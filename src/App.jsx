@@ -9,6 +9,7 @@ import TopBar from './components/TopBar.jsx';
 import BottomTransport from './components/BottomTransport.jsx';
 import { LeftDataPanel, RightDataPanel, SeatChip } from './components/Panels.jsx';
 import { FilePicker, VenuePicker } from './components/Modals.jsx';
+import SoundInfo from './components/SoundInfo.jsx';
 import { useEngine } from './audio/useEngine.js';
 import { audioBufferToWav } from './audio/wav.js';
 import { extractMetadata } from './audio/metadata.js';
@@ -253,6 +254,7 @@ export default function App() {
         onFileClick={() => setFilePickerOpen(true)}
         onVenueClick={() => setVenuePickerOpen(true)}
       />
+      <SoundInfo venue={venue} />
       <LeftDataPanel venue={venue} />
       <RightDataPanel venue={venue} file={displayFile} />
       <SeatChip venue={venue} />

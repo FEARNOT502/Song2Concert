@@ -74,3 +74,69 @@ export const VENUES = [
 ];
 
 export const findVenue = (id) => VENUES.find((v) => v.id === id) || VENUES[0];
+
+// SOUND_NOTES — per-venue explanation of how the convolution reverb is tuned,
+// surfaced by the "?" help popup. Each entry maps the venue's `ir` params
+// (audio/impulse.js) + engine processing (audio/engine.js) to plain language.
+// `points` are the bullet lines; `params` is the raw tuning shown as a chip row.
+export const SOUND_NOTES = {
+  jazz: {
+    headline: '짧고 따뜻한 잔향 — 클럽의 친밀함',
+    points: [
+      'RT60 0.9초의 아주 짧은 꼬리. 낮은 천장·우드 디퓨저의 흡음을 모사해 잔향이 빠르게 사라집니다.',
+      '프리딜레이 +12ms — 앞 테이블 청취 위치라 첫 반사음이 거의 즉시 도착합니다.',
+      '저역 감쇠(lfDamp 0.45)는 중간 정도, 고역(hfDamp 0.78)은 빠르게 굴려 어쿠스틱 악기의 따뜻함을 살립니다.',
+      '밀도 0.85로 초기 반사가 촘촘해 작은 공간 특유의 밀착감을 줍니다.',
+    ],
+    params: 'RT60 0.9s · PreDelay +12ms · lfDamp 0.45 · hfDamp 0.78 · density 0.85',
+  },
+  hall: {
+    headline: '길고 풍성한 중역 — 자연 음향 홀',
+    points: [
+      'RT60 2.0초의 길고 매끄러운 꼬리. 슈박스 콘서트홀의 자연 잔향을 재현합니다.',
+      '프리딜레이 +28ms — 메인플로어 중앙이라 무대에서 소리가 도달하는 시간이 깁니다.',
+      '저역 감쇠가 약해(lfDamp 0.32) PA 룸보다 베이스가 풍성하고, 스테레오 확산(spread 0.72)이 넓습니다.',
+      '밀도 0.92로 잔향이 균질하게 차올라 오케스트라가 공간에 감싸이는 느낌을 줍니다.',
+    ],
+    params: 'RT60 2.0s · PreDelay +28ms · lfDamp 0.32 · hfDamp 0.6 · spread 0.72',
+  },
+  arena: {
+    headline: 'PA 주도 — 타이트한 베이스 + 넓은 공간',
+    points: [
+      'RT60 2.4초지만 저역 감쇠를 깊게(lfDamp 0.62) 걸어 베이스가 부밍하지 않고 펀치를 유지합니다.',
+      '프리딜레이 +60ms — 플로어 중앙. 라인 어레이 PA가 만드는 첫 반사 지연을 반영합니다.',
+      '딜레이 타워 슬랩(slap)이 켜져 큰 공간 특유의 반사 클러스터가 더해집니다.',
+      '록/팝 튜닝: 펀치는 드라이 경로가, 공간감은 웻 경로가 담당하도록 분리했습니다.',
+    ],
+    params: 'RT60 2.4s · PreDelay +60ms · lfDamp 0.62 · slap on · 록/팝 튜닝',
+  },
+  dome: {
+    headline: '거대하고 동굴 같은 잔향',
+    points: [
+      'RT60 3.4초 — 가장 긴 꼬리. 에어 서포트 돔의 광대한 내부 반사를 모사합니다.',
+      '프리딜레이 +95ms — 메인 스탠드 중앙이라 첫 반사음이 한참 뒤에 도착합니다.',
+      '저·고역을 모두 강하게 감쇠(lfDamp 0.66 / hfDamp 0.78)해 중역이 워싱되며 동굴 같은 색을 냅니다.',
+      '딜레이 타워 슬랩으로 거대 공간의 메아리 클러스터를 추가합니다.',
+    ],
+    params: 'RT60 3.4s · PreDelay +95ms · lfDamp 0.66 · hfDamp 0.78 · slap on',
+  },
+  stadium: {
+    headline: '개방형 야외 — 얇은 확산 + 매우 타이트한 베이스',
+    points: [
+      'RT60 3.0초의 긴 꼬리지만 벽이 없어 확산이 얇습니다(density 0.5).',
+      '프리딜레이 +110ms — 필드 중앙. 대형 PA + 딜레이 타워의 긴 지연을 반영합니다.',
+      '저역 감쇠가 가장 강해(lfDamp 0.72) 벽 반사가 없는 야외처럼 베이스가 매우 타이트합니다.',
+      '스테레오 확산 0.9로 가장 넓게 펼쳐 광활한 야외감을 줍니다.',
+    ],
+    params: 'RT60 3.0s · PreDelay +110ms · lfDamp 0.72 · density 0.5 · spread 0.9',
+  },
+};
+
+// SHARED_NOTES — applied identically to every venue (engine.js graph).
+export const SHARED_NOTES = [
+  '웻 경로 전용 3단 EQ: 머드 컷(~300Hz) · 보컬 컷(~3.2kHz) · 에어 컷(6kHz)으로 잔향이 믹스를 뭉개지 않게 합니다.',
+  '등전력 크로스페이더로 웻/드라이를 섞고, 마지막 단 리미터가 어떤 설정에서도 클리핑을 막습니다.',
+  '임펄스 응답은 공연장 음향 파라미터로부터 실시간 합성됩니다(측정 IR로 교체 가능).',
+];
+
+export const getSoundNote = (id) => SOUND_NOTES[id] || SOUND_NOTES.jazz;

@@ -1,500 +1,688 @@
-// Scene.jsx — 6 first-person audience-POV venue scenes built to read like REAL
-// concert stages: a raised stage deck, line-array PA stacks flanking it, an
-// overhead lighting truss with moving-head fixtures + beams, an LED video wall
-// behind the band, band silhouettes with instruments, haze, and an audience
-// field that grows with venue size. Album art sits on the video wall / screen.
+// Scene.jsx — 5 first-person audience-POV venue scenes (ported from the V2
+// variants in venues/venue-variants.jsx). Each is a rich, venue-specific stage:
+// jazz club combo, concert-hall organ + orchestra, arena LED wall + sea of
+// crowd, domed stadium, and open night-sky stadium.
 //
-// Shared building blocks (Truss, LineArray, Beams, Band, …) keep the five
-// venues consistent while each gets its own architecture + scale.
+// The album art + "Title — Artist" caption are mounted INSIDE each venue's
+// on-stage screen (the amber-outlined LED rectangle), sized and spaced to sit
+// cleanly within it. Coordinates below are in the 1440×760 SVG space; the
+// HTML overlay is positioned with the same percentages so it tracks the screen
+// under `preserveAspectRatio="xMidYMid slice"`.
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import Cover from './Cover.jsx';
 
 const ACCENT = 'oklch(0.78 0.16 55)';
+const VB_W = 1440;
+const VB_H = 760;
 
-// deterministic RNG for stable scatter
-function rng(seed) {
+// deterministic RNG (matches venue-variants' vvPrng)
+function prng(seed) {
   let x = seed;
   return () => { x = (x * 9301 + 49297) % 233280; return x / 233280; };
 }
 
-// ── shared stage furniture ───────────────────────────────────────────────
-
-// overhead lighting truss spanning x1..x2 at height y, with hanging fixtures
-function Truss({ x1, x2, y, fixtures = 9, color = '#15161e' }) {
-  const w = x2 - x1;
+// crowd head: body + head, optional raised arms
+function Head({ cx, cy, size, arms = 0, fill = '#000' }) {
   return (
     <g>
-      <rect x={x1} y={y} width={w} height="10" fill={color} stroke="#26283a" strokeWidth="0.6" />
-      {/* lattice diagonals */}
-      {Array.from({ length: Math.floor(w / 24) }).map((_, i) => (
-        <line key={i} x1={x1 + i * 24} y1={y} x2={x1 + i * 24 + 24} y2={y + 10} stroke="#2a2c3e" strokeWidth="0.5" opacity="0.7" />
-      ))}
-      {/* hung moving-head fixtures */}
-      {Array.from({ length: fixtures }).map((_, i) => {
-        const fx = x1 + ((i + 0.5) / fixtures) * w;
-        return (
-          <g key={`f${i}`}>
-            <line x1={fx} y1={y + 10} x2={fx} y2={y + 16} stroke="#2a2c3e" strokeWidth="1.2" />
-            <rect x={fx - 4} y={y + 16} width="8" height="9" rx="1.5" fill="#0c0d14" stroke="#2a2c3e" strokeWidth="0.6" />
-            <circle cx={fx} cy={y + 25} r="1.6" fill={ACCENT} opacity="0.85" />
-          </g>
-        );
-      })}
-    </g>
-  );
-}
-
-// a flown line-array PA hang (the curved column of speaker boxes)
-function LineArray({ x, yTop, boxes = 7, w = 30, curve = 10 }) {
-  return (
-    <g>
-      <line x1={x} y1={yTop - 14} x2={x} y2={yTop} stroke="#2a2c3e" strokeWidth="1.4" />
-      {Array.from({ length: boxes }).map((_, i) => {
-        const bw = w - i * (curve * 0.15);
-        const by = yTop + i * 15;
-        const skew = (i / boxes) * curve;
-        return (
-          <g key={i}>
-            <rect x={x - bw / 2 + skew} y={by} width={bw} height="13" rx="1.5" fill="#0a0b12" stroke="#23252f" strokeWidth="0.6" />
-            <circle cx={x - bw / 4 + skew} cy={by + 6.5} r="3" fill="#16171f" />
-            <circle cx={x + bw / 4 + skew} cy={by + 6.5} r="3" fill="#16171f" />
-          </g>
-        );
-      })}
-    </g>
-  );
-}
-
-// moving-head light beams fanning down from the truss to the stage
-function Beams({ originY, spread = 1, count = 6, cx = 720, len = 360, hue = 55, op = 0.14 }) {
-  return (
-    <g>
-      {Array.from({ length: count }).map((_, i) => {
-        const t = count === 1 ? 0.5 : i / (count - 1);
-        const ox = cx + (t - 0.5) * 520 * spread;
-        const tx = cx + (t - 0.5) * 220 * spread;
-        return (
-          <polygon
-            key={i}
-            points={`${ox - 8},${originY} ${ox + 8},${originY} ${tx + 26},${originY + len} ${tx - 26},${originY + len}`}
-            fill={`oklch(0.82 0.16 ${hue})`}
-            opacity={op}
-          />
-        );
-      })}
-    </g>
-  );
-}
-
-// band silhouettes with instruments on the deck
-function Band({ y, scale = 1, members = 'full' }) {
-  const s = scale;
-  const fig = (cx, cy, h = 26) => (
-    <g>
-      <ellipse cx={cx} cy={cy} rx={5 * s} ry={h * 0.4 * s} fill="#000" />
-      <rect x={cx - 4 * s} y={cy - h * s} width={8 * s} height={h * s} rx={3 * s} fill="#000" />
-      <circle cx={cx} cy={cy - h * s} r={4.5 * s} fill="#000" />
-    </g>
-  );
-  return (
-    <g>
-      {/* lead vocalist center + mic stand */}
-      <line x1={720} y1={y} x2={720} y2={y - 34 * s} stroke="#000" strokeWidth={1.6 * s} />
-      <circle cx={720} cy={y - 35 * s} r={2.6 * s} fill="#000" />
-      {fig(720, y, 30)}
-      {/* guitarists flanking */}
-      {fig(640, y + 2, 27)}
-      <line x1={628} y1={y - 4 * s} x2={660} y2={y + 12 * s} stroke="#000" strokeWidth={2 * s} />
-      {fig(806, y + 2, 27)}
-      <line x1={792} y1={y - 4 * s} x2={822} y2={y + 12 * s} stroke="#000" strokeWidth={2 * s} />
-      {/* drum riser behind */}
-      {members === 'full' && (
-        <g>
-          <rect x={690} y={y - 30 * s} width={60 * s} height={14 * s} fill="#05050a" opacity="0.8" />
-          <circle cx={706} cy={y - 34 * s} r={8 * s} fill="#000" stroke="#1a1a22" strokeWidth="0.6" />
-          <circle cx={734} cy={y - 34 * s} r={8 * s} fill="#000" stroke="#1a1a22" strokeWidth="0.6" />
-          {fig(720, y - 30 * s, 18)}
-        </g>
+      <ellipse cx={cx} cy={cy} rx={size * 0.7} ry={size * 0.95} fill={fill} />
+      <circle cx={cx} cy={cy - size * 0.65} r={size * 0.6} fill={fill} />
+      {arms === 1 && (
+        <path d={`M ${cx - size * 0.3} ${cy - size * 0.3} L ${cx - size * 0.5} ${cy - size * 1.8}`}
+          fill="none" stroke={fill} strokeWidth={size * 0.45} strokeLinecap="round" />
+      )}
+      {arms === 2 && (
+        <>
+          <path d={`M ${cx - size * 0.3} ${cy - size * 0.3} L ${cx - size * 0.55} ${cy - size * 1.8}`}
+            fill="none" stroke={fill} strokeWidth={size * 0.42} strokeLinecap="round" />
+          <path d={`M ${cx + size * 0.3} ${cy - size * 0.3} L ${cx + size * 0.55} ${cy - size * 1.8}`}
+            fill="none" stroke={fill} strokeWidth={size * 0.42} strokeLinecap="round" />
+        </>
       )}
     </g>
   );
 }
 
-// scattered audience field; rows recede upward, heads shrink
-function Crowd({ rows, baseY, rowGap, colsBase, colGrow, sizeBase, sizeGrow, seed = 7, phones = 0 }) {
-  const pts = useMemo(() => {
-    const out = [];
-    const r = rng(seed);
-    for (let row = 0; row < rows; row++) {
-      const y = baseY + row * rowGap + row * row * 0.5;
-      const cols = colsBase + row * colGrow;
-      for (let c = 0; c < cols; c++) {
-        const x = ((c + 0.5) / cols) * 1440 + (r() - 0.5) * 10;
-        out.push({ x, y, size: sizeBase + row * sizeGrow });
-      }
-    }
-    return out;
-  }, [rows, baseY, rowGap, colsBase, colGrow, sizeBase, sizeGrow, seed]);
-  const ph = useMemo(() => {
-    const r = rng(seed + 99);
-    return Array.from({ length: phones }).map(() => ({ x: r() * 1440, y: baseY - 10 + r() * (rows * rowGap) }));
-  }, [phones, seed, baseY, rows, rowGap]);
-  return (
-    <g>
-      {pts.map((p, i) => (
-        <g key={i}>
-          <ellipse cx={p.x} cy={p.y} rx={p.size * 0.7} ry={p.size * 0.85} fill="#000" />
-          <circle cx={p.x} cy={p.y - p.size * 0.5} r={p.size * 0.55} fill="#000" />
-        </g>
-      ))}
-      {ph.map((p, i) => (
-        <rect key={`p${i}`} x={p.x} y={p.y} width="2" height="3" fill="oklch(0.92 0.08 90)" opacity={0.4 + (i % 3) * 0.15} />
-      ))}
-    </g>
-  );
+function dust(count, seed) {
+  const rnd = prng(seed);
+  return Array.from({ length: count }).map((_, i) => ({
+    x: 200 + rnd() * 1040,
+    y: 60 + rnd() * 500,
+    r: 0.4 + (i % 3) * 0.4,
+    o: 0.1 + (i % 4) * 0.06,
+  }));
 }
 
-const NowPlaying = ({ label = '▸ NOW PLAYING' }) => (
-  <div className="absolute -top-4 left-0 text-[11px] tracking-[0.3em] text-[oklch(0.78_0.16_55)] font-mono">{label}</div>
-);
-
-// "Title — Artist" caption under the album art on stage
-function StageCaption({ title, artist }) {
-  if (!title) return null;
-  return (
-    <div className="absolute left-1/2 -translate-x-1/2 top-full mt-4 w-[150%] text-center pointer-events-none">
-      <div className="text-white text-[20px] font-light leading-tight font-tight truncate" style={{ textShadow: '0 1px 12px rgba(0,0,0,0.95)' }}>{title}</div>
-      {artist && artist !== '—' && (
-        <div className="text-neutral-300 text-[13px] mt-1 tracking-[0.08em] font-tight truncate" style={{ textShadow: '0 1px 10px rgba(0,0,0,0.95)' }}>{artist}</div>
-      )}
-    </div>
-  );
+function StarField({ count = 60, seed = 1 }) {
+  const rnd = prng(seed);
+  return Array.from({ length: count }).map((_, i) => {
+    const x = rnd() * 1440, y = rnd() * 220;
+    const r = 0.4 + rnd() * 1.2;
+    return <circle key={i} cx={x} cy={y} r={r} fill="oklch(0.95 0.04 220)" opacity={0.3 + rnd() * 0.6} />;
+  });
 }
 
-// wrapper that places the album art (the LED-wall content) + caption + glow
-function StageArt({ coverId, coverSrc, pulse, size, top, glow = 0.32, label, title, artist, screen = true }) {
+// ── on-screen album art + caption, mounted INSIDE the venue's LED rectangle ──
+// `screen` is the rectangle in SVG coords: { x, y, w, h }. The cover is sized to
+// fill the screen width (minus padding); the caption sits just below the art but
+// inside the rectangle's lower band so the whole "now playing" block reads as
+// content ON the stage screen.
+function StageArt({ coverId, coverSrc, pulse, title, artist, screen, bezel = true }) {
+  // convert the screen rect to overlay percentages
+  const left = ((screen.x + screen.w / 2) / VB_W) * 100;
+  const top = (screen.y / VB_H) * 100;
+  const widthPct = (screen.w / VB_W) * 100;
+  const heightPct = (screen.h / VB_H) * 100;
+
+  // The SVG uses preserveAspectRatio="xMidYMid slice", so 1 SVG unit renders at
+  // scale = max(vw/1440, vh/760) px. Compute a NUMERIC cover size (the fictional
+  // covers do arithmetic on `size`, so it must be a number, not a CSS string).
+  const [vp, setVp] = useState(() => ({
+    w: typeof window !== 'undefined' ? window.innerWidth : 1440,
+    h: typeof window !== 'undefined' ? window.innerHeight : 760,
+  }));
+  useEffect(() => {
+    const onResize = () => setVp({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  const scale = Math.max(vp.w / VB_W, vp.h / VB_H);
+  // cover fits inside the screen with padding; bounded by both width & height
+  const coverPx = Math.max(40, Math.round(Math.min(screen.w * 0.66, screen.h * 0.62) * scale));
+
   return (
     <div
-      className="absolute z-10"
+      className="absolute z-10 flex flex-col items-center justify-center"
       style={{
-        left: '50%', top, transform: 'translateX(-50%)',
-        filter: `drop-shadow(0 0 ${50 + pulse * 30}px oklch(0.78 0.16 55 / ${glow + pulse * 0.12}))`,
-        transition: 'filter 120ms',
+        left: `${left}%`, top: `${top}%`,
+        width: `${widthPct}vw`, height: `${heightPct}vh`,
+        transform: 'translate(-50%, 0)',
+        pointerEvents: 'none',
+        filter: `drop-shadow(0 0 ${36 + pulse * 26}px oklch(0.78 0.16 55 / ${0.3 + pulse * 0.12}))`,
+        transition: 'filter 140ms',
       }}
     >
-      {/* a thin bezel so the art reads as an on-stage LED screen */}
-      <div style={screen ? { padding: 6, background: '#000', border: '1px solid rgba(255,255,255,0.12)' } : undefined}>
-        <Cover id={coverId} src={coverSrc} size={size} />
+      <div className="text-[9px] tracking-[0.3em] text-[oklch(0.78_0.16_55)] font-mono mb-1.5 opacity-90">▸ NOW PLAYING</div>
+      <div style={bezel ? { padding: 5, background: '#000', border: '1px solid rgba(255,255,255,0.14)' } : undefined}>
+        <Cover id={coverId} src={coverSrc} size={coverPx} />
       </div>
-      {label && <NowPlaying label={label} />}
-      <StageCaption title={title} artist={artist} />
+      {title && (
+        <div className="mt-2 w-[112%] text-center">
+          <div
+            className="text-white font-light leading-tight font-tight truncate"
+            style={{ fontSize: 'clamp(11px, 1.25vw, 19px)', textShadow: '0 1px 12px rgba(0,0,0,0.95)' }}
+          >
+            {title}
+          </div>
+          {artist && artist !== '—' && (
+            <div
+              className="text-neutral-300 mt-0.5 tracking-[0.08em] font-tight truncate"
+              style={{ fontSize: 'clamp(9px, 0.85vw, 13px)', textShadow: '0 1px 10px rgba(0,0,0,0.95)' }}
+            >
+              {artist}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-// ───────────────────────────────────────── 1. JAZZ CLUB
+const SceneShell = ({ children }) => (
+  <div className="absolute inset-0 z-0">{children}</div>
+);
+
+// ═══════════════════════════════════════════ 1. JAZZ CLUB — Blue Note
+// No LED wall; the album art mounts on the lit back wall behind the combo.
 function SceneJazz({ coverId, coverSrc, pulse, title, artist }) {
+  const particles = useMemo(() => dust(30, 7), []);
   return (
-    <div className="absolute inset-0 z-0">
+    <SceneShell>
       <svg viewBox="0 0 1440 760" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 w-full h-full">
         <defs>
-          <radialGradient id="jzSpot" cx="0.5" cy="0" r="0.7">
-            <stop offset="0" stopColor="oklch(0.85 0.16 55)" stopOpacity="0.32" />
+          <radialGradient id="j2Spot" cx="0.5" cy="0" r="0.7">
+            <stop offset="0" stopColor="oklch(0.85 0.16 55)" stopOpacity="0.35" />
             <stop offset="1" stopColor="oklch(0.85 0.16 55)" stopOpacity="0" />
           </radialGradient>
-          <linearGradient id="jzFloor" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0" stopColor="#1a1208" /><stop offset="1" stopColor="#000" />
-          </linearGradient>
-          <pattern id="jzBrick" patternUnits="userSpaceOnUse" width="32" height="14">
+          <pattern id="j2Brick" patternUnits="userSpaceOnUse" width="32" height="14">
             <rect width="32" height="14" fill="#0c0703" />
             <line x1="0" y1="14" x2="32" y2="14" stroke="#1a1208" strokeWidth="0.6" />
             <line x1="16" y1="0" x2="16" y2="14" stroke="#1a1208" strokeWidth="0.6" />
           </pattern>
         </defs>
-
-        {/* low room — brick side walls, dark back wall */}
-        <polygon points="0,0 1440,0 1080,250 360,250" fill="#040303" />
-        <polygon points="0,0 360,250 360,560 0,760" fill="url(#jzBrick)" />
-        <polygon points="1440,0 1080,250 1080,560 1440,760" fill="url(#jzBrick)" />
-        <rect x="360" y="250" width="720" height="320" fill="#070504" />
-        <polygon points="360,560 1080,560 1440,760 0,760" fill="url(#jzFloor)" />
-
-        {/* small overhead bar of warm cans */}
-        <Truss x1={470} x2={970} y={120} fixtures={6} color="#120c06" />
-        {/* tight warm spots onto the stage */}
-        <polygon points="620,150 760,150 850,540 560,540" fill="url(#jzSpot)" />
-        <polygon points="500,150 580,150 470,540 410,540" fill="url(#jzSpot)" opacity="0.5" />
-        <polygon points="880,150 960,150 1010,540 920,540" fill="url(#jzSpot)" opacity="0.5" />
-
-        {/* raised stage deck */}
-        <polygon points="430,548 1010,548 1070,580 370,580" fill="#0d0a06" />
-        <line x1="430" y1="548" x2="1010" y2="548" stroke={ACCENT} strokeWidth="1.4" opacity="0.85" />
-
-        {/* small PA cabinets on stands (club PA, not line array) */}
-        {[[ 470, 470 ], [ 970, 470 ]].map(([x, y], i) => (
+        <polygon points="0,0 1440,0 1080,260 360,260" fill="#040303" />
+        <polygon points="0,0 360,260 360,560 0,760" fill="url(#j2Brick)" />
+        <polygon points="1440,0 1080,260 1080,560 1440,760" fill="url(#j2Brick)" />
+        <rect x="360" y="260" width="720" height="320" fill="#070504" />
+        {/* on-stage screen frame the album art mounts into */}
+        <rect x="556" y="286" width="328" height="252" fill="#020108" stroke={ACCENT} strokeWidth="1.4" opacity="0.9" />
+        {/* pipe lighting bar */}
+        <rect x="360" y="248" width="720" height="6" fill="#1a1208" />
+        {[0, 1, 2, 3, 4, 5, 6, 7].map(i => (
           <g key={i}>
-            <line x1={x} y1={y + 40} x2={x} y2={y + 78} stroke="#1a1208" strokeWidth="3" />
-            <rect x={x - 16} y={y} width="32" height="44" rx="2" fill="#0a0806" stroke="#241a0e" />
-            <circle cx={x} cy={y + 16} r="9" fill="#16110a" />
-            <circle cx={x} cy={y + 33} r="5" fill="#16110a" />
+            <rect x={400 + i * 92 - 8} y="254" width="16" height="14" fill="#0a0604" stroke="#1a1208" />
+            <circle cx={400 + i * 92} cy="266" r="4" fill={i % 3 === 0 ? ACCENT : '#1a1208'} opacity={i % 3 === 0 ? 0.85 : 1} />
           </g>
         ))}
-
-        {/* jazz combo: upright bass, grand piano, drums, mic */}
-        <ellipse cx="500" cy="500" rx="20" ry="46" fill="#000" />
-        <rect x="496" y="420" width="7" height="86" fill="#000" />
-        <rect x="850" y="492" width="150" height="12" fill="#000" />
-        <rect x="858" y="504" width="134" height="44" fill="#0a0604" />
-        <Band y={520} scale={0.8} members="combo" />
-
-        {/* haze near the spots */}
-        {Array.from({ length: 22 }).map((_, i) => {
-          const r = rng(13 + i)();
-          return <circle key={i} cx={420 + r * 600} cy={180 + ((i * 53) % 340)} r={0.5 + (i % 3) * 0.4} fill={ACCENT} opacity={0.08 + (i % 4) * 0.05} />;
+        <polygon points="660,260 780,260 880,580 560,580" fill="url(#j2Spot)" />
+        <polygon points="940,260 1020,260 1060,580 940,580" fill="url(#j2Spot)" opacity="0.5" />
+        <polygon points="420,260 500,260 480,580 380,580" fill="url(#j2Spot)" opacity="0.5" />
+        <polygon points="360,560 1080,560 1080,580 360,580" fill="#1a1208" />
+        <line x1="360" y1="560" x2="1080" y2="560" stroke={ACCENT} strokeWidth="1.4" />
+        {/* drum kit center-left */}
+        <g transform="translate(560 460)">
+          <rect x="-90" y="100" width="180" height="14" fill="#0a0604" />
+          <ellipse cx="0" cy="80" rx="48" ry="46" fill="#0a0604" stroke="#1a1208" strokeWidth="1.5" />
+          <circle cx="0" cy="80" r="34" fill="#04020a" />
+          <circle cx="0" cy="80" r="18" fill={ACCENT} opacity="0.18" />
+          <line x1="-78" y1="100" x2="-78" y2="30" stroke="#1a1208" strokeWidth="2" />
+          <ellipse cx="-78" cy="30" rx="16" ry="3" fill="oklch(0.75 0.12 80)" />
+          <ellipse cx="38" cy="62" rx="22" ry="6" fill="#0a0604" stroke="#1a1208" />
+          <ellipse cx="-18" cy="36" rx="18" ry="5" fill="#0a0604" stroke="#1a1208" />
+          <ellipse cx="18" cy="32" rx="20" ry="5" fill="#0a0604" stroke="#1a1208" />
+          <line x1="62" y1="100" x2="76" y2="-2" stroke="#1a1208" strokeWidth="1.6" />
+          <ellipse cx="76" cy="-2" rx="26" ry="4" fill="oklch(0.75 0.12 80)" />
+          <ellipse cx="0" cy="20" rx="14" ry="22" fill="#000" />
+          <circle cx="0" cy="-8" r="11" fill="#000" />
+        </g>
+        {/* upright bass */}
+        <g transform="translate(840 540)">
+          <path d="M 0 0 Q -20 30 -20 60 Q -20 100 0 110 Q 20 100 20 60 Q 20 30 0 0 Z" fill="#0a0604" stroke="#1a1208" />
+          <rect x="-4" y="-90" width="8" height="90" fill="#0a0604" />
+          <ellipse cx="-22" cy="0" rx="12" ry="36" fill="#000" />
+          <circle cx="-22" cy="-46" r="11" fill="#000" />
+        </g>
+        {/* piano */}
+        <g transform="translate(280 510)">
+          <path d="M 0 60 L -90 0 L 60 0 L 150 60 Z" fill="#04020a" stroke="#1a1208" />
+          <rect x="-60" y="60" width="180" height="20" fill="#0a0604" />
+          <rect x="-50" y="80" width="160" height="6" fill="#e8e0d0" />
+          <ellipse cx="30" cy="80" rx="14" ry="24" fill="#000" />
+          <circle cx="30" cy="48" r="11" fill="#000" />
+        </g>
+        {/* singer */}
+        <g>
+          <line x1="720" y1="560" x2="720" y2="406" stroke="#1a1208" strokeWidth="2" />
+          <ellipse cx="752" cy="428" rx="8" ry="5" fill="#0a0604" stroke="#1a1208" />
+          <ellipse cx="720" cy="480" rx="22" ry="52" fill="#000" />
+          <circle cx="720" cy="418" r="14" fill="#000" />
+        </g>
+        {/* tables / heads receding */}
+        {Array.from({ length: 4 }).map((_, row) => {
+          const y = 610 + row * 38;
+          const headSize = 16 + row * 4;
+          const cols = 8 + row * 2;
+          const margin = 80 - row * 12;
+          const spacing = (1440 - margin * 2) / cols;
+          const rnd = prng(7 + row * 11);
+          return Array.from({ length: cols }).map((_, c) => {
+            const cx = margin + spacing * (c + 0.5) + (rnd() - 0.5) * 12;
+            return <Head key={`${row}-${c}`} cx={cx} cy={y} size={headSize} />;
+          });
         })}
-
-        {/* a few close audience heads at the bottom (intimate) */}
-        {[[160, 770, 95], [400, 790, 105], [690, 800, 100], [980, 785, 108], [1260, 795, 110]]
-          .map(([cx, cy, rx], i) => <ellipse key={i} cx={cx} cy={cy} rx={rx} ry={rx * 0.8} fill="#000" />)}
+        {Array.from({ length: 18 }).map((_, i) => {
+          const x = 60 + (i * 79) % 1380, y = 720 + (i % 3) * 6;
+          return <circle key={i} cx={x} cy={y} r="1.6" fill="oklch(0.92 0.18 60)" opacity="0.85" />;
+        })}
+        {particles.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={p.r} fill="oklch(0.85 0.16 55)" opacity={p.o} />)}
       </svg>
-
-      <StageArt coverId={coverId} coverSrc={coverSrc} pulse={pulse} size={250} top="20%" glow={0.3} label="▸ NOW PLAYING" title={title} artist={artist} screen={false} />
-    </div>
+      <StageArt coverId={coverId} coverSrc={coverSrc} pulse={pulse} title={title} artist={artist}
+        screen={{ x: 556, y: 286, w: 328, h: 252 }} />
+    </SceneShell>
   );
 }
 
-// ───────────────────────────────────────── 2. CONCERT HALL
+// ═══════════════════════════════════════════ 2. CONCERT HALL — Symphony Hall
 function SceneHall({ coverId, coverSrc, pulse, title, artist }) {
+  const particles = useMemo(() => dust(40, 23), []);
   return (
-    <div className="absolute inset-0 z-0">
+    <SceneShell>
       <svg viewBox="0 0 1440 760" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 w-full h-full">
         <defs>
-          <radialGradient id="chSpot" cx="0.5" cy="0" r="0.6">
-            <stop offset="0" stopColor="oklch(0.85 0.16 55)" stopOpacity="0.24" />
+          <radialGradient id="h2Spot" cx="0.5" cy="0" r="0.6">
+            <stop offset="0" stopColor="oklch(0.85 0.16 55)" stopOpacity="0.28" />
             <stop offset="1" stopColor="oklch(0.85 0.16 55)" stopOpacity="0" />
           </radialGradient>
         </defs>
-
-        {/* coffered ceiling converging to the proscenium */}
-        <polygon points="0,0 1440,0 1020,170 420,170" fill="#040302" />
-        {Array.from({ length: 8 }).map((_, i) => (
-          <line key={i} x1={420 + i * 86} y1="170" x2={i * 205} y2="0" stroke="#15100a" strokeWidth="1" />
+        <polygon points="0,0 1440,0 1020,180 420,180" fill="#040302" />
+        {Array.from({ length: 7 }).map((_, i) => (
+          <line key={i} x1={420 + i * 100} y1="180" x2={i * 200} y2="0" stroke="#15100a" strokeWidth="1" />
         ))}
-
-        {/* side balconies in perspective */}
-        <polygon points="0,0 420,170 420,520 0,720" fill="#0a0604" />
-        <polygon points="1440,0 1020,170 1020,520 1440,720" fill="#0a0604" />
-        {[230, 330].map((yy, i) => (
+        <g opacity="0.75">
+          <line x1="720" y1="0" x2="720" y2="80" stroke="#3a2a14" strokeWidth="1" />
+          <ellipse cx="720" cy="100" rx="46" ry="16" fill="#1a1208" />
+          {Array.from({ length: 18 }).map((_, i) => (
+            <circle key={i} cx={720 + Math.cos(i / 18 * Math.PI * 2) * 40} cy={100 + Math.sin(i / 18 * Math.PI * 2) * 14} r="1.8" fill="oklch(0.85 0.14 60)" opacity="0.9" />
+          ))}
+        </g>
+        <polygon points="0,0 420,180 420,500 0,720" fill="#0a0604" />
+        <polygon points="1440,0 1020,180 1020,500 1440,720" fill="#0a0604" />
+        {/* balcony boxes filled */}
+        {[260, 360, 460].map((y, i) => (
           <g key={i}>
-            <polygon points={`0,${yy} 420,${yy + 28} 420,${yy + 48} 0,${yy + 20}`} fill="#15100a" opacity="0.6" />
-            <polygon points={`1440,${yy} 1020,${yy + 28} 1020,${yy + 48} 1440,${yy + 20}`} fill="#15100a" opacity="0.6" />
+            <rect x="0" y={y} width="420" height="32" fill="#15100a" />
+            {Array.from({ length: 12 }).map((_, k) => <Head key={k} cx={30 + k * 32} cy={y + 14} size={6} />)}
+            <rect x="1020" y={y} width="420" height="32" fill="#15100a" />
+            {Array.from({ length: 12 }).map((_, k) => <Head key={`r${k}`} cx={1050 + k * 32} cy={y + 14} size={6} />)}
           </g>
         ))}
-
-        {/* proscenium arch around the stage */}
-        <path d="M 420,170 L 420,520 L 1020,520 L 1020,170 Q 720,132 420,170 Z" fill="none" stroke="oklch(0.7 0.12 55)" strokeWidth="1.2" opacity="0.7" />
-        {/* stage shell / back wall */}
-        <rect x="455" y="190" width="530" height="320" fill="#050403" />
-
-        {/* concert spots from the bridge */}
-        <polygon points="620,170 820,170 880,510 560,510" fill="url(#chSpot)" />
-        <polygon points="470,170 540,170 380,510 300,510" fill="url(#chSpot)" opacity="0.45" />
-        <polygon points="900,170 970,170 1140,510 1060,510" fill="url(#chSpot)" opacity="0.45" />
-
-        {/* raised stage with orchestra rows */}
-        <polygon points="455,512 985,512 1035,536 405,536" fill="#0a0604" />
-        <line x1="455" y1="512" x2="985" y2="512" stroke={ACCENT} strokeWidth="1.4" opacity="0.8" />
-        {Array.from({ length: 20 }).map((_, i) => {
-          const cx = 500 + (i % 10) * 50, cy = 470 + Math.floor(i / 10) * 20;
-          return <g key={i}><ellipse cx={cx} cy={cy} rx="6" ry="9" fill="#000" /><circle cx={cx} cy={cy - 8} r="3.5" fill="#000" /></g>;
+        <path d="M 420,180 L 420,500 L 1020,500 L 1020,180 Q 720,140 420,180 Z" fill="none" stroke="oklch(0.7 0.12 55)" strokeWidth="1" opacity="0.7" />
+        <rect x="460" y="200" width="520" height="295" fill="#050403" />
+        {/* organ pipes behind */}
+        {Array.from({ length: 24 }).map((_, i) => {
+          const x = 480 + i * 21;
+          const h = 80 + ((i * 7) % 60);
+          return <rect key={i} x={x} y={200 + 60 - h * 0.5} width="14" height={h + 60} fill="#0e0a06" stroke="#1a1208" strokeWidth="0.5" />;
         })}
-        {/* conductor */}
-        <ellipse cx="720" cy="512" rx="6" ry="11" fill="#000" /><circle cx="720" cy="500" r="4" fill="#000" />
-
-        {/* full audience receding */}
-        <Crowd rows={8} baseY={556} rowGap={26} colsBase={22} colGrow={-2} sizeBase={6} sizeGrow={1.6} seed={23} />
+        {/* on-stage screen frame in front of the organ */}
+        <rect x="556" y="226" width="328" height="244" fill="#020108" stroke={ACCENT} strokeWidth="1.4" opacity="0.9" />
+        <polygon points="620,180 820,180 880,500 560,500" fill="url(#h2Spot)" />
+        <polygon points="460,495 980,495 980,510 460,510" fill="#1a1208" />
+        <line x1="460" y1="495" x2="980" y2="495" stroke={ACCENT} strokeWidth="1.4" />
+        {[
+          { r: 200, cy: 530, count: 16, size: 5 },
+          { r: 160, cy: 510, count: 13, size: 5 },
+          { r: 120, cy: 490, count: 10, size: 5 },
+        ].map((row, ri) => Array.from({ length: row.count }).map((_, i) => {
+          const t = i / (row.count - 1);
+          const angle = Math.PI * (0.15 + t * 0.7);
+          const cx = 720 - Math.cos(angle) * row.r;
+          const cy = row.cy - Math.sin(angle) * 12;
+          return (
+            <g key={`s${ri}-${i}`}>
+              <ellipse cx={cx} cy={cy} rx="5" ry="9" fill="#000" />
+              <circle cx={cx} cy={cy - 8} r="3.5" fill="#000" />
+            </g>
+          );
+        }))}
+        <rect x="710" y="525" width="20" height="4" fill="#1a1208" />
+        <ellipse cx="720" cy="510" rx="7" ry="14" fill="#000" />
+        <circle cx="720" cy="494" r="5" fill="#000" />
+        {Array.from({ length: 9 }).map((_, row) => {
+          const y = 545 + row * 22 + row * row * 1.0;
+          const xMargin = 380 - row * 38;
+          const headSize = 6 + row * 1.4;
+          const cols = 28 - row * 2;
+          const spacing = (1440 - xMargin * 2) / cols;
+          return Array.from({ length: cols }).map((_, c) => {
+            const cx = xMargin + spacing * (c + 0.5);
+            return <Head key={`${row}-${c}`} cx={cx} cy={y} size={headSize} />;
+          });
+        })}
+        {particles.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={p.r} fill="oklch(0.85 0.16 55)" opacity={p.o} />)}
       </svg>
-
-      <StageArt coverId={coverId} coverSrc={coverSrc} pulse={pulse} size={210} top="17%" glow={0.26} label="▸ NOW PLAYING" title={title} artist={artist} />
-    </div>
+      <StageArt coverId={coverId} coverSrc={coverSrc} pulse={pulse} title={title} artist={artist}
+        screen={{ x: 556, y: 226, w: 328, h: 244 }} />
+    </SceneShell>
   );
 }
 
-// ───────────────────────────────────────── 3. ARENA
+// ═══════════════════════════════════════════ 3. ARENA — City Arena
 function SceneArena({ coverId, coverSrc, pulse, title, artist }) {
+  const crowd = useMemo(() => {
+    const pts = [];
+    const rnd = prng(91);
+    for (let row = 0; row < 18; row++) {
+      const y = 540 + row * 12 + row * row * 0.5;
+      const cols = 50 + row * 3;
+      for (let c = 0; c < cols; c++) {
+        const x = (c + 0.5) / cols * 1440 + (rnd() - 0.5) * 6;
+        const size = 3.6 + row * 0.55;
+        const r = rnd();
+        const arms = r < 0.06 ? 2 : r < 0.18 ? 1 : 0;
+        pts.push({ x, y, size, arms });
+      }
+    }
+    return pts;
+  }, []);
+  const phones = useMemo(() => {
+    const rnd = prng(33);
+    return Array.from({ length: 90 }).map(() => ({ x: rnd() * 1440, y: 560 + rnd() * 200, s: 2 + rnd() * 2 }));
+  }, []);
   return (
-    <div className="absolute inset-0 z-0">
+    <SceneShell>
       <svg viewBox="0 0 1440 760" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 w-full h-full">
         <defs>
-          <radialGradient id="arGlow" cx="0.5" cy="0.5" r="0.6">
-            <stop offset="0" stopColor={ACCENT} stopOpacity="0.32" />
-            <stop offset="1" stopColor={ACCENT} stopOpacity="0" />
+          <radialGradient id="a2LED" cx="0.5" cy="0.5" r="0.6">
+            <stop offset="0" stopColor={ACCENT} stopOpacity="0.45" /><stop offset="1" stopColor={ACCENT} stopOpacity="0" />
           </radialGradient>
+          <linearGradient id="a2Haze" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0" stopColor={ACCENT} stopOpacity="0.22" /><stop offset="1" stopColor={ACCENT} stopOpacity="0" />
+          </linearGradient>
+          <linearGradient id="a2HazeMag" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0" stopColor="oklch(0.7 0.18 320)" stopOpacity="0.22" /><stop offset="1" stopColor="oklch(0.7 0.18 320)" stopOpacity="0" />
+          </linearGradient>
         </defs>
+        <rect x="0" y="0" width="1440" height="50" fill="#020203" />
+        <path d="M 0,140 Q 720,80 1440,140 L 1440,200 Q 720,160 0,200 Z" fill="#0a0805" />
+        {Array.from({ length: 220 }).map((_, i) => {
+          const t = i / 220, x = t * 1440;
+          const y = 150 + Math.sin(t * Math.PI) * -32 + (i % 4) * 4;
+          return <circle key={i} cx={x} cy={y} r="1.4" fill="#2a2018" />;
+        })}
+        <rect x="200" y="70" width="1040" height="8" fill="#15110a" />
+        {Array.from({ length: 14 }).map((_, i) => {
+          const x = 230 + i * 76;
+          const on = i % 3 !== 1;
+          const hue = i % 4 === 0 ? 320 : 55;
+          return (
+            <g key={i}>
+              <rect x={x - 8} y="78" width="16" height="18" fill="#0a0604" stroke="#1a1208" />
+              <circle cx={x} cy="100" r="6" fill={on ? `oklch(0.78 0.16 ${hue})` : '#1a1208'} />
+              {on && <polygon points={`${x - 8},105 ${x + 8},105 ${x + 80},540 ${x - 80},540`} fill={`oklch(0.78 0.16 ${hue})`} opacity="0.05" />}
+            </g>
+          );
+        })}
+        {[230, 1210].map((cx, i) => (
+          <g key={i}>
+            <line x1={cx} y1="78" x2={cx} y2="130" stroke="#3a2a14" strokeWidth="0.8" />
+            {Array.from({ length: 7 }).map((_, k) => (
+              <polygon key={k} points={`${cx - 20},${130 + k * 22} ${cx + 20},${130 + k * 22} ${cx + 24},${152 + k * 22} ${cx - 24},${152 + k * 22}`} fill="#0a0604" stroke="#1a1208" />
+            ))}
+          </g>
+        ))}
+        <polygon points="280,90 380,90 640,540 540,540" fill="url(#a2Haze)" opacity="0.6" />
+        <polygon points="1060,90 1160,90 900,540 800,540" fill="url(#a2Haze)" opacity="0.6" />
+        <polygon points="720,90 840,90 800,540 740,540" fill="url(#a2HazeMag)" opacity="0.7" />
+        {/* main LED wall — album art mounts here */}
+        <rect x="280" y="180" width="880" height="300" fill="#020108" stroke={ACCENT} strokeWidth="2" />
+        {Array.from({ length: 80 }).map((_, i) => {
+          const x = 290 + (i % 40) * 22, y = 190 + Math.floor(i / 40) * 20;
+          return <rect key={i} x={x} y={y} width="1.2" height="1.2" fill="oklch(0.7 0.16 55)" opacity={0.25 + (i % 5) * 0.06} />;
+        })}
+        <rect x="280" y="180" width="880" height="300" fill="url(#a2LED)" />
+        {/* side LED wings */}
+        {[180, 1220].map((x, i) => (
+          <g key={i}>
+            <rect x={x - 50} y="220" width="100" height="260" fill="#020108" stroke={ACCENT} strokeWidth="1.4" />
+            {Array.from({ length: 26 }).map((_, k) => (
+              <rect key={k} x={x - 44 + (k % 4) * 22} y={230 + Math.floor(k / 4) * 38} width="14" height="14" fill={`oklch(0.65 0.16 ${55 + (k % 4) * 60})`} opacity={0.4 + (k % 3) * 0.15} />
+            ))}
+          </g>
+        ))}
+        <polygon points="280,495 1160,495 1240,540 200,540" fill="#0a0604" />
+        <line x1="280" y1="495" x2="1160" y2="495" stroke={ACCENT} strokeWidth="2" />
+        {Array.from({ length: 30 }).map((_, i) => <circle key={i} cx={290 + i * 30} cy="498" r="2" fill="oklch(0.92 0.18 60)" />)}
+        <g transform="translate(720 430)">
+          <rect x="-90" y="40" width="180" height="60" fill="#0a0604" />
+          <ellipse cx="0" cy="40" rx="40" ry="36" fill="#0a0604" stroke="#1a1208" />
+          <circle cx="0" cy="40" r="14" fill={ACCENT} opacity="0.25" />
+          <ellipse cx="0" cy="-10" rx="12" ry="18" fill="#000" />
+          <circle cx="0" cy="-32" r="9" fill="#000" />
+        </g>
+        {[360, 1080].map((x, i) => (
+          <g key={i}>
+            {[0, 1].map(k => (
+              <g key={k} transform={`translate(${x + k * 80} 0)`}>
+                <rect x="-30" y="400" width="60" height="50" fill="#0a0604" stroke="#1a1208" />
+                <rect x="-30" y="450" width="60" height="44" fill="#0a0604" stroke="#1a1208" />
+              </g>
+            ))}
+          </g>
+        ))}
+        <g transform="translate(720 460)">
+          <line x1="0" y1="40" x2="0" y2="-30" stroke="#1a1208" strokeWidth="2" />
+          <ellipse cx="0" cy="14" rx="18" ry="44" fill="#000" />
+          <circle cx="0" cy="-22" r="13" fill="#000" />
+          <path d="M 16 0 L 32 -50" stroke="#000" strokeWidth="8" strokeLinecap="round" />
+        </g>
+        <line x1="60" y1="100" x2="700" y2="540" stroke="oklch(0.78 0.16 320)" strokeWidth="1" opacity="0.5" />
+        <line x1="1380" y1="100" x2="740" y2="540" stroke="oklch(0.78 0.16 320)" strokeWidth="1" opacity="0.5" />
+        {crowd.map((p, i) => <Head key={i} cx={p.x} cy={p.y} size={p.size} arms={p.arms} />)}
+        {phones.map((p, i) => (
+          <g key={i}>
+            <rect x={p.x - p.s / 2} y={p.y} width={p.s} height={p.s * 1.4} fill="oklch(0.95 0.06 90)" opacity="0.9" />
+            <circle cx={p.x} cy={p.y + 1} r={p.s * 1.8} fill="oklch(0.95 0.06 90)" opacity="0.15" />
+          </g>
+        ))}
+      </svg>
+      <StageArt coverId={coverId} coverSrc={coverSrc} pulse={pulse} title={title} artist={artist}
+        screen={{ x: 280, y: 180, w: 880, h: 300 }} />
+    </SceneShell>
+  );
+}
 
-        {/* dark roof + curved upper bowl with distant fans */}
-        <rect x="0" y="0" width="1440" height="80" fill="#040303" />
-        <path d="M 0,150 Q 720,70 1440,150 L 1440,210 Q 720,150 0,210 Z" fill="#0a0805" />
-        {Array.from({ length: 90 }).map((_, i) => {
-          const t = i / 90; const x = t * 1440; const y = 160 + Math.sin(t * Math.PI) * -28 + (i % 3) * 4;
+// ═══════════════════════════════════════════ 4. DOMED STADIUM — Grand Dome
+function SceneDome({ coverId, coverSrc, pulse, title, artist }) {
+  const crowd = useMemo(() => {
+    const pts = [];
+    const rnd = prng(55);
+    for (let row = 0; row < 24; row++) {
+      const y = 470 + row * 10 + row * row * 0.45;
+      const cols = 64 + row * 3;
+      for (let c = 0; c < cols; c++) {
+        const x = (c + 0.5) / cols * 1440 + (rnd() - 0.5) * 4;
+        const size = 2.8 + row * 0.45;
+        const r = rnd();
+        if (row < 6 && x > 620 && x < 820) continue;
+        const arms = r < 0.05 ? 2 : r < 0.15 ? 1 : 0;
+        pts.push({ x, y, size, arms });
+      }
+    }
+    return pts;
+  }, []);
+  const sticks = useMemo(() => {
+    const rnd = prng(77);
+    return Array.from({ length: 140 }).map(() => ({ x: rnd() * 1440, y: 480 + rnd() * 260, hue: rnd() < 0.5 ? 320 : (rnd() < 0.5 ? 55 : 220), o: 0.5 + rnd() * 0.4 }));
+  }, []);
+  return (
+    <SceneShell>
+      <svg viewBox="0 0 1440 760" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 w-full h-full">
+        <defs>
+          <radialGradient id="d2Sky" cx="0.5" cy="1" r="1">
+            <stop offset="0" stopColor="#1a1a22" stopOpacity="0.9" /><stop offset="1" stopColor="#04040a" stopOpacity="0" />
+          </radialGradient>
+          <linearGradient id="d2Haze" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0" stopColor="oklch(0.7 0.14 55)" stopOpacity="0.2" /><stop offset="1" stopColor="oklch(0.7 0.14 55)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d="M -200,500 Q 720,-100 1640,500 L 1640,-50 L -200,-50 Z" fill="#06060a" />
+        {Array.from({ length: 9 }).map((_, i) => (
+          <path key={i} d={`M -200,${500 - i * 30} Q 720,${-100 - i * 70} 1640,${500 - i * 30}`} fill="none" stroke="rgba(180,180,200,0.06)" strokeWidth="0.7" />
+        ))}
+        <ellipse cx="720" cy="70" rx="220" ry="14" fill="oklch(0.85 0.04 220 / 0.16)" />
+        <rect x="0" y="0" width="1440" height="500" fill="url(#d2Sky)" opacity="0.4" />
+        <ellipse cx="720" cy="120" rx="500" ry="36" fill="none" stroke="#1a1a22" strokeWidth="1.4" />
+        {Array.from({ length: 36 }).map((_, i) => {
+          const a = (i / 36) * Math.PI * 2;
+          const x = 720 + Math.cos(a) * 500, y = 120 + Math.sin(a) * 36;
+          if (y > 122) return null;
+          const hue = i % 3 === 0 ? 320 : (i % 3 === 1 ? 55 : 220);
+          return (
+            <g key={i}>
+              <circle cx={x} cy={y} r="3" fill={`oklch(0.78 0.16 ${hue})`} />
+              <polygon points={`${x - 3},${y + 4} ${x + 3},${y + 4} ${x + 80},480 ${x - 80},480`} fill={`oklch(0.78 0.16 ${hue})`} opacity="0.04" />
+            </g>
+          );
+        })}
+        <polygon points="200,140 320,140 720,480 600,480" fill="url(#d2Haze)" opacity="0.7" />
+        <polygon points="1240,140 1120,140 720,480 840,480" fill="url(#d2Haze)" opacity="0.7" />
+        <line x1="720" y1="120" x2="720" y2="180" stroke="#3a3a48" strokeWidth="1.6" />
+        {/* center LED — album art mounts here */}
+        <rect x="540" y="180" width="360" height="220" fill="#020108" stroke={ACCENT} strokeWidth="1.6" />
+        {Array.from({ length: 80 }).map((_, i) => {
+          const x = 545 + (i % 40) * 9, y = 185 + Math.floor(i / 40) * 12;
+          return <rect key={i} x={x} y={y} width="1" height="1" fill="oklch(0.7 0.16 55)" opacity={0.3 + (i % 5) * 0.06} />;
+        })}
+        {[200, 1240].map((x, i) => (
+          <g key={i}>
+            <rect x={x - 70} y="200" width="140" height="240" fill="#020108" stroke={ACCENT} strokeWidth="1.2" />
+            {Array.from({ length: 36 }).map((_, k) => {
+              const hue = 55 + (k % 5) * 60;
+              return <rect key={k} x={x - 60 + (k % 6) * 22} y={210 + Math.floor(k / 6) * 38} width="14" height="14" fill={`oklch(0.65 0.16 ${hue})`} opacity={0.4 + (k % 3) * 0.15} />;
+            })}
+          </g>
+        ))}
+        <polygon points="460,450 980,450 1020,490 420,490" fill="#0a0604" />
+        <line x1="460" y1="450" x2="980" y2="450" stroke={ACCENT} strokeWidth="1.4" />
+        <polygon points="650,490 790,490 810,580 630,580" fill="#0a0604" />
+        <ellipse cx="720" cy="600" rx="40" ry="14" fill="#0a0604" stroke={ACCENT} strokeWidth="1.2" />
+        {[500, 560, 620, 820, 880, 940].map((x, i) => (
+          <g key={i}><ellipse cx={x} cy={460} rx="6" ry="14" fill="#000" /><circle cx={x} cy={442} r="5" fill="#000" /></g>
+        ))}
+        <g transform="translate(720 596)">
+          <ellipse cx="0" cy="-4" rx="6" ry="12" fill="#000" />
+          <circle cx="0" cy="-20" r="5" fill="#000" />
+          <path d="M 5 -10 L 14 -28" stroke="#000" strokeWidth="3" strokeLinecap="round" />
+        </g>
+        <rect x="0" y="400" width="380" height="80" fill="#06060a" />
+        <rect x="1060" y="400" width="380" height="80" fill="#06060a" />
+        {Array.from({ length: 5 }).map((_, row) =>
+          Array.from({ length: 28 }).map((_, c) => (
+            <g key={`ul-${row}-${c}`}>
+              <Head cx={10 + c * 14} cy={415 + row * 12} size={2.4} />
+              <Head cx={1066 + c * 14} cy={415 + row * 12} size={2.4} />
+            </g>
+          ))
+        )}
+        {crowd.map((p, i) => <Head key={i} cx={p.x} cy={p.y} size={p.size} arms={p.arms} />)}
+        {sticks.map((s, i) => (
+          <g key={i}>
+            <rect x={s.x} y={s.y} width="1.2" height="3" fill={`oklch(0.85 0.18 ${s.hue})`} opacity={s.o} />
+            <circle cx={s.x + 0.6} cy={s.y} r="3.5" fill={`oklch(0.85 0.18 ${s.hue})`} opacity={s.o * 0.3} />
+          </g>
+        ))}
+      </svg>
+      <StageArt coverId={coverId} coverSrc={coverSrc} pulse={pulse} title={title} artist={artist}
+        screen={{ x: 540, y: 180, w: 360, h: 220 }} />
+    </SceneShell>
+  );
+}
+
+// ═══════════════════════════════════════════ 5. OPEN STADIUM — Mega Stadium
+function SceneStadium({ coverId, coverSrc, pulse, title, artist }) {
+  const crowd = useMemo(() => {
+    const pts = [];
+    const rnd = prng(177);
+    for (let row = 0; row < 20; row++) {
+      const y = 500 + row * 12 + row * row * 0.45;
+      const cols = 56 + row * 3;
+      for (let c = 0; c < cols; c++) {
+        const x = (c + 0.5) / cols * 1440 + (rnd() - 0.5) * 4;
+        const size = 3.2 + row * 0.5;
+        const r = rnd();
+        const arms = r < 0.05 ? 2 : r < 0.18 ? 1 : 0;
+        pts.push({ x, y, size, arms });
+      }
+    }
+    return pts;
+  }, []);
+  const phones = useMemo(() => {
+    const rnd = prng(199);
+    return Array.from({ length: 200 }).map(() => ({ x: rnd() * 1440, y: 520 + rnd() * 220, s: 1.6 + rnd() * 2 }));
+  }, []);
+  return (
+    <SceneShell>
+      <svg viewBox="0 0 1440 760" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 w-full h-full">
+        <defs>
+          <linearGradient id="s2Sky" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0" stopColor="#04041a" /><stop offset="0.6" stopColor="#1a0820" /><stop offset="1" stopColor="#2a1014" />
+          </linearGradient>
+          <radialGradient id="s2LED" cx="0.5" cy="0.5" r="0.6">
+            <stop offset="0" stopColor={ACCENT} stopOpacity="0.45" /><stop offset="1" stopColor={ACCENT} stopOpacity="0" />
+          </radialGradient>
+          <linearGradient id="s2Haze" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0" stopColor={ACCENT} stopOpacity="0.24" /><stop offset="1" stopColor={ACCENT} stopOpacity="0" />
+          </linearGradient>
+          <linearGradient id="s2HazeMag" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0" stopColor="oklch(0.7 0.18 320)" stopOpacity="0.22" /><stop offset="1" stopColor="oklch(0.7 0.18 320)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <rect x="0" y="0" width="1440" height="300" fill="url(#s2Sky)" />
+        <StarField count={100} seed={31} />
+        <ellipse cx="220" cy="100" rx="200" ry="22" fill="#1a0a1a" opacity="0.6" />
+        <ellipse cx="1100" cy="60" rx="240" ry="18" fill="#1a0a1a" opacity="0.5" />
+        <circle cx="1140" cy="100" r="18" fill="oklch(0.92 0.06 80)" opacity="0.6" />
+        {/* CITY SKYLINE */}
+        <g fill="#04020a">
+          <rect x="0" y="220" width="40" height="80" /><rect x="40" y="250" width="60" height="50" />
+          <rect x="100" y="200" width="50" height="100" /><rect x="150" y="260" width="80" height="40" />
+          <rect x="230" y="230" width="30" height="70" /><rect x="260" y="270" width="80" height="30" />
+          <rect x="1100" y="240" width="60" height="60" /><rect x="1160" y="180" width="40" height="120" />
+          <rect x="1200" y="220" width="80" height="80" /><rect x="1280" y="260" width="60" height="40" />
+          <rect x="1340" y="200" width="50" height="100" /><rect x="1390" y="240" width="50" height="60" />
+        </g>
+        {Array.from({ length: 60 }).map((_, i) => {
+          const x = (i * 23) % 1440;
+          const ok = x < 340 || x > 1100;
+          if (!ok) return null;
+          const y = 220 + (i % 7) * 14;
+          return <rect key={i} x={x} y={y} width="1.4" height="1.4" fill="oklch(0.92 0.12 80)" opacity="0.7" />;
+        })}
+        <path d="M 0,300 Q 720,260 1440,300 L 1440,360 Q 720,320 0,360 Z" fill="#06060a" />
+        {Array.from({ length: 180 }).map((_, i) => {
+          const t = i / 180, x = t * 1440;
+          const y = 308 + Math.sin(t * Math.PI) * -28 + (i % 4) * 4;
           return <circle key={i} cx={x} cy={y} r="1.2" fill="#2a2018" />;
         })}
-
-        {/* main lighting truss + beams */}
-        <Truss x1={300} x2={1140} y={96} fixtures={13} />
-        <Beams originY={122} spread={1.1} count={7} len={360} hue={55} op={0.13} />
-        <Beams originY={122} spread={1.3} count={4} len={380} hue={310} op={0.08} />
-
-        {/* big LED wall behind the band */}
-        <rect x="430" y="180" width="580" height="250" fill="#000" stroke={ACCENT} strokeWidth="1.6" opacity="0.85" />
-        <rect x="430" y="180" width="580" height="250" fill="url(#arGlow)" />
-
-        {/* flown line arrays flanking the stage */}
-        <LineArray x={372} yTop={170} boxes={8} w={34} curve={12} />
-        <LineArray x={1068} yTop={170} boxes={8} w={34} curve={12} />
-
-        {/* raised stage deck with thrust */}
-        <polygon points="470,470 970,470 1030,512 410,512" fill="#0a0604" />
-        <polygon points="690,512 750,512 770,556 670,556" fill="#0a0604" />
-        <line x1="470" y1="470" x2="970" y2="470" stroke={ACCENT} strokeWidth="1.6" />
-        <Band y={452} scale={1} members="full" />
-
-        {/* a sea of fans on the floor + lower bowl */}
-        <Crowd rows={13} baseY={540} rowGap={15} colsBase={40} colGrow={2} sizeBase={4} sizeGrow={0.6} seed={31} phones={26} />
-      </svg>
-
-      <StageArt coverId={coverId} coverSrc={coverSrc} pulse={pulse} size={250} top="25%" glow={0.4} title={title} artist={artist} />
-    </div>
-  );
-}
-
-// ───────────────────────────────────────── 4. DOMED STADIUM
-function SceneDome({ coverId, coverSrc, pulse, title, artist }) {
-  return (
-    <div className="absolute inset-0 z-0">
-      <svg viewBox="0 0 1440 760" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 w-full h-full">
-        <defs>
-          <radialGradient id="domSky" cx="0.5" cy="1" r="1">
-            <stop offset="0" stopColor="#16161e" stopOpacity="0.9" /><stop offset="1" stopColor="#04040a" stopOpacity="0" />
-          </radialGradient>
-          <radialGradient id="domGlow" cx="0.5" cy="0.5" r="0.6">
-            <stop offset="0" stopColor={ACCENT} stopOpacity="0.3" /><stop offset="1" stopColor={ACCENT} stopOpacity="0" />
-          </radialGradient>
-        </defs>
-
-        {/* dome shell with concentric panels + central skylight */}
-        <path d="M -200,470 Q 720,-110 1640,470 L 1640,-50 L -200,-50 Z" fill="#06060a" />
-        {Array.from({ length: 7 }).map((_, i) => (
-          <path key={i} d={`M -200,${470 - i * 30} Q 720,${-110 - i * 70} 1640,${470 - i * 30}`} fill="none" stroke="rgba(180,180,200,0.06)" strokeWidth="0.8" />
-        ))}
-        {Array.from({ length: 13 }).map((_, i) => {
-          const a = (i / 12) * Math.PI;
-          return <line key={i} x1={720 + Math.cos(a + Math.PI) * 900} y1="470" x2="720" y2="55" stroke="rgba(180,180,200,0.04)" strokeWidth="0.6" />;
-        })}
-        <ellipse cx="720" cy="66" rx="170" ry="13" fill="oklch(0.85 0.04 220 / 0.18)" />
-        <rect x="0" y="0" width="1440" height="470" fill="url(#domSky)" opacity="0.4" />
-
-        {/* hung center scoreboard rig + truss + beams */}
-        <Truss x1={260} x2={1180} y={150} fixtures={16} />
-        <Beams originY={176} spread={1.3} count={9} len={340} hue={55} op={0.12} />
-
-        {/* huge LED video wall on the end stage */}
-        <rect x="470" y="210" width="500" height="220" fill="#000" stroke={ACCENT} strokeWidth="1.6" opacity="0.85" />
-        <rect x="470" y="210" width="500" height="220" fill="url(#domGlow)" />
-
-        {/* tall flown line arrays + side delay hangs */}
-        <LineArray x={420} yTop={200} boxes={9} w={32} curve={12} />
-        <LineArray x={1020} yTop={200} boxes={9} w={32} curve={12} />
-        <LineArray x={240} yTop={230} boxes={6} w={24} curve={8} />
-        <LineArray x={1200} yTop={230} boxes={6} w={24} curve={8} />
-
-        {/* end stage deck */}
-        <polygon points="500,450 940,450 990,492 450,492" fill="#0a0604" />
-        <line x1="500" y1="450" x2="940" y2="450" stroke={ACCENT} strokeWidth="1.4" />
-        <Band y={436} scale={0.85} members="full" />
-
-        {/* upper-deck wraparound silhouettes */}
-        <rect x="0" y="392" width="430" height="64" fill="#06060a" />
-        <rect x="1010" y="392" width="430" height="64" fill="#06060a" />
-        {Array.from({ length: 50 }).map((_, i) => {
-          const x = (i / 25) * 430; return <circle key={i} cx={i < 25 ? x : 1010 + x} cy={410 + (i % 3) * 14} r="1.6" fill="#2a2018" />;
-        })}
-
-        {/* enormous crowd field */}
-        <Crowd rows={17} baseY={500} rowGap={14} colsBase={50} colGrow={2} sizeBase={3.2} sizeGrow={0.5} seed={41} phones={60} />
-      </svg>
-
-      <StageArt coverId={coverId} coverSrc={coverSrc} pulse={pulse} size={210} top="27%" glow={0.32} title={title} artist={artist} />
-    </div>
-  );
-}
-
-// ───────────────────────────────────────── 5. OPEN STADIUM (80,000)
-function SceneStadium({ coverId, coverSrc, pulse, title, artist }) {
-  return (
-    <div className="absolute inset-0 z-0">
-      <svg viewBox="0 0 1440 760" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 w-full h-full">
-        <defs>
-          <linearGradient id="stdSky" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0" stopColor="#070b16" /><stop offset="1" stopColor="#0a0a10" stopOpacity="0" />
-          </linearGradient>
-          <radialGradient id="stdGlow" cx="0.5" cy="0.5" r="0.6">
-            <stop offset="0" stopColor={ACCENT} stopOpacity="0.3" /><stop offset="1" stopColor={ACCENT} stopOpacity="0" />
-          </radialGradient>
-        </defs>
-
-        {/* open night sky + stars */}
-        <rect x="0" y="0" width="1440" height="300" fill="#05070f" />
-        <rect x="0" y="0" width="1440" height="340" fill="url(#stdSky)" opacity="0.7" />
-        {Array.from({ length: 40 }).map((_, i) => (
-          <circle key={`s${i}`} cx={(i * 173) % 1440} cy={(i * 53) % 150} r={i % 5 === 0 ? 1 : 0.6} fill="#cdd6ff" opacity={0.2 + (i % 4) * 0.12} />
-        ))}
-
-        {/* open bowl rim with terraced rings */}
-        <path d="M 0,290 Q 720,175 1440,290 L 1440,460 L 0,460 Z" fill="#0a0a12" />
-        <path d="M 0,290 Q 720,175 1440,290" fill="none" stroke="rgba(180,190,220,0.10)" strokeWidth="1.2" />
-        {Array.from({ length: 4 }).map((_, i) => (
-          <path key={i} d={`M 0,${320 + i * 30} Q 720,${205 + i * 30} 1440,${320 + i * 30}`} fill="none" stroke="rgba(180,190,220,0.05)" strokeWidth="0.8" />
-        ))}
-
-        {/* floodlight masts */}
-        {[110, 470, 970, 1330].map((x, i) => (
+        {/* 4 light towers */}
+        {[140, 540, 900, 1300].map((x, i) => (
           <g key={i}>
-            <line x1={x} y1="290" x2={x} y2="115" stroke="#15161e" strokeWidth="3" />
-            <rect x={x - 26} y="92" width="52" height="24" fill="#0c0d14" stroke="#1c1d28" />
-            {Array.from({ length: 12 }).map((_, k) => (
-              <circle key={k} cx={x - 20 + (k % 4) * 13} cy={98 + Math.floor(k / 4) * 8} r="2.2" fill="oklch(0.95 0.06 90)" opacity="0.85" />
-            ))}
-            <polygon points={`${x - 26},116 ${x + 26},116 ${x + 200},470 ${x - 200},470`} fill="oklch(0.85 0.1 90)" opacity="0.05" />
+            <line x1={x} y1="700" x2={x} y2="140" stroke="#1a1a22" strokeWidth="3" />
+            <polygon points={`${x - 28},120 ${x + 28},120 ${x + 36},170 ${x - 36},170`} fill="#0a0a14" stroke="#1a1a22" />
+            {Array.from({ length: 12 }).map((_, k) => {
+              const dx = (k % 4) * 14 - 21, dy = Math.floor(k / 4) * 12 + 130;
+              const on = k % 2 === 0;
+              return <circle key={k} cx={x + dx} cy={dy} r="2" fill={on ? 'oklch(0.95 0.18 80)' : '#1a1a22'} opacity={on ? 0.95 : 1} />;
+            })}
+            <polygon points={`${x - 30},170 ${x + 30},170 ${x + 70},500 ${x - 70},500`} fill="url(#s2Haze)" opacity="0.45" />
           </g>
         ))}
-
-        {/* festival stage roof + truss + beams */}
-        <polygon points="430,200 1010,200 1040,238 400,238" fill="#0a0b12" stroke="#1c1d28" strokeWidth="0.8" />
-        <Truss x1={445} x2={995} y={236} fixtures={11} />
-        <Beams originY={262} spread={1.2} count={8} len={210} hue={55} op={0.13} />
-        <Beams originY={262} spread={1.4} count={5} len={220} hue={310} op={0.07} />
-
-        {/* giant LED wall */}
-        <rect x="500" y="252" width="440" height="200" fill="#000" stroke={ACCENT} strokeWidth="1.6" opacity="0.9" />
-        <rect x="500" y="252" width="440" height="200" fill="url(#stdGlow)" />
-
-        {/* big PA wings (line arrays) */}
-        <LineArray x={420} yTop={250} boxes={9} w={32} curve={12} />
-        <LineArray x={1020} yTop={250} boxes={9} w={32} curve={12} />
-
-        {/* stage deck + band */}
-        <polygon points="520,452 920,452 980,492 460,492" fill="#0a0604" />
-        <line x1="520" y1="452" x2="920" y2="452" stroke={ACCENT} strokeWidth="1.4" />
-        <Band y={438} scale={0.8} members="full" />
-
-        {/* massive open-field crowd */}
-        <Crowd rows={20} baseY={470} rowGap={13} colsBase={54} colGrow={2} sizeBase={3} sizeGrow={0.45} seed={57} phones={90} />
+        {/* center main stage LED — album art mounts here */}
+        <rect x="380" y="220" width="680" height="240" fill="#020108" stroke={ACCENT} strokeWidth="2.4" />
+        {Array.from({ length: 100 }).map((_, i) => {
+          const x = 390 + (i % 40) * 17, y = 230 + Math.floor(i / 40) * 16;
+          return <rect key={i} x={x} y={y} width="1.4" height="1.4" fill="oklch(0.7 0.16 55)" opacity={0.3 + (i % 5) * 0.06} />;
+        })}
+        <rect x="380" y="220" width="680" height="240" fill="url(#s2LED)" />
+        {/* side LED wings (delay screens) */}
+        {[260, 1180].map((x, i) => (
+          <g key={i}>
+            <rect x={x - 60} y="240" width="120" height="200" fill="#020108" stroke={ACCENT} strokeWidth="1.4" />
+            {Array.from({ length: 30 }).map((_, k) => (
+              <rect key={k} x={x - 54 + (k % 5) * 22} y={250 + Math.floor(k / 5) * 32} width="14" height="14" fill={`oklch(0.65 0.16 ${55 + (k % 4) * 60})`} opacity={0.4 + (k % 3) * 0.15} />
+            ))}
+          </g>
+        ))}
+        {/* PA delay towers */}
+        {[300, 1140].map((x, i) => (
+          <g key={i}>
+            {Array.from({ length: 6 }).map((_, k) => (
+              <polygon key={k} points={`${x - 14},${320 + k * 18} ${x + 14},${320 + k * 18} ${x + 18},${338 + k * 18} ${x - 18},${338 + k * 18}`}
+                fill="#0a0604" stroke="#1a1208" />
+            ))}
+          </g>
+        ))}
+        <polygon points="240,200 360,200 580,500 460,500" fill="url(#s2HazeMag)" opacity="0.55" />
+        <polygon points="1080,200 1200,200 980,500 860,500" fill="url(#s2HazeMag)" opacity="0.55" />
+        <polygon points="280,460 1160,460 1240,500 200,500" fill="#0a0604" />
+        <line x1="280" y1="460" x2="1160" y2="460" stroke={ACCENT} strokeWidth="2" />
+        {Array.from({ length: 32 }).map((_, i) => <circle key={i} cx={300 + i * 28} cy="463" r="2" fill="oklch(0.92 0.18 60)" />)}
+        <g transform="translate(720 420)">
+          <rect x="-60" y="20" width="120" height="34" fill="#0a0604" />
+          <ellipse cx="0" cy="20" rx="24" ry="22" fill="#0a0604" stroke="#1a1208" />
+        </g>
+        {[460, 540, 620, 820, 900, 980].map((x, i) => (
+          <g key={i}><ellipse cx={x} cy={430} rx="6" ry="14" fill="#000" /><circle cx={x} cy={412} r="5" fill="#000" /></g>
+        ))}
+        <g transform="translate(720 440)">
+          <line x1="0" y1="20" x2="0" y2="-30" stroke="#1a1208" strokeWidth="2" />
+          <ellipse cx="0" cy="0" rx="10" ry="22" fill="#000" />
+          <circle cx="0" cy="-22" r="8" fill="#000" />
+          <path d="M 9 -10 L 22 -38" stroke="#000" strokeWidth="6" strokeLinecap="round" />
+        </g>
+        {crowd.map((p, i) => <Head key={i} cx={p.x} cy={p.y} size={p.size} arms={p.arms} />)}
+        {phones.map((p, i) => (
+          <g key={i}>
+            <rect x={p.x - p.s / 2} y={p.y} width={p.s} height={p.s * 1.4} fill="oklch(0.95 0.06 90)" opacity="0.9" />
+            <circle cx={p.x} cy={p.y + 1} r={p.s * 1.8} fill="oklch(0.95 0.06 90)" opacity="0.15" />
+          </g>
+        ))}
       </svg>
-
-      <StageArt coverId={coverId} coverSrc={coverSrc} pulse={pulse} size={200} top="30%" glow={0.32} title={title} artist={artist} />
-    </div>
+      <StageArt coverId={coverId} coverSrc={coverSrc} pulse={pulse} title={title} artist={artist}
+        screen={{ x: 380, y: 220, w: 680, h: 240 }} />
+    </SceneShell>
   );
 }
 
