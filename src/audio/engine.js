@@ -68,7 +68,18 @@ export class ConcertEngine {
     // shared input bus — both the <audio> source and the buffer-fallback source
     // connect here, so the dry/wet graph downstream is identical for both modes.
     this._inGain = this.ctx.createGain();
-    this.source.connect(this._inGain);
+
+    // Low-end body, the way a real concert PA presents bass: big subwoofer
+    // weight on the DIRECT sound. This low-shelf sits on the shared input bus so
+    // it lifts both the dry and the wet feed BEFORE the split. The reverb tail
+    // stays tight because the wet path still has its mud cut (~300 Hz) + lfDamp
+    // in the IR — so we get more bass *body*, not a boomy tail.
+    this.bassShelf = this.ctx.createBiquadFilter();
+    this.bassShelf.type = 'lowshelf';
+    this.bassShelf.frequency.value = 90;   // sub/low-bass region
+    this.bassShelf.gain.value = 3.5;       // dB of added low-end weight
+    this.source.connect(this.bassShelf);
+    this.bassShelf.connect(this._inGain);
 
     this.dryGain = this.ctx.createGain();
     this.wetGain = this.ctx.createGain();
@@ -344,7 +355,9 @@ export class ConcertEngine {
     this._teardownBufferSource();
     const src = this.ctx.createBufferSource();
     src.buffer = this._decoded;
-    src.connect(this._inGain);
+    // route through the same bass shelf as the streaming source so both playback
+    // modes share the identical low-end + dry/wet graph
+    src.connect(this.bassShelf);
     // tag this source so a stale onended from a previous source can't fire late
     const myId = ++this._bufGen;
     src.onended = () => {
@@ -475,6 +488,12 @@ export class ConcertEngine {
     const src = offline.createBufferSource();
     src.buffer = decoded;
 
+    // match the live graph's low-end shelf so the export sounds identical
+    const bassShelf = offline.createBiquadFilter();
+    bassShelf.type = 'lowshelf';
+    bassShelf.frequency.value = 90;
+    bassShelf.gain.value = 3.5;
+
     const dry = offline.createGain();
     const wet = offline.createGain();
     const wetTrim = offline.createGain();
@@ -502,8 +521,9 @@ export class ConcertEngine {
     const ms = venue.position ? parseFloat(String(venue.position.firstReflection).replace(/[^0-9.]/g, '')) : 20;
     pre.delayTime.value = (Number.isNaN(ms) ? 20 : ms) / 1000;
 
-    src.connect(dry); dry.connect(out);
-    src.connect(pre); pre.connect(conv); conv.connect(mCut); mCut.connect(vCut); vCut.connect(aCut); aCut.connect(wet); wet.connect(wetTrim); wetTrim.connect(out);
+    src.connect(bassShelf);
+    bassShelf.connect(dry); dry.connect(out);
+    bassShelf.connect(pre); pre.connect(conv); conv.connect(mCut); mCut.connect(vCut); vCut.connect(aCut); aCut.connect(wet); wet.connect(wetTrim); wetTrim.connect(out);
     out.connect(limiter); limiter.connect(offline.destination);
 
     src.start(0);

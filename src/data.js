@@ -134,6 +134,7 @@ export const SOUND_NOTES = {
 
 // SHARED_NOTES — applied identically to every venue (engine.js graph).
 export const SHARED_NOTES = [
+  '대형 PA의 서브우퍼 양감을 모사해, 입력단 로우셸프(~90Hz, +3.5dB)로 저역 직접음 바디를 키웁니다 — 꼬리는 머드 컷+lfDamp로 타이트하게 유지.',
   '웻 경로 전용 3단 EQ: 머드 컷(~300Hz) · 보컬 컷(~3.2kHz) · 에어 컷(6kHz)으로 잔향이 믹스를 뭉개지 않게 합니다.',
   '등전력 크로스페이더로 웻/드라이를 섞고, 마지막 단 리미터가 어떤 설정에서도 클리핑을 막습니다.',
   '임펄스 응답은 공연장 음향 파라미터로부터 실시간 합성됩니다(측정 IR로 교체 가능).',
