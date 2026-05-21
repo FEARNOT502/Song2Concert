@@ -1,68 +1,136 @@
 # Song2Concert
 
-Auralize a FLAC/WAV file as if heard from a chosen seat in one of six venues
-(jazz club · concert hall · arena · domed stadium · cathedral · recording
-studio). One full-bleed, first-person audience-POV screen with an audiophile-
-console overlay, built on a real **Web Audio API convolution-reverb** engine.
+내 음원을 **실제 공연장에서 듣는 것처럼** 들려주는 웹 앱입니다.
+FLAC/WAV 파일을 올리면, 다섯 곳의 공연장 중 한 곳을 골라 그 공간의
+잔향(reverb)으로 재렌더링해 들려줍니다. 화면은 1인칭 관객 시점의 공연장
+장면(SVG)으로 가득 채워지고, 그 위에 오디오파일 콘솔 스타일의 정보 패널이
+얹힙니다. 핵심은 **실제 Web Audio API 컨볼루션 리버브 엔진**으로 동작한다는
+점입니다 — 가짜 효과음이 아니라 공연장별 임펄스 응답(IR)을 합성해 음원에
+컨볼루션을 겁니다.
 
-## Run
+## 실행 방법
 
 ```bash
 npm install
 npm run dev      # → http://localhost:5173
-npm run build    # production build to dist/
+npm run build    # dist/ 에 프로덕션 빌드
+npm run preview  # 빌드 결과 미리보기
 ```
 
-## How it works
+브라우저에서 열고, 화면 가운데의 **"Drop a FLAC / WAV to begin"** 버튼이나
+상단 **File** 메뉴로 음원을 올린 뒤 재생하면 됩니다. (Chrome / Edge / Firefox /
+Safari 동작 확인)
 
-**UI** follows `CLAUDE_PROMPT.md` exactly: strict black / white / amber palette
-(`oklch(0.78 0.16 55)`), three fonts (JetBrains Mono · Inter Tight · Instrument
-Serif), and a 1440×760 SVG scene per venue. No routing — pickers are overlays.
+## 다섯 공연장
 
-**Audio** (`src/audio/`):
+각 공연장은 하나의 대표 청취 위치(관객석)를 모델링합니다. 좌석을 따로 고르지
+않는데, 이는 대형 PA가 객석 전체에 거의 같은 믹스를 들려주는 실제 상황을 반영한
+설계입니다.
 
-- Streaming source — uploaded files play through a hidden `<audio>` element via
-  `createMediaElementSource()`, so large hi-res files are **not** loaded into one
-  in-memory `AudioBuffer`.
-- Routing — `source → dryGain → master` (dry) and
-  `source → preDelay → convolver → wetGain → master` (wet). The wet/dry slider
-  is an equal-power crossfader; pre-delay is the seat's first-reflection time;
-  **Bypass** mutes the convolver path (100 % dry).
-- Impulse responses are synthesized per venue from its acoustic params
-  (`src/audio/impulse.js`); production would swap in measured IRs.
-- Autoplay policy — `AudioContext.resume()` fires on the first user gesture.
-- The album-art **pulse** is driven by an `AnalyserNode` RMS read each frame
-  (sine fallback for the demo library), frozen on pause / bypass.
-- **Export WAV** renders the current file through the venue offline.
+| 공연장 | 타입 | 규모 | RT60 | 특징 |
+| --- | --- | --- | --- | --- |
+| Blue Note | 재즈 클럽 | 300석 | 0.9 s | 낮은 천장 · 친밀한 거리 · 타이트한 베이스 |
+| Symphony Hall | 콘서트홀 | 3,000석 | 2.0 s | 슈박스 구조 · 자연 음향 · 넓고 풍성한 중역 |
+| City Arena | 아레나 | 20,000석 | 2.4 s | 라인 어레이 PA · 록/팝 튜닝 |
+| Grand Dome | 돔 구장 | 45,000석 | 3.4 s | 거대한 잔향 · 딜레이 타워 슬랩 |
+| Mega Stadium | 야외 스타디움 | 80,000석 | 3.0 s | 개방형 · 대형 PA + 딜레이 타워 |
 
-When you drop in a real file, embedded **cover art + title/artist** are read
-straight from the header (FLAC `PICTURE`/`VORBIS_COMMENT`, ID3v2 `APIC`/`TIT2`/
-`TPE1`) without pulling the hi-res payload into memory (`src/audio/metadata.js`).
+## 주요 기능
 
-The demo library tracks have no audio payload (they exercise the visual/state
-system); drop a real FLAC/WAV via **File ▾** to hear the reverb and export.
+- **공연장 잔향 재현** — 음원을 선택한 공연장의 합성 IR로 컨볼루션해 재생.
+- **웻/드라이 믹스** — 잔향(웻)과 원음(드라이)을 등전력 크로스페이더로 조절.
+  공연장을 바꾸면 그 공간에 어울리는 기본값으로 초기화됩니다.
+- **볼륨 / 재생 / 탐색** — 마스터 볼륨, 재생·일시정지, 스크러버.
+- **재생 큐** — 여러 파일을 한 번에 올리면 큐로 쌓이고, 이전/다음 곡으로 이동
+  하며 자동으로 다음 곡을 재생합니다.
+- **앨범 아트 펄스** — 재생 중 음압(RMS)에 맞춰 커버 아트가 맥동, 일시정지 시
+  멈춥니다.
+- **메타데이터 자동 추출** — 파일 헤더에서 커버 아트 + 제목/아티스트를 읽어옵
+  니다 (FLAC `PICTURE`/`VORBIS_COMMENT`, ID3v2 `APIC`/`TIT2`/`TPE1`). 고음질
+  오디오 본문은 메모리에 통째로 올리지 않습니다.
+- **WAV 내보내기** — 현재 음원을 선택한 공연장 음향으로 오프라인 렌더링해
+  16비트 WAV로 저장. (라이브 그래프와 동일한 신호 경로로 렌더링)
 
-## Source map
+## 동작 원리
+
+### 오디오 그래프 (`src/audio/engine.js`)
+
+```
+                                  ┌────────────────────────► [dryGain] ──────────────┐
+  <audio>/buffer ─► input ────────┤                                                  ├─► [master] ─► [limiter] ─► 출력
+                                  └─► [preDelay] ─► [convolver] ─► (EQ) ─► [wetGain] ─┘        │
+                                                                                              └─► [analyser] (펄스용 RMS)
+```
+
+- **소스** — 업로드 파일은 기본적으로 숨겨진 `<audio>` 엘리먼트로
+  스트리밍됩니다(`createMediaElementSource`). 단, FLAC·WAV·AIFF 같은 무손실
+  파일은 브라우저 `<audio>` 디코더가 못 다루는 경우가 많아(특히 Chrome/Edge의
+  고음질 FLAC), `decodeAudioData` → 실패 시 **WASM FLAC 디코더**로 폴백해
+  `AudioBufferSourceNode`로 재생합니다.
+- **드라이/웻** — `dryGain`(원음)과 `wetGain`(잔향)을 등전력 크로스페이드로
+  섞습니다. `preDelay`(DelayNode)는 그 공연장 청취 위치의 첫 반사음 도달 시간을
+  모델링합니다.
+- **웻 경로 EQ** — 잔향에만 적용되는 3단 EQ로 믹스가 뭉개지지 않게 합니다:
+  머드 컷(~300 Hz), 보컬 컷(~3.2 kHz), 에어 컷(6 kHz 하이셸프). 실제 라이브
+  음향 엔지니어가 잔향을 다듬는 방식과 같습니다.
+- **리미터** — 마지막 단의 `DynamicsCompressor`가 어떤 공연장/믹스/입력
+  레벨에서도 클리핑이 나지 않도록 안전망 역할을 합니다.
+- **펄스** — `AnalyserNode`가 마스터 버스의 RMS를 매 프레임 읽어 앨범 아트
+  맥동을 구동합니다.
+
+### 임펄스 응답 합성 (`src/audio/impulse.js`)
+
+공연장별 음향 파라미터(`src/data.js`의 `ir` 블록)로부터 스테레오 IR을 직접
+합성합니다. 라이브 음향 실무를 따라 설계되었습니다:
+
+- 시간에 따라 차단 주파수가 내려가는 로우패스로 **고역이 먼저 사라지는** 자연
+  스러운 감쇠를 만듭니다.
+- **저역 잔향을 짧게** 유지해(`lfDamp`) 베이스가 부밍하지 않고 타이트하게
+  들리도록 합니다. 펀치감은 드라이 경로가 담당합니다.
+- 다이렉트 → 초기 반사 → 후기 잔향 구조, 코사인 페이드아웃(절단 클릭 방지),
+  L2 에너지 정규화로 공연장마다 일정하고 안전한 웻 레벨을 유지합니다.
+
+실제 제품이라면 이 합성 IR을 측정된 실측 IR로 교체하면 됩니다.
+
+## 키보드 단축키
+
+| 키 | 동작 |
+| --- | --- |
+| `Space` | 재생 / 일시정지 |
+| `←` / `→` | ±5초 탐색 |
+| `F` | 파일 선택 열기 |
+| `V` | 공연장 선택 열기 |
+| `Esc` | 모달 닫기 |
+
+## 소스 구조
 
 ```
 src/
-  App.jsx                    state model, clock, pulse, keyboard, transitions
-  data.js                    FILES + VENUES (+ per-venue IR synthesis params)
+  main.jsx                   엔트리 포인트
+  App.jsx                    상태 모델, 재생 클럭, 펄스, 큐, 키보드
+  data.js                    VENUES (공연장별 음향 + IR 합성 파라미터)
+  index.css                  전역 스타일
   components/
-    Cover.jsx                4 album covers + real-image (src) support
-    Scene.jsx                6 venue SVG scenes + dispatcher
-    TopBar.jsx               file / venue / seat dropdowns + engine status
-    BottomTransport.jsx      play, scrubber, wet/dry, bypass, export
-    Panels.jsx               left / right data rails + seat chip
-    Modals.jsx               modal shell, venue thumbs, 3 pickers
+    Scene.jsx                공연장 SVG 장면 5종 + 디스패처
+    Cover.jsx                앨범 커버 (합성 아트 + 실제 이미지 src 지원)
+    TopBar.jsx               파일 / 공연장 메뉴 + 엔진 상태 표시
+    BottomTransport.jsx      재생·이전·다음, 스크러버, 웻/드라이, 볼륨, 내보내기
+    Panels.jsx               좌/우 데이터 패널 + 청취 위치 칩
+    Modals.jsx               모달 셸, 공연장 썸네일, 파일/공연장 선택
   audio/
-    engine.js                ConcertEngine — the Web Audio graph
-    useEngine.js             React binding
-    impulse.js               synthetic IR generator
-    metadata.js              FLAC/ID3v2 cover-art + title/artist extraction
-    wav.js                   AudioBuffer → 16-bit WAV
+    engine.js                ConcertEngine — Web Audio 그래프 (핵심)
+    useEngine.js             React 바인딩 (단일 엔진 인스턴스 관리)
+    impulse.js               공연장별 합성 IR 생성기
+    metadata.js              FLAC/ID3v2 커버 아트 + 제목/아티스트 추출
+    wav.js                   AudioBuffer → 16비트 WAV 인코더
 ```
 
-## Keyboard
+## 기술 스택
 
-`Space` play/pause · `←` / `→` seek ±5s · `F` / `V` / `S` pickers · `Esc` close.
+React 18 · Vite 6 · Tailwind CSS 3 · Web Audio API · `@wasm-audio-decoders/flac`
+
+## 참고
+
+- 음원은 **모두 브라우저 안에서** 처리됩니다. 서버로 업로드되지 않습니다.
+- 데모용 샘플 음원은 포함되어 있지 않습니다. 직접 FLAC/WAV 파일을 올려야
+  잔향과 내보내기를 사용할 수 있습니다.
