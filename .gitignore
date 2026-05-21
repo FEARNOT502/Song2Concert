@@ -1,0 +1,14 @@
+node_modules
+dist
+*.local
+.DS_Store
+
+# Audio test assets (large / copyrighted)
+*.flac
+*.wav
+
+# Redundant source archive
+*.zip
+
+# Local Claude Code settings
+.claude/settings.local.json
