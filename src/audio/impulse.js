@@ -107,27 +107,55 @@ export function buildImpulseResponse(ctx, params, seed = 1) {
     // DENSER, time-jittered cluster of early reflections so the transient gets a
     // smooth diffuse response. Each tap gets a randomized time + gain so no taps
     // line up into a periodic comb (flutter echo).
+    //
+    // Crucially the cluster must START RIGHT AFTER the direct sound and stay
+    // CONTINUOUS into the late tail. Big rooms have low `density`, which used to
+    // leave the first ~40ms nearly empty; combined with the pre-delay that made
+    // the reverb arrive as a separate, late "chh" after the kick/snare "tak".
+    // So the early field now begins at ~2ms and its tap COUNT has a floor that is
+    // independent of density (density only scales late build-up / level), filling
+    // the gap so the tail fuses onto the transient.
     const erRnd = mulberry32(seed * 2654435761 + ch * 40503 + 17);
-    const erCount = Math.round(10 + density * 8);
+    const erCount = Math.round(26 + density * 16); // was 10–18; floor raised so big rooms aren't sparse
     const erWindow = Math.min(0.05 + rt60 * 0.02, 0.12); // seconds of early field
     for (let kk = 0; kk < erCount; kk++) {
       // spread taps across the early window, denser toward the start
-      const frac = Math.pow((kk + 0.5) / erCount, 1.25);
-      const tt = (0.006 + frac * erWindow) * (1 + rt60 * 0.03);
-      const jitter = Math.floor((erRnd() - 0.5) * 0.0022 * sr); // ±~1ms
+      const frac = Math.pow((kk + 0.5) / erCount, 1.3);
+      const tt = (0.002 + frac * erWindow) * (1 + rt60 * 0.03); // start ~2ms (was 6ms)
+      const jitter = Math.floor((erRnd() - 0.5) * 0.0020 * sr); // ±~1ms
       const tap = Math.floor(tt * sr) + jitter;
       if (tap > 0 && tap < len) {
         const sign = erRnd() < 0.5 ? -1 : 1;
-        const g = (0.12 - kk * (0.10 / erCount)) * (0.6 + erRnd() * 0.4) * density;
+        // level keeps a density-independent base so the gap is always filled,
+        // plus a density-scaled part for room character.
+        const g = (0.05 + 0.07 * density) * (1 - 0.6 * frac) * (0.6 + erRnd() * 0.4);
         d[tap] += sign * g * Math.exp(-decay * (tap / sr));
       }
     }
 
-    // gentle, decaying PA delay-tower slap cluster for the big rooms
+    // PA delay-tower slap for the big rooms (arena/dome/stadium). The towers
+    // re-emit the sound ~tens of ms late, which is part of a stadium's character.
+    // But as SINGLE discrete taps at a regular spacing they read as a hard
+    // "tk… tk… tk" slapback on sharp transients (the awkward kick/snare reverb in
+    // the big venues, exposed by sparse drum intros like Billie Jean). Fix:
+    //   • smear each slap over a short diffuse burst so it's a "wash", not a click
+    //   • drop the level so it sits under, not above, the diffuse tail
+    //   • de-regularize the timing so the repeats don't comb into a flutter
     if (slap) {
-      [0.075, 0.145, 0.215].forEach((s, n) => {
-        const tap = Math.floor(s * sr);
-        if (tap < len) d[tap] += (0.13 / (n + 1)) * (ch === 0 ? 1 : -1) * Math.exp(-decay * s);
+      const slapRnd = mulberry32(seed * 1597334677 + ch * 19349663 + 71);
+      const burst = Math.max(3, Math.floor(0.004 * sr)); // ~4ms diffuse smear
+      [0.072, 0.151, 0.223].forEach((base, n) => {
+        const s = base * (1 + (slapRnd() - 0.5) * 0.12); // ±6% timing jitter
+        const start = Math.floor(s * sr);
+        const peak = (0.06 / (n + 1)) * Math.exp(-decay * s); // ~halved level
+        for (let b = 0; b < burst; b++) {
+          const idx = start + b;
+          if (idx > 0 && idx < len) {
+            const w = (0.5 - 0.5 * Math.cos((Math.PI * b) / burst)); // soft attack
+            const noise = slapRnd() * 2 - 1;
+            d[idx] += peak * w * noise * (ch === 0 ? 1 : -1);
+          }
+        }
       });
     }
 

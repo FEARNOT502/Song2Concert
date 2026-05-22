@@ -17,6 +17,49 @@
 import { buildImpulseResponse } from './impulse.js';
 import { readAudioFormat } from './bitdepth.js';
 
+// AudioWorklet module URL. The processor lives in public/ (served verbatim, no
+// bundling) so audioWorklet.addModule can fetch it as a standalone module.
+// BASE_URL keeps it correct under the GitHub Pages base path.
+const WET_DUCKER_URL = `${import.meta.env.BASE_URL}wet-ducker-processor.js`;
+
+// Register the wet-ducker worklet on a context (idempotent per context). Returns
+// true if available, false if the browser/context can't load it (→ caller skips
+// the ducker and wires the wet bus straight through).
+async function ensureWetDucker(ctx) {
+  if (!ctx.audioWorklet) return false;
+  if (ctx.__wetDuckerReady) return true;
+  try {
+    await ctx.audioWorklet.addModule(WET_DUCKER_URL);
+    ctx.__wetDuckerReady = true;
+    return true;
+  } catch (e) {
+    console.warn('[engine] wet-ducker worklet unavailable:', e.message);
+    return false;
+  }
+}
+
+// Cap the wet pre-delay so the reverb stays fused with the dry transient.
+// Big venues model a long first-reflection time (stadium +110ms), but on a sharp
+// SPARSE hit (kick/snare in an intro) a >~50ms gap makes the reverb arrive as a
+// SEPARATE echo — the "tak…… chh" the listener hears. Keeping the pre-delay
+// under the echo-fusion threshold (~35ms) glues the tail onto the hit while
+// still giving a little first-reflection space. (The displayed firstReflection
+// figure is unchanged; this only affects what's audible.)
+const PREDELAY_CAP = 0.025; // seconds
+function cappedPreDelay(seconds) {
+  return Math.min(seconds, PREDELAY_CAP);
+}
+
+// Create a configured wet-ducker node: 2 inputs (wet stereo, dry sidechain),
+// stereo out. Feed the wet bus into input 0 and the dry tap into input 1.
+function createWetDucker(ctx) {
+  return new AudioWorkletNode(ctx, 'wet-ducker', {
+    numberOfInputs: 2,
+    numberOfOutputs: 1,
+    outputChannelCount: [2],
+  });
+}
+
 export class ConcertEngine {
   constructor() {
     this.ctx = null;
@@ -49,6 +92,7 @@ export class ConcertEngine {
     this._bufGen = 0;              // generation counter to ignore stale onended
     this._ended = false;           // true only on a real end-of-track
     this._fileRef = null;          // original File (for offline export)
+    this._wetDucker = null;        // AudioWorkletNode spliced into the wet bus
   }
 
   // Build the AudioContext + node graph. Idempotent; called on first interaction.
@@ -205,6 +249,9 @@ export class ConcertEngine {
     this.dryGain.connect(this.master);
 
     // wet path: in -> preDelay -> convolver -> lowCut -> mudCut -> vocalCut -> airCut -> wetGain -> wetTrim -> master
+    // The sidechain ducker is inserted between wetGain and wetTrim once its
+    // AudioWorklet module finishes loading (see _installWetDucker). Until then
+    // the wet bus runs straight through (no audible glitch on insertion).
     this._inGain.connect(this.preDelay);
     this.preDelay.connect(this.convolver);
     this.convolver.connect(this.wetLowCut);
@@ -221,6 +268,27 @@ export class ConcertEngine {
     this.master.connect(this.analyser);
 
     this._applyCrossfade();
+    this._installWetDucker(); // async; inserts the ducker when ready
+  }
+
+  // Load the worklet, then splice the ducker into the wet bus:
+  //   wetGain -> [ducker] -> wetTrim   (dry tap = _inGain drives input 1)
+  async _installWetDucker() {
+    if (this._wetDucker) return;
+    const ok = await ensureWetDucker(this.ctx);
+    if (!ok || !this.ctx || !this.wetGain) return; // unsupported → leave as-is
+    try {
+      const ducker = createWetDucker(this.ctx);
+      this.wetGain.disconnect(this.wetTrim);
+      this.wetGain.connect(ducker, 0, 0);   // wet → input 0
+      this._inGain.connect(ducker, 0, 1);   // dry sidechain → input 1
+      ducker.connect(this.wetTrim);
+      this._wetDucker = ducker;
+    } catch (e) {
+      console.warn('[engine] failed to insert wet ducker:', e.message);
+      // ensure the wet bus stays connected if insertion threw mid-way
+      try { this.wetGain.connect(this.wetTrim); } catch (_) { /* noop */ }
+    }
   }
 
   // Browser autoplay policy: must resume() inside a user gesture.
@@ -374,7 +442,7 @@ export class ConcertEngine {
     const ms = venue.position && venue.position.firstReflection
       ? parseFloat(String(venue.position.firstReflection).replace(/[^0-9.]/g, ''))
       : null;
-    this.setPreDelay(Number.isFinite(ms) ? ms / 1000 : (venue.ir.predelay ?? 0.02));
+    this.setPreDelay(cappedPreDelay(Number.isFinite(ms) ? ms / 1000 : (venue.ir.predelay ?? 0.02)));
   }
 
   setPreDelay(seconds) {
@@ -575,6 +643,8 @@ export class ConcertEngine {
     const len = decoded.length;
     const sr = decoded.sampleRate;
     const offline = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(2, len + sr * Math.ceil(venue.ir.rt60 + 1), sr);
+    // load the wet-ducker worklet on this offline context so export matches live
+    const duckerOk = await ensureWetDucker(offline);
 
     const src = offline.createBufferSource();
     src.buffer = decoded;
@@ -644,11 +714,22 @@ export class ConcertEngine {
     dry.gain.value = Math.cos(w * 0.5 * Math.PI);
     wet.gain.value = Math.cos((1 - w) * 0.5 * Math.PI);
     const ms = venue.position ? parseFloat(String(venue.position.firstReflection).replace(/[^0-9.]/g, '')) : 20;
-    pre.delayTime.value = (Number.isNaN(ms) ? 20 : ms) / 1000;
+    pre.delayTime.value = cappedPreDelay((Number.isNaN(ms) ? 20 : ms) / 1000); // match live: glue tail to transient
 
     src.connect(bassShelf); bassShelf.connect(kickPeak); kickPeak.connect(bassBody); bassBody.connect(bassDef);
     bassDef.connect(vocalPresence); vocalPresence.connect(snareCrack); snareCrack.connect(hatAir); hatAir.connect(dry); dry.connect(out);
-    bassDef.connect(pre); pre.connect(conv); conv.connect(wLow); wLow.connect(mCut); mCut.connect(vCut); vCut.connect(aCut); aCut.connect(wet); wet.connect(wetTrim); wetTrim.connect(out);
+    bassDef.connect(pre); pre.connect(conv); conv.connect(wLow); wLow.connect(mCut); mCut.connect(vCut); vCut.connect(aCut); aCut.connect(wet);
+    // sidechain ducker (match live graph): dry (bassDef) drives it, wet passes
+    // through. If the worklet isn't available, run the wet bus straight through.
+    if (duckerOk) {
+      const ducker = createWetDucker(offline);
+      wet.connect(ducker, 0, 0);      // wet → input 0
+      bassDef.connect(ducker, 0, 1);  // dry sidechain → input 1
+      ducker.connect(wetTrim);
+    } else {
+      wet.connect(wetTrim);
+    }
+    wetTrim.connect(out);
     out.connect(limiter); limiter.connect(offline.destination);
 
     src.start(0);
