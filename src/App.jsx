@@ -9,7 +9,7 @@ import TopBar from './components/TopBar.jsx';
 import BottomTransport from './components/BottomTransport.jsx';
 import { LeftDataPanel, RightDataPanel, SeatChip } from './components/Panels.jsx';
 import { FilePicker, VenuePicker } from './components/Modals.jsx';
-import SoundInfo from './components/SoundInfo.jsx';
+import QueuePanel from './components/QueuePanel.jsx';
 import { useEngine } from './audio/useEngine.js';
 import { audioBufferToWav } from './audio/wav.js';
 import { extractMetadata } from './audio/metadata.js';
@@ -38,10 +38,12 @@ export default function App() {
   const [pulse, setPulse] = useState(0);
   const [exporting, setExporting] = useState(false);
 
-  // playback queue (raw File objects) + the current track's metadata
-  const queueRef = useRef([]);             // File[]
-  const [queueLen, setQueueLen] = useState(0);
-  const [queueIndex, setQueueIndex] = useState(-1);
+  // playback queue. The track at index 0 is ALWAYS the one currently loaded;
+  // finished / skipped tracks are removed from the front. `queue` state mirrors
+  // the File[] in queueRef as lightweight display rows ({ id, name }).
+  const queueRef = useRef([]);             // File[] — [current, next, ...]
+  const idRef = useRef(0);                 // monotonic id for stable list keys
+  const [queue, setQueue] = useState([]);  // [{ id, name }] for display
   const [upload, setUpload] = useState(null); // { name, track, artist, durSec, coverSrc, format }
 
   const { engine, status, duration, hasAudio, setStatus, loadFile, play, pause } = useEngine();
@@ -75,17 +77,9 @@ export default function App() {
     const tick = () => {
       if (stopped) return;
       if (engine.isEnded) {
-        // track finished → advance to the next queued track, else stop & reset
-        const q = queueRef.current;
-        if (q.length > 1 && queueIndex < q.length - 1) {
-          stopped = true;
-          advanceRef.current(queueIndex + 1);
-          return;
-        }
-        setPlaying(false);
-        setStatus('ready');
-        setTime(0);
-        setPulse(0);
+        // track finished → drop it from the queue and play the next one
+        stopped = true;
+        advanceRef.current();
         return;
       }
       setTime(engine.currentTime);
@@ -93,7 +87,7 @@ export default function App() {
     };
     raf = requestAnimationFrame(tick);
     return () => { stopped = true; cancelAnimationFrame(raf); };
-  }, [playing, hasAudio, engine, setStatus, queueIndex]);
+  }, [playing, hasAudio, engine]);
 
   // ── pulse animation — AnalyserNode RMS, frozen on pause ──────────────────
   useEffect(() => {
@@ -132,17 +126,25 @@ export default function App() {
     setWetDry(findVenue(id).position.wet); // reset wet/dry to the venue default
   };
 
-  // load queue[index] (decode + metadata + play). autoplay defaults true.
-  const loadTrack = useCallback(async (index, autoplay = true) => {
+  // Load whatever sits at the FRONT of the queue (index 0) and play it.
+  // The queue is consumed from the front, so the current track is always [0].
+  const loadFront = useCallback(async (autoplay = true) => {
     const q = queueRef.current;
-    if (index < 0 || index >= q.length) return;
-    const f = q[index];
-    setQueueIndex(index);
-
+    if (!q.length) {
+      // queue drained → stop & reset to the empty state
+      setPlaying(false);
+      setStatus('ready');
+      setTime(0);
+      setPulse(0);
+      return;
+    }
+    const f = q[0];
     const ok = await loadFile(f);
     if (!ok) {
-      alert(`이 파일을 디코드하지 못했습니다: ${f.name}`);
-      return;
+      // skip an undecodable file: drop it and try the next
+      queueRef.current = queueRef.current.slice(1);
+      setQueue((rows) => rows.slice(1));
+      return loadFront(autoplay);
     }
     const fmt = `${(f.name.split('.').pop() || 'PCM').toUpperCase()} · streaming`;
     const meta = await extractMetadata(f);
@@ -161,8 +163,34 @@ export default function App() {
     engine.setWetDry(wetDry);
     engine.setVolume(volume);
     if (autoplay) { await play(); setPlaying(true); }
-  }, [engine, loadFile, play, wetDry, volume]);
-  advanceRef.current = (i) => loadTrack(i, true); // keep the clock's ref fresh
+  }, [engine, loadFile, play, setStatus, wetDry, volume]);
+
+  // Drop the front (finished/skipped) track, then load the new front.
+  const advance = useCallback(async () => {
+    queueRef.current = queueRef.current.slice(1);
+    setQueue((rows) => rows.slice(1));
+    await loadFront(true);
+  }, [loadFront]);
+  advanceRef.current = advance; // keep the playback clock's ref fresh
+
+  // Jump to a track in the queue by display id: drop everything before it
+  // (including the current track), then play it.
+  const jumpTo = useCallback(async (id) => {
+    const rows = queue;
+    const idx = rows.findIndex((r) => r.id === id);
+    if (idx <= 0) { if (idx === 0) return; else return; } // 0 is already playing
+    queueRef.current = queueRef.current.slice(idx);
+    setQueue(rows.slice(idx));
+    await loadFront(true);
+  }, [queue, loadFront]);
+
+  // Remove a single queued track by id (cannot remove the one playing, index 0).
+  const removeFromQueue = useCallback((id) => {
+    const idx = queue.findIndex((r) => r.id === id);
+    if (idx <= 0) return; // never remove the currently-playing front track here
+    queueRef.current = queueRef.current.filter((_, i) => i !== idx);
+    setQueue((rows) => rows.filter((r) => r.id !== id));
+  }, [queue]);
 
   // append dropped/selected files to the queue; start playing if idle
   const handleUpload = async (files) => {
@@ -170,21 +198,22 @@ export default function App() {
     if (!list.length) return;
     const wasEmpty = queueRef.current.length === 0;
     queueRef.current = queueRef.current.concat(list);
-    setQueueLen(queueRef.current.length);
-    if (wasEmpty) await loadTrack(0, true);
+    setQueue((rows) => rows.concat(list.map((f) => ({ id: ++idRef.current, name: stripExt(f.name) }))));
+    if (wasEmpty) await loadFront(true);
   };
 
+  // next = drop the front and play the next queued track
   const nextTrack = useCallback(() => {
-    const q = queueRef.current;
-    if (q.length < 2) return;
-    loadTrack((queueIndex + 1) % q.length, true);
-  }, [queueIndex, loadTrack]);
+    if (queueRef.current.length < 2) return;
+    advance();
+  }, [advance]);
 
+  // prev = restart the current track from the top (finished tracks are gone)
   const prevTrack = useCallback(() => {
-    const q = queueRef.current;
-    if (q.length < 2) return;
-    loadTrack((queueIndex - 1 + q.length) % q.length, true);
-  }, [queueIndex, loadTrack]);
+    if (!hasAudio) return;
+    setTime(0);
+    engine.seek(0);
+  }, [hasAudio, engine]);
 
   // ── export WAV (offline render through current venue) ────────────────────
   const handleExport = async () => {
@@ -254,16 +283,17 @@ export default function App() {
         onFileClick={() => setFilePickerOpen(true)}
         onVenueClick={() => setVenuePickerOpen(true)}
       />
-      <SoundInfo venue={venue} />
       <LeftDataPanel venue={venue} />
       <RightDataPanel venue={venue} file={displayFile} />
       <SeatChip venue={venue} />
+      <QueuePanel queue={queue} onJump={jumpTo} onRemove={removeFromQueue} playing={playing} />
 
-      {/* call-to-action before any file is loaded */}
+      {/* call-to-action before any file is loaded — sits BELOW the album art so
+          it doesn't cover the cover/caption on the stage */}
       {!hasAudio && (
         <button
           onClick={() => setFilePickerOpen(true)}
-          className="absolute top-1/2 left-1/2 -translate-x-1/2 translate-y-[120px] z-20 border border-[oklch(0.78_0.16_55)]/60 text-[oklch(0.78_0.16_55)] px-5 py-2.5 text-[10px] tracking-[0.3em] uppercase hover:bg-[oklch(0.78_0.16_55)] hover:text-black transition-colors font-mono"
+          className="absolute bottom-[150px] left-1/2 -translate-x-1/2 z-20 border border-[oklch(0.78_0.16_55)]/60 text-[oklch(0.78_0.16_55)] px-5 py-2.5 text-[10px] tracking-[0.3em] uppercase hover:bg-[oklch(0.78_0.16_55)] hover:text-black transition-colors font-mono"
         >
           ↓ Drop a FLAC / WAV to begin
         </button>
@@ -281,7 +311,8 @@ export default function App() {
         onToggle={togglePlay}
         onPrev={prevTrack}
         onNext={nextTrack}
-        hasQueue={queueLen > 1}
+        hasNext={queue.length > 1}
+        hasPrev={hasAudio}
         time={time}
         durSec={effDurSec}
         wetDry={wetDry}
@@ -298,8 +329,7 @@ export default function App() {
         onClose={() => setFilePickerOpen(false)}
         onUpload={handleUpload}
         uploadedName={upload?.name}
-        queueLen={queueLen}
-        queueIndex={queueIndex}
+        queueCount={queue.length}
       />
       <VenuePicker open={venuePickerOpen} onClose={() => setVenuePickerOpen(false)} current={venueId} onPick={handlePickVenue} />
     </div>

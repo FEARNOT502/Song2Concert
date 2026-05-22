@@ -76,10 +76,18 @@ export class ConcertEngine {
     // in the IR — so we get more bass *body*, not a boomy tail.
     this.bassShelf = this.ctx.createBiquadFilter();
     this.bassShelf.type = 'lowshelf';
-    this.bassShelf.frequency.value = 90;   // sub/low-bass region
-    this.bassShelf.gain.value = 3.5;       // dB of added low-end weight
+    this.bassShelf.frequency.value = 110;  // sub + kick-punch region (~50–110 Hz)
+    this.bassShelf.gain.value = 5;         // dB of added low-end weight
+    // A gentle peak right on the kick-drum punch (~70 Hz) so the kick reads with
+    // a bit more thump on top of the broad shelf — concert-PA "chest" feel.
+    this.kickPeak = this.ctx.createBiquadFilter();
+    this.kickPeak.type = 'peaking';
+    this.kickPeak.frequency.value = 70;
+    this.kickPeak.Q.value = 1.1;
+    this.kickPeak.gain.value = 2;          // dB
     this.source.connect(this.bassShelf);
-    this.bassShelf.connect(this._inGain);
+    this.bassShelf.connect(this.kickPeak);
+    this.kickPeak.connect(this._inGain);
 
     this.dryGain = this.ctx.createGain();
     this.wetGain = this.ctx.createGain();
@@ -488,11 +496,16 @@ export class ConcertEngine {
     const src = offline.createBufferSource();
     src.buffer = decoded;
 
-    // match the live graph's low-end shelf so the export sounds identical
+    // match the live graph's low-end shaping so the export sounds identical
     const bassShelf = offline.createBiquadFilter();
     bassShelf.type = 'lowshelf';
-    bassShelf.frequency.value = 90;
-    bassShelf.gain.value = 3.5;
+    bassShelf.frequency.value = 110;
+    bassShelf.gain.value = 5;
+    const kickPeak = offline.createBiquadFilter();
+    kickPeak.type = 'peaking';
+    kickPeak.frequency.value = 70;
+    kickPeak.Q.value = 1.1;
+    kickPeak.gain.value = 2;
 
     const dry = offline.createGain();
     const wet = offline.createGain();
@@ -521,9 +534,9 @@ export class ConcertEngine {
     const ms = venue.position ? parseFloat(String(venue.position.firstReflection).replace(/[^0-9.]/g, '')) : 20;
     pre.delayTime.value = (Number.isNaN(ms) ? 20 : ms) / 1000;
 
-    src.connect(bassShelf);
-    bassShelf.connect(dry); dry.connect(out);
-    bassShelf.connect(pre); pre.connect(conv); conv.connect(mCut); mCut.connect(vCut); vCut.connect(aCut); aCut.connect(wet); wet.connect(wetTrim); wetTrim.connect(out);
+    src.connect(bassShelf); bassShelf.connect(kickPeak);
+    kickPeak.connect(dry); dry.connect(out);
+    kickPeak.connect(pre); pre.connect(conv); conv.connect(mCut); mCut.connect(vCut); vCut.connect(aCut); aCut.connect(wet); wet.connect(wetTrim); wetTrim.connect(out);
     out.connect(limiter); limiter.connect(offline.destination);
 
     src.start(0);

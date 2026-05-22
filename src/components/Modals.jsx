@@ -112,7 +112,7 @@ export function VenuePicker({ open, onClose, current, onPick }) {
 }
 
 // ───────────────────────────────────────── File picker (upload, multi-file)
-export function FilePicker({ open, onClose, onUpload, uploadedName, queueLen = 0, queueIndex = -1 }) {
+export function FilePicker({ open, onClose, onUpload, uploadedName, queueCount = 0 }) {
   const inputRef = useRef(null);
   const [dragOver, setDragOver] = useState(false);
 
@@ -137,7 +137,7 @@ export function FilePicker({ open, onClose, onUpload, uploadedName, queueLen = 0
         <div className="text-neutral-600 text-[11px] mt-4 font-mono">or click to browse ↗</div>
         {uploadedName && (
           <div className="text-[oklch(0.78_0.16_55)] text-[11px] mt-5 font-mono">
-            ▸ NOW · {uploadedName}{queueLen > 1 ? `   ·   QUEUE ${queueIndex + 1}/${queueLen}` : ''}
+            ▸ NOW · {uploadedName}{queueCount > 1 ? `   ·   ${queueCount - 1} in queue` : ''}
           </div>
         )}
         <input

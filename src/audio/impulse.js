@@ -101,15 +101,27 @@ export function buildImpulseResponse(ctx, params, seed = 1) {
       d[i] = shaped * env * earlyGain;
     }
 
-    // a few discrete early reflections for a sense of size (kept modest)
-    const erTimes = [0.009, 0.017, 0.026, 0.038];
-    erTimes.forEach((tt, kk) => {
-      const tap = Math.floor(tt * sr * (1 + rt60 * 0.03));
-      if (tap < len) {
-        const sign = (kk % 2 === 0 ? 1 : -1) * (ch === 0 ? 1 : -1);
-        d[tap] += sign * (0.16 - kk * 0.03) * density * Math.exp(-decay * (tap / sr));
+    // Early reflections. A snare (or any sharp transient) convolved with only a
+    // few DISCRETE taps rings/flutters — the ear hears each tap as a separate
+    // echo, which is the "awkward snare reverb" problem. We instead lay down a
+    // DENSER, time-jittered cluster of early reflections so the transient gets a
+    // smooth diffuse response. Each tap gets a randomized time + gain so no taps
+    // line up into a periodic comb (flutter echo).
+    const erRnd = mulberry32(seed * 2654435761 + ch * 40503 + 17);
+    const erCount = Math.round(10 + density * 8);
+    const erWindow = Math.min(0.05 + rt60 * 0.02, 0.12); // seconds of early field
+    for (let kk = 0; kk < erCount; kk++) {
+      // spread taps across the early window, denser toward the start
+      const frac = Math.pow((kk + 0.5) / erCount, 1.25);
+      const tt = (0.006 + frac * erWindow) * (1 + rt60 * 0.03);
+      const jitter = Math.floor((erRnd() - 0.5) * 0.0022 * sr); // ±~1ms
+      const tap = Math.floor(tt * sr) + jitter;
+      if (tap > 0 && tap < len) {
+        const sign = erRnd() < 0.5 ? -1 : 1;
+        const g = (0.12 - kk * (0.10 / erCount)) * (0.6 + erRnd() * 0.4) * density;
+        d[tap] += sign * g * Math.exp(-decay * (tap / sr));
       }
-    });
+    }
 
     // gentle, decaying PA delay-tower slap cluster for the big rooms
     if (slap) {

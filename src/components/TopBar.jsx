@@ -3,6 +3,8 @@
 // 'ready' | 'live'. It replaces the prototype's static "IN SEAT" badge with a
 // truthful indicator of whether real audio is loaded.
 
+import SoundInfo from './SoundInfo.jsx';
+
 const STATUS_LABEL = {
   demo: '○ NO FILE',
   loading: '◌ DECODING…',
@@ -35,6 +37,7 @@ export default function TopBar({ file, venue, audioStatus = 'demo', onFileClick,
       </div>
 
       <div className="flex items-center gap-4">
+        <SoundInfo venue={venue} />
         <span>{file.format.split(' · ').slice(0, 2).join(' · ')}</span>
         <span className={liveish ? 'text-[oklch(0.78_0.16_55)]' : 'text-neutral-500'}>
           {STATUS_LABEL[audioStatus] || STATUS_LABEL.demo}

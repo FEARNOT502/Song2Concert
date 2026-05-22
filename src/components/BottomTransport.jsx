@@ -54,18 +54,18 @@ function Slider({ value, max = 100, onChange, fillClass, knobClass, disabled }) 
 }
 
 export default function BottomTransport({
-  playing, onToggle, onPrev, onNext, hasQueue,
+  playing, onToggle, onPrev, onNext, hasNext, hasPrev,
   time, durSec, wetDry, onWetChange, onSeek,
   onExport, exporting, volume, onVolumeChange,
 }) {
   return (
     <div className="absolute bottom-0 inset-x-0 z-40 border-t border-white/10 px-10 py-6 flex items-center gap-8 text-[13px] tracking-[0.2em] text-neutral-400 uppercase bg-black/70 backdrop-blur-md font-mono">
       <div className="flex items-center gap-3">
-        <button onClick={onPrev} disabled={!hasQueue} className="w-9 h-9 rounded-full border border-white/25 hover:border-white/60 flex items-center justify-center text-xs transition-colors disabled:opacity-30">⏮</button>
+        <button onClick={onPrev} disabled={!hasPrev} title="처음부터 다시" className="w-9 h-9 rounded-full border border-white/25 hover:border-white/60 flex items-center justify-center text-xs transition-colors disabled:opacity-30">⏮</button>
         <button onClick={onToggle} className="w-12 h-12 rounded-full bg-white text-black hover:bg-neutral-200 flex items-center justify-center text-lg transition-colors">
           {playing ? '⏸' : '▶'}
         </button>
-        <button onClick={onNext} disabled={!hasQueue} className="w-9 h-9 rounded-full border border-white/25 hover:border-white/60 flex items-center justify-center text-xs transition-colors disabled:opacity-30">⏭</button>
+        <button onClick={onNext} disabled={!hasNext} title="다음 곡" className="w-9 h-9 rounded-full border border-white/25 hover:border-white/60 flex items-center justify-center text-xs transition-colors disabled:opacity-30">⏭</button>
       </div>
 
       <div className="flex items-center gap-3 text-[12px] tabular-nums text-neutral-300 min-w-[120px]">
