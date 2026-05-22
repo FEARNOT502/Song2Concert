@@ -76,18 +76,40 @@ export class ConcertEngine {
     // in the IR — so we get more bass *body*, not a boomy tail.
     this.bassShelf = this.ctx.createBiquadFilter();
     this.bassShelf.type = 'lowshelf';
-    this.bassShelf.frequency.value = 110;  // sub + kick-punch region (~50–110 Hz)
-    this.bassShelf.gain.value = 5;         // dB of added low-end weight
-    // A gentle peak right on the kick-drum punch (~70 Hz) so the kick reads with
-    // a bit more thump on top of the broad shelf — concert-PA "chest" feel.
+    this.bassShelf.frequency.value = 120;  // overall low-end weight (sub..low-bass)
+    this.bassShelf.gain.value = 6;         // dB — a touch more body than before (+1)
+    // ── Kick vs. bass frequency separation (live-FOH "carve" approach) ──
+    // The kick and the bass guitar fight in the 60–120 Hz region. A FOH engineer
+    // un-masks them by giving each its OWN pocket instead of boosting the shared
+    // band: the kick keeps the very-low chest THUMP (~60 Hz), while the bass owns
+    // the fundamental/BODY just above it (~110 Hz). We also dip the kick's filter
+    // band slightly where it would otherwise smother the bass fundamental.
+    //
+    // kickPunch: narrow lift on the kick's chest-thump fundamental (~60 Hz).
     this.kickPeak = this.ctx.createBiquadFilter();
     this.kickPeak.type = 'peaking';
-    this.kickPeak.frequency.value = 70;
-    this.kickPeak.Q.value = 1.1;
-    this.kickPeak.gain.value = 2;          // dB
+    this.kickPeak.frequency.value = 60;    // lower than before → out of the bass's way
+    this.kickPeak.Q.value = 1.6;           // narrower → only the thump, not the bass
+    this.kickPeak.gain.value = 2.5;        // dB
+    // bassBody: lift the bass guitar's fundamental/body pocket so it sits ABOVE
+    // the kick instead of under it — this is the main fix for "bass buried in kick".
+    this.bassBody = this.ctx.createBiquadFilter();
+    this.bassBody.type = 'peaking';
+    this.bassBody.frequency.value = 110;   // bass fundamental / "round" body
+    this.bassBody.Q.value = 1.3;
+    this.bassBody.gain.value = 3;          // dB — adds the requested extra bass weight
+    // bassDef: a small lift in the bass's note-definition/growl region so the
+    // pitch of each bass note stays legible through a dense mix (separation).
+    this.bassDef = this.ctx.createBiquadFilter();
+    this.bassDef.type = 'peaking';
+    this.bassDef.frequency.value = 800;    // string growl / where the note "reads"
+    this.bassDef.Q.value = 1.0;
+    this.bassDef.gain.value = 1.5;         // dB
     this.source.connect(this.bassShelf);
     this.bassShelf.connect(this.kickPeak);
-    this.kickPeak.connect(this._inGain);
+    this.kickPeak.connect(this.bassBody);
+    this.bassBody.connect(this.bassDef);
+    this.bassDef.connect(this._inGain);
 
     this.dryGain = this.ctx.createGain();
     this.wetGain = this.ctx.createGain();
@@ -110,8 +132,15 @@ export class ConcertEngine {
     this.wetMudCut = this.ctx.createBiquadFilter();
     this.wetMudCut.type = 'peaking';
     this.wetMudCut.frequency.value = 300;
-    this.wetMudCut.Q.value = 1.0;
-    this.wetMudCut.gain.value = -5; // dB
+    this.wetMudCut.Q.value = 1.1;
+    this.wetMudCut.gain.value = -6; // dB — deeper low-mid dip un-glues instruments more
+    // Keep the reverb tail from re-muddying the low end we just separated on the
+    // dry path: high-pass the WET feed so sub/kick energy doesn't smear into the
+    // tail. The dry path keeps the full low-end body; the ambience stays clean.
+    this.wetLowCut = this.ctx.createBiquadFilter();
+    this.wetLowCut.type = 'highpass';
+    this.wetLowCut.frequency.value = 140;  // bass body & below stays dry/tight
+    this.wetLowCut.Q.value = 0.7;
     this.wetVocalCut = this.ctx.createBiquadFilter();
     this.wetVocalCut.type = 'peaking';
     this.wetVocalCut.frequency.value = 3200;
@@ -141,10 +170,11 @@ export class ConcertEngine {
     this._inGain.connect(this.dryGain);
     this.dryGain.connect(this.master);
 
-    // wet path: in -> preDelay -> convolver -> mudCut -> vocalCut -> airCut -> wetGain -> wetTrim -> master
+    // wet path: in -> preDelay -> convolver -> lowCut -> mudCut -> vocalCut -> airCut -> wetGain -> wetTrim -> master
     this._inGain.connect(this.preDelay);
     this.preDelay.connect(this.convolver);
-    this.convolver.connect(this.wetMudCut);
+    this.convolver.connect(this.wetLowCut);
+    this.wetLowCut.connect(this.wetMudCut);
     this.wetMudCut.connect(this.wetVocalCut);
     this.wetVocalCut.connect(this.wetAirCut);
     this.wetAirCut.connect(this.wetGain);
@@ -499,13 +529,23 @@ export class ConcertEngine {
     // match the live graph's low-end shaping so the export sounds identical
     const bassShelf = offline.createBiquadFilter();
     bassShelf.type = 'lowshelf';
-    bassShelf.frequency.value = 110;
-    bassShelf.gain.value = 5;
+    bassShelf.frequency.value = 120;
+    bassShelf.gain.value = 6;
     const kickPeak = offline.createBiquadFilter();
     kickPeak.type = 'peaking';
-    kickPeak.frequency.value = 70;
-    kickPeak.Q.value = 1.1;
-    kickPeak.gain.value = 2;
+    kickPeak.frequency.value = 60;
+    kickPeak.Q.value = 1.6;
+    kickPeak.gain.value = 2.5;
+    const bassBody = offline.createBiquadFilter();
+    bassBody.type = 'peaking';
+    bassBody.frequency.value = 110;
+    bassBody.Q.value = 1.3;
+    bassBody.gain.value = 3;
+    const bassDef = offline.createBiquadFilter();
+    bassDef.type = 'peaking';
+    bassDef.frequency.value = 800;
+    bassDef.Q.value = 1.0;
+    bassDef.gain.value = 1.5;
 
     const dry = offline.createGain();
     const wet = offline.createGain();
@@ -515,9 +555,11 @@ export class ConcertEngine {
     const conv = offline.createConvolver();
     conv.normalize = false; // match the live graph
     conv.buffer = buildImpulseResponse(offline, venue.ir, venue.id.split('').reduce((a, c) => a + c.charCodeAt(0), 1));
-    // wet-path EQ (match live graph): mud cut + vocal cut + air cut
+    // wet-path EQ (match live graph): low cut + mud cut + vocal cut + air cut
+    const wLow = offline.createBiquadFilter();
+    wLow.type = 'highpass'; wLow.frequency.value = 140; wLow.Q.value = 0.7;
     const mCut = offline.createBiquadFilter();
-    mCut.type = 'peaking'; mCut.frequency.value = 300; mCut.Q.value = 1.0; mCut.gain.value = -5;
+    mCut.type = 'peaking'; mCut.frequency.value = 300; mCut.Q.value = 1.1; mCut.gain.value = -6;
     const vCut = offline.createBiquadFilter();
     vCut.type = 'peaking'; vCut.frequency.value = 3200; vCut.Q.value = 0.9; vCut.gain.value = -7;
     const aCut = offline.createBiquadFilter();
@@ -534,9 +576,9 @@ export class ConcertEngine {
     const ms = venue.position ? parseFloat(String(venue.position.firstReflection).replace(/[^0-9.]/g, '')) : 20;
     pre.delayTime.value = (Number.isNaN(ms) ? 20 : ms) / 1000;
 
-    src.connect(bassShelf); bassShelf.connect(kickPeak);
-    kickPeak.connect(dry); dry.connect(out);
-    kickPeak.connect(pre); pre.connect(conv); conv.connect(mCut); mCut.connect(vCut); vCut.connect(aCut); aCut.connect(wet); wet.connect(wetTrim); wetTrim.connect(out);
+    src.connect(bassShelf); bassShelf.connect(kickPeak); kickPeak.connect(bassBody); bassBody.connect(bassDef);
+    bassDef.connect(dry); dry.connect(out);
+    bassDef.connect(pre); pre.connect(conv); conv.connect(wLow); wLow.connect(mCut); mCut.connect(vCut); vCut.connect(aCut); aCut.connect(wet); wet.connect(wetTrim); wetTrim.connect(out);
     out.connect(limiter); limiter.connect(offline.destination);
 
     src.start(0);
