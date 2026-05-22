@@ -145,6 +145,10 @@ export default function Cover({ id, size, src }) {
       />
     );
   }
+  // No id and no src → start screen (no file loaded yet): plain black cover.
+  if (!id) {
+    return <div style={{ width: size, height: size, background: '#000', display: 'block' }} />;
+  }
   const C = COVER_MAP[id] || CoverBlueRoom;
   return <C size={size} />;
 }

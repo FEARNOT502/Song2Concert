@@ -8,9 +8,8 @@ export function LeftDataPanel({ venue }) {
   const direct = 100 - pos.wet;
   return (
     <div className="absolute top-[100px] left-10 z-20 text-[12px] tracking-[0.2em] uppercase text-neutral-500 max-w-[260px] font-mono">
-      <div className="text-neutral-300">LISTENING POSITION</div>
-      <div className="text-white text-[34px] font-light tracking-tight normal-case mt-1 leading-tight font-tight">{pos.label}</div>
-      <div className="mt-2 text-[12px]">{pos.distance} from stage</div>
+      <div className="text-neutral-300">VENUE</div>
+      <div className="text-white text-[34px] font-light tracking-tight normal-case mt-1 leading-tight font-tight">{venue.name}</div>
 
       <div className="mt-7 text-neutral-300">DIRECT / REVERB</div>
       <div className="mt-2 flex items-center gap-2">

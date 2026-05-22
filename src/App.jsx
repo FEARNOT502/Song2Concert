@@ -23,7 +23,7 @@ const PLACEHOLDER_FILE = {
   artist: '—',
   format: '— · —',
   durSec: 0,
-  cover: 'blueRoom', // neutral default art on the stage
+  cover: null, // no art before a file is loaded → plain black on the stage
 };
 
 export default function App() {
