@@ -10,6 +10,8 @@ import BottomTransport from './components/BottomTransport.jsx';
 import { LeftDataPanel, RightDataPanel, SeatChip } from './components/Panels.jsx';
 import { FilePicker, VenuePicker } from './components/Modals.jsx';
 import QueuePanel from './components/QueuePanel.jsx';
+import MobileLayout from './components/MobileLayout.jsx';
+import { useIsMobile } from './useIsMobile.js';
 import { useEngine } from './audio/useEngine.js';
 import { audioBufferToFlac } from './audio/flac.js';
 import { extractMetadata } from './audio/metadata.js';
@@ -47,6 +49,7 @@ export default function App() {
   const [upload, setUpload] = useState(null); // { name, track, artist, durSec, coverSrc, format }
 
   const { engine, status, duration, hasAudio, setStatus, loadFile, play, pause } = useEngine();
+  const isMobile = useIsMobile();
 
   // derived
   const venue = findVenue(venueId);
@@ -262,6 +265,54 @@ export default function App() {
 
   const audioStatus = hasAudio ? (playing ? 'live' : (status === 'loading' ? 'loading' : 'ready')) : 'demo';
 
+  // Shared pickers — rendered in both layouts.
+  const pickers = (
+    <>
+      <FilePicker
+        open={filePickerOpen}
+        onClose={() => setFilePickerOpen(false)}
+        onUpload={handleUpload}
+        uploadedName={upload?.name}
+        queueCount={queue.length}
+      />
+      <VenuePicker open={venuePickerOpen} onClose={() => setVenuePickerOpen(false)} current={venueId} onPick={handlePickVenue} />
+    </>
+  );
+
+  if (isMobile) {
+    return (
+      <>
+        <MobileLayout
+          venue={venue}
+          displayFile={displayFile}
+          coverSrc={coverSrc}
+          pulse={pulse}
+          upload={upload}
+          audioStatus={audioStatus}
+          hasAudio={hasAudio}
+          playing={playing}
+          onToggle={togglePlay}
+          onPrev={prevTrack}
+          onNext={nextTrack}
+          hasNext={queue.length > 1}
+          hasPrev={hasAudio}
+          time={time}
+          durSec={effDurSec}
+          wetDry={wetDry}
+          onWetChange={setWetDry}
+          onSeek={handleSeek}
+          onExport={handleExport}
+          exporting={exporting}
+          volume={volume}
+          onVolumeChange={setVolume}
+          onFileClick={() => setFilePickerOpen(true)}
+          onVenueClick={() => setVenuePickerOpen(true)}
+        />
+        {pickers}
+      </>
+    );
+  }
+
   return (
     <div className="w-screen h-screen bg-black text-neutral-200 overflow-hidden relative font-mono">
       <Scene
@@ -330,14 +381,7 @@ export default function App() {
         onVolumeChange={setVolume}
       />
 
-      <FilePicker
-        open={filePickerOpen}
-        onClose={() => setFilePickerOpen(false)}
-        onUpload={handleUpload}
-        uploadedName={upload?.name}
-        queueCount={queue.length}
-      />
-      <VenuePicker open={venuePickerOpen} onClose={() => setVenuePickerOpen(false)} current={venueId} onPick={handlePickVenue} />
+      {pickers}
     </div>
   );
 }
