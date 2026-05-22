@@ -98,7 +98,7 @@ export class ConcertEngine {
     this.bassBody.type = 'peaking';
     this.bassBody.frequency.value = 110;   // bass fundamental / "round" body
     this.bassBody.Q.value = 1.3;
-    this.bassBody.gain.value = 3;          // dB — adds the requested extra bass weight
+    this.bassBody.gain.value = 4;          // dB — +1 to keep bass weight after the vocal lift
     // bassDef: a small lift in the bass's note-definition/growl region so the
     // pitch of each bass note stays legible through a dense mix (separation).
     this.bassDef = this.ctx.createBiquadFilter();
@@ -113,6 +113,34 @@ export class ConcertEngine {
     this.bassDef.connect(this._inGain);
 
     this.dryGain = this.ctx.createGain();
+    // Vocal presence lift on the DRY (direct) path only. When the bass body is
+    // strong it masks the vocal's intelligibility band; a real FOH engineer
+    // answers that by nudging the vocal's presence/consonant region forward so
+    // the lead stays legible over the low end. A wide, gentle peak at ~2.5 kHz
+    // (Q 0.8 covers ~1.5–4 kHz) keeps it musical rather than harsh/sibilant.
+    // It lives on the dry feed, NOT the wet bus — boosting it in the reverb
+    // would only smear the vocal, so the tail keeps its existing 3.2 kHz cut.
+    this.vocalPresence = this.ctx.createBiquadFilter();
+    this.vocalPresence.type = 'peaking';
+    this.vocalPresence.frequency.value = 2500;
+    this.vocalPresence.Q.value = 0.8;
+    this.vocalPresence.gain.value = 2.5; // dB — un-mask the vocal without overpowering the bass
+    // Snare "crack"/attack lift on the DRY path. The snare's snap reads ~4–5 kHz,
+    // just ABOVE the vocal presence band, so a narrowish peak here makes the snare
+    // pop out crisply without dragging the vocal up with it. Kept tight (Q 1.2) so
+    // it doesn't bleed into the vocal's ~2.5 kHz or the hat's air above.
+    this.snareCrack = this.ctx.createBiquadFilter();
+    this.snareCrack.type = 'peaking';
+    this.snareCrack.frequency.value = 4500;
+    this.snareCrack.Q.value = 1.6;     // tighter so it doesn't bleed down into the vocal
+    this.snareCrack.gain.value = 3.5; // dB — snare asked to be especially crisp
+    // Hi-hat / cymbal sparkle: a high shelf well above the vocal/snare so only the
+    // hats' shimmer lifts. The other instruments have little energy this high, so
+    // this brightens the hats specifically rather than the whole mix.
+    this.hatAir = this.ctx.createBiquadFilter();
+    this.hatAir.type = 'highshelf';
+    this.hatAir.frequency.value = 10000;
+    this.hatAir.gain.value = 3; // dB
     this.wetGain = this.ctx.createGain();
     this.wetTrim = this.ctx.createGain();
     this.wetTrim.gain.value = 0.45; // keep the reverb bus as ambience, not a wash
@@ -167,8 +195,13 @@ export class ConcertEngine {
     this.analyser.fftSize = 1024;
     this._analyserBuf = new Float32Array(this.analyser.fftSize);
 
-    // dry path:  in -> dryGain -> master
-    this._inGain.connect(this.dryGain);
+    // dry path:  in -> vocalPresence -> snareCrack -> hatAir -> dryGain -> master
+    // (presence/crack/air lifts live on the direct sound only, so the vocal,
+    //  snare and hats read clearly without smearing the reverb tail)
+    this._inGain.connect(this.vocalPresence);
+    this.vocalPresence.connect(this.snareCrack);
+    this.snareCrack.connect(this.hatAir);
+    this.hatAir.connect(this.dryGain);
     this.dryGain.connect(this.master);
 
     // wet path: in -> preDelay -> convolver -> lowCut -> mudCut -> vocalCut -> airCut -> wetGain -> wetTrim -> master
@@ -560,12 +593,29 @@ export class ConcertEngine {
     bassBody.type = 'peaking';
     bassBody.frequency.value = 110;
     bassBody.Q.value = 1.3;
-    bassBody.gain.value = 3;
+    bassBody.gain.value = 4;
     const bassDef = offline.createBiquadFilter();
     bassDef.type = 'peaking';
     bassDef.frequency.value = 800;
     bassDef.Q.value = 1.0;
     bassDef.gain.value = 1.5;
+    // vocal presence lift on the dry path (match live graph) — keeps the lead
+    // legible when the bass body is heavy
+    const vocalPresence = offline.createBiquadFilter();
+    vocalPresence.type = 'peaking';
+    vocalPresence.frequency.value = 2500;
+    vocalPresence.Q.value = 0.8;
+    vocalPresence.gain.value = 2.5;
+    // snare crack + hi-hat air on the dry path (match live graph)
+    const snareCrack = offline.createBiquadFilter();
+    snareCrack.type = 'peaking';
+    snareCrack.frequency.value = 4500;
+    snareCrack.Q.value = 1.6;
+    snareCrack.gain.value = 3.5;
+    const hatAir = offline.createBiquadFilter();
+    hatAir.type = 'highshelf';
+    hatAir.frequency.value = 10000;
+    hatAir.gain.value = 3;
 
     const dry = offline.createGain();
     const wet = offline.createGain();
@@ -597,7 +647,7 @@ export class ConcertEngine {
     pre.delayTime.value = (Number.isNaN(ms) ? 20 : ms) / 1000;
 
     src.connect(bassShelf); bassShelf.connect(kickPeak); kickPeak.connect(bassBody); bassBody.connect(bassDef);
-    bassDef.connect(dry); dry.connect(out);
+    bassDef.connect(vocalPresence); vocalPresence.connect(snareCrack); snareCrack.connect(hatAir); hatAir.connect(dry); dry.connect(out);
     bassDef.connect(pre); pre.connect(conv); conv.connect(wLow); wLow.connect(mCut); mCut.connect(vCut); vCut.connect(aCut); aCut.connect(wet); wet.connect(wetTrim); wetTrim.connect(out);
     out.connect(limiter); limiter.connect(offline.destination);
 
