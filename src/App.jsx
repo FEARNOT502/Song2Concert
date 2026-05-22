@@ -74,12 +74,18 @@ export default function App() {
     if (!playing || !hasAudio) return undefined;
     let raf;
     let stopped = false;
+    let advancing = false; // guard so we fire advance() once per track-end
     const tick = () => {
       if (stopped) return;
       if (engine.isEnded) {
-        // track finished → drop it from the queue and play the next one
-        stopped = true;
-        advanceRef.current();
+        // Track finished → drop it from the queue and play the next one.
+        // We keep the RAF loop alive across the advance (do NOT stop it):
+        // `playing` stays true while auto-advancing, so this effect never
+        // re-runs to restart the loop — if we stopped here, the clock would
+        // freeze on the next track. The `advancing` flag prevents firing the
+        // async advance more than once before the next track is loaded.
+        if (!advancing) { advancing = true; advanceRef.current().finally(() => { advancing = false; }); }
+        raf = requestAnimationFrame(tick);
         return;
       }
       setTime(engine.currentTime);

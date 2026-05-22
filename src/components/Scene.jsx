@@ -133,10 +133,28 @@ const SceneShell = ({ children }) => (
   <div className="absolute inset-0 z-0">{children}</div>
 );
 
+// Music-reactive crowd phone lights: a sea of phone torches that twinkle with
+// the beat. `pulse` (0..1 RMS) drives the swell; each phone has its own phase
+// (p.ph) and `now` is a render-time clock so the field shimmers individually.
+function PhoneField({ phones, pulse, now }) {
+  return phones.map((p, i) => {
+    const tw = 0.5 + 0.5 * Math.sin(now * 0.007 + p.ph);
+    const lit = Math.min(1, 0.55 + pulse * 0.9 * tw);
+    const glow = Math.min(0.55, 0.15 + pulse * 0.6 * tw);
+    return (
+      <g key={i}>
+        <rect x={p.x - p.s / 2} y={p.y} width={p.s} height={p.s * 1.4} fill="oklch(0.97 0.07 90)" opacity={lit} />
+        <circle cx={p.x} cy={p.y + 1} r={p.s * (1.8 + pulse * 2.4 * tw)} fill="oklch(0.96 0.07 90)" opacity={glow} />
+      </g>
+    );
+  });
+}
+
 // ═══════════════════════════════════════════ 1. JAZZ CLUB — Blue Note
 // No LED wall; the album art mounts on the lit back wall behind the combo.
 function SceneJazz({ coverId, coverSrc, pulse, title, artist }) {
   const particles = useMemo(() => dust(30, 7), []);
+  const now = performance.now();
   return (
     <SceneShell>
       <svg viewBox="0 0 1440 760" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 w-full h-full">
@@ -157,17 +175,21 @@ function SceneJazz({ coverId, coverSrc, pulse, title, artist }) {
         <rect x="360" y="260" width="720" height="320" fill="#070504" />
         {/* on-stage screen frame the album art mounts into */}
         <rect x="556" y="286" width="328" height="252" fill="#020108" stroke={ACCENT} strokeWidth="1.4" opacity="0.9" />
-        {/* pipe lighting bar */}
+        {/* pipe lighting bar — lit cans glow & swell with the music */}
         <rect x="360" y="248" width="720" height="6" fill="#1a1208" />
-        {[0, 1, 2, 3, 4, 5, 6, 7].map(i => (
+        {[0, 1, 2, 3, 4, 5, 6, 7].map(i => {
+          const lit = i % 3 === 0;
+          const tw = 0.5 + 0.5 * Math.sin(now * 0.005 + i * 0.9);
+          return (
           <g key={i}>
             <rect x={400 + i * 92 - 8} y="254" width="16" height="14" fill="#0a0604" stroke="#1a1208" />
-            <circle cx={400 + i * 92} cy="266" r="4" fill={i % 3 === 0 ? ACCENT : '#1a1208'} opacity={i % 3 === 0 ? 0.85 : 1} />
+            <circle cx={400 + i * 92} cy="266" r={lit ? 4 + pulse * 3 * tw : 4} fill={lit ? ACCENT : '#1a1208'} opacity={lit ? Math.min(1, 0.85 + pulse * 0.15) : 1} />
           </g>
-        ))}
-        <polygon points="660,260 780,260 880,580 560,580" fill="url(#j2Spot)" />
-        <polygon points="940,260 1020,260 1060,580 940,580" fill="url(#j2Spot)" opacity="0.5" />
-        <polygon points="420,260 500,260 480,580 380,580" fill="url(#j2Spot)" opacity="0.5" />
+          );
+        })}
+        <polygon points="660,260 780,260 880,580 560,580" fill="url(#j2Spot)" opacity={0.65 + pulse * 0.35} />
+        <polygon points="940,260 1020,260 1060,580 940,580" fill="url(#j2Spot)" opacity={0.4 + pulse * 0.4} />
+        <polygon points="420,260 500,260 480,580 380,580" fill="url(#j2Spot)" opacity={0.4 + pulse * 0.4} />
         <polygon points="360,560 1080,560 1080,580 360,580" fill="#1a1208" />
         <line x1="360" y1="560" x2="1080" y2="560" stroke={ACCENT} strokeWidth="1.4" />
         {/* drum kit center-left */}
@@ -236,6 +258,7 @@ function SceneJazz({ coverId, coverSrc, pulse, title, artist }) {
 // ═══════════════════════════════════════════ 2. CONCERT HALL — Symphony Hall
 function SceneHall({ coverId, coverSrc, pulse, title, artist }) {
   const particles = useMemo(() => dust(40, 23), []);
+  const now = performance.now();
   return (
     <SceneShell>
       <svg viewBox="0 0 1440 760" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 w-full h-full">
@@ -249,12 +272,14 @@ function SceneHall({ coverId, coverSrc, pulse, title, artist }) {
         {Array.from({ length: 7 }).map((_, i) => (
           <line key={i} x1={420 + i * 100} y1="180" x2={i * 200} y2="0" stroke="#15100a" strokeWidth="1" />
         ))}
-        <g opacity="0.75">
+        {/* chandelier — each bulb glows with the music */}
+        <g opacity={0.75 + pulse * 0.25}>
           <line x1="720" y1="0" x2="720" y2="80" stroke="#3a2a14" strokeWidth="1" />
           <ellipse cx="720" cy="100" rx="46" ry="16" fill="#1a1208" />
-          {Array.from({ length: 18 }).map((_, i) => (
-            <circle key={i} cx={720 + Math.cos(i / 18 * Math.PI * 2) * 40} cy={100 + Math.sin(i / 18 * Math.PI * 2) * 14} r="1.8" fill="oklch(0.85 0.14 60)" opacity="0.9" />
-          ))}
+          {Array.from({ length: 18 }).map((_, i) => {
+            const tw = 0.5 + 0.5 * Math.sin(now * 0.005 + i * 0.8);
+            return <circle key={i} cx={720 + Math.cos(i / 18 * Math.PI * 2) * 40} cy={100 + Math.sin(i / 18 * Math.PI * 2) * 14} r={1.8 + pulse * 2 * tw} fill={`oklch(${0.82 + pulse * 0.1} 0.15 60)`} opacity={Math.min(1, 0.7 + pulse * 0.3 * tw)} />;
+          })}
         </g>
         <polygon points="0,0 420,180 420,500 0,720" fill="#0a0604" />
         <polygon points="1440,0 1020,180 1020,500 1440,720" fill="#0a0604" />
@@ -277,7 +302,7 @@ function SceneHall({ coverId, coverSrc, pulse, title, artist }) {
         })}
         {/* on-stage screen frame in front of the organ */}
         <rect x="556" y="226" width="328" height="244" fill="#020108" stroke={ACCENT} strokeWidth="1.4" opacity="0.9" />
-        <polygon points="620,180 820,180 880,500 560,500" fill="url(#h2Spot)" />
+        <polygon points="620,180 820,180 880,500 560,500" fill="url(#h2Spot)" opacity={0.6 + pulse * 0.5} />
         <polygon points="460,495 980,495 980,510 460,510" fill="#1a1208" />
         <line x1="460" y1="495" x2="980" y2="495" stroke={ACCENT} strokeWidth="1.4" />
         {[
@@ -338,8 +363,9 @@ function SceneArena({ coverId, coverSrc, pulse, title, artist }) {
   }, []);
   const phones = useMemo(() => {
     const rnd = prng(33);
-    return Array.from({ length: 90 }).map(() => ({ x: rnd() * 1440, y: 560 + rnd() * 200, s: 2 + rnd() * 2 }));
+    return Array.from({ length: 90 }).map(() => ({ x: rnd() * 1440, y: 560 + rnd() * 200, s: 2 + rnd() * 2, ph: rnd() * Math.PI * 2 }));
   }, []);
+  const now = performance.now();
   return (
     <SceneShell>
       <svg viewBox="0 0 1440 760" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 w-full h-full">
@@ -366,11 +392,14 @@ function SceneArena({ coverId, coverSrc, pulse, title, artist }) {
           const x = 230 + i * 76;
           const on = i % 3 !== 1;
           const hue = i % 4 === 0 ? 320 : 55;
+          // overhead PA lights pump with the beat, each on its own phase
+          const sway = 0.5 + 0.5 * Math.sin(now * 0.005 + i * 0.9);
+          const lampR = 6 + (on ? pulse * 5 * sway : 0);
           return (
             <g key={i}>
               <rect x={x - 8} y="78" width="16" height="18" fill="#0a0604" stroke="#1a1208" />
-              <circle cx={x} cy="100" r="6" fill={on ? `oklch(0.78 0.16 ${hue})` : '#1a1208'} />
-              {on && <polygon points={`${x - 8},105 ${x + 8},105 ${x + 80},540 ${x - 80},540`} fill={`oklch(0.78 0.16 ${hue})`} opacity="0.05" />}
+              <circle cx={x} cy="100" r={lampR} fill={on ? `oklch(${0.78 + pulse * 0.12} 0.18 ${hue})` : '#1a1208'} />
+              {on && <polygon points={`${x - 8},105 ${x + 8},105 ${x + 80},540 ${x - 80},540`} fill={`oklch(0.8 0.18 ${hue})`} opacity={0.05 + pulse * 0.22 * sway} />}
             </g>
           );
         })}
@@ -382,23 +411,24 @@ function SceneArena({ coverId, coverSrc, pulse, title, artist }) {
             ))}
           </g>
         ))}
-        <polygon points="280,90 380,90 640,540 540,540" fill="url(#a2Haze)" opacity="0.6" />
-        <polygon points="1060,90 1160,90 900,540 800,540" fill="url(#a2Haze)" opacity="0.6" />
-        <polygon points="720,90 840,90 800,540 740,540" fill="url(#a2HazeMag)" opacity="0.7" />
+        <polygon points="280,90 380,90 640,540 540,540" fill="url(#a2Haze)" opacity={0.4 + pulse * 0.5} />
+        <polygon points="1060,90 1160,90 900,540 800,540" fill="url(#a2Haze)" opacity={0.4 + pulse * 0.5} />
+        <polygon points="720,90 840,90 800,540 740,540" fill="url(#a2HazeMag)" opacity={0.45 + pulse * 0.5} />
         {/* main LED wall — album art mounts here */}
         <rect x="280" y="180" width="880" height="300" fill="#020108" stroke={ACCENT} strokeWidth="2" />
         {Array.from({ length: 80 }).map((_, i) => {
           const x = 290 + (i % 40) * 22, y = 190 + Math.floor(i / 40) * 20;
           return <rect key={i} x={x} y={y} width="1.2" height="1.2" fill="oklch(0.7 0.16 55)" opacity={0.25 + (i % 5) * 0.06} />;
         })}
-        <rect x="280" y="180" width="880" height="300" fill="url(#a2LED)" />
-        {/* side LED wings */}
+        <rect x="280" y="180" width="880" height="300" fill="url(#a2LED)" opacity={0.55 + pulse * 0.45} />
+        {/* side LED wings — panels flicker with the beat */}
         {[180, 1220].map((x, i) => (
           <g key={i}>
             <rect x={x - 50} y="220" width="100" height="260" fill="#020108" stroke={ACCENT} strokeWidth="1.4" />
-            {Array.from({ length: 26 }).map((_, k) => (
-              <rect key={k} x={x - 44 + (k % 4) * 22} y={230 + Math.floor(k / 4) * 38} width="14" height="14" fill={`oklch(0.65 0.16 ${55 + (k % 4) * 60})`} opacity={0.4 + (k % 3) * 0.15} />
-            ))}
+            {Array.from({ length: 26 }).map((_, k) => {
+              const sway = 0.5 + 0.5 * Math.sin(now * 0.006 + k * 1.3 + i * 2);
+              return <rect key={k} x={x - 44 + (k % 4) * 22} y={230 + Math.floor(k / 4) * 38} width="14" height="14" fill={`oklch(${0.6 + pulse * 0.18} 0.17 ${55 + (k % 4) * 60})`} opacity={Math.min(1, (0.4 + (k % 3) * 0.15) * (0.6 + pulse * 0.9 * sway))} />;
+            })}
           </g>
         ))}
         <polygon points="280,495 1160,495 1240,540 200,540" fill="#0a0604" />
@@ -430,12 +460,7 @@ function SceneArena({ coverId, coverSrc, pulse, title, artist }) {
         <line x1="60" y1="100" x2="700" y2="540" stroke="oklch(0.78 0.16 320)" strokeWidth="1" opacity="0.5" />
         <line x1="1380" y1="100" x2="740" y2="540" stroke="oklch(0.78 0.16 320)" strokeWidth="1" opacity="0.5" />
         {crowd.map((p, i) => <Head key={i} cx={p.x} cy={p.y} size={p.size} arms={p.arms} />)}
-        {phones.map((p, i) => (
-          <g key={i}>
-            <rect x={p.x - p.s / 2} y={p.y} width={p.s} height={p.s * 1.4} fill="oklch(0.95 0.06 90)" opacity="0.9" />
-            <circle cx={p.x} cy={p.y + 1} r={p.s * 1.8} fill="oklch(0.95 0.06 90)" opacity="0.15" />
-          </g>
-        ))}
+        <PhoneField phones={phones} pulse={pulse} now={now} />
       </svg>
       <StageArt coverId={coverId} coverSrc={coverSrc} pulse={pulse} title={title} artist={artist}
         screen={{ x: 280, y: 180, w: 880, h: 300 }} />
@@ -464,8 +489,11 @@ function SceneDome({ coverId, coverSrc, pulse, title, artist }) {
   }, []);
   const sticks = useMemo(() => {
     const rnd = prng(77);
-    return Array.from({ length: 140 }).map(() => ({ x: rnd() * 1440, y: 480 + rnd() * 260, hue: rnd() < 0.5 ? 320 : (rnd() < 0.5 ? 55 : 220), o: 0.5 + rnd() * 0.4 }));
+    return Array.from({ length: 140 }).map(() => ({ x: rnd() * 1440, y: 480 + rnd() * 260, hue: rnd() < 0.5 ? 320 : (rnd() < 0.5 ? 55 : 220), o: 0.5 + rnd() * 0.4, ph: rnd() * Math.PI * 2 }));
   }, []);
+  // render-time clock for the lightstick shimmer; advances every frame while
+  // playing (pulse drives re-renders). Paused → pulse 0 → reactive terms vanish.
+  const now = performance.now();
   return (
     <SceneShell>
       <svg viewBox="0 0 1440 760" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 w-full h-full">
@@ -489,15 +517,20 @@ function SceneDome({ coverId, coverSrc, pulse, title, artist }) {
           const x = 720 + Math.cos(a) * 500, y = 120 + Math.sin(a) * 36;
           if (y > 122) return null;
           const hue = i % 3 === 0 ? 320 : (i % 3 === 1 ? 55 : 220);
+          // each beam fixture brightens with the music, on its own phase so the
+          // rig "dances" rather than flashing in unison
+          const sway = 0.5 + 0.5 * Math.sin(now * 0.005 + i * 0.7);
+          const lampR = 3 + pulse * 4 * sway;
+          const beamO = 0.04 + pulse * 0.16 * sway;
           return (
             <g key={i}>
-              <circle cx={x} cy={y} r="3" fill={`oklch(0.78 0.16 ${hue})`} />
-              <polygon points={`${x - 3},${y + 4} ${x + 3},${y + 4} ${x + 80},480 ${x - 80},480`} fill={`oklch(0.78 0.16 ${hue})`} opacity="0.04" />
+              <circle cx={x} cy={y} r={lampR} fill={`oklch(0.82 0.18 ${hue})`} opacity={Math.min(1, 0.7 + pulse * 0.3)} />
+              <polygon points={`${x - 3},${y + 4} ${x + 3},${y + 4} ${x + 80},480 ${x - 80},480`} fill={`oklch(0.8 0.18 ${hue})`} opacity={beamO} />
             </g>
           );
         })}
-        <polygon points="200,140 320,140 720,480 600,480" fill="url(#d2Haze)" opacity="0.7" />
-        <polygon points="1240,140 1120,140 720,480 840,480" fill="url(#d2Haze)" opacity="0.7" />
+        <polygon points="200,140 320,140 720,480 600,480" fill="url(#d2Haze)" opacity={0.5 + pulse * 0.4} />
+        <polygon points="1240,140 1120,140 720,480 840,480" fill="url(#d2Haze)" opacity={0.5 + pulse * 0.4} />
         <line x1="720" y1="120" x2="720" y2="180" stroke="#3a3a48" strokeWidth="1.6" />
         {/* center LED — album art mounts here */}
         <rect x="540" y="180" width="360" height="220" fill="#020108" stroke={ACCENT} strokeWidth="1.6" />
@@ -537,12 +570,20 @@ function SceneDome({ coverId, coverSrc, pulse, title, artist }) {
           ))
         )}
         {crowd.map((p, i) => <Head key={i} cx={p.x} cy={p.y} size={p.size} arms={p.arms} />)}
-        {sticks.map((s, i) => (
-          <g key={i}>
-            <rect x={s.x} y={s.y} width="1.2" height="3" fill={`oklch(0.85 0.18 ${s.hue})`} opacity={s.o} />
-            <circle cx={s.x + 0.6} cy={s.y} r="3.5" fill={`oklch(0.85 0.18 ${s.hue})`} opacity={s.o * 0.3} />
-          </g>
-        ))}
+        {sticks.map((s, i) => {
+          // music-reactive lightstick: brightness + glow swell with the beat,
+          // each stick on its own phase so the sea of light shimmers (not a
+          // single uniform on/off). `pulse` (0..1, RMS) is the audio drive.
+          const beat = 0.55 + 0.45 * Math.sin(now * 0.006 + s.ph); // per-stick shimmer
+          const lit = s.o * (0.45 + pulse * 1.1 * beat);
+          const r = 3.5 + pulse * 5 * beat;
+          return (
+            <g key={i}>
+              <rect x={s.x} y={s.y} width="1.2" height={3 + pulse * 2} fill={`oklch(0.9 0.2 ${s.hue})`} opacity={Math.min(1, lit)} />
+              <circle cx={s.x + 0.6} cy={s.y} r={r} fill={`oklch(0.88 0.2 ${s.hue})`} opacity={Math.min(0.6, lit * 0.4)} />
+            </g>
+          );
+        })}
       </svg>
       <StageArt coverId={coverId} coverSrc={coverSrc} pulse={pulse} title={title} artist={artist}
         screen={{ x: 540, y: 180, w: 360, h: 220 }} />
@@ -570,8 +611,9 @@ function SceneStadium({ coverId, coverSrc, pulse, title, artist }) {
   }, []);
   const phones = useMemo(() => {
     const rnd = prng(199);
-    return Array.from({ length: 200 }).map(() => ({ x: rnd() * 1440, y: 520 + rnd() * 220, s: 1.6 + rnd() * 2 }));
+    return Array.from({ length: 200 }).map(() => ({ x: rnd() * 1440, y: 520 + rnd() * 220, s: 1.6 + rnd() * 2, ph: rnd() * Math.PI * 2 }));
   }, []);
+  const now = performance.now();
   return (
     <SceneShell>
       <svg viewBox="0 0 1440 760" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 w-full h-full">
@@ -616,33 +658,37 @@ function SceneStadium({ coverId, coverSrc, pulse, title, artist }) {
           const y = 308 + Math.sin(t * Math.PI) * -28 + (i % 4) * 4;
           return <circle key={i} cx={x} cy={y} r="1.2" fill="#2a2018" />;
         })}
-        {/* 4 light towers */}
-        {[140, 540, 900, 1300].map((x, i) => (
+        {/* 4 light towers — each rig's beam haze + lamp glow pulses with music */}
+        {[140, 540, 900, 1300].map((x, i) => {
+          const sway = 0.5 + 0.5 * Math.sin(now * 0.0045 + i * 1.6);
+          return (
           <g key={i}>
             <line x1={x} y1="700" x2={x} y2="140" stroke="#1a1a22" strokeWidth="3" />
             <polygon points={`${x - 28},120 ${x + 28},120 ${x + 36},170 ${x - 36},170`} fill="#0a0a14" stroke="#1a1a22" />
             {Array.from({ length: 12 }).map((_, k) => {
               const dx = (k % 4) * 14 - 21, dy = Math.floor(k / 4) * 12 + 130;
               const on = k % 2 === 0;
-              return <circle key={k} cx={x + dx} cy={dy} r="2" fill={on ? 'oklch(0.95 0.18 80)' : '#1a1a22'} opacity={on ? 0.95 : 1} />;
+              return <circle key={k} cx={x + dx} cy={dy} r={on ? 2 + pulse * 2.4 * sway : 2} fill={on ? `oklch(${0.92 + pulse * 0.08} 0.18 80)` : '#1a1a22'} opacity={on ? 0.95 : 1} />;
             })}
-            <polygon points={`${x - 30},170 ${x + 30},170 ${x + 70},500 ${x - 70},500`} fill="url(#s2Haze)" opacity="0.45" />
+            <polygon points={`${x - 30},170 ${x + 30},170 ${x + 70},500 ${x - 70},500`} fill="url(#s2Haze)" opacity={0.3 + pulse * 0.5 * sway} />
           </g>
-        ))}
+          );
+        })}
         {/* center main stage LED — album art mounts here */}
         <rect x="380" y="220" width="680" height="240" fill="#020108" stroke={ACCENT} strokeWidth="2.4" />
         {Array.from({ length: 100 }).map((_, i) => {
           const x = 390 + (i % 40) * 17, y = 230 + Math.floor(i / 40) * 16;
           return <rect key={i} x={x} y={y} width="1.4" height="1.4" fill="oklch(0.7 0.16 55)" opacity={0.3 + (i % 5) * 0.06} />;
         })}
-        <rect x="380" y="220" width="680" height="240" fill="url(#s2LED)" />
-        {/* side LED wings (delay screens) */}
+        <rect x="380" y="220" width="680" height="240" fill="url(#s2LED)" opacity={0.55 + pulse * 0.45} />
+        {/* side LED wings (delay screens) — flicker with the beat */}
         {[260, 1180].map((x, i) => (
           <g key={i}>
             <rect x={x - 60} y="240" width="120" height="200" fill="#020108" stroke={ACCENT} strokeWidth="1.4" />
-            {Array.from({ length: 30 }).map((_, k) => (
-              <rect key={k} x={x - 54 + (k % 5) * 22} y={250 + Math.floor(k / 5) * 32} width="14" height="14" fill={`oklch(0.65 0.16 ${55 + (k % 4) * 60})`} opacity={0.4 + (k % 3) * 0.15} />
-            ))}
+            {Array.from({ length: 30 }).map((_, k) => {
+              const sway = 0.5 + 0.5 * Math.sin(now * 0.006 + k * 1.1 + i * 2);
+              return <rect key={k} x={x - 54 + (k % 5) * 22} y={250 + Math.floor(k / 5) * 32} width="14" height="14" fill={`oklch(${0.6 + pulse * 0.18} 0.17 ${55 + (k % 4) * 60})`} opacity={Math.min(1, (0.4 + (k % 3) * 0.15) * (0.6 + pulse * 0.9 * sway))} />;
+            })}
           </g>
         ))}
         {/* PA delay towers */}
@@ -654,8 +700,8 @@ function SceneStadium({ coverId, coverSrc, pulse, title, artist }) {
             ))}
           </g>
         ))}
-        <polygon points="240,200 360,200 580,500 460,500" fill="url(#s2HazeMag)" opacity="0.55" />
-        <polygon points="1080,200 1200,200 980,500 860,500" fill="url(#s2HazeMag)" opacity="0.55" />
+        <polygon points="240,200 360,200 580,500 460,500" fill="url(#s2HazeMag)" opacity={0.4 + pulse * 0.5} />
+        <polygon points="1080,200 1200,200 980,500 860,500" fill="url(#s2HazeMag)" opacity={0.4 + pulse * 0.5} />
         <polygon points="280,460 1160,460 1240,500 200,500" fill="#0a0604" />
         <line x1="280" y1="460" x2="1160" y2="460" stroke={ACCENT} strokeWidth="2" />
         {Array.from({ length: 32 }).map((_, i) => <circle key={i} cx={300 + i * 28} cy="463" r="2" fill="oklch(0.92 0.18 60)" />)}
@@ -673,12 +719,7 @@ function SceneStadium({ coverId, coverSrc, pulse, title, artist }) {
           <path d="M 9 -10 L 22 -38" stroke="#000" strokeWidth="6" strokeLinecap="round" />
         </g>
         {crowd.map((p, i) => <Head key={i} cx={p.x} cy={p.y} size={p.size} arms={p.arms} />)}
-        {phones.map((p, i) => (
-          <g key={i}>
-            <rect x={p.x - p.s / 2} y={p.y} width={p.s} height={p.s * 1.4} fill="oklch(0.95 0.06 90)" opacity="0.9" />
-            <circle cx={p.x} cy={p.y + 1} r={p.s * 1.8} fill="oklch(0.95 0.06 90)" opacity="0.15" />
-          </g>
-        ))}
+        <PhoneField phones={phones} pulse={pulse} now={now} />
       </svg>
       <StageArt coverId={coverId} coverSrc={coverSrc} pulse={pulse} title={title} artist={artist}
         screen={{ x: 380, y: 220, w: 680, h: 240 }} />
