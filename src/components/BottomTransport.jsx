@@ -1,6 +1,6 @@
 // BottomTransport.jsx — transport bar.
 // All sliders are real draggable controls (pointer capture), independent of one
-// another. Wet/dry drives the GainNode crossfader; EXPORT WAV renders offline.
+// another. Wet/dry drives the GainNode crossfader; EXPORT FLAC renders offline.
 
 import { useRef } from 'react';
 
@@ -121,7 +121,7 @@ export default function BottomTransport({
         disabled={exporting}
         className="px-3 py-1.5 border border-[oklch(0.78_0.16_55)] text-[oklch(0.78_0.16_55)] hover:bg-[oklch(0.78_0.16_55)] hover:text-black rounded transition-colors disabled:opacity-50 disabled:cursor-wait text-[12px]"
       >
-        {exporting ? 'RENDERING…' : 'EXPORT WAV ↗'}
+        {exporting ? 'RENDERING…' : 'EXPORT FLAC ↗'}
       </button>
     </div>
   );

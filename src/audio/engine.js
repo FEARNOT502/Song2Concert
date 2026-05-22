@@ -15,6 +15,7 @@
 // - analyser taps the master bus; the UI reads RMS to animate the album-art pulse.
 
 import { buildImpulseResponse } from './impulse.js';
+import { readAudioFormat } from './bitdepth.js';
 
 export class ConcertEngine {
   constructor() {
@@ -504,18 +505,37 @@ export class ConcertEngine {
     return Math.sqrt(sum / buf.length);
   }
 
-  // Offline render of the current file through the current venue → WAV blob.
-  // Mirrors the live graph so the export matches what's heard.
+  // Offline render of the current file through the current venue.
+  // Mirrors the live graph so the export matches what's heard. Returns the
+  // rendered AudioBuffer plus the source's original bit depth (16 or 24) and
+  // sample rate, both read from the file header, so the export can preserve them.
   async renderOffline(venue) {
     if (!this._fileRef && !this._decoded) {
       throw new Error('no file loaded');
     }
-    // decode the whole file once for offline rendering (export is opt-in).
-    // Reuse the already-decoded buffer when available; otherwise read the File.
+    // Web Audio loses the source bit depth and resamples to the decoding
+    // context's rate, so read both from the file header. No file ref (e.g. demo
+    // URL) → assume 16-bit and let the decoded buffer dictate the rate.
+    let bitDepth = 16;
+    let srcRate = null;
+    if (this._fileRef) {
+      // Header chunks live at the start; reading 64KB is plenty and avoids
+      // pulling a multi-MB hi-res file into memory just to peek at the header.
+      const head = await this._fileRef.slice(0, 65536).arrayBuffer();
+      const fmt = readAudioFormat(head);
+      if (fmt) { bitDepth = fmt.bitDepth; srcRate = fmt.sampleRate; }
+    }
+
+    // decode the whole file for offline rendering (export is opt-in).
+    // decodeAudioData resamples to the decoding context's rate, so the live
+    // playback buffer (decoded at the system context's rate, often 48k) may not
+    // match the source. Reuse it only when its rate already matches the source;
+    // otherwise re-decode at the source's own rate to preserve hi-res files.
     let decoded = this._decoded;
-    if (!decoded) {
+    const wantRate = srcRate || (decoded ? decoded.sampleRate : 44100);
+    if (!decoded || (this._fileRef && decoded.sampleRate !== wantRate)) {
       const arr = await this._fileRef.arrayBuffer();
-      const tmp = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(2, 44100, 44100);
+      const tmp = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(2, wantRate, wantRate);
       decoded = await tmp.decodeAudioData(arr.slice(0));
     }
 
@@ -582,7 +602,8 @@ export class ConcertEngine {
     out.connect(limiter); limiter.connect(offline.destination);
 
     src.start(0);
-    return offline.startRendering();
+    const buffer = await offline.startRendering();
+    return { buffer, bitDepth, sampleRate: buffer.sampleRate };
   }
 
   destroy() {

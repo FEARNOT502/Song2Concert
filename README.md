@@ -48,8 +48,10 @@ Safari 동작 확인)
 - **메타데이터 자동 추출** — 파일 헤더에서 커버 아트 + 제목/아티스트를 읽어옵
   니다 (FLAC `PICTURE`/`VORBIS_COMMENT`, ID3v2 `APIC`/`TIT2`/`TPE1`). 고음질
   오디오 본문은 메모리에 통째로 올리지 않습니다.
-- **WAV 내보내기** — 현재 음원을 선택한 공연장 음향으로 오프라인 렌더링해
-  16비트 WAV로 저장. (라이브 그래프와 동일한 신호 경로로 렌더링)
+- **FLAC 내보내기** — 현재 음원을 선택한 공연장 음향으로 오프라인 렌더링해
+  무손실 FLAC으로 저장. (라이브 그래프와 동일한 신호 경로로 렌더링) 원본의
+  **비트 심도(16/24bit)와 샘플레이트(kHz)를 그대로 보존**합니다 — 16비트 음원은
+  16비트로, 96 kHz 음원은 96 kHz로 추출됩니다.
 
 ## 동작 원리
 
@@ -122,12 +124,13 @@ src/
     useEngine.js             React 바인딩 (단일 엔진 인스턴스 관리)
     impulse.js               공연장별 합성 IR 생성기
     metadata.js              FLAC/ID3v2 커버 아트 + 제목/아티스트 추출
-    wav.js                   AudioBuffer → 16비트 WAV 인코더
+    flac.js                  AudioBuffer → FLAC 인코더 (16/24bit, libflacjs)
+    bitdepth.js              파일 헤더에서 원본 비트 심도 + 샘플레이트 읽기
 ```
 
 ## 기술 스택
 
-React 18 · Vite 6 · Tailwind CSS 3 · Web Audio API · `@wasm-audio-decoders/flac`
+React 18 · Vite 6 · Tailwind CSS 3 · Web Audio API · `@wasm-audio-decoders/flac` (디코딩) · `libflacjs` (FLAC 인코딩)
 
 ## 참고
 

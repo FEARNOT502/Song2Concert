@@ -11,7 +11,7 @@ import { LeftDataPanel, RightDataPanel, SeatChip } from './components/Panels.jsx
 import { FilePicker, VenuePicker } from './components/Modals.jsx';
 import QueuePanel from './components/QueuePanel.jsx';
 import { useEngine } from './audio/useEngine.js';
-import { audioBufferToWav } from './audio/wav.js';
+import { audioBufferToFlac } from './audio/flac.js';
 import { extractMetadata } from './audio/metadata.js';
 
 const stripExt = (name) => name.replace(/\.[^.]+$/, '');
@@ -221,17 +221,17 @@ export default function App() {
     engine.seek(0);
   }, [hasAudio, engine]);
 
-  // ── export WAV (offline render through current venue) ────────────────────
+  // ── export FLAC (offline render through current venue) ────────────────────
   const handleExport = async () => {
     if (!hasAudio) { setFilePickerOpen(true); return; }
     setExporting(true);
     try {
-      const rendered = await engine.renderOffline(venue);
-      const blob = audioBufferToWav(rendered);
+      const { buffer, bitDepth } = await engine.renderOffline(venue);
+      const blob = await audioBufferToFlac(buffer, { bitDepth });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${stripExt(upload?.name || 'export')} — ${venue.type.toLowerCase()}.wav`;
+      a.download = `${stripExt(upload?.name || 'export')} — ${venue.type.toLowerCase()}.flac`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
