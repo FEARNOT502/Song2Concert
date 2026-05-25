@@ -18,10 +18,10 @@ export const VENUES = [
     city: 'Roppongi · Tokyo',
     descKo: '낮은 천장 · 우드 디퓨저 · 친밀한 거리',
     // single listening position
-    position: { label: 'Front table', distance: '4 m', wet: 26, firstReflection: '+12 ms' },
+    position: { label: 'Front table', distance: '4 m', wet: 30, firstReflection: '+12 ms' },
     acoustics: { rt60: '0.9 s', edt: '0.7 s', c80: '+6.0 dB', warmth: 'warm', level: '90 dB SPL' },
     // intimate, woody: short tail, tight bass, fast HF roll-off
-    ir: { rt60: 0.9, predelay: 0.012, lfDamp: 0.45, hfDamp: 0.78, color: 0.6, density: 0.85, spread: 0.45 },
+    ir: { rt60: 0.9, predelay: 0.012, lfDamp: 0.45, hfDamp: 0.78, color: 0.6, density: 0.85, spread: 0.5 },
   },
   {
     id: 'hall',
@@ -30,10 +30,10 @@ export const VENUES = [
     capacity: '3,000 seats',
     city: 'Amsterdam',
     descKo: '슈박스 · 코퍼드 천장 · 자연 음향',
-    position: { label: 'Mid stalls', distance: '20 m', wet: 40, firstReflection: '+28 ms' },
+    position: { label: 'Mid stalls', distance: '20 m', wet: 46, firstReflection: '+28 ms' },
     acoustics: { rt60: '2.0 s', edt: '1.8 s', c80: '+2.4 dB', warmth: '+3.0 dB', level: '84 dB SPL' },
     // acoustic hall: longer lush mid tail, bass fuller than a PA room, wide
-    ir: { rt60: 2.0, predelay: 0.028, lfDamp: 0.32, hfDamp: 0.6, color: 0.5, density: 0.92, spread: 0.72 },
+    ir: { rt60: 2.0, predelay: 0.028, lfDamp: 0.32, hfDamp: 0.6, color: 0.5, density: 0.92, spread: 0.8 },
   },
   {
     id: 'arena',
@@ -42,10 +42,10 @@ export const VENUES = [
     capacity: '20,000 seats',
     city: 'London',
     descKo: '라인 어레이 PA · 점보트론 · 록/팝 튜닝',
-    position: { label: 'Floor, mid', distance: '45 m', wet: 42, firstReflection: '+60 ms' },
+    position: { label: 'Floor, mid', distance: '45 m', wet: 48, firstReflection: '+60 ms' },
     acoustics: { rt60: '2.4 s', edt: '1.9 s', c80: '−0.2 dB', warmth: 'tight LF', level: '104 dB SPL' },
     // PA-driven: mid space but DEEP LF damping so bass stays punchy not boomy
-    ir: { rt60: 2.4, predelay: 0.04, lfDamp: 0.62, hfDamp: 0.72, color: 0.44, density: 0.7, spread: 0.8, slap: true },
+    ir: { rt60: 2.4, predelay: 0.04, lfDamp: 0.62, hfDamp: 0.72, color: 0.44, density: 0.7, spread: 0.88, slap: true },
   },
   {
     id: 'dome',
@@ -54,10 +54,10 @@ export const VENUES = [
     capacity: '45,000 seats',
     city: 'Bunkyo · Tokyo',
     descKo: '에어 서포트 돔 · 딜레이 타워 클러스터',
-    position: { label: 'Arena, mid', distance: '70 m', wet: 50, firstReflection: '+95 ms' },
+    position: { label: 'Arena, mid', distance: '70 m', wet: 56, firstReflection: '+95 ms' },
     acoustics: { rt60: '3.4 s', edt: '2.6 s', c80: '−2.4 dB', warmth: 'cavernous', level: '100 dB SPL' },
     // huge, washy mids; strong LF + HF damping; delay-tower slap cluster
-    ir: { rt60: 3.4, predelay: 0.055, lfDamp: 0.66, hfDamp: 0.78, color: 0.38, density: 0.62, spread: 0.85, slap: true },
+    ir: { rt60: 3.4, predelay: 0.055, lfDamp: 0.66, hfDamp: 0.78, color: 0.38, density: 0.62, spread: 0.92, slap: true },
   },
   {
     id: 'stadium',
@@ -66,10 +66,10 @@ export const VENUES = [
     capacity: '80,000 seats',
     city: 'Seoul',
     descKo: '개방형 야외 · 대형 PA + 딜레이 타워',
-    position: { label: 'Lower bowl', distance: '90 m', wet: 48, firstReflection: '+110 ms' },
+    position: { label: 'Lower bowl', distance: '90 m', wet: 54, firstReflection: '+110 ms' },
     acoustics: { rt60: '3.0 s', edt: '2.2 s', c80: '−3.0 dB', warmth: 'open-air PA', level: '105 dB SPL' },
     // open-air: thinner diffuse field, very tight bass (no walls), long PA delays
-    ir: { rt60: 3.0, predelay: 0.06, lfDamp: 0.72, hfDamp: 0.82, color: 0.42, density: 0.5, spread: 0.9, slap: true },
+    ir: { rt60: 3.0, predelay: 0.06, lfDamp: 0.72, hfDamp: 0.82, color: 0.42, density: 0.5, spread: 0.96, slap: true },
   },
 ];
 
@@ -95,10 +95,10 @@ export const SOUND_NOTES = {
     points: [
       'RT60 2.0초의 길고 매끄러운 꼬리. 슈박스 콘서트홀의 자연 잔향을 재현합니다.',
       '프리딜레이 +28ms — 메인플로어 중앙이라 무대에서 소리가 도달하는 시간이 깁니다.',
-      '저역 감쇠가 약해(lfDamp 0.32) PA 룸보다 베이스가 풍성하고, 스테레오 확산(spread 0.72)이 넓습니다.',
+      '저역 감쇠가 약해(lfDamp 0.32) PA 룸보다 베이스가 풍성하고, 스테레오 확산(spread 0.8)이 넓습니다.',
       '밀도 0.92로 잔향이 균질하게 차올라 오케스트라가 공간에 감싸이는 느낌을 줍니다.',
     ],
-    params: 'RT60 2.0s · PreDelay +28ms · lfDamp 0.32 · hfDamp 0.6 · spread 0.72',
+    params: 'RT60 2.0s · PreDelay +28ms · lfDamp 0.32 · hfDamp 0.6 · spread 0.8',
   },
   arena: {
     headline: 'PA 주도 — 타이트한 베이스 + 넓은 공간',
@@ -126,9 +126,9 @@ export const SOUND_NOTES = {
       'RT60 3.0초의 긴 꼬리지만 벽이 없어 확산이 얇습니다(density 0.5).',
       '프리딜레이 +110ms — 필드 중앙. 대형 PA + 딜레이 타워의 긴 지연을 반영합니다.',
       '저역 감쇠가 가장 강해(lfDamp 0.72) 벽 반사가 없는 야외처럼 베이스가 매우 타이트합니다.',
-      '스테레오 확산 0.9로 가장 넓게 펼쳐 광활한 야외감을 줍니다.',
+      '스테레오 확산 0.96으로 가장 넓게 펼쳐 광활한 야외감을 줍니다.',
     ],
-    params: 'RT60 3.0s · PreDelay +110ms · lfDamp 0.72 · density 0.5 · spread 0.9',
+    params: 'RT60 3.0s · PreDelay +110ms · lfDamp 0.72 · density 0.5 · spread 0.96',
   },
 };
 
