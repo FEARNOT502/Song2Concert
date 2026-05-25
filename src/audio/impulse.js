@@ -22,6 +22,7 @@
 //   color   — 0..1 initial brightness of the early tail
 //   density — 0..1 early-reflection build-up
 //   spread  — 0..1 stereo decorrelation of the tail
+//   lateral — 0..1 strength of SIDE early reflections (envelopment / "wrap")
 //   slap    — optional gentle PA delay-tower cluster (arena/dome/stadium)
 
 function mulberry32(seed) {
@@ -38,7 +39,7 @@ function mulberry32(seed) {
 export function buildImpulseResponse(ctx, params, seed = 1) {
   const {
     rt60, lfDamp = 0.4, hfDamp = 0.6, color = 0.45,
-    density = 0.8, spread = 0.6, slap = false,
+    density = 0.8, spread = 0.6, lateral = 0, slap = false,
   } = params;
   const sr = ctx.sampleRate;
 
@@ -133,36 +134,86 @@ export function buildImpulseResponse(ctx, params, seed = 1) {
       }
     }
 
-    // PA delay-tower slap for the big rooms (arena/dome/stadium). The towers
-    // re-emit the sound ~tens of ms late, which is part of a stadium's character.
-    // But as SINGLE discrete taps at a regular spacing they read as a hard
-    // "tk… tk… tk" slapback on sharp transients (the awkward kick/snare reverb in
-    // the big venues, exposed by sparse drum intros like Billie Jean). Fix:
-    //   • smear each slap over a short diffuse burst so it's a "wash", not a click
-    //   • drop the level so it sits under, not above, the diffuse tail
-    //   • de-regularize the timing so the repeats don't comb into a flutter
+    // PA delay-tower energy for the big rooms (arena/dome/stadium). The towers
+    // re-emit the sound tens of ms late and add to the venue's sense of SIZE.
+    // But in a well-run show the towers are TIME-ALIGNED to the main PA, so from
+    // a GOOD seat you do NOT hear them as discrete "tk… tk… tk" slap-back echoes
+    // — that periodic cluster was the awkward kick/snare artifact on sparse
+    // intros. So we KEEP the energy the towers contribute (the reverb/ambience is
+    // NOT reduced) but render it as a CONTINUOUS, decorrelated diffuse cluster
+    // spread across ~60–240ms instead of 3 discrete bursts: many jittered,
+    // smoothly-enveloped taps with no regular spacing → a spacious wash that
+    // thickens the tail, never a flutter or a separate echo.
     if (slap) {
       const slapRnd = mulberry32(seed * 1597334677 + ch * 19349663 + 71);
-      const burst = Math.max(3, Math.floor(0.004 * sr)); // ~4ms diffuse smear
-      [0.072, 0.151, 0.223].forEach((base, n) => {
-        const s = base * (1 + (slapRnd() - 0.5) * 0.12); // ±6% timing jitter
-        const start = Math.floor(s * sr);
-        const peak = (0.06 / (n + 1)) * Math.exp(-decay * s); // ~halved level
+      const regionStart = 0.06;                          // ~60ms in
+      const regionEnd = Math.min(0.24, seconds * 0.9);   // out to ~240ms
+      const towerTaps = 28;
+      for (let s = 0; s < towerTaps; s++) {
+        // jittered position across the region (no regular spacing → no comb)
+        const frac = (s + slapRnd()) / towerTaps;
+        const tt = regionStart + frac * (regionEnd - regionStart);
+        const center = Math.floor(tt * sr);
+        const burst = Math.max(3, Math.floor((0.003 + slapRnd() * 0.004) * sr)); // 3–7ms smear
+        // level fades across the region; total energy comparable to the old
+        // slaps so the big-space body is preserved (the ambience isn't reduced)
+        const peak = 0.030 * (1 - 0.5 * frac) * (0.6 + slapRnd() * 0.4) * Math.exp(-decay * tt);
+        const pol = slapRnd() < 0.5 ? -1 : 1; // random polarity → decorrelated, not hard L/R inverse
         for (let b = 0; b < burst; b++) {
-          const idx = start + b;
+          const idx = center + b;
           if (idx > 0 && idx < len) {
-            const w = (0.5 - 0.5 * Math.cos((Math.PI * b) / burst)); // soft attack
-            const noise = slapRnd() * 2 - 1;
-            d[idx] += peak * w * noise * (ch === 0 ? 1 : -1);
+            const w = 0.5 - 0.5 * Math.cos((Math.PI * b) / burst); // soft attack/decay
+            d[idx] += peak * w * (slapRnd() * 2 - 1) * pol;
           }
         }
-      });
+      }
     }
 
     // cosine fade-out → ends in silence
     for (let i = 0; i < fadeSamp; i++) {
       const idx = len - fadeSamp + i;
       d[idx] *= 0.5 + 0.5 * Math.cos((Math.PI * i) / fadeSamp);
+    }
+  }
+
+  // ── Lateral (side) reflections → "wrapped from the sides" spaciousness ──
+  // Apparent source width (ASW) and listener envelopment (LEV) — the concert
+  // hall's signature "sound arrives from the sides and surrounds you" — come
+  // almost entirely from reflections that arrive LATERALLY. A lateral arrival
+  // reaches the two ears with an inter-aural TIME difference (~0.3–0.7ms ≈ a
+  // source near 90° off-axis); that inter-channel decorrelation is the cue the
+  // ear reads as width/envelopment. The random L/R tail (via `spread`) gives
+  // diffuse decorrelation but no directional EARLY structure, so we add it
+  // explicitly here: each lateral reflection is written to BOTH channels with a
+  // small inter-channel time offset (and an alternating leading ear), plus a
+  // slight level difference (ILD). It stays mono-safe — a time offset, not a
+  // phase inversion, so it doesn't cancel when summed to mono. Scaled by
+  // `lateral`: strong in the hall, present-but-subtle in the intimate club.
+  if (lateral > 0) {
+    const L = ir.getChannelData(0);
+    const R = ir.getChannelData(1);
+    const latRnd = mulberry32(seed * 2246822519 + 9176);
+    const count = Math.round(8 + lateral * 8);              // 8..16 lateral taps
+    const winStart = 0.012;                                 // ~12ms after direct
+    const winEnd = Math.min(0.02 + rt60 * 0.035, 0.095);    // out to ~95ms (bigger = wider)
+    for (let n = 0; n < count; n++) {
+      const frac = Math.max(0, Math.min(1, (n + 0.5 + (latRnd() - 0.5) * 0.7) / count));
+      const t = winStart + frac * (winEnd - winStart);
+      const near = Math.floor(t * sr);
+      const itd = Math.max(1, Math.floor((0.0003 + latRnd() * 0.0004) * sr)); // 0.3–0.7ms ITD
+      const far = near + itd;
+      const sign = latRnd() < 0.5 ? -1 : 1;
+      // prominent early, fading across the window; overall level set by `lateral`
+      const g = lateral * 0.12 * (1 - 0.7 * frac) * (0.6 + latRnd() * 0.4) * Math.exp(-decay * t);
+      if (near > 0 && far < len) {
+        if (latRnd() < 0.5) {            // left ear leads → image pulls left
+          L[near] += sign * g;
+          R[far] += sign * g * 0.92;     // 0.92 = small ILD
+        } else {                          // right ear leads → image pulls right
+          R[near] += sign * g;
+          L[far] += sign * g * 0.92;
+        }
+      }
     }
   }
 

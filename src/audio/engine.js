@@ -38,16 +38,30 @@ async function ensureWetDucker(ctx) {
   }
 }
 
-// Cap the wet pre-delay so the reverb stays fused with the dry transient.
-// Big venues model a long first-reflection time (stadium +110ms), but on a sharp
-// SPARSE hit (kick/snare in an intro) a >~50ms gap makes the reverb arrive as a
-// SEPARATE echo — the "tak…… chh" the listener hears. Keeping the pre-delay
-// under the echo-fusion threshold (~35ms) glues the tail onto the hit while
-// still giving a little first-reflection space. (The displayed firstReflection
-// figure is unchanged; this only affects what's audible.)
-const PREDELAY_CAP = 0.025; // seconds
-function cappedPreDelay(seconds) {
-  return Math.min(seconds, PREDELAY_CAP);
+// Map a venue's first-reflection time to an AUDIBLE wet pre-delay that stays
+// fused with the dry transient.
+//
+// The tension: big venues model a long first-reflection time (stadium +110ms),
+// and that bulk gap is the natural cue for SIZE. But before the reverb a bulk
+// pre-delay inserts SILENCE after a sharp, isolated hit — so on a sparse
+// kick/snare/bass intro the whole reverb arrives late as a SEPARATE echo
+// ("tak…… chh"), which sounds awkward. A single flat cap (the old 25ms) fixed
+// the echo but flattened every big venue to the same gap, erasing size — and on
+// some sources 25ms was still enough to read as a slap.
+//
+// So instead of clamping, we soft-compress the pre-delay through a saturating
+// curve toward a low ceiling: small venues keep their short, intimate value;
+// large venues are pulled toward the ceiling but still ORDERED (arena < dome ≈
+// stadium), so they read as "bigger" without crossing the echo-fusion threshold.
+// The remaining sense of size is carried by the IR's own early + lateral field,
+// whose timing widens for big rooms (impulse.js) but is CONTINUOUS from t≈0 — no
+// silent gap to read as an echo. (The displayed firstReflection figure is
+// unchanged; this only sets what's audible.)
+const PREDELAY_CEIL = 0.022; // seconds — saturating asymptote (was a hard 25ms cap)
+function fusedPreDelay(seconds) {
+  const s = Math.max(0, seconds);
+  // 1 - e^(-s/ceil): ≈ s for small s, saturating to PREDELAY_CEIL for large s.
+  return PREDELAY_CEIL * (1 - Math.exp(-s / PREDELAY_CEIL));
 }
 
 // Create a configured wet-ducker node: 2 inputs (wet stereo, dry sidechain),
@@ -122,7 +136,7 @@ export class ConcertEngine {
     this.bassShelf = this.ctx.createBiquadFilter();
     this.bassShelf.type = 'lowshelf';
     this.bassShelf.frequency.value = 120;  // overall low-end weight (sub..low-bass)
-    this.bassShelf.gain.value = 6;         // dB — a touch more body than before (+1)
+    this.bassShelf.gain.value = 7;         // dB — bigger low-end weight (concert sub feel)
     // ── Kick vs. bass frequency separation (live-FOH "carve" approach) ──
     // The kick and the bass guitar fight in the 60–120 Hz region. A FOH engineer
     // un-masks them by giving each its OWN pocket instead of boosting the shared
@@ -135,14 +149,14 @@ export class ConcertEngine {
     this.kickPeak.type = 'peaking';
     this.kickPeak.frequency.value = 60;    // lower than before → out of the bass's way
     this.kickPeak.Q.value = 1.6;           // narrower → only the thump, not the bass
-    this.kickPeak.gain.value = 2.5;        // dB
+    this.kickPeak.gain.value = 3.5;        // dB — more chest thump
     // bassBody: lift the bass guitar's fundamental/body pocket so it sits ABOVE
     // the kick instead of under it — this is the main fix for "bass buried in kick".
     this.bassBody = this.ctx.createBiquadFilter();
     this.bassBody.type = 'peaking';
     this.bassBody.frequency.value = 110;   // bass fundamental / "round" body
     this.bassBody.Q.value = 1.3;
-    this.bassBody.gain.value = 4;          // dB — +1 to keep bass weight after the vocal lift
+    this.bassBody.gain.value = 5;          // dB — fuller bass fundamental/body
     // bassDef: a small lift in the bass's note-definition/growl region so the
     // pitch of each bass note stays legible through a dense mix (separation).
     this.bassDef = this.ctx.createBiquadFilter();
@@ -166,9 +180,9 @@ export class ConcertEngine {
     // would only smear the vocal, so the tail keeps its existing 3.2 kHz cut.
     this.vocalPresence = this.ctx.createBiquadFilter();
     this.vocalPresence.type = 'peaking';
-    this.vocalPresence.frequency.value = 2500;
+    this.vocalPresence.frequency.value = 2800; // toward the consonant/articulation band for intelligibility
     this.vocalPresence.Q.value = 0.8;
-    this.vocalPresence.gain.value = 2.5; // dB — un-mask the vocal without overpowering the bass
+    this.vocalPresence.gain.value = 4.5; // dB — vocal pushed a little further forward for clarity
     // Snare "crack"/attack lift on the DRY path. The snare's snap reads ~4–5 kHz,
     // just ABOVE the vocal presence band, so a narrowish peak here makes the snare
     // pop out crisply without dragging the vocal up with it. Kept tight (Q 1.2) so
@@ -177,7 +191,7 @@ export class ConcertEngine {
     this.snareCrack.type = 'peaking';
     this.snareCrack.frequency.value = 4500;
     this.snareCrack.Q.value = 1.6;     // tighter so it doesn't bleed down into the vocal
-    this.snareCrack.gain.value = 3.5; // dB — snare asked to be especially crisp
+    this.snareCrack.gain.value = 4.5; // dB — snare pops harder
     // Hi-hat / cymbal sparkle: a high shelf well above the vocal/snare so only the
     // hats' shimmer lifts. The other instruments have little energy this high, so
     // this brightens the hats specifically rather than the whole mix.
@@ -185,9 +199,37 @@ export class ConcertEngine {
     this.hatAir.type = 'highshelf';
     this.hatAir.frequency.value = 10000;
     this.hatAir.gain.value = 3; // dB
+    // ── Direct-sound stereo width (mid/side) ─────────────────────────────
+    // A big-venue PA is essentially mono/LCR: both line arrays carry largely the
+    // same signal, so across the house the DIRECT sound images centered/narrow —
+    // the wide stereo lives in the room's reflections, not the PA. We model that
+    // with a mid/side matrix on the dry path whose Side gain = `dryWidth`
+    // (1 = original studio stereo, 0 = mono):
+    //   outL = a·L + b·R,  outR = b·L + a·R,  a = (1+w)/2,  b = (1−w)/2
+    // Per venue: full width for the intimate club / natural hall, progressively
+    // narrower for arena→dome→stadium. The wide LATERAL reverb (impulse.js) then
+    // supplies the envelopment → "centered PA up front, space wrapped around you".
+    // A speakers-mode stereoizer first guarantees a true 2-ch feed so a MONO
+    // source passes through unchanged (L=R → Side=0 → no level loss).
+    this._wIn = this.ctx.createGain();
+    this._wIn.channelCount = 2;
+    this._wIn.channelCountMode = 'explicit';
+    this._wIn.channelInterpretation = 'speakers';
+    this._wSplit = this.ctx.createChannelSplitter(2);
+    this._wMerge = this.ctx.createChannelMerger(2);
+    this._wLL = this.ctx.createGain(); // L→L (a)
+    this._wRR = this.ctx.createGain(); // R→R (a)
+    this._wLR = this.ctx.createGain(); // L→R (b)
+    this._wRL = this.ctx.createGain(); // R→L (b)
+    this._wIn.connect(this._wSplit);
+    this._wSplit.connect(this._wLL, 0); this._wSplit.connect(this._wLR, 0); // L
+    this._wSplit.connect(this._wRL, 1); this._wSplit.connect(this._wRR, 1); // R
+    this._wLL.connect(this._wMerge, 0, 0); this._wRL.connect(this._wMerge, 0, 0); // → out L
+    this._wLR.connect(this._wMerge, 0, 1); this._wRR.connect(this._wMerge, 0, 1); // → out R
+    this.setDryWidth(1); // full width until a venue sets it
     this.wetGain = this.ctx.createGain();
     this.wetTrim = this.ctx.createGain();
-    this.wetTrim.gain.value = 0.45; // keep the reverb bus as ambience, not a wash
+    this.wetTrim.gain.value = 0.5; // more reverb than original (0.45) but dialed back from 0.55 to keep clarity
     this.preDelay = this.ctx.createDelay(1.0); // up to 1s of pre-delay
     this.convolver = this.ctx.createConvolver();
     // We energy-normalize our IRs ourselves (impulse.js), so disable the
@@ -205,20 +247,28 @@ export class ConcertEngine {
     this.wetMudCut = this.ctx.createBiquadFilter();
     this.wetMudCut.type = 'peaking';
     this.wetMudCut.frequency.value = 300;
-    this.wetMudCut.Q.value = 1.1;
-    this.wetMudCut.gain.value = -6; // dB — deeper low-mid dip un-glues instruments more
+    this.wetMudCut.Q.value = 0.85; // wider (covers ~190–500Hz) — un-glues bass/guitar/vocal bodies
+    this.wetMudCut.gain.value = -8; // dB — deeper low-mid dip = clearer instrument separation
     // Keep the reverb tail from re-muddying the low end we just separated on the
     // dry path: high-pass the WET feed so sub/kick energy doesn't smear into the
     // tail. The dry path keeps the full low-end body; the ambience stays clean.
     this.wetLowCut = this.ctx.createBiquadFilter();
     this.wetLowCut.type = 'highpass';
-    this.wetLowCut.frequency.value = 140;  // bass body & below stays dry/tight
+    // 170 Hz (raised from 140): a live PA keeps the kick THUMP and bass BODY in
+    // the direct/dry path and high-passes the reverb send hard, so the low end
+    // stays punchy and felt instead of being smeared by the room. This is the
+    // main fix for "kick/bass body buried" — the reverb no longer fills the
+    // ~140–170 Hz weight band that the rhythm section lives in.
+    this.wetLowCut.frequency.value = 170;
     this.wetLowCut.Q.value = 0.7;
     this.wetVocalCut = this.ctx.createBiquadFilter();
     this.wetVocalCut.type = 'peaking';
-    this.wetVocalCut.frequency.value = 3200;
+    // 3.6 kHz (shifted up from 3.2): a wide dip here covers BOTH the vocal
+    // sibilance AND the snare "crack" (~4–5 kHz) in the tail, so the snare's
+    // attack cuts through the direct path instead of being haloed by reverb.
+    this.wetVocalCut.frequency.value = 3600;
     this.wetVocalCut.Q.value = 0.9;
-    this.wetVocalCut.gain.value = -7; // dB
+    this.wetVocalCut.gain.value = -9.5; // dB — deeper still so the vocal sits above the reverb (snare pops too)
     this.wetAirCut = this.ctx.createBiquadFilter();
     this.wetAirCut.type = 'highshelf';
     this.wetAirCut.frequency.value = 6000;
@@ -245,7 +295,8 @@ export class ConcertEngine {
     this._inGain.connect(this.vocalPresence);
     this.vocalPresence.connect(this.snareCrack);
     this.snareCrack.connect(this.hatAir);
-    this.hatAir.connect(this.dryGain);
+    this.hatAir.connect(this._wIn);        // → mid/side width matrix
+    this._wMerge.connect(this.dryGain);
     this.dryGain.connect(this.master);
 
     // wet path: in -> preDelay -> convolver -> lowCut -> mudCut -> vocalCut -> airCut -> wetGain -> wetTrim -> master
@@ -442,13 +493,29 @@ export class ConcertEngine {
     const ms = venue.position && venue.position.firstReflection
       ? parseFloat(String(venue.position.firstReflection).replace(/[^0-9.]/g, ''))
       : null;
-    this.setPreDelay(cappedPreDelay(Number.isFinite(ms) ? ms / 1000 : (venue.ir.predelay ?? 0.02)));
+    this.setPreDelay(fusedPreDelay(Number.isFinite(ms) ? ms / 1000 : (venue.ir.predelay ?? 0.02)));
+    // direct-sound width: mono-ish for big PA venues, full for club/hall
+    this.setDryWidth(venue.dryWidth ?? 1);
   }
 
   setPreDelay(seconds) {
     if (!this.preDelay) return;
     const t = Math.max(0, Math.min(1, seconds));
     this.preDelay.delayTime.setTargetAtTime(t, this.ctx.currentTime, 0.01);
+  }
+
+  // Direct-path stereo width via the mid/side matrix. w: 1 = original studio
+  // stereo, 0 = mono. Big-venue PA images narrow → small w; club/hall → 1.
+  setDryWidth(w) {
+    if (!this._wLL) return;
+    const width = Math.max(0, Math.min(1, w));
+    const a = (1 + width) / 2; // direct (L→L, R→R)
+    const b = (1 - width) / 2; // cross  (L→R, R→L)
+    const t = this.ctx ? this.ctx.currentTime : 0;
+    this._wLL.gain.setTargetAtTime(a, t, 0.02);
+    this._wRR.gain.setTargetAtTime(a, t, 0.02);
+    this._wLR.gain.setTargetAtTime(b, t, 0.02);
+    this._wRL.gain.setTargetAtTime(b, t, 0.02);
   }
 
   // wet 0..100 → equal-power crossfade between dry and wet busses.
@@ -653,17 +720,17 @@ export class ConcertEngine {
     const bassShelf = offline.createBiquadFilter();
     bassShelf.type = 'lowshelf';
     bassShelf.frequency.value = 120;
-    bassShelf.gain.value = 6;
+    bassShelf.gain.value = 7;
     const kickPeak = offline.createBiquadFilter();
     kickPeak.type = 'peaking';
     kickPeak.frequency.value = 60;
     kickPeak.Q.value = 1.6;
-    kickPeak.gain.value = 2.5;
+    kickPeak.gain.value = 3.5;
     const bassBody = offline.createBiquadFilter();
     bassBody.type = 'peaking';
     bassBody.frequency.value = 110;
     bassBody.Q.value = 1.3;
-    bassBody.gain.value = 4;
+    bassBody.gain.value = 5;
     const bassDef = offline.createBiquadFilter();
     bassDef.type = 'peaking';
     bassDef.frequency.value = 800;
@@ -673,35 +740,51 @@ export class ConcertEngine {
     // legible when the bass body is heavy
     const vocalPresence = offline.createBiquadFilter();
     vocalPresence.type = 'peaking';
-    vocalPresence.frequency.value = 2500;
+    vocalPresence.frequency.value = 2800;
     vocalPresence.Q.value = 0.8;
-    vocalPresence.gain.value = 2.5;
+    vocalPresence.gain.value = 4.5;
     // snare crack + hi-hat air on the dry path (match live graph)
     const snareCrack = offline.createBiquadFilter();
     snareCrack.type = 'peaking';
     snareCrack.frequency.value = 4500;
     snareCrack.Q.value = 1.6;
-    snareCrack.gain.value = 3.5;
+    snareCrack.gain.value = 4.5;
     const hatAir = offline.createBiquadFilter();
     hatAir.type = 'highshelf';
     hatAir.frequency.value = 10000;
     hatAir.gain.value = 3;
+    // direct-sound width (mid/side) — match the live graph
+    const width = venue.dryWidth ?? 1;
+    const wa = (1 + width) / 2, wb = (1 - width) / 2;
+    const wIn = offline.createGain();
+    wIn.channelCount = 2; wIn.channelCountMode = 'explicit'; wIn.channelInterpretation = 'speakers';
+    const wSplit = offline.createChannelSplitter(2);
+    const wMerge = offline.createChannelMerger(2);
+    const wLL = offline.createGain(); wLL.gain.value = wa;
+    const wRR = offline.createGain(); wRR.gain.value = wa;
+    const wLR = offline.createGain(); wLR.gain.value = wb;
+    const wRL = offline.createGain(); wRL.gain.value = wb;
+    wIn.connect(wSplit);
+    wSplit.connect(wLL, 0); wSplit.connect(wLR, 0);
+    wSplit.connect(wRL, 1); wSplit.connect(wRR, 1);
+    wLL.connect(wMerge, 0, 0); wRL.connect(wMerge, 0, 0);
+    wLR.connect(wMerge, 0, 1); wRR.connect(wMerge, 0, 1);
 
     const dry = offline.createGain();
     const wet = offline.createGain();
     const wetTrim = offline.createGain();
-    wetTrim.gain.value = 0.45; // match live graph headroom
+    wetTrim.gain.value = 0.5; // match live graph (more reverb than original, dialed for clarity)
     const pre = offline.createDelay(1.0);
     const conv = offline.createConvolver();
     conv.normalize = false; // match the live graph
     conv.buffer = buildImpulseResponse(offline, venue.ir, venue.id.split('').reduce((a, c) => a + c.charCodeAt(0), 1));
     // wet-path EQ (match live graph): low cut + mud cut + vocal cut + air cut
     const wLow = offline.createBiquadFilter();
-    wLow.type = 'highpass'; wLow.frequency.value = 140; wLow.Q.value = 0.7;
+    wLow.type = 'highpass'; wLow.frequency.value = 170; wLow.Q.value = 0.7; // keep kick/bass body in the dry path (match live)
     const mCut = offline.createBiquadFilter();
-    mCut.type = 'peaking'; mCut.frequency.value = 300; mCut.Q.value = 1.1; mCut.gain.value = -6;
+    mCut.type = 'peaking'; mCut.frequency.value = 300; mCut.Q.value = 0.85; mCut.gain.value = -8; // wider+deeper un-glue (match live)
     const vCut = offline.createBiquadFilter();
-    vCut.type = 'peaking'; vCut.frequency.value = 3200; vCut.Q.value = 0.9; vCut.gain.value = -7;
+    vCut.type = 'peaking'; vCut.frequency.value = 3600; vCut.Q.value = 0.9; vCut.gain.value = -9.5; // covers snare crack halo (match live)
     const aCut = offline.createBiquadFilter();
     aCut.type = 'highshelf'; aCut.frequency.value = 6000; aCut.gain.value = -6;
     const out = offline.createGain();
@@ -714,10 +797,11 @@ export class ConcertEngine {
     dry.gain.value = Math.cos(w * 0.5 * Math.PI);
     wet.gain.value = Math.cos((1 - w) * 0.5 * Math.PI);
     const ms = venue.position ? parseFloat(String(venue.position.firstReflection).replace(/[^0-9.]/g, '')) : 20;
-    pre.delayTime.value = cappedPreDelay((Number.isNaN(ms) ? 20 : ms) / 1000); // match live: glue tail to transient
+    pre.delayTime.value = fusedPreDelay((Number.isNaN(ms) ? 20 : ms) / 1000); // match live: glue tail to transient
 
     src.connect(bassShelf); bassShelf.connect(kickPeak); kickPeak.connect(bassBody); bassBody.connect(bassDef);
-    bassDef.connect(vocalPresence); vocalPresence.connect(snareCrack); snareCrack.connect(hatAir); hatAir.connect(dry); dry.connect(out);
+    bassDef.connect(vocalPresence); vocalPresence.connect(snareCrack); snareCrack.connect(hatAir);
+    hatAir.connect(wIn); wMerge.connect(dry); dry.connect(out); // dry path through the width matrix
     bassDef.connect(pre); pre.connect(conv); conv.connect(wLow); wLow.connect(mCut); mCut.connect(vCut); vCut.connect(aCut); aCut.connect(wet);
     // sidechain ducker (match live graph): dry (bassDef) drives it, wet passes
     // through. If the worklet isn't available, run the wet bus straight through.
