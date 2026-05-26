@@ -21,6 +21,7 @@ import { readAudioFormat } from './bitdepth.js';
 // bundling) so audioWorklet.addModule can fetch it as a standalone module.
 // BASE_URL keeps it correct under the GitHub Pages base path.
 const WET_DUCKER_URL = `${import.meta.env.BASE_URL}wet-ducker-processor.js`;
+const VOCAL_DEMASK_URL = `${import.meta.env.BASE_URL}vocal-demask-processor.js`;
 
 // Register the wet-ducker worklet on a context (idempotent per context). Returns
 // true if available, false if the browser/context can't load it (→ caller skips
@@ -34,6 +35,20 @@ async function ensureWetDucker(ctx) {
     return true;
   } catch (e) {
     console.warn('[engine] wet-ducker worklet unavailable:', e.message);
+    return false;
+  }
+}
+
+// Register the vocal-demask worklet on a context (idempotent per context).
+async function ensureVocalDemask(ctx) {
+  if (!ctx.audioWorklet) return false;
+  if (ctx.__vocalDemaskReady) return true;
+  try {
+    await ctx.audioWorklet.addModule(VOCAL_DEMASK_URL);
+    ctx.__vocalDemaskReady = true;
+    return true;
+  } catch (e) {
+    console.warn('[engine] vocal-demask worklet unavailable:', e.message);
     return false;
   }
 }
@@ -74,6 +89,16 @@ function createWetDucker(ctx) {
   });
 }
 
+// Create the vocal-demask node: 2 mono inputs (Mid presence, Side presence),
+// 1 mono output (the presence to add back to the center).
+function createVocalDemask(ctx) {
+  return new AudioWorkletNode(ctx, 'vocal-demask', {
+    numberOfInputs: 2,
+    numberOfOutputs: 1,
+    outputChannelCount: [1],
+  });
+}
+
 export class ConcertEngine {
   constructor() {
     this.ctx = null;
@@ -107,6 +132,7 @@ export class ConcertEngine {
     this._ended = false;           // true only on a real end-of-track
     this._fileRef = null;          // original File (for offline export)
     this._wetDucker = null;        // AudioWorkletNode spliced into the wet bus
+    this._vocalDemask = null;      // AudioWorkletNode lifting the masked vocal
   }
 
   // Build the AudioContext + node graph. Idempotent; called on first interaction.
@@ -227,6 +253,29 @@ export class ConcertEngine {
     this._wLL.connect(this._wMerge, 0, 0); this._wRL.connect(this._wMerge, 0, 0); // → out L
     this._wLR.connect(this._wMerge, 0, 1); this._wRR.connect(this._wMerge, 0, 1); // → out R
     this.setDryWidth(1); // full width until a venue sets it
+    // ── Vocal de-mask (keep the centered vocal cutting through dense mixes) ──
+    // Tap the dry tone, split it into Mid (vocal) and Side (masker) presence
+    // bands; a worklet lifts the Mid presence ONLY in proportion to how much the
+    // Side competes, and adds it back to the center. No Side competition → no
+    // boost → the sound is unchanged from baseline. The worklet itself is spliced
+    // in asynchronously by _installVocalDemask once its module loads.
+    this._vdMid = this.ctx.createGain(); // stereo→mono downmix = Mid = 0.5(L+R)
+    this._vdMid.channelCount = 1; this._vdMid.channelCountMode = 'explicit'; this._vdMid.channelInterpretation = 'speakers';
+    this._vdSplit = this.ctx.createChannelSplitter(2);
+    this._vdSideL = this.ctx.createGain(); this._vdSideL.gain.value = 0.5;
+    this._vdSideR = this.ctx.createGain(); this._vdSideR.gain.value = -0.5;
+    this._vdSideSum = this.ctx.createGain(); // 0.5L − 0.5R = Side
+    this._vdVocalBP = this.ctx.createBiquadFilter();
+    this._vdVocalBP.type = 'bandpass'; this._vdVocalBP.frequency.value = 2800; this._vdVocalBP.Q.value = 0.8;
+    this._vdMaskBP = this.ctx.createBiquadFilter();
+    this._vdMaskBP.type = 'bandpass'; this._vdMaskBP.frequency.value = 2800; this._vdMaskBP.Q.value = 0.8;
+    this._vdAdd = this.ctx.createGain(); // boost return summed into the dry center
+    this.hatAir.connect(this._vdMid); this._vdMid.connect(this._vdVocalBP);
+    this.hatAir.connect(this._vdSplit);
+    this._vdSplit.connect(this._vdSideL, 0); this._vdSplit.connect(this._vdSideR, 1);
+    this._vdSideL.connect(this._vdSideSum); this._vdSideR.connect(this._vdSideSum);
+    this._vdSideSum.connect(this._vdMaskBP);
+    this._vdAdd.connect(this.dryGain); // mono → up-mixed to center, summed into dry
     this.wetGain = this.ctx.createGain();
     this.wetTrim = this.ctx.createGain();
     this.wetTrim.gain.value = 0.5; // more reverb than original (0.45) but dialed back from 0.55 to keep clarity
@@ -320,6 +369,7 @@ export class ConcertEngine {
 
     this._applyCrossfade();
     this._installWetDucker(); // async; inserts the ducker when ready
+    this._installVocalDemask(); // async; inserts the vocal de-mask when ready
   }
 
   // Load the worklet, then splice the ducker into the wet bus:
@@ -339,6 +389,24 @@ export class ConcertEngine {
       console.warn('[engine] failed to insert wet ducker:', e.message);
       // ensure the wet bus stays connected if insertion threw mid-way
       try { this.wetGain.connect(this.wetTrim); } catch (_) { /* noop */ }
+    }
+  }
+
+  // Load the worklet, then splice the vocal de-mask in:
+  //   Mid presence  → input 0 (carrier)   Side presence → input 1 (sidechain)
+  //   output (mono) → _vdAdd → dryGain (added to the center)
+  async _installVocalDemask() {
+    if (this._vocalDemask) return;
+    const ok = await ensureVocalDemask(this.ctx);
+    if (!ok || !this.ctx || !this._vdVocalBP) return; // unsupported → no boost (baseline)
+    try {
+      const node = createVocalDemask(this.ctx);
+      this._vdVocalBP.connect(node, 0, 0); // Mid presence → input 0
+      this._vdMaskBP.connect(node, 0, 1);  // Side presence → input 1
+      node.connect(this._vdAdd);
+      this._vocalDemask = node;
+    } catch (e) {
+      console.warn('[engine] failed to insert vocal de-mask:', e.message);
     }
   }
 
@@ -712,6 +780,7 @@ export class ConcertEngine {
     const offline = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(2, len + sr * Math.ceil(venue.ir.rt60 + 1), sr);
     // load the wet-ducker worklet on this offline context so export matches live
     const duckerOk = await ensureWetDucker(offline);
+    const vdOk = await ensureVocalDemask(offline);
 
     const src = offline.createBufferSource();
     src.buffer = decoded;
@@ -802,6 +871,23 @@ export class ConcertEngine {
     src.connect(bassShelf); bassShelf.connect(kickPeak); kickPeak.connect(bassBody); bassBody.connect(bassDef);
     bassDef.connect(vocalPresence); vocalPresence.connect(snareCrack); snareCrack.connect(hatAir);
     hatAir.connect(wIn); wMerge.connect(dry); dry.connect(out); // dry path through the width matrix
+    // vocal de-mask (match live): lift the centered vocal presence when wide
+    // instruments mask it, added back to the dry center
+    if (vdOk) {
+      const vdMid = offline.createGain();
+      vdMid.channelCount = 1; vdMid.channelCountMode = 'explicit'; vdMid.channelInterpretation = 'speakers';
+      const vdSplit = offline.createChannelSplitter(2);
+      const vdSideL = offline.createGain(); vdSideL.gain.value = 0.5;
+      const vdSideR = offline.createGain(); vdSideR.gain.value = -0.5;
+      const vdSideSum = offline.createGain();
+      const vdVocalBP = offline.createBiquadFilter(); vdVocalBP.type = 'bandpass'; vdVocalBP.frequency.value = 2800; vdVocalBP.Q.value = 0.8;
+      const vdMaskBP = offline.createBiquadFilter(); vdMaskBP.type = 'bandpass'; vdMaskBP.frequency.value = 2800; vdMaskBP.Q.value = 0.8;
+      const vd = createVocalDemask(offline);
+      hatAir.connect(vdMid); vdMid.connect(vdVocalBP); vdVocalBP.connect(vd, 0, 0);
+      hatAir.connect(vdSplit); vdSplit.connect(vdSideL, 0); vdSplit.connect(vdSideR, 1);
+      vdSideL.connect(vdSideSum); vdSideR.connect(vdSideSum); vdSideSum.connect(vdMaskBP); vdMaskBP.connect(vd, 0, 1);
+      vd.connect(dry);
+    }
     bassDef.connect(pre); pre.connect(conv); conv.connect(wLow); wLow.connect(mCut); mCut.connect(vCut); vCut.connect(aCut); aCut.connect(wet);
     // sidechain ducker (match live graph): dry (bassDef) drives it, wet passes
     // through. If the worklet isn't available, run the wet bus straight through.
