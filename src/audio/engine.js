@@ -317,11 +317,11 @@ export class ConcertEngine {
     // attack cuts through the direct path instead of being haloed by reverb.
     this.wetVocalCut.frequency.value = 3600;
     this.wetVocalCut.Q.value = 0.9;
-    this.wetVocalCut.gain.value = -7.0; // dB — let a little more reverb sit on the vocal (more concert-like, less artificially dry)
+    this.wetVocalCut.gain.value = -3.5; // dB — a touch more vocal/consonant tail
     this.wetAirCut = this.ctx.createBiquadFilter();
     this.wetAirCut.type = 'highshelf';
     this.wetAirCut.frequency.value = 6000;
-    this.wetAirCut.gain.value = -6; // dB — tame sibilant tail / "shhh"
+    this.wetAirCut.gain.value = -2.5; // dB — a touch more "air" hanging on the tail
     this.master = this.ctx.createGain();
     this.master.gain.value = this._volume; // user volume (0..1)
 
@@ -853,9 +853,9 @@ export class ConcertEngine {
     const mCut = offline.createBiquadFilter();
     mCut.type = 'peaking'; mCut.frequency.value = 300; mCut.Q.value = 0.85; mCut.gain.value = -8; // wider+deeper un-glue (match live)
     const vCut = offline.createBiquadFilter();
-    vCut.type = 'peaking'; vCut.frequency.value = 3600; vCut.Q.value = 0.9; vCut.gain.value = -7.0; // covers snare crack halo (match live)
+    vCut.type = 'peaking'; vCut.frequency.value = 3600; vCut.Q.value = 0.9; vCut.gain.value = -3.5; // a touch more vocal tail (match live)
     const aCut = offline.createBiquadFilter();
-    aCut.type = 'highshelf'; aCut.frequency.value = 6000; aCut.gain.value = -6;
+    aCut.type = 'highshelf'; aCut.frequency.value = 6000; aCut.gain.value = -2.5;
     const out = offline.createGain();
     out.gain.value = this._volume;
     const limiter = offline.createDynamicsCompressor();
