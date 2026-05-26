@@ -97,7 +97,7 @@ export function VenuePicker({ open, onClose, current, onPick }) {
                 {active && <div className="absolute top-2 right-2 text-[oklch(0.78_0.16_55)] text-[9px] tracking-[0.3em]">● CURRENT</div>}
               </div>
               <div className="text-white text-[21px] font-light normal-case tracking-tight font-tight">{v.name}</div>
-              <div className="text-[12px] text-neutral-500 mt-1">{v.capacity} · {v.city}</div>
+              <div className="text-[12px] text-neutral-500 mt-1">{v.capacity}</div>
               <div className="text-[12px] text-neutral-400 mt-3 leading-relaxed normal-case tracking-normal font-tight">{v.descKo}</div>
               <div className="mt-3 pt-3 border-t border-white/10 flex gap-4 text-[12px] tabular-nums">
                 <span className="text-neutral-500">RT60 <span className="text-white">{v.acoustics.rt60}</span></span>

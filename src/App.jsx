@@ -30,10 +30,10 @@ const PLACEHOLDER_FILE = {
 
 export default function App() {
   // ── state model (CLAUDE_PROMPT.md §3) ───────────────────────────────────
-  const [venueId, setVenueId] = useState('jazz');
+  const [venueId, setVenueId] = useState('stadium');
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
-  const [wetDry, setWetDry] = useState(findVenue('jazz').position.wet);
+  const [wetDry, setWetDry] = useState(findVenue('stadium').position.wet);
   const [volume, setVolume] = useState(85);
   const [filePickerOpen, setFilePickerOpen] = useState(false);
   const [venuePickerOpen, setVenuePickerOpen] = useState(false);

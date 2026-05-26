@@ -144,7 +144,7 @@ export default function MobileLayout({
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-white text-[22px] font-light leading-tight font-tight">{venue.name}</div>
-                  <div className="text-[12px] text-neutral-500 mt-0.5">{venue.type} · {venue.city}</div>
+                  <div className="text-[12px] text-neutral-500 mt-0.5">{venue.type}</div>
                 </div>
                 <span className="text-neutral-600 text-lg">▾</span>
               </div>

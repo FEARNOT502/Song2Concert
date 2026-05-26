@@ -25,8 +25,9 @@
 class VocalDemaskProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
-      // max extra presence added at full masking (0.8 ≈ +5 dB in-band)
-      { name: 'maxAdd', defaultValue: 0.8, minValue: 0, maxValue: 2 },
+      // max extra presence added at full masking (0.55 ≈ +3.8 dB in-band) —
+      // gentle so the vocal sits naturally in the concert mix, not artificially forward
+      { name: 'maxAdd', defaultValue: 0.55, minValue: 0, maxValue: 2 },
       // how quickly the boost reaches max as the side fraction grows
       { name: 'sens', defaultValue: 1.8, minValue: 0.1, maxValue: 6 },
     ];

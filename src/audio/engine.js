@@ -317,7 +317,7 @@ export class ConcertEngine {
     // attack cuts through the direct path instead of being haloed by reverb.
     this.wetVocalCut.frequency.value = 3600;
     this.wetVocalCut.Q.value = 0.9;
-    this.wetVocalCut.gain.value = -9.5; // dB — deeper still so the vocal sits above the reverb (snare pops too)
+    this.wetVocalCut.gain.value = -7.0; // dB — let a little more reverb sit on the vocal (more concert-like, less artificially dry)
     this.wetAirCut = this.ctx.createBiquadFilter();
     this.wetAirCut.type = 'highshelf';
     this.wetAirCut.frequency.value = 6000;
@@ -853,7 +853,7 @@ export class ConcertEngine {
     const mCut = offline.createBiquadFilter();
     mCut.type = 'peaking'; mCut.frequency.value = 300; mCut.Q.value = 0.85; mCut.gain.value = -8; // wider+deeper un-glue (match live)
     const vCut = offline.createBiquadFilter();
-    vCut.type = 'peaking'; vCut.frequency.value = 3600; vCut.Q.value = 0.9; vCut.gain.value = -9.5; // covers snare crack halo (match live)
+    vCut.type = 'peaking'; vCut.frequency.value = 3600; vCut.Q.value = 0.9; vCut.gain.value = -7.0; // covers snare crack halo (match live)
     const aCut = offline.createBiquadFilter();
     aCut.type = 'highshelf'; aCut.frequency.value = 6000; aCut.gain.value = -6;
     const out = offline.createGain();

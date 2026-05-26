@@ -56,7 +56,6 @@ export function RightDataPanel({ venue, file }) {
 
       <div className="mt-7 text-neutral-300">Capacity</div>
       <div className="text-white text-[17px] mt-1 normal-case font-tight">{venue.capacity}</div>
-      <div className="text-[11px] text-neutral-600 mt-1 normal-case tracking-normal">{venue.city}</div>
     </div>
   );
 }
