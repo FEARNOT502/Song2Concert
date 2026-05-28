@@ -163,8 +163,19 @@ function buildSpatialField(ctx, input, output) {
   hp.frequency.value = 300;
   hp.Q.value = 0.7;
   input.connect(hp);
+  // Tame the vocal band IN THE WRAP ONLY. The centered vocal sits in both L/R,
+  // so the side/rear copies wrap a washy vocal halo all around the listener,
+  // which reads as "too much vocal reverb" when 360° is on. Dipping ~2.9 kHz here
+  // pulls that halo down without touching the front bed (so 360° OFF is unchanged
+  // and the vocal still has its tail up front).
+  const voxDip = ctx.createBiquadFilter();
+  voxDip.type = 'peaking';
+  voxDip.frequency.value = 2900;
+  voxDip.Q.value = 0.8;
+  voxDip.gain.value = -7; // dB
+  hp.connect(voxDip);
   const split = ctx.createChannelSplitter(2);
-  hp.connect(split);
+  voxDip.connect(split);
   const panners = [];
   for (const d of SPATIAL_DIRS) {
     const g = ctx.createGain();
@@ -402,9 +413,9 @@ export class ConcertEngine {
     // 3.6 kHz (shifted up from 3.2): a wide dip here covers BOTH the vocal
     // sibilance AND the snare "crack" (~4–5 kHz) in the tail, so the snare's
     // attack cuts through the direct path instead of being haloed by reverb.
-    this.wetVocalCut.frequency.value = 3400; // nudged down toward the vocal band
-    this.wetVocalCut.Q.value = 0.8;          // a touch wider — reaches the ~2.8k vocal presence
-    this.wetVocalCut.gain.value = -6; // dB — deeper dip: less washy halo on the vocal
+    this.wetVocalCut.frequency.value = 3600;
+    this.wetVocalCut.Q.value = 0.9;
+    this.wetVocalCut.gain.value = -3.5; // dB — a touch more vocal/consonant tail
     this.wetAirCut = this.ctx.createBiquadFilter();
     this.wetAirCut.type = 'highshelf';
     this.wetAirCut.frequency.value = 6000;
@@ -982,7 +993,7 @@ export class ConcertEngine {
     const mCut = offline.createBiquadFilter();
     mCut.type = 'peaking'; mCut.frequency.value = 300; mCut.Q.value = 0.85; mCut.gain.value = -8; // wider+deeper un-glue (match live)
     const vCut = offline.createBiquadFilter();
-    vCut.type = 'peaking'; vCut.frequency.value = 3400; vCut.Q.value = 0.8; vCut.gain.value = -6; // deeper vocal-band dip (match live)
+    vCut.type = 'peaking'; vCut.frequency.value = 3600; vCut.Q.value = 0.9; vCut.gain.value = -3.5; // a touch more vocal tail (match live)
     const aCut = offline.createBiquadFilter();
     aCut.type = 'highshelf'; aCut.frequency.value = 6000; aCut.gain.value = -2.5;
     const out = offline.createGain();
