@@ -153,8 +153,18 @@ function placePanner(pan, azDeg, elDeg) {
 // L/R channels are decorrelated), which avoids the echo/comb artifacts. Returns
 // the panner nodes. Shared by the live graph and the offline export.
 function buildSpatialField(ctx, input, output) {
+  // High-pass the wrap: spatial cues live in the mids/highs, while low frequencies
+  // are essentially omnidirectional. Routing bass through the side/rear HRTF
+  // panners phase-shifts it and partially cancels the front bed's low end (thin
+  // kick/bass body). Keeping the wrap above ~300 Hz leaves all the low-end weight
+  // anchored in the front stereo bed, so 360° ON no longer thins the bass/kick.
+  const hp = ctx.createBiquadFilter();
+  hp.type = 'highpass';
+  hp.frequency.value = 300;
+  hp.Q.value = 0.7;
+  input.connect(hp);
   const split = ctx.createChannelSplitter(2);
-  input.connect(split);
+  hp.connect(split);
   const panners = [];
   for (const d of SPATIAL_DIRS) {
     const g = ctx.createGain();
@@ -392,9 +402,9 @@ export class ConcertEngine {
     // 3.6 kHz (shifted up from 3.2): a wide dip here covers BOTH the vocal
     // sibilance AND the snare "crack" (~4–5 kHz) in the tail, so the snare's
     // attack cuts through the direct path instead of being haloed by reverb.
-    this.wetVocalCut.frequency.value = 3600;
-    this.wetVocalCut.Q.value = 0.9;
-    this.wetVocalCut.gain.value = -3.5; // dB — a touch more vocal/consonant tail
+    this.wetVocalCut.frequency.value = 3400; // nudged down toward the vocal band
+    this.wetVocalCut.Q.value = 0.8;          // a touch wider — reaches the ~2.8k vocal presence
+    this.wetVocalCut.gain.value = -6; // dB — deeper dip: less washy halo on the vocal
     this.wetAirCut = this.ctx.createBiquadFilter();
     this.wetAirCut.type = 'highshelf';
     this.wetAirCut.frequency.value = 6000;
@@ -972,7 +982,7 @@ export class ConcertEngine {
     const mCut = offline.createBiquadFilter();
     mCut.type = 'peaking'; mCut.frequency.value = 300; mCut.Q.value = 0.85; mCut.gain.value = -8; // wider+deeper un-glue (match live)
     const vCut = offline.createBiquadFilter();
-    vCut.type = 'peaking'; vCut.frequency.value = 3600; vCut.Q.value = 0.9; vCut.gain.value = -3.5; // a touch more vocal tail (match live)
+    vCut.type = 'peaking'; vCut.frequency.value = 3400; vCut.Q.value = 0.8; vCut.gain.value = -6; // deeper vocal-band dip (match live)
     const aCut = offline.createBiquadFilter();
     aCut.type = 'highshelf'; aCut.frequency.value = 6000; aCut.gain.value = -2.5;
     const out = offline.createGain();
