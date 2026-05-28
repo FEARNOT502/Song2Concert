@@ -35,6 +35,7 @@ export default function App() {
   const [time, setTime] = useState(0);
   const [wetDry, setWetDry] = useState(findVenue('stadium').position.wet);
   const [volume, setVolume] = useState(85);
+  const [immersive, setImmersive] = useState(true); // 360° HRTF spatialization (headphones)
   const [filePickerOpen, setFilePickerOpen] = useState(false);
   const [venuePickerOpen, setVenuePickerOpen] = useState(false);
   const [pulse, setPulse] = useState(0);
@@ -69,6 +70,7 @@ export default function App() {
   // ── push wet/dry + volume → graph ───────────────────────────────────────
   useEffect(() => { engine.setWetDry(wetDry); }, [engine, wetDry]);
   useEffect(() => { engine.setVolume(volume); }, [engine, volume]);
+  useEffect(() => { engine.setImmersive(immersive); }, [engine, immersive]);
 
   // ── playback clock — reads engine.currentTime each frame while playing ───
   // (loadTrack is declared below; reach it via a ref to dodge the TDZ + deps.)
@@ -305,6 +307,8 @@ export default function App() {
           exporting={exporting}
           volume={volume}
           onVolumeChange={setVolume}
+          immersive={immersive}
+          onImmersiveChange={setImmersive}
           onFileClick={() => setFilePickerOpen(true)}
           onVenueClick={() => setVenuePickerOpen(true)}
         />
@@ -379,6 +383,8 @@ export default function App() {
         exporting={exporting}
         volume={volume}
         onVolumeChange={setVolume}
+        immersive={immersive}
+        onImmersiveChange={setImmersive}
       />
 
       {pickers}

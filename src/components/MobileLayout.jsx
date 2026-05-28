@@ -80,7 +80,7 @@ export default function MobileLayout({
   // transport
   playing, onToggle, onPrev, onNext, hasNext, hasPrev,
   time, durSec, wetDry, onWetChange, onSeek, onExport, exporting,
-  volume, onVolumeChange,
+  volume, onVolumeChange, immersive, onImmersiveChange,
   // pickers
   onFileClick, onVenueClick,
 }) {
@@ -191,6 +191,12 @@ export default function MobileLayout({
               <MobileSlider value={volume} max={100} onChange={(v) => onVolumeChange(Math.round(v))} fillClass="bg-white/60" />
               <span className="w-12 text-right tabular-nums">{volume}</span>
             </div>
+            <button
+              onClick={() => onImmersiveChange(!immersive)}
+              className={`w-full mt-1 py-2.5 border rounded-lg text-[12px] tracking-[0.15em] uppercase transition-colors ${immersive ? 'border-[oklch(0.78_0.16_55)] bg-[oklch(0.78_0.16_55)]/15 text-[oklch(0.78_0.16_55)]' : 'border-white/25 text-neutral-400'}`}
+            >
+              360° Spatial {immersive ? 'ON' : 'OFF'} · 헤드폰 권장
+            </button>
             <button
               onClick={onExport}
               disabled={exporting}

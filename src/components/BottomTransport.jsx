@@ -57,6 +57,7 @@ export default function BottomTransport({
   playing, onToggle, onPrev, onNext, hasNext, hasPrev,
   time, durSec, wetDry, onWetChange, onSeek,
   onExport, exporting, volume, onVolumeChange,
+  immersive, onImmersiveChange,
 }) {
   return (
     <div className="absolute bottom-0 inset-x-0 z-40 border-t border-white/10 px-10 py-6 flex items-center gap-8 text-[13px] tracking-[0.2em] text-neutral-400 uppercase bg-black/70 backdrop-blur-md font-mono">
@@ -115,6 +116,14 @@ export default function BottomTransport({
         />
         <span className="text-neutral-500 tabular-nums w-8 text-right">{volume}</span>
       </div>
+
+      <button
+        onClick={() => onImmersiveChange(!immersive)}
+        title={immersive ? '360° 공간화 ON — 헤드폰 권장 (잔향이 뒤·위·사방에서 감쌈)' : '360° 공간화 OFF — 기존 정면 스테레오 잔향'}
+        className={`px-3 py-1.5 border rounded transition-colors text-[12px] ${immersive ? 'border-[oklch(0.78_0.16_55)] bg-[oklch(0.78_0.16_55)]/15 text-[oklch(0.78_0.16_55)]' : 'border-white/25 text-neutral-400 hover:border-white/60'}`}
+      >
+        360° {immersive ? 'ON' : 'OFF'}
+      </button>
 
       <button
         onClick={onExport}

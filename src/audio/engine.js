@@ -99,6 +99,78 @@ function createVocalDemask(ctx) {
   });
 }
 
+// ── Immersive 360° spatializer ────────────────────────────────────────────
+// The "best seat" experience: the DIRECT sound (vocals/kick/snare = the PA) sits
+// up FRONT and stays clear, while the REVERBERANT field wraps around the head
+// from the sides, BEHIND, and slightly ABOVE — true listener envelopment (LEV).
+//
+// Stereo width + the IR's lateral taps only widen the FRONTAL image; they can't
+// place energy behind or overhead. So we distribute the wet (reverb) bus across a
+// ring of virtual ambience sources positioned around the listener and render each
+// through an HRTF PannerNode (binaural), which is what gives genuine rear/height
+// localization on headphones. Each source is fed a DECORRELATED copy of the
+// reverb (a distinct short delay on a diffuse tail → no comb/echo) drawn from the
+// L or R reverb channel (or a mono sum for the overhead), so the field stays
+// spacious rather than a point source. Rear/overhead sources are delayed a touch
+// MORE, matching how those reflections arrive later in a real room.
+//
+// Azimuth: 0° = front (toward the stage, −Z), positive = listener's right (+X).
+// Elevation: degrees above the horizontal plane (+Y).
+// ch: 0 = left reverb channel, 1 = right, 2 = mono sum of both.
+const SPATIAL_DIRS = [
+  { az: -32, el: 0,  ch: 0, delayMs: 7,  gain: 0.55 }, // front-left fill
+  { az: 32,  el: 0,  ch: 1, delayMs: 11, gain: 0.55 }, // front-right fill
+  { az: -95, el: 0,  ch: 0, delayMs: 19, gain: 0.70 }, // hard left (lateral)
+  { az: 95,  el: 0,  ch: 1, delayMs: 27, gain: 0.70 }, // hard right (lateral)
+  { az: -140, el: 8, ch: 0, delayMs: 33, gain: 0.60 }, // rear-left
+  { az: 140,  el: 8, ch: 1, delayMs: 43, gain: 0.60 }, // rear-right
+  { az: 0,    el: 60, ch: 2, delayMs: 29, gain: 0.50 }, // overhead (ceiling)
+];
+const IMM_TRIM = 0.6; // output trim so the 360° field matches the stereo bus level
+
+// Position an HRTF panner on a sphere around the listener from azimuth/elevation.
+function placePanner(pan, azDeg, elDeg) {
+  pan.panningModel = 'HRTF';
+  pan.distanceModel = 'inverse';
+  pan.refDistance = 1;
+  pan.rolloffFactor = 0; // direction-only: no distance attenuation between sources
+  const az = (azDeg * Math.PI) / 180;
+  const el = (elDeg * Math.PI) / 180;
+  const r = 1.6;
+  const x = r * Math.sin(az) * Math.cos(el);
+  const z = -r * Math.cos(az) * Math.cos(el); // front = −Z
+  const y = r * Math.sin(el);
+  if (pan.positionX) {
+    pan.positionX.value = x; pan.positionY.value = y; pan.positionZ.value = z;
+  } else {
+    pan.setPosition(x, y, z); // legacy Safari
+  }
+}
+
+// Build the 360° ambience ring: `input` (stereo reverb) → ring of delayed,
+// HRTF-panned virtual sources → `output`. Returns the created panner nodes.
+// Shared by the live graph and the offline export so they sound identical.
+function buildSpatialField(ctx, input, output) {
+  const split = ctx.createChannelSplitter(2);
+  input.connect(split);
+  const panners = [];
+  for (const d of SPATIAL_DIRS) {
+    const delay = ctx.createDelay(0.1);
+    delay.delayTime.value = d.delayMs / 1000;
+    const g = ctx.createGain();
+    g.gain.value = d.gain;
+    const pan = ctx.createPanner();
+    placePanner(pan, d.az, d.el);
+    if (d.ch === 2) { split.connect(delay, 0); split.connect(delay, 1); } // mono sum
+    else split.connect(delay, d.ch);
+    delay.connect(g);
+    g.connect(pan);
+    pan.connect(output);
+    panners.push(pan);
+  }
+  return panners;
+}
+
 export class ConcertEngine {
   constructor() {
     this.ctx = null;
@@ -116,6 +188,7 @@ export class ConcertEngine {
     this._wetDry = 0.78;
     this._bypass = false;
     this._volume = 0.85; // master output volume, 0..1
+    this._immersive = true; // 360° HRTF spatialization of the reverb field (default on)
     this.ready = false;
 
     // decoded-buffer fallback (used when <audio> can't decode the file, e.g.
@@ -133,6 +206,10 @@ export class ConcertEngine {
     this._fileRef = null;          // original File (for offline export)
     this._wetDucker = null;        // AudioWorkletNode spliced into the wet bus
     this._vocalDemask = null;      // AudioWorkletNode lifting the masked vocal
+    this._wetStereoGain = null;    // front-stereo reverb bus (active when immersive off)
+    this._immIn = null;            // feed into the 360° HRTF ring
+    this._immOut = null;           // 360° ring output trim (active when immersive on)
+    this._immPanners = null;       // HRTF panner nodes around the listener
   }
 
   // Build the AudioContext + node graph. Idempotent; called on first interaction.
@@ -360,7 +437,21 @@ export class ConcertEngine {
     this.wetVocalCut.connect(this.wetAirCut);
     this.wetAirCut.connect(this.wetGain);
     this.wetGain.connect(this.wetTrim);
-    this.wetTrim.connect(this.master);
+
+    // Reverb bus output. Two parallel destinations gated by complementary gains:
+    //   • _wetStereoGain — the original front stereo reverb straight to master.
+    //   • _immIn → 360° HRTF ring → _immOut — the immersive spatialized field.
+    // setImmersive() crossfades between them, so OFF is bit-for-bit the original
+    // path (a unity gain is transparent; the muted ring adds pure silence).
+    this._wetStereoGain = this.ctx.createGain();
+    this._immIn = this.ctx.createGain();
+    this._immOut = this.ctx.createGain();
+    this.wetTrim.connect(this._wetStereoGain);
+    this._wetStereoGain.connect(this.master);
+    this.wetTrim.connect(this._immIn);
+    this._immPanners = buildSpatialField(this.ctx, this._immIn, this._immOut);
+    this._immOut.connect(this.master);
+    this._applyImmersive();
 
     // master -> limiter -> destination, and tap the analyser pre-limiter
     this.master.connect(this.limiter);
@@ -603,6 +694,22 @@ export class ConcertEngine {
     if (this.master) {
       this.master.gain.setTargetAtTime(this._volume, this.ctx.currentTime, 0.02);
     }
+  }
+
+  // Toggle the 360° HRTF spatialization of the reverb field. OFF restores the
+  // exact original front-stereo reverb path (the immersive ring is muted to
+  // silence, the stereo bus runs at unity → output is unchanged from baseline).
+  setImmersive(on) {
+    this._immersive = !!on;
+    this._applyImmersive();
+  }
+
+  _applyImmersive() {
+    if (!this._immOut) return;
+    const t = this.ctx ? this.ctx.currentTime : 0;
+    const on = this._immersive;
+    this._immOut.gain.setTargetAtTime(on ? IMM_TRIM : 0, t, 0.03);
+    this._wetStereoGain.gain.setTargetAtTime(on ? 0 : 1, t, 0.03);
   }
 
   _applyCrossfade() {
@@ -899,7 +1006,18 @@ export class ConcertEngine {
     } else {
       wet.connect(wetTrim);
     }
-    wetTrim.connect(out);
+    // Reverb output: match the live toggle. Immersive ON → 360° HRTF ring;
+    // OFF → the original front-stereo reverb straight through.
+    if (this._immersive) {
+      const immIn = offline.createGain();
+      const immOut = offline.createGain();
+      immOut.gain.value = IMM_TRIM;
+      wetTrim.connect(immIn);
+      buildSpatialField(offline, immIn, immOut);
+      immOut.connect(out);
+    } else {
+      wetTrim.connect(out);
+    }
     out.connect(limiter); limiter.connect(offline.destination);
 
     src.start(0);
