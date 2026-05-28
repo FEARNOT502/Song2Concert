@@ -22,6 +22,7 @@ export const VENUES = [
     // intimate, woody: short tail, tight bass, fast HF roll-off; mostly frontal
     ir: { rt60: 0.9, predelay: 0.012, lfDamp: 0.45, hfDamp: 0.78, color: 0.6, density: 0.85, spread: 0.5, lateral: 0.25 },
     dryWidth: 1.0, // acoustic, close — full natural stereo
+    immersion: 0.35, // intimate club: reverb stays mostly frontal, only a slight side/rear wrap
   },
   {
     id: 'hall',
@@ -35,6 +36,7 @@ export const VENUES = [
     // STRONG lateral early reflections → the hall's signature side-envelopment
     ir: { rt60: 2.0, predelay: 0.028, lfDamp: 0.32, hfDamp: 0.6, color: 0.5, density: 0.92, spread: 0.8, lateral: 0.95 },
     dryWidth: 1.0, // natural acoustic hall — full stereo
+    immersion: 1.0, // strong lateral envelopment (lateral 0.95) — full 360° wrap
   },
   {
     id: 'arena',
@@ -47,6 +49,7 @@ export const VENUES = [
     // PA-driven: mid space but DEEP LF damping so bass stays punchy not boomy
     ir: { rt60: 2.4, predelay: 0.04, lfDamp: 0.62, hfDamp: 0.72, color: 0.44, density: 0.7, spread: 0.88, lateral: 0.5, slap: true },
     dryWidth: 0.85, // slight PA narrowing — keep most stereo separation for clarity
+    immersion: 0.6, // PA-driven: moderate wrap — space comes from sides, vocals stay up front
   },
   {
     id: 'dome',
@@ -59,6 +62,7 @@ export const VENUES = [
     // huge, washy mids; strong LF + HF damping; delay-tower slap cluster
     ir: { rt60: 3.4, predelay: 0.055, lfDamp: 0.66, hfDamp: 0.78, color: 0.38, density: 0.62, spread: 0.92, lateral: 0.6, slap: true },
     dryWidth: 0.82, // gentle narrowing — preserve instrument separation
+    immersion: 0.65, // cavernous dome: enveloping wash from all sides
   },
   {
     id: 'stadium',
@@ -71,6 +75,7 @@ export const VENUES = [
     // open-air: thinner diffuse field, very tight bass (no walls), long PA delays
     ir: { rt60: 3.0, predelay: 0.06, lfDamp: 0.72, hfDamp: 0.82, color: 0.42, density: 0.5, spread: 0.96, lateral: 0.55, slap: true },
     dryWidth: 0.8, // gentle narrowing — keep the kit/instruments distinct
+    immersion: 0.55, // open-air: thinner diffuse field, so a lighter wrap than enclosed venues
   },
 ];
 

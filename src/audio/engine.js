@@ -101,32 +101,33 @@ function createVocalDemask(ctx) {
 
 // ── Immersive 360° spatializer ────────────────────────────────────────────
 // The "best seat" experience: the DIRECT sound (vocals/kick/snare = the PA) sits
-// up FRONT and stays clear, while the REVERBERANT field wraps around the head
-// from the sides, BEHIND, and slightly ABOVE — true listener envelopment (LEV).
+// up FRONT and stays clear, while the REVERBERANT field also WRAPS the listener
+// from the sides and BEHIND — listener envelopment (LEV) on headphones.
 //
-// Stereo width + the IR's lateral taps only widen the FRONTAL image; they can't
-// place energy behind or overhead. So we distribute the wet (reverb) bus across a
-// ring of virtual ambience sources positioned around the listener and render each
-// through an HRTF PannerNode (binaural), which is what gives genuine rear/height
-// localization on headphones. Each source is fed a DECORRELATED copy of the
-// reverb (a distinct short delay on a diffuse tail → no comb/echo) drawn from the
-// L or R reverb channel (or a mono sum for the overhead), so the field stays
-// spacious rather than a point source. Rear/overhead sources are delayed a touch
-// MORE, matching how those reflections arrive later in a real room.
+// Design notes (why it's built the way it is — earlier versions sounded wrong):
+//   • NO added delays. Feeding the reverb through delayed taps (tens of ms) made
+//     the long big-venue tail read as a SEPARATE echo / slap and combed into a
+//     phasey sweep. The IR's own L/R channels are already decorrelated, so we
+//     pan them directly — no delay → no echo, no delay-comb.
+//   • NO overhead/height source. HRTF elevation is encoded almost entirely as
+//     sharp spectral notches, so an "above" tap mostly just sounds HOLLOW /
+//     boxy ("통울림") rather than localizing up. Dropped until it can be done
+//     subtly without that coloration.
+//   • The front stereo reverb stays as a BED (see _applyImmersive); the ring is
+//     an ADDITIVE side/rear wrap on top, so the ambience never collapses to
+//     "all behind you / floating". Each side is fed ONLY its own reverb channel
+//     so the two sides don't comb against each other.
 //
 // Azimuth: 0° = front (toward the stage, −Z), positive = listener's right (+X).
-// Elevation: degrees above the horizontal plane (+Y).
 // ch: 0 = left reverb channel, 1 = right, 2 = mono sum of both.
 const SPATIAL_DIRS = [
-  { az: -32, el: 0,  ch: 0, delayMs: 7,  gain: 0.55 }, // front-left fill
-  { az: 32,  el: 0,  ch: 1, delayMs: 11, gain: 0.55 }, // front-right fill
-  { az: -95, el: 0,  ch: 0, delayMs: 19, gain: 0.70 }, // hard left (lateral)
-  { az: 95,  el: 0,  ch: 1, delayMs: 27, gain: 0.70 }, // hard right (lateral)
-  { az: -140, el: 8, ch: 0, delayMs: 33, gain: 0.60 }, // rear-left
-  { az: 140,  el: 8, ch: 1, delayMs: 43, gain: 0.60 }, // rear-right
-  { az: 0,    el: 60, ch: 2, delayMs: 29, gain: 0.50 }, // overhead (ceiling)
+  { az: -100, el: 0, ch: 0, gain: 0.70 }, // left, slightly behind
+  { az: 100,  el: 0, ch: 1, gain: 0.70 }, // right, slightly behind
+  { az: -150, el: 0, ch: 0, gain: 0.45 }, // rear-left
+  { az: 150,  el: 0, ch: 1, gain: 0.45 }, // rear-right
 ];
-const IMM_TRIM = 0.6; // output trim so the 360° field matches the stereo bus level
+const IMM_TRIM = 0.35;  // level of the additive side/rear wrap (sits under the bed)
+const FRONT_BED = 0.7;  // front stereo reverb kept when immersive is on (anchors it)
 
 // Position an HRTF panner on a sphere around the listener from azimuth/elevation.
 function placePanner(pan, azDeg, elDeg) {
@@ -147,23 +148,21 @@ function placePanner(pan, azDeg, elDeg) {
   }
 }
 
-// Build the 360° ambience ring: `input` (stereo reverb) → ring of delayed,
-// HRTF-panned virtual sources → `output`. Returns the created panner nodes.
-// Shared by the live graph and the offline export so they sound identical.
+// Build the 360° side/rear ambience ring: `input` (stereo reverb) → HRTF-panned
+// virtual sources → `output`. No delays (the reverb is already diffuse and its
+// L/R channels are decorrelated), which avoids the echo/comb artifacts. Returns
+// the panner nodes. Shared by the live graph and the offline export.
 function buildSpatialField(ctx, input, output) {
   const split = ctx.createChannelSplitter(2);
   input.connect(split);
   const panners = [];
   for (const d of SPATIAL_DIRS) {
-    const delay = ctx.createDelay(0.1);
-    delay.delayTime.value = d.delayMs / 1000;
     const g = ctx.createGain();
     g.gain.value = d.gain;
     const pan = ctx.createPanner();
     placePanner(pan, d.az, d.el);
-    if (d.ch === 2) { split.connect(delay, 0); split.connect(delay, 1); } // mono sum
-    else split.connect(delay, d.ch);
-    delay.connect(g);
+    if (d.ch === 2) { split.connect(g, 0); split.connect(g, 1); } // mono sum
+    else split.connect(g, d.ch);
     g.connect(pan);
     pan.connect(output);
     panners.push(pan);
@@ -189,6 +188,7 @@ export class ConcertEngine {
     this._bypass = false;
     this._volume = 0.85; // master output volume, 0..1
     this._immersive = true; // 360° HRTF spatialization of the reverb field (default on)
+    this._immScale = 1;     // per-venue wrap amount (set by setVenue)
     this.ready = false;
 
     // decoded-buffer fallback (used when <audio> can't decode the file, e.g.
@@ -655,6 +655,8 @@ export class ConcertEngine {
     this.setPreDelay(fusedPreDelay(Number.isFinite(ms) ? ms / 1000 : (venue.ir.predelay ?? 0.02)));
     // direct-sound width: mono-ish for big PA venues, full for club/hall
     this.setDryWidth(venue.dryWidth ?? 1);
+    // per-venue 360° wrap amount (intimate club → subtle, acoustic hall → strong)
+    this.setImmersionScale(venue.immersion ?? 1);
   }
 
   setPreDelay(seconds) {
@@ -708,8 +710,18 @@ export class ConcertEngine {
     if (!this._immOut) return;
     const t = this.ctx ? this.ctx.currentTime : 0;
     const on = this._immersive;
-    this._immOut.gain.setTargetAtTime(on ? IMM_TRIM : 0, t, 0.03);
-    this._wetStereoGain.gain.setTargetAtTime(on ? 0 : 1, t, 0.03);
+    // ON: keep the front stereo reverb as a bed + add the side/rear wrap scaled
+    // by the venue's immersion amount. OFF: front stereo at unity, wrap muted →
+    // bit-identical to the original path.
+    this._immOut.gain.setTargetAtTime(on ? IMM_TRIM * this._immScale : 0, t, 0.03);
+    this._wetStereoGain.gain.setTargetAtTime(on ? FRONT_BED : 1, t, 0.03);
+  }
+
+  // Per-venue wrap amount (0..1): intimate rooms ~0 (mostly frontal), acoustic
+  // halls ~1 (strong side envelopment). Scales the additive ring's level.
+  setImmersionScale(scale) {
+    this._immScale = Math.max(0, Math.min(1, scale));
+    this._applyImmersive();
   }
 
   _applyCrossfade() {
@@ -1006,12 +1018,20 @@ export class ConcertEngine {
     } else {
       wet.connect(wetTrim);
     }
-    // Reverb output: match the live toggle. Immersive ON → 360° HRTF ring;
-    // OFF → the original front-stereo reverb straight through.
+    // Reverb output: match the live toggle/graph. Immersive ON → front stereo
+    // bed (FRONT_BED) anchors the reverb up front, plus an additive 360° HRTF
+    // wrap scaled by IMM_TRIM × the venue's immersion amount. OFF → the original
+    // front-stereo reverb straight through at unity.
     if (this._immersive) {
+      const imm = Math.max(0, Math.min(1, venue.immersion ?? 1));
+      const stereoBed = offline.createGain();
+      stereoBed.gain.value = FRONT_BED;
+      wetTrim.connect(stereoBed);
+      stereoBed.connect(out);
+
       const immIn = offline.createGain();
       const immOut = offline.createGain();
-      immOut.gain.value = IMM_TRIM;
+      immOut.gain.value = IMM_TRIM * imm;
       wetTrim.connect(immIn);
       buildSpatialField(offline, immIn, immOut);
       immOut.connect(out);
