@@ -73,21 +73,38 @@ export default function App() {
   // ── playback clock — reads engine.currentTime each frame while playing ───
   // (loadTrack is declared below; reach it via a ref to dodge the TDZ + deps.)
   const advanceRef = useRef(() => {});
+  // Advance exactly once per track-end. Shared by BOTH the rAF poll (foreground)
+  // and the engine's end-of-track event (fires while backgrounded), so the two
+  // can never double-advance and skip a track.
+  const advancingRef = useRef(false);
+  const handleEnded = useCallback(() => {
+    if (advancingRef.current) return;
+    advancingRef.current = true;
+    advanceRef.current().finally(() => { advancingRef.current = false; });
+  }, []);
+
+  // Drive auto-advance off the engine's REAL end-of-track event (audio 'ended' /
+  // buffer-source onended). These fire even when the tab/window is minimized or
+  // not on top — unlike requestAnimationFrame, which the browser pauses in the
+  // background — so the queue keeps moving without the page being focused.
+  useEffect(() => {
+    engine.onended = handleEnded;
+    return () => { if (engine.onended === handleEnded) engine.onended = null; };
+  }, [engine, handleEnded]);
+
   useEffect(() => {
     if (!playing || !hasAudio) return undefined;
     let raf;
     let stopped = false;
-    let advancing = false; // guard so we fire advance() once per track-end
     const tick = () => {
       if (stopped) return;
       if (engine.isEnded) {
-        // Track finished → drop it from the queue and play the next one.
-        // We keep the RAF loop alive across the advance (do NOT stop it):
-        // `playing` stays true while auto-advancing, so this effect never
-        // re-runs to restart the loop — if we stopped here, the clock would
-        // freeze on the next track. The `advancing` flag prevents firing the
-        // async advance more than once before the next track is loaded.
-        if (!advancing) { advancing = true; advanceRef.current().finally(() => { advancing = false; }); }
+        // Track finished → advance (foreground fallback; the engine event above
+        // is the primary trigger and also covers the backgrounded case). We keep
+        // the RAF loop alive across the advance (do NOT stop it): `playing` stays
+        // true while auto-advancing, so this effect never re-runs to restart the
+        // loop — if we stopped here, the clock would freeze on the next track.
+        handleEnded();
         raf = requestAnimationFrame(tick);
         return;
       }
@@ -96,7 +113,7 @@ export default function App() {
     };
     raf = requestAnimationFrame(tick);
     return () => { stopped = true; cancelAnimationFrame(raf); };
-  }, [playing, hasAudio, engine]);
+  }, [playing, hasAudio, engine, handleEnded]);
 
   // ── pulse animation — AnalyserNode RMS, frozen on pause ──────────────────
   useEffect(() => {

@@ -117,6 +117,10 @@ export class ConcertEngine {
     this._bypass = false;
     this._volume = 0.85; // master output volume, 0..1
     this.ready = false;
+    // Called once when a track reaches its NATURAL end. Driven by real audio
+    // events (element 'ended' / buffer-source onended), not the UI's rAF clock,
+    // so auto-advance keeps working while the tab/window is backgrounded.
+    this.onended = null;
 
     // decoded-buffer fallback (used when <audio> can't decode the file, e.g.
     // FLAC on Chrome/Edge). When active, playback runs off an
@@ -147,6 +151,10 @@ export class ConcertEngine {
     // element is actually attached to the document. Mount it hidden.
     this.audioEl.style.display = 'none';
     document.body.appendChild(this.audioEl);
+    // Fire the end-of-track callback from the element's own 'ended' event. Media
+    // 'ended' events keep firing while the tab/window is backgrounded (unlike
+    // requestAnimationFrame, which the browser pauses), so the app can advance.
+    this.audioEl.addEventListener('ended', () => this._emitEnded());
 
     this.source = this.ctx.createMediaElementSource(this.audioEl);
 
@@ -642,6 +650,7 @@ export class ConcertEngine {
       this._bufPlaying = false;
       this._bufOffset = 0;
       this._ended = true;
+      this._emitEnded();
     };
     const off = Math.max(0, Math.min(this._decoded.duration, offset));
     src.start(0, off);
@@ -706,6 +715,15 @@ export class ConcertEngine {
     }
     if (this.audioEl && Number.isFinite(this.audioEl.duration)) {
       this.audioEl.currentTime = Math.max(0, Math.min(this.audioEl.duration, seconds));
+    }
+  }
+
+  // Notify the app that the current track reached its natural end. Fired from
+  // real audio events (element 'ended' / buffer-source onended), so auto-advance
+  // works even while backgrounded (where the UI's rAF clock is paused).
+  _emitEnded() {
+    if (typeof this.onended === 'function') {
+      try { this.onended(); } catch (e) { /* ignore listener errors */ }
     }
   }
 
