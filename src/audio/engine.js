@@ -1,11 +1,12 @@
 // engine.js — the Web Audio convolution-reverb engine.
 //
-// Routing graph (CLAUDE_PROMPT.md §7 + technical spec §2):
+// Routing graph (CLAUDE_PROMPT.md §7 + technical spec §2, extended):
 //
-//                                  ┌──────────────► [dryGain] ─────────────┐
-//   <audio> ─► MediaElementSource ─┤                                       ├─► [master] ─► destination
-//                                  └─► [preDelay] ─► [convolver] ─► [wetGain]┘                  │
-//                                                                            └─► [analyser] (RMS for pulse)
+//   <audio> ─► [subCut] ─► [EQ] ─┬─► dry tone/width ─► [dryGain] ──────────────┐
+//                                └─► [preDelay] ─► [convolver] ─► wet EQ ─► [wetGain·wetTrim] ─┤
+//   ┌────────────────────────────────────────────────────────────────────────────┘
+//   └─► [mixBus] ─► [glue comp] ─► [PA saturation] ─► [master] ─► [limiter] ─► destination
+//                                                        └─► [analyser] (RMS for pulse)
 //
 // - Source is a streaming HTMLAudioElement (createMediaElementSource) so large
 //   FLAC/WAV files are NOT decoded into a single in-memory AudioBuffer.
@@ -89,6 +90,38 @@ function createWetDucker(ctx) {
   });
 }
 
+// tanh soft-saturation curve for the PA drive stage. Big PAs at concert SPL sit
+// just into their power-band, adding subtle harmonic density and rounding the
+// loudest peaks — that "wall of sound" thickness studio playback lacks. k = 0 →
+// null (linear passthrough / bypass). Normalized so ±1 still maps to ±1: small
+// k only rounds peaks and adds low-order harmonics, it never hard-clips.
+function makeSatCurve(k) {
+  if (!k || k < 0.05) return null;
+  const n = 1024;
+  const curve = new Float32Array(n);
+  const norm = Math.tanh(k);
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * 2 - 1;
+    curve[i] = Math.tanh(k * x) / norm;
+  }
+  return curve;
+}
+
+// Map a venue's 0..1 `glue` amount to live bus-compressor settings. FOH mixes
+// run through a gentle master-bus compressor that pumps the mix together —
+// slow-ish attack so kick/snare transients still punch through, program-length
+// release, soft knee. Bigger shows compress harder.
+function glueSettings(glue) {
+  const g = Math.max(0, Math.min(1, glue));
+  return {
+    threshold: -12 - 10 * g, // dBFS: club grazes it, stadium leans on it
+    ratio: 1.6 + 2.6 * g,    // ~1.6:1 (transparent) … ~4.2:1 (dense live mix)
+    knee: 12,
+    attack: 0.028,           // lets the transient through before clamping
+    release: 0.25,
+  };
+}
+
 // Create the vocal-demask node: 2 mono inputs (Mid presence, Side presence),
 // 1 mono output (the presence to add back to the center).
 function createVocalDemask(ctx) {
@@ -162,6 +195,16 @@ export class ConcertEngine {
     // connect here, so the dry/wet graph downstream is identical for both modes.
     this._inGain = this.ctx.createGain();
 
+    // Subsonic cut: a real PA reproduces almost nothing below ~30 Hz — the sub
+    // stacks roll off and the system processor high-passes the feed to protect
+    // drivers. Cutting it here (before the bass shelf) removes inaudible rumble
+    // that would otherwise eat limiter headroom, and makes the low end read
+    // TIGHTER, the way a tuned system does.
+    this.subCut = this.ctx.createBiquadFilter();
+    this.subCut.type = 'highpass';
+    this.subCut.frequency.value = 30;
+    this.subCut.Q.value = 0.7;
+
     // Low-end body, the way a real concert PA presents bass: big subwoofer
     // weight on the DIRECT sound. This low-shelf sits on the shared input bus so
     // it lifts both the dry and the wet feed BEFORE the split. The reverb tail
@@ -198,7 +241,8 @@ export class ConcertEngine {
     this.bassDef.frequency.value = 800;    // string growl / where the note "reads"
     this.bassDef.Q.value = 1.0;
     this.bassDef.gain.value = 1.5;         // dB
-    this.source.connect(this.bassShelf);
+    this.source.connect(this.subCut);
+    this.subCut.connect(this.bassShelf);
     this.bassShelf.connect(this.kickPeak);
     this.kickPeak.connect(this.bassBody);
     this.bassBody.connect(this.bassDef);
@@ -233,6 +277,18 @@ export class ConcertEngine {
     this.hatAir.type = 'highshelf';
     this.hatAir.frequency.value = 10000;
     this.hatAir.gain.value = 3; // dB
+    // ── Distance darkening (air absorption) on the DIRECT sound ─────────
+    // Over tens of meters, air absorbs high frequencies hard (~0.1–0.2 dB/m at
+    // 10 kHz), so from a real seat the PA sounds noticeably DARKER than a studio
+    // monitor — that tilt is one of the strongest "I'm far from the stage" cues,
+    // and it was missing: the dry path stayed studio-bright even at "90 m".
+    // FOH tuning partially compensates (HF horn throw), so we model the NET
+    // house curve as a gentle high-shelf cut whose depth scales with the venue's
+    // listening distance (set per venue in setVenue: club ≈ 0 → stadium ≈ −5.5 dB).
+    this.paAir = this.ctx.createBiquadFilter();
+    this.paAir.type = 'highshelf';
+    this.paAir.frequency.value = 7500;
+    this.paAir.gain.value = 0; // set per venue
     // ── Direct-sound stereo width (mid/side) ─────────────────────────────
     // A big-venue PA is essentially mono/LCR: both line arrays carry largely the
     // same signal, so across the house the DIRECT sound images centered/narrow —
@@ -333,6 +389,25 @@ export class ConcertEngine {
     this.master = this.ctx.createGain();
     this.master.gain.value = this._volume; // user volume (0..1)
 
+    // ── Live mix-bus stage: glue compression + PA saturation ────────────
+    // Dry and wet sum into mixBus, then pass through a gentle bus compressor
+    // (the FOH "glue" that makes a live mix breathe as ONE dense thing instead
+    // of separate studio stems) and a soft tanh saturator (the harmonic
+    // thickness of a big PA near its power band). Both sit BEFORE the volume
+    // knob so their character doesn't change with playback level; per-venue
+    // depth is set in setVenue (acoustic hall ≈ transparent, stadium ≈ dense).
+    this.mixBus = this.ctx.createGain();
+    this.glue = this.ctx.createDynamicsCompressor();
+    const gs = glueSettings(0.3); // neutral default until a venue is set
+    this.glue.threshold.value = gs.threshold;
+    this.glue.ratio.value = gs.ratio;
+    this.glue.knee.value = gs.knee;
+    this.glue.attack.value = gs.attack;
+    this.glue.release.value = gs.release;
+    this.paSat = this.ctx.createWaveShaper();
+    this.paSat.oversample = '4x'; // keep the added harmonics alias-free
+    this.paSat.curve = null;      // linear until a venue sets its drive
+
     // brickwall-ish limiter as the final safety net so nothing tears, no matter
     // the venue / wet mix / source level.
     this.limiter = this.ctx.createDynamicsCompressor();
@@ -352,9 +427,10 @@ export class ConcertEngine {
     this._inGain.connect(this.vocalPresence);
     this.vocalPresence.connect(this.snareCrack);
     this.snareCrack.connect(this.hatAir);
-    this.hatAir.connect(this._wIn);        // → mid/side width matrix
+    this.hatAir.connect(this.paAir);       // distance darkening (per venue)
+    this.paAir.connect(this._wIn);         // → mid/side width matrix
     this._wMerge.connect(this.dryGain);
-    this.dryGain.connect(this.master);
+    this.dryGain.connect(this.mixBus);
 
     // wet path: in -> preDelay -> convolver -> lowCut -> mudCut -> vocalCut -> airCut -> wetGain -> wetTrim -> master
     // The sidechain ducker is inserted between wetGain and wetTrim once its
@@ -368,9 +444,13 @@ export class ConcertEngine {
     this.wetVocalCut.connect(this.wetAirCut);
     this.wetAirCut.connect(this.wetGain);
     this.wetGain.connect(this.wetTrim);
-    this.wetTrim.connect(this.master);
+    this.wetTrim.connect(this.mixBus);
 
-    // master -> limiter -> destination, and tap the analyser pre-limiter
+    // mixBus -> glue -> saturation -> master -> limiter -> destination,
+    // and tap the analyser pre-limiter
+    this.mixBus.connect(this.glue);
+    this.glue.connect(this.paSat);
+    this.paSat.connect(this.master);
     this.master.connect(this.limiter);
     this.limiter.connect(this.ctx.destination);
     this.master.connect(this.analyser);
@@ -572,6 +652,23 @@ export class ConcertEngine {
     this.setPreDelay(fusedPreDelay(Number.isFinite(ms) ? ms / 1000 : (venue.ir.predelay ?? 0.02)));
     // direct-sound width: mono-ish for big PA venues, full for club/hall
     this.setDryWidth(venue.dryWidth ?? 1);
+    // PA/system character: distance darkening, bus glue, saturation drive
+    this._applyPACharacter(venue.pa || {});
+  }
+
+  // Per-venue PA / listening-distance character (see data.js `pa` blocks):
+  //   airHF — dB of high-shelf CUT on the direct sound (distance darkening)
+  //   glue  — 0..1 live bus-compression depth
+  //   drive — tanh saturation amount (0 = linear bypass)
+  _applyPACharacter(pa) {
+    const t = this.ctx.currentTime;
+    if (this.paAir) this.paAir.gain.setTargetAtTime(pa.airHF ?? 0, t, 0.02);
+    if (this.glue) {
+      const gs = glueSettings(pa.glue ?? 0.3);
+      this.glue.threshold.setTargetAtTime(gs.threshold, t, 0.02);
+      this.glue.ratio.setTargetAtTime(gs.ratio, t, 0.02);
+    }
+    if (this.paSat) this.paSat.curve = makeSatCurve(pa.drive ?? 0);
   }
 
   setPreDelay(seconds) {
@@ -804,6 +901,10 @@ export class ConcertEngine {
     src.buffer = decoded;
 
     // match the live graph's low-end shaping so the export sounds identical
+    const subCut = offline.createBiquadFilter();
+    subCut.type = 'highpass';
+    subCut.frequency.value = 30;
+    subCut.Q.value = 0.7;
     const bassShelf = offline.createBiquadFilter();
     bassShelf.type = 'lowshelf';
     bassShelf.frequency.value = 120;
@@ -840,6 +941,12 @@ export class ConcertEngine {
     hatAir.type = 'highshelf';
     hatAir.frequency.value = 10000;
     hatAir.gain.value = 3;
+    // distance darkening on the direct sound (match live graph, per venue)
+    const pa = venue.pa || {};
+    const paAir = offline.createBiquadFilter();
+    paAir.type = 'highshelf';
+    paAir.frequency.value = 7500;
+    paAir.gain.value = pa.airHF ?? 0;
     // direct-sound width (mid/side) — match the live graph
     const width = venue.dryWidth ?? 1;
     const wa = (1 + width) / 2, wb = (1 - width) / 2;
@@ -874,6 +981,18 @@ export class ConcertEngine {
     vCut.type = 'peaking'; vCut.frequency.value = 3600; vCut.Q.value = 0.9; vCut.gain.value = -3.5; // a touch more vocal tail (match live)
     const aCut = offline.createBiquadFilter();
     aCut.type = 'highshelf'; aCut.frequency.value = 6000; aCut.gain.value = -2.5;
+    // live mix-bus stage (match live graph): glue compression + PA saturation
+    const mixBus = offline.createGain();
+    const glue = offline.createDynamicsCompressor();
+    const gs = glueSettings(pa.glue ?? 0.3);
+    glue.threshold.value = gs.threshold;
+    glue.ratio.value = gs.ratio;
+    glue.knee.value = gs.knee;
+    glue.attack.value = gs.attack;
+    glue.release.value = gs.release;
+    const paSat = offline.createWaveShaper();
+    paSat.oversample = '4x';
+    paSat.curve = makeSatCurve(pa.drive ?? 0);
     const out = offline.createGain();
     out.gain.value = this._volume;
     const limiter = offline.createDynamicsCompressor();
@@ -886,9 +1005,9 @@ export class ConcertEngine {
     const ms = venue.position ? parseFloat(String(venue.position.firstReflection).replace(/[^0-9.]/g, '')) : 20;
     pre.delayTime.value = fusedPreDelay((Number.isNaN(ms) ? 20 : ms) / 1000); // match live: glue tail to transient
 
-    src.connect(bassShelf); bassShelf.connect(kickPeak); kickPeak.connect(bassBody); bassBody.connect(bassDef);
+    src.connect(subCut); subCut.connect(bassShelf); bassShelf.connect(kickPeak); kickPeak.connect(bassBody); bassBody.connect(bassDef);
     bassDef.connect(vocalPresence); vocalPresence.connect(snareCrack); snareCrack.connect(hatAir);
-    hatAir.connect(wIn); wMerge.connect(dry); dry.connect(out); // dry path through the width matrix
+    hatAir.connect(paAir); paAir.connect(wIn); wMerge.connect(dry); dry.connect(mixBus); // dry path through the width matrix
     // vocal de-mask (match live): lift the centered vocal presence when wide
     // instruments mask it, added back to the dry center
     if (vdOk) {
@@ -917,7 +1036,8 @@ export class ConcertEngine {
     } else {
       wet.connect(wetTrim);
     }
-    wetTrim.connect(out);
+    wetTrim.connect(mixBus);
+    mixBus.connect(glue); glue.connect(paSat); paSat.connect(out);
     out.connect(limiter); limiter.connect(offline.destination);
 
     src.start(0);

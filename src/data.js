@@ -8,6 +8,16 @@
 // bass stays tight/punchy (the dry path keeps the punch), let the mid carry the
 // "space", and roll the highs off fastest — that's what real concert PA + room
 // treatment do. See impulse.js for the lf/hf damping model.
+//
+// Each venue also carries a `pa` block — the sound SYSTEM + listening-distance
+// character applied by engine.js on top of the room's reverb:
+//   airHF — dB high-shelf cut (7.5 kHz) on the DIRECT sound. Air absorption over
+//           the listening distance darkens the house sound; the strongest
+//           "I'm far from the stage" cue. Net of FOH HF compensation.
+//   glue  — 0..1 live mix-bus compression depth. FOH bus compression makes a
+//           live mix breathe as one dense thing; acoustic hall ≈ transparent.
+//   drive — tanh PA saturation. Harmonic thickness of a big rig near its power
+//           band; 0 = clean/bypass (natural acoustics).
 
 export const VENUES = [
   {
@@ -22,6 +32,9 @@ export const VENUES = [
     // intimate, woody: short tail, tight bass, fast HF roll-off; mostly frontal
     ir: { rt60: 0.9, predelay: 0.012, lfDamp: 0.45, hfDamp: 0.78, color: 0.6, density: 0.85, spread: 0.5, lateral: 0.25 },
     dryWidth: 1.0, // acoustic, close — full natural stereo
+    // 4 m away: no air loss to speak of; a small club rig runs warm with a
+    // touch of console/system glue
+    pa: { airHF: -0.5, glue: 0.35, drive: 0.5 },
   },
   {
     id: 'hall',
@@ -35,6 +48,8 @@ export const VENUES = [
     // STRONG lateral early reflections → the hall's signature side-envelopment
     ir: { rt60: 2.0, predelay: 0.028, lfDamp: 0.32, hfDamp: 0.6, color: 0.5, density: 0.92, spread: 0.8, lateral: 0.95 },
     dryWidth: 1.0, // natural acoustic hall — full stereo
+    // natural acoustics, no PA: only the mild 20 m air loss; no bus glue or drive
+    pa: { airHF: -1.5, glue: 0.12, drive: 0 },
   },
   {
     id: 'arena',
@@ -47,6 +62,8 @@ export const VENUES = [
     // PA-driven: mid space but DEEP LF damping so bass stays punchy not boomy
     ir: { rt60: 2.4, predelay: 0.04, lfDamp: 0.62, hfDamp: 0.72, color: 0.44, density: 0.7, spread: 0.88, lateral: 0.5, slap: true },
     dryWidth: 0.85, // slight PA narrowing — keep most stereo separation for clarity
+    // 45 m of air darkens the top; loud rock/pop mix = firm bus glue + PA drive
+    pa: { airHF: -3.5, glue: 0.75, drive: 1.0 },
   },
   {
     id: 'dome',
@@ -59,6 +76,8 @@ export const VENUES = [
     // huge, washy mids; strong LF + HF damping; delay-tower slap cluster
     ir: { rt60: 3.4, predelay: 0.055, lfDamp: 0.66, hfDamp: 0.78, color: 0.38, density: 0.62, spread: 0.92, lateral: 0.6, slap: true },
     dryWidth: 0.82, // gentle narrowing — preserve instrument separation
+    // 70 m through dome air: strongly darkened top, dense driven house mix
+    pa: { airHF: -4.5, glue: 0.8, drive: 1.1 },
   },
   {
     id: 'stadium',
@@ -71,6 +90,8 @@ export const VENUES = [
     // open-air: thinner diffuse field, very tight bass (no walls), long PA delays
     ir: { rt60: 3.0, predelay: 0.06, lfDamp: 0.72, hfDamp: 0.82, color: 0.42, density: 0.5, spread: 0.96, lateral: 0.55, slap: true },
     dryWidth: 0.8, // gentle narrowing — keep the kit/instruments distinct
+    // 90 m open-air: deepest distance darkening, loudest show = most glue/drive
+    pa: { airHF: -5.5, glue: 0.85, drive: 1.2 },
   },
 ];
 
@@ -139,6 +160,9 @@ export const SHARED_NOTES = [
   '초기 반사를 촘촘하고 불규칙하게 배치해 스네어 같은 타격음의 잔향이 플러터(메아리)로 어색하게 울리지 않고 매끄럽게 퍼지도록 했습니다.',
   '웻 경로 EQ: 로우컷(~170Hz)으로 킥·베이스 바디를 직접음에 몰아 또렷하게 + 머드 컷(~300Hz) · 보컬/스네어 컷(~3.6kHz) · 에어 컷(6kHz)으로 잔향이 리듬 섹션을 덮지 않게 합니다.',
   '보컬 디마스킹: 보컬이 사는 중앙(Mid) ~2.8kHz 대역을, 양옆으로 퍼진 악기가 그 대역을 덮을 때만 자동으로 끌어올려(사이드체인) 보컬의 또렷함을 일정하게 유지합니다 — 단독·조용한 보컬 구간은 그대로 둡니다.',
+  '거리 기반 고역 감쇠: 공연장 규모(청취 거리)에 따라 직접음의 초고역을 하이셸프(7.5kHz)로 낮춰(클럽 −0.5dB → 스타디움 −5.5dB) 공기 흡음으로 어두워지는 "멀리서 듣는 PA" 특유의 톤 기울기를 재현합니다.',
+  '라이브 버스 컴프레션("글루") + PA 새추레이션: FOH 마스터 버스처럼 완만한 컴프레션(어택을 느리게 잡아 킥·스네어 타격감은 통과)으로 믹스를 하나로 응집시키고, 큰 공연장일수록 tanh 소프트 새추레이션을 더해 대음량 PA의 하모닉 밀도를 냅니다. 자연 음향 홀은 거의 투명하게 둡니다.',
+  '서브소닉 컷(~30Hz 하이패스): 실제 PA가 재생하지 못하는 초저역 럼블을 정리해 저역이 더 타이트하게 들리고 리미터 헤드룸을 확보합니다.',
   '등전력 크로스페이더로 웻/드라이를 섞고, 마지막 단 리미터가 어떤 설정에서도 클리핑을 막습니다.',
   '임펄스 응답은 공연장 음향 파라미터로부터 실시간 합성됩니다(측정 IR로 교체 가능).',
 ];
