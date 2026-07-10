@@ -92,17 +92,35 @@ function createWetDucker(ctx) {
 
 // tanh soft-saturation curve for the PA drive stage. Big PAs at concert SPL sit
 // just into their power-band, adding subtle harmonic density and rounding the
-// loudest peaks — that "wall of sound" thickness studio playback lacks. k = 0 →
-// null (linear passthrough / bypass). Normalized so ±1 still maps to ±1: small
-// k only rounds peaks and adds low-order harmonics, it never hard-clips.
+// loudest peaks — that "wall of sound" thickness studio playback lacks.
+//
+// Two hard-earned constraints (both were audible as crackle/fizz on kicks and
+// a gritty top end):
+//
+// 1. HEADROOM. A WaveShaper CLAMPS any input outside the curve's ±1 domain to
+//    the curve's endpoints — i.e. it hard-clips. With the dry path's low-end
+//    EQ stacking up to ~+13 dB, kick peaks sail well past ±1 and were being
+//    hard-clipped, which sprays harsh high-order harmonics across the top end
+//    ("noise" on every kick). So the signal is pre-scaled by 1/SAT_HEADROOM
+//    (see satIn) and the curve is defined over a ±SAT_HEADROOM signal range:
+//    hot peaks now ride the smooth tanh shoulder instead of a clamp.
+// 2. UNITY SLOPE AT ZERO. Normalizing by tanh(k) (the old curve) lifts every
+//    mid-level sample by up to ~1.4 dB, shoving the program into the final
+//    limiter full-time — constant limiting reads as grit/pumping. Normalizing
+//    by 1/k instead (curve = tanh(k·s)/k) leaves quiet material bit-identical
+//    and only COMPRESSES peaks (output ≤ input, always), so the saturator can
+//    never push the limiter harder than the clean signal would.
+//
+// k = 0 (or ≈0) yields the exact identity line, so venues with no PA drive
+// (e.g. the natural-acoustics hall) pass through untouched.
+const SAT_HEADROOM = 6; // curve spans ±6 of signal (+15.6 dB) — never clamps
 function makeSatCurve(k) {
-  if (!k || k < 0.05) return null;
-  const n = 1024;
+  const drive = k >= 0.05 ? k : 0;
+  const n = 4097; // odd → exact zero-crossing sample (no interpolated DC kink)
   const curve = new Float32Array(n);
-  const norm = Math.tanh(k);
   for (let i = 0; i < n; i++) {
-    const x = (i / (n - 1)) * 2 - 1;
-    curve[i] = Math.tanh(k * x) / norm;
+    const s = ((i / (n - 1)) * 2 - 1) * SAT_HEADROOM; // signal value
+    curve[i] = drive ? Math.tanh(drive * s) / drive : s;
   }
   return curve;
 }
@@ -414,9 +432,14 @@ export class ConcertEngine {
     this.glue.knee.value = gs.knee;
     this.glue.attack.value = gs.attack;
     this.glue.release.value = gs.release;
+    // satIn pre-scales by 1/SAT_HEADROOM so the shaper's ±1 domain covers a
+    // ±SAT_HEADROOM signal range — the curve (built in signal units) undoes the
+    // scaling, so a zero-drive curve is a true identity passthrough.
+    this.satIn = this.ctx.createGain();
+    this.satIn.gain.value = 1 / SAT_HEADROOM;
     this.paSat = this.ctx.createWaveShaper();
     this.paSat.oversample = '4x'; // keep the added harmonics alias-free
-    this.paSat.curve = null;      // linear until a venue sets its drive
+    this.paSat.curve = makeSatCurve(0); // identity until a venue sets its drive
 
     // brickwall-ish limiter as the final safety net so nothing tears, no matter
     // the venue / wet mix / source level.
@@ -459,7 +482,8 @@ export class ConcertEngine {
     // mixBus -> glue -> saturation -> master -> limiter -> destination,
     // and tap the analyser pre-limiter
     this.mixBus.connect(this.glue);
-    this.glue.connect(this.paSat);
+    this.glue.connect(this.satIn);
+    this.satIn.connect(this.paSat);
     this.paSat.connect(this.master);
     this.master.connect(this.limiter);
     this.limiter.connect(this.ctx.destination);
@@ -1000,6 +1024,8 @@ export class ConcertEngine {
     glue.knee.value = gs.knee;
     glue.attack.value = gs.attack;
     glue.release.value = gs.release;
+    const satIn = offline.createGain();
+    satIn.gain.value = 1 / SAT_HEADROOM;
     const paSat = offline.createWaveShaper();
     paSat.oversample = '4x';
     paSat.curve = makeSatCurve(pa.drive ?? 0);
@@ -1047,7 +1073,7 @@ export class ConcertEngine {
       wet.connect(wetTrim);
     }
     wetTrim.connect(mixBus);
-    mixBus.connect(glue); glue.connect(paSat); paSat.connect(out);
+    mixBus.connect(glue); glue.connect(satIn); satIn.connect(paSat); paSat.connect(out);
     out.connect(limiter); limiter.connect(offline.destination);
 
     src.start(0);
