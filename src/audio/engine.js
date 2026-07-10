@@ -111,14 +111,21 @@ function makeSatCurve(k) {
 // run through a gentle master-bus compressor that pumps the mix together —
 // slow-ish attack so kick/snare transients still punch through, program-length
 // release, soft knee. Bigger shows compress harder.
+//
+// Kept deliberately LIGHT: Web Audio's DynamicsCompressor applies implicit
+// makeup gain, so a deep glue stage both squashes the mix on its own AND
+// pushes the program into the final limiter full-time — the two stack into an
+// audibly congested ("stuck together") sound. Cohesion should be a seasoning
+// the ear barely notices, so the ratio tops out under 3:1 and the threshold
+// stays high enough that only the mix's crest gets touched.
 function glueSettings(glue) {
   const g = Math.max(0, Math.min(1, glue));
   return {
-    threshold: -12 - 10 * g, // dBFS: club grazes it, stadium leans on it
-    ratio: 1.6 + 2.6 * g,    // ~1.6:1 (transparent) … ~4.2:1 (dense live mix)
+    threshold: -9 - 7 * g,   // dBFS: club grazes it, stadium leans on it
+    ratio: 1.35 + 1.45 * g,  // ~1.35:1 (transparent) … ~2.8:1 (gentle live glue)
     knee: 12,
-    attack: 0.028,           // lets the transient through before clamping
-    release: 0.25,
+    attack: 0.04,            // lets the full transient through before clamping
+    release: 0.2,
   };
 }
 
@@ -213,7 +220,7 @@ export class ConcertEngine {
     this.bassShelf = this.ctx.createBiquadFilter();
     this.bassShelf.type = 'lowshelf';
     this.bassShelf.frequency.value = 120;  // overall low-end weight (sub..low-bass)
-    this.bassShelf.gain.value = 7;         // dB — bigger low-end weight (concert sub feel)
+    this.bassShelf.gain.value = 8.5;       // dB — bigger low-end weight (concert sub feel)
     // ── Kick vs. bass frequency separation (live-FOH "carve" approach) ──
     // The kick and the bass guitar fight in the 60–120 Hz region. A FOH engineer
     // un-masks them by giving each its OWN pocket instead of boosting the shared
@@ -226,14 +233,14 @@ export class ConcertEngine {
     this.kickPeak.type = 'peaking';
     this.kickPeak.frequency.value = 60;    // lower than before → out of the bass's way
     this.kickPeak.Q.value = 1.6;           // narrower → only the thump, not the bass
-    this.kickPeak.gain.value = 3.5;        // dB — more chest thump
+    this.kickPeak.gain.value = 5;          // dB — more chest thump
     // bassBody: lift the bass guitar's fundamental/body pocket so it sits ABOVE
     // the kick instead of under it — this is the main fix for "bass buried in kick".
     this.bassBody = this.ctx.createBiquadFilter();
     this.bassBody.type = 'peaking';
     this.bassBody.frequency.value = 110;   // bass fundamental / "round" body
     this.bassBody.Q.value = 1.3;
-    this.bassBody.gain.value = 5;          // dB — fuller bass fundamental/body
+    this.bassBody.gain.value = 6.5;        // dB — fuller bass fundamental/body
     // bassDef: a small lift in the bass's note-definition/growl region so the
     // pitch of each bass note stays legible through a dense mix (separation).
     this.bassDef = this.ctx.createBiquadFilter();
@@ -284,10 +291,13 @@ export class ConcertEngine {
     // and it was missing: the dry path stayed studio-bright even at "90 m".
     // FOH tuning partially compensates (HF horn throw), so we model the NET
     // house curve as a gentle high-shelf cut whose depth scales with the venue's
-    // listening distance (set per venue in setVenue: club ≈ 0 → stadium ≈ −5.5 dB).
+    // listening distance (set per venue in setVenue: club ≈ 0 → stadium ≈ −4 dB).
+    // Corner at 9 kHz: high enough that the shelf's transition skirt leaves the
+    // vocal-consonant (~2.8 kHz) and snare-crack (~4.5 kHz) bands alone — pulling
+    // those down reads as a congested mix, not distance.
     this.paAir = this.ctx.createBiquadFilter();
     this.paAir.type = 'highshelf';
-    this.paAir.frequency.value = 7500;
+    this.paAir.frequency.value = 9000;
     this.paAir.gain.value = 0; // set per venue
     // ── Direct-sound stereo width (mid/side) ─────────────────────────────
     // A big-venue PA is essentially mono/LCR: both line arrays carry largely the
@@ -908,17 +918,17 @@ export class ConcertEngine {
     const bassShelf = offline.createBiquadFilter();
     bassShelf.type = 'lowshelf';
     bassShelf.frequency.value = 120;
-    bassShelf.gain.value = 7;
+    bassShelf.gain.value = 8.5;
     const kickPeak = offline.createBiquadFilter();
     kickPeak.type = 'peaking';
     kickPeak.frequency.value = 60;
     kickPeak.Q.value = 1.6;
-    kickPeak.gain.value = 3.5;
+    kickPeak.gain.value = 5;
     const bassBody = offline.createBiquadFilter();
     bassBody.type = 'peaking';
     bassBody.frequency.value = 110;
     bassBody.Q.value = 1.3;
-    bassBody.gain.value = 5;
+    bassBody.gain.value = 6.5;
     const bassDef = offline.createBiquadFilter();
     bassDef.type = 'peaking';
     bassDef.frequency.value = 800;
@@ -945,7 +955,7 @@ export class ConcertEngine {
     const pa = venue.pa || {};
     const paAir = offline.createBiquadFilter();
     paAir.type = 'highshelf';
-    paAir.frequency.value = 7500;
+    paAir.frequency.value = 9000;
     paAir.gain.value = pa.airHF ?? 0;
     // direct-sound width (mid/side) — match the live graph
     const width = venue.dryWidth ?? 1;

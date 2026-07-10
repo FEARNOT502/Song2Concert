@@ -34,7 +34,7 @@ export const VENUES = [
     dryWidth: 1.0, // acoustic, close — full natural stereo
     // 4 m away: no air loss to speak of; a small club rig runs warm with a
     // touch of console/system glue
-    pa: { airHF: -0.5, glue: 0.35, drive: 0.5 },
+    pa: { airHF: -0.5, glue: 0.35, drive: 0.35 },
   },
   {
     id: 'hall',
@@ -49,7 +49,7 @@ export const VENUES = [
     ir: { rt60: 2.0, predelay: 0.028, lfDamp: 0.32, hfDamp: 0.6, color: 0.5, density: 0.92, spread: 0.8, lateral: 0.95 },
     dryWidth: 1.0, // natural acoustic hall — full stereo
     // natural acoustics, no PA: only the mild 20 m air loss; no bus glue or drive
-    pa: { airHF: -1.5, glue: 0.12, drive: 0 },
+    pa: { airHF: -1, glue: 0.12, drive: 0 },
   },
   {
     id: 'arena',
@@ -63,7 +63,7 @@ export const VENUES = [
     ir: { rt60: 2.4, predelay: 0.04, lfDamp: 0.62, hfDamp: 0.72, color: 0.44, density: 0.7, spread: 0.88, lateral: 0.5, slap: true },
     dryWidth: 0.85, // slight PA narrowing — keep most stereo separation for clarity
     // 45 m of air darkens the top; loud rock/pop mix = firm bus glue + PA drive
-    pa: { airHF: -3.5, glue: 0.75, drive: 1.0 },
+    pa: { airHF: -2.5, glue: 0.75, drive: 0.65 },
   },
   {
     id: 'dome',
@@ -77,7 +77,7 @@ export const VENUES = [
     ir: { rt60: 3.4, predelay: 0.055, lfDamp: 0.66, hfDamp: 0.78, color: 0.38, density: 0.62, spread: 0.92, lateral: 0.6, slap: true },
     dryWidth: 0.82, // gentle narrowing — preserve instrument separation
     // 70 m through dome air: strongly darkened top, dense driven house mix
-    pa: { airHF: -4.5, glue: 0.8, drive: 1.1 },
+    pa: { airHF: -3.5, glue: 0.8, drive: 0.7 },
   },
   {
     id: 'stadium',
@@ -91,7 +91,7 @@ export const VENUES = [
     ir: { rt60: 3.0, predelay: 0.06, lfDamp: 0.72, hfDamp: 0.82, color: 0.42, density: 0.5, spread: 0.96, lateral: 0.55, slap: true },
     dryWidth: 0.8, // gentle narrowing — keep the kit/instruments distinct
     // 90 m open-air: deepest distance darkening, loudest show = most glue/drive
-    pa: { airHF: -5.5, glue: 0.85, drive: 1.2 },
+    pa: { airHF: -4, glue: 0.85, drive: 0.75 },
   },
 ];
 
@@ -156,12 +156,12 @@ export const SOUND_NOTES = {
 
 // SHARED_NOTES — applied identically to every venue (engine.js graph).
 export const SHARED_NOTES = [
-  '대형 PA의 서브우퍼 양감을 모사해, 입력단 로우셸프(~120Hz, +7dB) + 킥 펀치 피크(~60Hz, +3.5dB) + 베이스 바디(~110Hz, +5dB)로 킥·베이스 바디를 직접음에 묵직하게 실어 줍니다 — 꼬리는 로우컷+머드컷+lfDamp로 타이트하게 유지.',
+  '대형 PA의 서브우퍼 양감을 모사해, 입력단 로우셸프(~120Hz, +8.5dB) + 킥 펀치 피크(~60Hz, +5dB) + 베이스 바디(~110Hz, +6.5dB)로 킥·베이스 바디를 직접음에 묵직하게 실어 줍니다 — 꼬리는 로우컷+머드컷+lfDamp로 타이트하게 유지.',
   '초기 반사를 촘촘하고 불규칙하게 배치해 스네어 같은 타격음의 잔향이 플러터(메아리)로 어색하게 울리지 않고 매끄럽게 퍼지도록 했습니다.',
   '웻 경로 EQ: 로우컷(~170Hz)으로 킥·베이스 바디를 직접음에 몰아 또렷하게 + 머드 컷(~300Hz) · 보컬/스네어 컷(~3.6kHz) · 에어 컷(6kHz)으로 잔향이 리듬 섹션을 덮지 않게 합니다.',
   '보컬 디마스킹: 보컬이 사는 중앙(Mid) ~2.8kHz 대역을, 양옆으로 퍼진 악기가 그 대역을 덮을 때만 자동으로 끌어올려(사이드체인) 보컬의 또렷함을 일정하게 유지합니다 — 단독·조용한 보컬 구간은 그대로 둡니다.',
-  '거리 기반 고역 감쇠: 공연장 규모(청취 거리)에 따라 직접음의 초고역을 하이셸프(7.5kHz)로 낮춰(클럽 −0.5dB → 스타디움 −5.5dB) 공기 흡음으로 어두워지는 "멀리서 듣는 PA" 특유의 톤 기울기를 재현합니다.',
-  '라이브 버스 컴프레션("글루") + PA 새추레이션: FOH 마스터 버스처럼 완만한 컴프레션(어택을 느리게 잡아 킥·스네어 타격감은 통과)으로 믹스를 하나로 응집시키고, 큰 공연장일수록 tanh 소프트 새추레이션을 더해 대음량 PA의 하모닉 밀도를 냅니다. 자연 음향 홀은 거의 투명하게 둡니다.',
+  '거리 기반 고역 감쇠: 공연장 규모(청취 거리)에 따라 직접음의 초고역을 하이셸프(9kHz)로 낮춰(클럽 −0.5dB → 스타디움 −4dB) 공기 흡음으로 어두워지는 "멀리서 듣는 PA" 특유의 톤 기울기를 재현합니다. 보컬 자음(~2.8kHz)·스네어 크랙(~4.5kHz) 대역은 건드리지 않아 또렷함은 유지됩니다.',
+  '라이브 버스 컴프레션("글루") + PA 새추레이션: FOH 마스터 버스처럼 아주 완만한 컴프레션(3:1 미만, 느린 어택으로 킥·스네어 타격감은 통과)으로 믹스를 살짝 응집시키고, 큰 공연장일수록 tanh 소프트 새추레이션을 더해 대음량 PA의 하모닉 밀도를 냅니다. 자연 음향 홀은 거의 투명하게 둡니다.',
   '서브소닉 컷(~30Hz 하이패스): 실제 PA가 재생하지 못하는 초저역 럼블을 정리해 저역이 더 타이트하게 들리고 리미터 헤드룸을 확보합니다.',
   '등전력 크로스페이더로 웻/드라이를 섞고, 마지막 단 리미터가 어떤 설정에서도 클리핑을 막습니다.',
   '임펄스 응답은 공연장 음향 파라미터로부터 실시간 합성됩니다(측정 IR로 교체 가능).',
