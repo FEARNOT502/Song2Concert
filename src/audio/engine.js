@@ -5,8 +5,8 @@
 //   <audio> ─► [subCut] ─► [EQ] ─┬─► dry tone/width ─► [dryGain] ──────────────┐
 //                                └─► [preDelay] ─► [convolver] ─► wet EQ ─► [wetGain·wetTrim] ─┤
 //   ┌────────────────────────────────────────────────────────────────────────────┘
-//   └─► [mixBus] ─► [glue comp] ─► [PA saturation] ─► [master] ─► [limiter] ─► destination
-//                                                        └─► [analyser] (RMS for pulse)
+//   └─► [mixBus] ─► [glue comp] ─► 200Hz LR4 x-over ┬─ low ─► [bass leveler] ─┬─► [master] ─► [limiter] ─► destination
+//                                                   └─ high ─► [PA saturation] ┘      └─► [analyser] (RMS for pulse)
 //
 // - Source is a streaming HTMLAudioElement (createMediaElementSource) so large
 //   FLAC/WAV files are NOT decoded into a single in-memory AudioBuffer.
@@ -432,6 +432,37 @@ export class ConcertEngine {
     this.glue.knee.value = gs.knee;
     this.glue.attack.value = gs.attack;
     this.glue.release.value = gs.release;
+    // ── Band-split system processing (crossover + per-band control) ─────
+    // With the low end EQ'd up ~+14 dB, the LOUDEST thing on the mix bus by far
+    // is the kick/bass — and any FULL-BAND nonlinearity downstream gets driven
+    // by it. Two full-band stages were tearing on bass-heavy passages:
+    //   · the saturator: hot bass pushed it deep into the tanh shoulder, so the
+    //     WHOLE mix (vocals, cymbals) was waveform-modulated by the bass — IMD
+    //     that reads as "tearing" exactly when the low end gets loud;
+    //   · the final limiter: 20:1 with fast attack/release on a 50–60 Hz wave
+    //     modulates gain WITHIN the waveform cycle → harmonic grind.
+    // Real PA rigs solve this in the system processor: crossover, then PER-BAND
+    // limiting. We do the same — a Linkwitz-Riley 4th-order split at 200 Hz:
+    //   LOW  → dedicated compressor (bass leveler: keeps the sub weight big but
+    //          caps the peaks that were grinding the shaper/limiter; band-
+    //          limited, so its gain riding never modulates mids/highs, and its
+    //          slow-ish release stays clean relative to a 60 Hz period)
+    //   HIGH → satIn → paSat (the PA saturation, now free of bass drive)
+    // LR4 (two cascaded Butterworth Q=1/√2 biquads per side) sums back flat.
+    const XOVER_HZ = 200;
+    this.xLowA = this.ctx.createBiquadFilter();
+    this.xLowB = this.ctx.createBiquadFilter();
+    for (const f of [this.xLowA, this.xLowB]) { f.type = 'lowpass'; f.frequency.value = XOVER_HZ; f.Q.value = Math.SQRT1_2; }
+    this.xHighA = this.ctx.createBiquadFilter();
+    this.xHighB = this.ctx.createBiquadFilter();
+    for (const f of [this.xHighA, this.xHighB]) { f.type = 'highpass'; f.frequency.value = XOVER_HZ; f.Q.value = Math.SQRT1_2; }
+    this.lowComp = this.ctx.createDynamicsCompressor();
+    this.lowComp.threshold.value = -12;
+    this.lowComp.knee.value = 8;
+    this.lowComp.ratio.value = 6;
+    this.lowComp.attack.value = 0.012; // let the kick's thump transient through
+    this.lowComp.release.value = 0.3;  // ≫ one 60 Hz cycle → no intra-cycle ripple
+    this.bandSum = this.ctx.createGain();
     // satIn pre-scales by 1/SAT_HEADROOM so the shaper's ±1 domain covers a
     // ±SAT_HEADROOM signal range — the curve (built in signal units) undoes the
     // scaling, so a zero-drive curve is a true identity passthrough.
@@ -448,7 +479,7 @@ export class ConcertEngine {
     this.limiter.knee.value = 0;
     this.limiter.ratio.value = 20;       // hard limiting
     this.limiter.attack.value = 0.002;
-    this.limiter.release.value = 0.12;
+    this.limiter.release.value = 0.22; // slower → less gain ripple if bass peaks reach it
 
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 1024;
@@ -482,9 +513,18 @@ export class ConcertEngine {
     // mixBus -> glue -> saturation -> master -> limiter -> destination,
     // and tap the analyser pre-limiter
     this.mixBus.connect(this.glue);
-    this.glue.connect(this.satIn);
+    // low band: crossover → bass leveler → sum
+    this.glue.connect(this.xLowA);
+    this.xLowA.connect(this.xLowB);
+    this.xLowB.connect(this.lowComp);
+    this.lowComp.connect(this.bandSum);
+    // high band: crossover → PA saturation → sum
+    this.glue.connect(this.xHighA);
+    this.xHighA.connect(this.xHighB);
+    this.xHighB.connect(this.satIn);
     this.satIn.connect(this.paSat);
-    this.paSat.connect(this.master);
+    this.paSat.connect(this.bandSum);
+    this.bandSum.connect(this.master);
     this.master.connect(this.limiter);
     this.limiter.connect(this.ctx.destination);
     this.master.connect(this.analyser);
@@ -1024,6 +1064,21 @@ export class ConcertEngine {
     glue.knee.value = gs.knee;
     glue.attack.value = gs.attack;
     glue.release.value = gs.release;
+    // band-split system processing (match live graph): LR4 crossover at 200 Hz,
+    // low band through the bass leveler, high band through the PA saturation
+    const xLowA = offline.createBiquadFilter();
+    const xLowB = offline.createBiquadFilter();
+    for (const f of [xLowA, xLowB]) { f.type = 'lowpass'; f.frequency.value = 200; f.Q.value = Math.SQRT1_2; }
+    const xHighA = offline.createBiquadFilter();
+    const xHighB = offline.createBiquadFilter();
+    for (const f of [xHighA, xHighB]) { f.type = 'highpass'; f.frequency.value = 200; f.Q.value = Math.SQRT1_2; }
+    const lowComp = offline.createDynamicsCompressor();
+    lowComp.threshold.value = -12;
+    lowComp.knee.value = 8;
+    lowComp.ratio.value = 6;
+    lowComp.attack.value = 0.012;
+    lowComp.release.value = 0.3;
+    const bandSum = offline.createGain();
     const satIn = offline.createGain();
     satIn.gain.value = 1 / SAT_HEADROOM;
     const paSat = offline.createWaveShaper();
@@ -1033,7 +1088,7 @@ export class ConcertEngine {
     out.gain.value = this._volume;
     const limiter = offline.createDynamicsCompressor();
     limiter.threshold.value = -3; limiter.knee.value = 0; limiter.ratio.value = 20;
-    limiter.attack.value = 0.002; limiter.release.value = 0.12;
+    limiter.attack.value = 0.002; limiter.release.value = 0.22;
 
     const w = this._bypass ? 0 : this._wetDry;
     dry.gain.value = Math.cos(w * 0.5 * Math.PI);
@@ -1073,7 +1128,10 @@ export class ConcertEngine {
       wet.connect(wetTrim);
     }
     wetTrim.connect(mixBus);
-    mixBus.connect(glue); glue.connect(satIn); satIn.connect(paSat); paSat.connect(out);
+    mixBus.connect(glue);
+    glue.connect(xLowA); xLowA.connect(xLowB); xLowB.connect(lowComp); lowComp.connect(bandSum);
+    glue.connect(xHighA); xHighA.connect(xHighB); xHighB.connect(satIn); satIn.connect(paSat); paSat.connect(bandSum);
+    bandSum.connect(out);
     out.connect(limiter); limiter.connect(offline.destination);
 
     src.start(0);
