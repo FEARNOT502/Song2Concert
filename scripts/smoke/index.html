@@ -102,6 +102,42 @@ async function run() {
     log({ test: 'crossfeed mono transparency', maxDeviation: +maxDiff.toExponential(2) });
   }
 
+  // A four-channel response is only worth generating if the ConvolverNode
+  // actually applies it as a matrix. The spec says it should —
+  //   outL = inL ⊛ IR0 + inR ⊛ IR2 ,  outR = inL ⊛ IR1 + inR ⊛ IR3
+  // — but a browser that ignored channels 2 and 3 would still accept the buffer
+  // and still make sound, so accepting it proves nothing. Feeding one channel at
+  // a time distinguishes the two: with true stereo, a left-only input produces
+  // output on the right and a right-only input produces output on the left.
+  {
+    const sr = 48000;
+    const measure = async (side) => {
+      const ctx = new OfflineAudioContext(2, sr, sr);
+      const g = buildGraph(ctx, { venue: VENUES[1], volume: 1, wetDb: 0, worklets: {} });
+      const buf = ctx.createBuffer(2, 128, sr);
+      buf.getChannelData(side)[0] = 1; // an impulse into one channel only
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(g.convolver);
+      g.wet.connect(ctx.destination);
+      src.start(0);
+      const out = await ctx.startRendering();
+      const e = (c) => { let s = 0; const d = out.getChannelData(c); for (let i = 0; i < d.length; i++) s += d[i] * d[i]; return s; };
+      return { toL: e(0), toR: e(1) };
+    };
+    const fromL = await measure(0);
+    const fromR = await measure(1);
+    log({
+      test: 'true-stereo convolution',
+      leftInputReachesRightOutput: fromL.toR > fromL.toL * 0.01,
+      rightInputReachesLeftOutput: fromR.toL > fromR.toR * 0.01,
+      // The two source positions are mirrored, so a left input should favour the
+      // left output and a right input the right.
+      leftInputFavoursLeft: fromL.toL > fromL.toR,
+      rightInputFavoursRight: fromR.toR > fromR.toL,
+    });
+  }
+
   document.getElementById('out').textContent = JSON.stringify(results, null, 1);
   window.__done = true;
 }
