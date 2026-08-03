@@ -5,6 +5,8 @@
 <script type="module">
 import { buildGraph, wetTrimDb, INPUT_TRIM_DB } from '/src/audio/graph.js';
 import { VENUES } from '/src/data.js';
+import { ConcertEngine } from '/src/audio/engine.js';
+import { synthesizeIR, venueSeed } from '/src/audio/impulse.js';
 
 const results = [];
 const log = (o) => results.push(o);
@@ -136,6 +138,49 @@ async function run() {
       leftInputFavoursLeft: fromL.toL > fromL.toR,
       rightInputFavoursRight: fromR.toR > fromR.toL,
     });
+  }
+
+  // Impulse synthesis runs on the main thread when a venue is selected, so it
+  // has to stay under a frame budget or selecting a venue visibly stutters.
+  for (const venue of VENUES) {
+    const t0 = performance.now();
+    synthesizeIR({ venueId: venue.id, sampleRate: 44100, seed: venueSeed(venue.id) });
+    const cold = performance.now() - t0;
+    const t1 = performance.now();
+    synthesizeIR({ venueId: venue.id, sampleRate: 44100, seed: venueSeed(venue.id) });
+    log({ test: 'ir build time', venue: venue.id, coldMs: Math.round(cold), cachedMs: +(performance.now() - t1).toFixed(2) });
+  }
+
+  // The export path is separate code and has to be exercised separately. A WAV
+  // is assembled in memory and pushed through renderOffline exactly as a dropped
+  // file would be.
+  {
+    const sr = 44100, n = sr * 2;
+    const bytes = 44 + n * 4;
+    const dv = new DataView(new ArrayBuffer(bytes));
+    const ascii = (off, str) => { for (let i = 0; i < str.length; i++) dv.setUint8(off + i, str.charCodeAt(i)); };
+    ascii(0, 'RIFF'); dv.setUint32(4, bytes - 8, true); ascii(8, 'WAVEfmt ');
+    dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 2, true);
+    dv.setUint32(24, sr, true); dv.setUint32(28, sr * 4, true);
+    dv.setUint16(32, 4, true); dv.setUint16(34, 16, true);
+    ascii(36, 'data'); dv.setUint32(40, n * 4, true);
+    for (let i = 0; i < n; i++) {
+      const v = Math.round(12000 * Math.sin(2 * Math.PI * 220 * i / sr));
+      dv.setInt16(44 + i * 4, v, true); dv.setInt16(46 + i * 4, v, true);
+    }
+    const file = new File([dv.buffer], 'test.wav', { type: 'audio/wav' });
+    const engine = new ConcertEngine();
+    await engine.resume();
+    await engine.loadFile(file);
+    engine.setVenue(VENUES[1]);
+    const { buffer, bitDepth, sampleRate } = await engine.renderOffline(VENUES[1]);
+    let peak = 0;
+    for (let c = 0; c < buffer.numberOfChannels; c++) {
+      const d = buffer.getChannelData(c);
+      for (let i = 0; i < d.length; i++) if (Math.abs(d[i]) > peak) peak = Math.abs(d[i]);
+    }
+    log({ test: 'offline export', bitDepth, sampleRate, seconds: +buffer.duration.toFixed(2), peak: +peak.toFixed(4) });
+    engine.destroy();
   }
 
   document.getElementById('out').textContent = JSON.stringify(results, null, 1);

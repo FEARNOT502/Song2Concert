@@ -196,9 +196,31 @@ const energyOf = (buf) => {
   return e;
 };
 
+// Synthesis costs 30–170 ms depending on the venue, which is several frames, so
+// selecting a venue would visibly stutter without this — and the chain is
+// rebuilt more than once per venue (again when the worklets finish loading).
+// Small and bounded: entries are a few megabytes each and a handful of venues,
+// plus the odd export at a different sample rate, is all that ever accumulates.
+const IR_CACHE = new Map();
+const IR_CACHE_MAX = 6;
+
 // Build the four-channel response for a venue. Pure: no Web Audio, so the
 // verification script can measure it in Node.
 export function synthesizeIR({ venueId, sampleRate, seed = 1 }) {
+  const key = `${venueId}@${sampleRate}#${seed}`;
+  const hit = IR_CACHE.get(key);
+  if (hit) {
+    IR_CACHE.delete(key);   // reinsert, so the Map's order is least-recent-first
+    IR_CACHE.set(key, hit);
+    return hit;
+  }
+  const built = synthesize({ venueId, sampleRate, seed });
+  IR_CACHE.set(key, built);
+  if (IR_CACHE.size > IR_CACHE_MAX) IR_CACHE.delete(IR_CACHE.keys().next().value);
+  return built;
+}
+
+function synthesize({ venueId, sampleRate, seed }) {
   const room = VENUE_ROOMS[venueId];
   if (!room) throw new Error(`unknown venue: ${venueId}`);
 
