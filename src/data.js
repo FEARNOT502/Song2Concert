@@ -1,23 +1,72 @@
-// data.js — venues. Each carries an `ir` block describing how to synthesize its
-// impulse response (see audio/impulse.js). Acoustic feel ≈ visual feel.
-// (Upload-only — there is no demo file library, and no per-seat selection: each
-// venue models one representative "in the crowd" listening position, the way a
-// distributed PA presents nearly the same mix everywhere in the house.)
+// data.js — venues, as presented to the UI.
 //
-// Sound design follows live-sound practice: keep LOW-FREQUENCY reverb short so
-// bass stays tight/punchy (the dry path keeps the punch), let the mid carry the
-// "space", and roll the highs off fastest — that's what real concert PA + room
-// treatment do. See impulse.js for the lf/hf damping model.
+// The acoustic figures shown here are DERIVED from the room model
+// (audio/venuerooms.js + audio/roomacoustics.js), not typed in. They used to be
+// typed in, and were therefore decorative: nothing computed them, nothing
+// enforced them, and one of them — a 3.4 s reverberation time for a dome — was
+// not physically attainable at all. Now the number on screen is the number the
+// engine is using.
 //
-// Each venue also carries a `pa` block — the sound SYSTEM + listening-distance
-// character applied by engine.js on top of the room's reverb:
-//   airHF — dB high-shelf cut (7.5 kHz) on the DIRECT sound. Air absorption over
-//           the listening distance darkens the house sound; the strongest
-//           "I'm far from the stage" cue. Net of FOH HF compensation.
-//   glue  — 0..1 live mix-bus compression depth. FOH bus compression makes a
-//           live mix breathe as one dense thing; acoustic hall ≈ transparent.
-//   drive — tanh PA saturation. Harmonic thickness of a big rig near its power
-//           band; 0 = clean/bypass (natural acoustics).
+// Each venue keeps only what the room model cannot know: its name, how it looks,
+// and its `pa` block, which is the SYSTEM rather than the room:
+//   glue  — 0..1 live mix-bus compression depth
+//   drive — tanh saturation, the harmonic density of a large rig working hard
+// Both are far lighter than they were. The source is already a finished master
+// that has been through a mastering engineer's bus compressor, and a second
+// helping on top of that is what congestion sounds like.
+
+import { reverbTimes, imageSources, itdg, midRT, bassRatio, lateralFraction } from './audio/roomacoustics.js';
+import { VENUE_ROOMS, roomAbsorption, sourcePositions, listenerPosition, listeningDistance } from './audio/venuerooms.js';
+
+// Measure a venue from its room model, for display.
+function derive(id) {
+  const room = VENUE_ROOMS[id];
+  const rts = reverbTimes(roomAbsorption(id));
+  const refl = sourcePositions(id)
+    .flatMap((src) => imageSources({
+      room: { dims: room.dims, surfaces: room.surfaces },
+      source: src,
+      listener: listenerPosition(id),
+      maxOrder: 4,
+      maxTime: 0.15,
+    }))
+    .sort((a, b) => a.time - b.time);
+  return {
+    rt60: midRT(rts),
+    bass: bassRatio(rts),
+    gap: itdg(refl),
+    lf: lateralFraction(refl),
+    distance: listeningDistance(id),
+    rts,
+  };
+}
+
+const fmtPosition = (id, label, wet) => ({
+  label,
+  wet,
+  distance: `${M[id].distance.toFixed(0)} m`,
+  // The real initial time delay gap for this seat, straight out of the geometry.
+  firstReflection: `+${(M[id].gap * 1000).toFixed(0)} ms`,
+});
+
+// Only quantities the room model computes exactly and cheaply are shown. A
+// predicted clarity figure was tried and dropped: approximating it well enough
+// to be worth displaying meant reimplementing the synthesiser's own build-up,
+// and it still read about 4 dB optimistic. Clarity is measured properly by
+// scripts/verify-ir.mjs, against the response actually generated.
+const fmtAcoustics = (id, level) => ({
+  rt60: `${M[id].rt60.toFixed(2)} s`,
+  'rt60 @125Hz': `${M[id].rts[0].toFixed(2)} s`,
+  'bass ratio': M[id].bass.toFixed(2),
+  // Share of early energy arriving from the sides — what makes a room feel like
+  // it wraps around you. The single figure that most separates a great hall from
+  // a large one.
+  spaciousness: M[id].lf.toFixed(2),
+  warmth: M[id].bass >= 1.1 ? 'warm' : M[id].bass >= 0.95 ? 'neutral' : 'tight',
+  level,
+});
+
+const M = Object.fromEntries(Object.keys(VENUE_ROOMS).map((id) => [id, derive(id)]));
 
 export const VENUES = [
   {
@@ -26,15 +75,10 @@ export const VENUES = [
     type: 'JAZZ CLUB',
     capacity: '300 seats',
     descKo: '낮은 천장 · 우드 디퓨저 · 친밀한 거리',
-    // single listening position
-    position: { label: 'Front table', distance: '4 m', wet: 30, firstReflection: '+12 ms' },
-    acoustics: { rt60: '0.9 s', edt: '0.7 s', c80: '+6.0 dB', warmth: 'warm', level: '90 dB SPL' },
-    // intimate, woody: short tail, tight bass, fast HF roll-off; mostly frontal
-    ir: { rt60: 0.9, predelay: 0.012, lfDamp: 0.45, hfDamp: 0.78, color: 0.6, density: 0.85, spread: 0.5, lateral: 0.25 },
-    dryWidth: 1.0, // acoustic, close — full natural stereo
-    // 4 m away: no air loss to speak of; a small club rig runs warm with a
-    // touch of console/system glue
-    pa: { airHF: -0.5, glue: 0.35, drive: 0.35 },
+    position: fmtPosition('jazz', 'Front table', 50),
+    acoustics: fmtAcoustics('jazz', '90 dB SPL'),
+    // A small wood-lined club: gentle console glue, a touch of system drive.
+    pa: { glue: 0.20, drive: 0.20 },
   },
   {
     id: 'hall',
@@ -42,14 +86,10 @@ export const VENUES = [
     type: 'CONCERT HALL',
     capacity: '3,000 seats',
     descKo: '슈박스 · 코퍼드 천장 · 자연 음향',
-    position: { label: 'Mid stalls', distance: '20 m', wet: 46, firstReflection: '+28 ms' },
-    acoustics: { rt60: '2.0 s', edt: '1.8 s', c80: '+2.4 dB', warmth: '+3.0 dB', level: '84 dB SPL' },
-    // acoustic hall: longer lush mid tail, bass fuller than a PA room, wide;
-    // STRONG lateral early reflections → the hall's signature side-envelopment
-    ir: { rt60: 2.0, predelay: 0.028, lfDamp: 0.32, hfDamp: 0.6, color: 0.5, density: 0.92, spread: 0.8, lateral: 0.95 },
-    dryWidth: 1.0, // natural acoustic hall — full stereo
-    // natural acoustics, no PA: only the mild 20 m air loss; no bus glue or drive
-    pa: { airHF: -1, glue: 0.12, drive: 0 },
+    position: fmtPosition('hall', 'Mid stalls', 50),
+    acoustics: fmtAcoustics('hall', '84 dB SPL'),
+    // No PA at all: nothing to glue, nothing to drive.
+    pa: { glue: 0, drive: 0 },
   },
   {
     id: 'arena',
@@ -57,13 +97,9 @@ export const VENUES = [
     type: 'ARENA',
     capacity: '20,000 seats',
     descKo: '라인 어레이 PA · 점보트론 · 록/팝 튜닝',
-    position: { label: 'Floor, mid', distance: '45 m', wet: 48, firstReflection: '+60 ms' },
-    acoustics: { rt60: '2.4 s', edt: '1.9 s', c80: '−0.2 dB', warmth: 'tight LF', level: '104 dB SPL' },
-    // PA-driven: mid space but DEEP LF damping so bass stays punchy not boomy
-    ir: { rt60: 2.4, predelay: 0.04, lfDamp: 0.62, hfDamp: 0.72, color: 0.44, density: 0.7, spread: 0.88, lateral: 0.5, slap: true },
-    dryWidth: 0.85, // slight PA narrowing — keep most stereo separation for clarity
-    // 45 m of air darkens the top; loud rock/pop mix = firm bus glue + PA drive
-    pa: { airHF: -2.5, glue: 0.75, drive: 0.65 },
+    position: fmtPosition('arena', 'FOH, floor', 50),
+    acoustics: fmtAcoustics('arena', '104 dB SPL'),
+    pa: { glue: 0.25, drive: 0.20 },
   },
   {
     id: 'dome',
@@ -71,13 +107,9 @@ export const VENUES = [
     type: 'DOMED STADIUM',
     capacity: '45,000 seats',
     descKo: '에어 서포트 돔 · 딜레이 타워 클러스터',
-    position: { label: 'Arena, mid', distance: '70 m', wet: 56, firstReflection: '+95 ms' },
-    acoustics: { rt60: '3.4 s', edt: '2.6 s', c80: '−2.4 dB', warmth: 'cavernous', level: '100 dB SPL' },
-    // huge, washy mids; strong LF + HF damping; delay-tower slap cluster
-    ir: { rt60: 3.4, predelay: 0.055, lfDamp: 0.66, hfDamp: 0.78, color: 0.38, density: 0.62, spread: 0.92, lateral: 0.6, slap: true },
-    dryWidth: 0.82, // gentle narrowing — preserve instrument separation
-    // 70 m through dome air: strongly darkened top, dense driven house mix
-    pa: { airHF: -3.5, glue: 0.8, drive: 0.7 },
+    position: fmtPosition('dome', 'FOH, arena floor', 50),
+    acoustics: fmtAcoustics('dome', '100 dB SPL'),
+    pa: { glue: 0.30, drive: 0.25 },
   },
   {
     id: 'stadium',
@@ -85,87 +117,84 @@ export const VENUES = [
     type: 'OPEN STADIUM',
     capacity: '80,000 seats',
     descKo: '개방형 야외 · 대형 PA + 딜레이 타워',
-    position: { label: 'Lower bowl', distance: '90 m', wet: 54, firstReflection: '+110 ms' },
-    acoustics: { rt60: '3.0 s', edt: '2.2 s', c80: '−3.0 dB', warmth: 'open-air PA', level: '105 dB SPL' },
-    // open-air: thinner diffuse field, very tight bass (no walls), long PA delays
-    ir: { rt60: 3.0, predelay: 0.06, lfDamp: 0.72, hfDamp: 0.82, color: 0.42, density: 0.5, spread: 0.96, lateral: 0.55, slap: true },
-    dryWidth: 0.8, // gentle narrowing — keep the kit/instruments distinct
-    // 90 m open-air: deepest distance darkening, loudest show = most glue/drive
-    pa: { airHF: -4, glue: 0.85, drive: 0.75 },
+    position: fmtPosition('stadium', 'FOH, pitch', 50),
+    acoustics: fmtAcoustics('stadium', '105 dB SPL'),
+    pa: { glue: 0.30, drive: 0.25 },
   },
 ];
 
 export const findVenue = (id) => VENUES.find((v) => v.id === id) || VENUES[0];
 
-// SOUND_NOTES — per-venue explanation of how the convolution reverb is tuned,
-// surfaced by the "?" help popup. Each entry maps the venue's `ir` params
-// (audio/impulse.js) + engine processing (audio/engine.js) to plain language.
-// `points` are the bullet lines; `params` is the raw tuning shown as a chip row.
+// SOUND_NOTES — per-venue explanation, surfaced by the "?" help popup.
+// `points` are the bullet lines; `params` is a chip row of the venue's measured
+// figures, which are read from the room model rather than written down.
+const chip = (id) => `RT60 ${M[id].rt60.toFixed(2)}s · 베이스비 ${M[id].bass.toFixed(2)} · 첫 반사 +${(M[id].gap * 1000).toFixed(0)}ms · 거리 ${M[id].distance.toFixed(0)}m`;
+
 export const SOUND_NOTES = {
   jazz: {
-    headline: '짧고 따뜻한 잔향 — 클럽의 친밀함',
+    headline: '짧고 타이트한 잔향 — 클럽의 친밀함',
     points: [
-      'RT60 0.9초의 아주 짧은 꼬리. 낮은 천장·우드 디퓨저의 흡음을 모사해 잔향이 빠르게 사라집니다.',
-      '프리딜레이 +12ms — 앞 테이블 청취 위치라 첫 반사음이 거의 즉시 도착합니다.',
-      '저역 감쇠(lfDamp 0.45)는 중간 정도, 고역(hfDamp 0.78)은 빠르게 굴려 어쿠스틱 악기의 따뜻함을 살립니다.',
-      '밀도 0.85로 초기 반사가 촘촘해 작은 공간 특유의 밀착감을 줍니다.',
+      '벽·천장의 우드 패널은 전형적인 판 흡음체라 저역을 가장 많이 먹습니다. 그래서 베이스비가 1보다 작게(0.85) 나오고, 작은 클럽 특유의 "따뜻하지만 붕 뜨지 않는" 저역이 됩니다 — 설정값이 아니라 재질에서 나온 결과입니다.',
+      '첫 반사가 +6ms. 앞 테이블이라 천장 반사가 거의 곧바로 따라붙습니다.',
+      '초기 반사 밀도가 80ms 안에 2,000회/초를 넘습니다. 좁은 방이라 사방의 벽이 가깝고, 그 촘촘함이 밀착감의 정체입니다.',
+      '측면 반사 비율 0.17 — 무대가 가까워 직접음이 지배하지만 옆에서 감싸는 성분도 분명히 있습니다.',
     ],
-    params: 'RT60 0.9s · PreDelay +12ms · lfDamp 0.45 · hfDamp 0.78 · density 0.85',
+    params: chip('jazz'),
   },
   hall: {
-    headline: '길고 풍성한 중역 — 자연 음향 홀',
+    headline: '길고 따뜻한 잔향 — 자연 음향 홀',
     points: [
-      'RT60 2.0초의 길고 매끄러운 꼬리. 슈박스 콘서트홀의 자연 잔향을 재현합니다.',
-      '프리딜레이 +28ms — 메인플로어 중앙이라 무대에서 소리가 도달하는 시간이 깁니다.',
-      '저역 감쇠가 약해(lfDamp 0.32) PA 룸보다 베이스가 풍성하고, 스테레오 확산(spread 0.8)이 넓습니다.',
-      '측면 초기반사를 양귀 시간차(~0.5ms)로 배치해(lateral 0.95) 소리가 좌우 측면에서 감싸오는 콘서트홀 특유의 포위감(envelopment)을 만듭니다.',
+      '베이스비 1.20. 좋은 콘서트홀의 결정적 지표로, 저역이 중역보다 더 오래 울린다는 뜻입니다. 흡음의 대부분을 담당하는 관객이 125Hz에서는 1kHz의 절반도 흡수하지 못하기 때문에 물리적으로 그렇게 됩니다.',
+      '첫 반사가 +16ms — 좋은 좌석의 조건입니다. 직접음을 깨끗하게 먼저 듣고 나서 공간이 열립니다.',
+      '측면 반사 비율 0.31로 5개 공연장 중 가장 높습니다. 소리가 좌우 측면에서 감싸오는 포위감(envelopment)은 거의 전적으로 이 측면 반사에서 나옵니다.',
+      '각 반사음은 도달 방향에 맞는 양귀 시간차와 머리 그림자를 거쳐 임펄스에 새겨집니다. 직접음은 건드리지 않으므로 음색은 그대로입니다.',
     ],
-    params: 'RT60 2.0s · PreDelay +28ms · lfDamp 0.32 · spread 0.8 · lateral 0.95',
+    params: chip('hall'),
   },
   arena: {
-    headline: 'PA 주도 — 타이트한 베이스 + 넓은 공간',
+    headline: 'FOH 자리 — 직접음이 이끄는 대형 PA',
     points: [
-      'RT60 2.4초지만 저역 감쇠를 깊게(lfDamp 0.62) 걸어 베이스가 부밍하지 않고 펀치를 유지합니다.',
-      '프리딜레이 +60ms — 플로어 중앙. 라인 어레이 PA가 만드는 첫 반사 지연을 반영합니다.',
-      '딜레이 타워는 실제 공연처럼 시간 정렬됐다고 보고, 개별 메아리(슬랩백) 대신 확산 반사 클러스터로 큰 공간의 양감만 더합니다.',
-      '대형 PA의 모노 특성을 직접음 폭을 살짝만 좁혀(dryWidth 0.85) 반영하되, 악기 분리감(또렷함)은 유지하고 공간감은 넓은 측면 잔향이 담당합니다.',
+      '청취 위치는 FOH(콘솔) 자리입니다. 타협이 아니라, 공연이 실제로 그 지점에서 제대로 들리도록 믹스되는 자리입니다.',
+      '80ms 안의 측면 반사가 사실상 0입니다. 폭 70m 공간에서 옆벽이 너무 멀어 초기 반사가 도달할 시간이 없습니다 — 큰 공간이 홀만큼 감싸주지 않는 이유이고, 억지로 만들어 넣지 않았습니다.',
+      '라인 어레이는 지향성이 강해 객석으로 에너지를 쏘고 룸을 덜 흔듭니다. 그래서 RT60이 2.2초여도 명료도(C80)가 +0.7dB로 유지됩니다.',
+      '보울의 옆·뒷벽은 벽이 아니라 사람으로 찬 관중석으로 모델링합니다. 콘크리트로 두면 뒷벽이 거울처럼 반사해 슬랩백이 생깁니다.',
     ],
-    params: 'RT60 2.4s · PreDelay +60ms · lfDamp 0.62 · dryWidth 0.85 · 확산 타워',
+    params: chip('arena'),
   },
   dome: {
-    headline: '거대하고 동굴 같은 잔향',
+    headline: '가장 긴 잔향 — 거대한 실내 공간',
     points: [
-      'RT60 3.4초 — 가장 긴 꼬리. 에어 서포트 돔의 광대한 내부 반사를 모사합니다.',
-      '프리딜레이 +95ms — 메인 스탠드 중앙이라 첫 반사음이 한참 뒤에 도착합니다.',
-      '저·고역을 모두 강하게 감쇠(lfDamp 0.66 / hfDamp 0.78)해 중역이 워싱되며 동굴 같은 색을 냅니다.',
-      '딜레이 타워는 시간 정렬됐다고 보고 개별 메아리 대신 확산 반사로 거대 공간의 양감을 채우며, 직접음 폭은 악기 분리감을 위해 살짝만 좁힙니다(dryWidth 0.82).',
+      'RT60 3.8초로 가장 깁니다. 130만 m³라는 부피에서 나오는 값이며, 예전에 표기하던 3.4초는 어떤 돔도 갖지 못하는 흡음량을 전제해야 나오는 숫자였습니다.',
+      '첫 반사가 +67ms. 이 공백 자체가 공간의 크기를 알려주는 단서라, 잔향의 상승은 이 시점부터 시작하도록 했습니다 — 공백을 메우면 거리감이 사라집니다.',
+      '지붕에는 이상적인 돔이라면 갖췄을 흡음을 부여했습니다. 맨 막구조는 저역이 거의 그대로 통과해 7초 넘게 울립니다.',
+      '베이스비 1.26 — 거대 공간 특유의 저역 잔향이 길게 남습니다.',
     ],
-    params: 'RT60 3.4s · PreDelay +95ms · lfDamp 0.66 · hfDamp 0.78 · dryWidth 0.82',
+    params: chip('dome'),
   },
   stadium: {
-    headline: '개방형 야외 — 얇은 확산 + 매우 타이트한 베이스',
+    headline: '개방형 야외 — 가장 건조한 공간',
     points: [
-      'RT60 3.0초의 긴 꼬리지만 벽이 없어 확산이 얇습니다(density 0.5).',
-      '프리딜레이 +110ms — 필드 중앙. 대형 PA + 딜레이 타워의 긴 지연을 반영합니다.',
-      '저역 감쇠가 가장 강해(lfDamp 0.72) 벽 반사가 없는 야외처럼 베이스가 매우 타이트합니다.',
-      '잔향의 스테레오 확산은 0.96으로 가장 넓게, 직접음은 악기 분리감을 위해 살짝만 좁힙니다(dryWidth 0.8). 딜레이 타워는 메아리 대신 확산 반사로 처리합니다.',
+      '5개 중 가장 건조합니다. 머리 위 60%가 하늘이라 올라간 소리는 돌아오지 않고, 8만 명의 관객이 나머지를 흡수합니다. 야외 공연이 얇게 들리는 이유가 그대로 재현됩니다.',
+      '초기 감쇠 시간(EDT)이 RT60의 절반 수준입니다. 꼬리는 길지만 직접음보다 한참 아래에 있어서, 실제로 느껴지는 잔향은 훨씬 짧습니다.',
+      '+57ms에 반대편 스탠드에서 돌아오는 반사가 하나 있습니다. 스타디움의 시그니처이고, 이제는 지어낸 메아리 클러스터가 아니라 기하학이 정한 방향·레벨로 한 번 도착합니다.',
+      '스탠드 지붕에는 흡음을 넣었습니다. 맨 콘크리트로 두면 125Hz 흡수가 거의 없어 베이스비가 1.45까지 올라가는데, 좋은 공연장에 그런 붐은 없습니다.',
     ],
-    params: 'RT60 3.0s · PreDelay +110ms · lfDamp 0.72 · spread 0.96 · dryWidth 0.8',
+    params: chip('stadium'),
   },
 };
 
-// SHARED_NOTES — applied identically to every venue (engine.js graph).
+// SHARED_NOTES — applied identically to every venue.
 export const SHARED_NOTES = [
-  '대형 PA의 서브우퍼 양감을 모사해, 입력단 로우셸프(~120Hz, +8.5dB) + 킥 펀치 피크(~60Hz, +5dB) + 베이스 바디(~110Hz, +6.5dB)로 킥·베이스 바디를 직접음에 묵직하게 실어 줍니다 — 꼬리는 로우컷+머드컷+lfDamp로 타이트하게 유지.',
-  '초기 반사를 촘촘하고 불규칙하게 배치해 스네어 같은 타격음의 잔향이 플러터(메아리)로 어색하게 울리지 않고 매끄럽게 퍼지도록 했습니다.',
-  '웻 경로 EQ: 로우컷(~170Hz)으로 킥·베이스 바디를 직접음에 몰아 또렷하게 + 머드 컷(~300Hz) · 보컬/스네어 컷(~3.6kHz) · 에어 컷(6kHz)으로 잔향이 리듬 섹션을 덮지 않게 합니다.',
-  '보컬 디마스킹: 보컬이 사는 중앙(Mid) ~2.8kHz 대역을, 양옆으로 퍼진 악기가 그 대역을 덮을 때만 자동으로 끌어올려(사이드체인) 보컬의 또렷함을 일정하게 유지합니다 — 단독·조용한 보컬 구간은 그대로 둡니다.',
-  '거리 기반 고역 감쇠: 공연장 규모(청취 거리)에 따라 직접음의 초고역을 하이셸프(9kHz)로 낮춰(클럽 −0.5dB → 스타디움 −4dB) 공기 흡음으로 어두워지는 "멀리서 듣는 PA" 특유의 톤 기울기를 재현합니다. 보컬 자음(~2.8kHz)·스네어 크랙(~4.5kHz) 대역은 건드리지 않아 또렷함은 유지됩니다.',
-  '라이브 버스 컴프레션("글루") + PA 새추레이션: FOH 마스터 버스처럼 아주 완만한 컴프레션(3:1 미만, 느린 어택으로 킥·스네어 타격감은 통과)으로 믹스를 살짝 응집시키고, 큰 공연장일수록 tanh 소프트 새추레이션을 더해 대음량 PA의 하모닉 밀도를 냅니다. 자연 음향 홀은 거의 투명하게 둡니다.',
-  '밴드 분할 시스템 프로세싱: 실제 PA 시스템 프로세서처럼 200Hz 크로스오버(LR4)로 저역을 갈라 전용 컴프레서로 레벨링하고, 새추레이션은 그 위 대역에만 겁니다 — 부스트된 킥·베이스가 믹스 전체를 왜곡시키거나(상호변조) 리미터를 갈아대는 것을 막아, 저역이 커도 소리가 찢어지지 않습니다.',
-  '서브소닉 컷(~30Hz 하이패스): 실제 PA가 재생하지 못하는 초저역 럼블을 정리해 저역이 더 타이트하게 들리고 리미터 헤드룸을 확보합니다.',
-  '등전력 크로스페이더로 웻/드라이를 섞고, 마지막 단 리미터가 어떤 설정에서도 클리핑을 막습니다.',
-  '임펄스 응답은 공연장 음향 파라미터로부터 실시간 합성됩니다(측정 IR로 교체 가능).',
+  '공연장은 잔향 파라미터가 아니라 실제 형상으로 기술됩니다 — 치수, 표면 재질, 무대와 좌석의 위치. RT60(옥타브별), 베이스비, 첫 반사 시각, 측면 반사 비율은 전부 거기서 계산되어 나옵니다. 화면의 숫자는 엔진이 실제로 쓰는 숫자입니다.',
+  '초기 반사는 이미지 소스법으로 하나하나 계산합니다. 각 반사는 물리적 지연·1/r 감쇠·표면별 흡음·도달 방향을 가지며, 방향에 맞는 양귀 시간차와 머리 그림자를 거쳐 임펄스에 새겨집니다. 직접음에는 HRTF를 걸지 않으므로 음색이 변하지 않습니다.',
+  '후기 잔향은 옥타브마다 각자의 속도로 감쇠합니다. 밴드는 1극 로우패스의 차분으로 만들어 정확히 원신호로 합산되므로, 꼬리는 평탄하게 시작해 각 대역의 흡음이 정하는 속도로 어두워집니다. 좋은 홀의 저역이 중역보다 오래 남는 것은 설정이 아니라 관객의 흡음 특성에서 나옵니다.',
+  '임펄스는 4채널입니다. 믹스의 좌/우가 각각 좌/우 음원 위치의 룸 응답을 거치는 트루 스테레오 컨볼루션 — 2채널로는 좌우가 서로 다른 방에 갇힙니다.',
+  '라우드니스 보상: 공연장은 100dB SPL, 헤드폰은 75dB 정도로 듣습니다. 등청감 곡선은 평행하지 않아서 조용히 들으면 저역이 먼저 빠집니다. 그래서 90Hz 셸프 하나와 45Hz 서브 확장으로 완만하게 되살립니다 — 예전처럼 110Hz에 봉우리를 세우지 않습니다. 45Hz는 오히려 조금 더 나오고 110Hz는 9dB 낮아, 더 깊고 단단해집니다.',
+  '킥·스네어는 정적 EQ가 아니라 트랜지언트 셰이퍼로 강조합니다. 60Hz를 올리면 베이스 기타가 같이 오고 4.5kHz를 올리면 보컬 치찰음과 심벌이 같이 옵니다. 어택의 "속도"로 구분하면 킥과 스네어의 타격만 살아나고 지속음은 그대로입니다. 타격이 없을 때는 정확히 0을 더하므로 소리가 변하지 않습니다.',
+  '보컬 앵커: 이 곡의 보컬이 평소 프로그램 대비 차지하는 비율을 15초 창으로 학습하고, 그보다 낮아진 구간만 최대 +3dB 되돌립니다. 구간이 바뀌어도 보컬 레벨이 일정하게 유지됩니다. 보컬이 없는 인스트 구간에는 게이트가 걸려 동결됩니다.',
+  '크로스피드: 700Hz 아래에서 머리는 파장에 비해 작아 레벨 차이를 거의 만들지 못합니다. 그 대역에 하드팬된 성분은 실제 음원이 만들 수 없는 단서이고, 이어폰에서 소리가 머리 안에 갇히는 주범입니다. 미드/사이드의 사이드 쪽에만 셸프로 걸어 중앙(보컬·킥·스네어·베이스)은 수학적으로 그대로 둡니다.',
+  '입력단에서 9dB의 헤드룸을 먼저 확보합니다. 예전에는 15dB를 부스트한 뒤 트림 없이 리미터로 밀어 넣어, 리미터가 사실상 가장 강력한 톤 컨트롤이 되어 있었습니다.',
+  '내보내기는 재생과 완전히 동일한 그래프로 렌더링됩니다(같은 코드, 두 번 호출). 볼륨 노브는 모니터링 컨트롤이므로 파일에 구워 넣지 않습니다.',
 ];
 
 export const getSoundNote = (id) => SOUND_NOTES[id] || SOUND_NOTES.jazz;

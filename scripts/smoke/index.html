@@ -1,0 +1,193 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>audio smoke</title>
+<pre id="out">running…</pre>
+<script type="module">
+import { buildGraph, wetTrimDb, INPUT_TRIM_DB } from '/src/audio/graph.js';
+import { VENUES } from '/src/data.js';
+import { ConcertEngine } from '/src/audio/engine.js';
+import { synthesizeIR, venueSeed } from '/src/audio/impulse.js';
+
+const results = [];
+const log = (o) => results.push(o);
+
+// A drum-ish test signal: sharp transients over a sustained low tone, so the
+// transient shaper, the loudness shelf and the limiter all get exercised.
+function testSignal(ctx, seconds) {
+  const sr = ctx.sampleRate;
+  const n = Math.floor(sr * seconds);
+  const buf = ctx.createBuffer(2, n, sr);
+  for (let c = 0; c < 2; c++) {
+    const d = buf.getChannelData(c);
+    for (let i = 0; i < n; i++) {
+      const t = i / sr;
+      d[i] = 0.25 * Math.sin(2 * Math.PI * 90 * t) + 0.08 * Math.sin(2 * Math.PI * 1500 * t + c);
+      const beat = t % 0.5;
+      if (beat < 0.01) d[i] += 0.5 * Math.exp(-beat * 400) * (Math.random() * 2 - 1);
+    }
+  }
+  return buf;
+}
+
+const stats = (buf) => {
+  let peak = 0, sum = 0, n = 0, nan = 0;
+  for (let c = 0; c < buf.numberOfChannels; c++) {
+    const d = buf.getChannelData(c);
+    for (let i = 0; i < d.length; i++) {
+      const v = d[i];
+      if (!Number.isFinite(v)) { nan++; continue; }
+      const a = Math.abs(v);
+      if (a > peak) peak = a;
+      sum += v * v; n++;
+    }
+  }
+  return { peak, rms: Math.sqrt(sum / Math.max(n, 1)), nan };
+};
+
+async function run() {
+  for (const venue of VENUES) {
+    const sr = 48000;
+    const seconds = 3;
+    const ctx = new OfflineAudioContext(2, sr * (seconds + 2), sr);
+    let worklets = {};
+    try {
+      await ctx.audioWorklet.addModule('/Song2Concert/transient-processor.js');
+      await ctx.audioWorklet.addModule('/Song2Concert/vocal-anchor-processor.js');
+      worklets = { transient: true, vocalAnchor: true };
+    } catch (e) {
+      log({ venue: venue.id, workletError: String(e.message) });
+    }
+    const g = buildGraph(ctx, { venue, volume: 1, wetDb: wetTrimDb(venue.position.wet, venue.position.wet), worklets });
+    g.limiter.connect(ctx.destination);
+    const src = ctx.createBufferSource();
+    src.buffer = testSignal(ctx, seconds);
+    src.connect(g.trim);
+    src.start(0);
+    const out = await ctx.startRendering();
+    const st = stats(out);
+    log({
+      venue: venue.id,
+      irChannels: g.convolver.buffer.numberOfChannels,
+      irSeconds: +(g.convolver.buffer.duration.toFixed(2)),
+      worklets: Object.keys(worklets).length,
+      peak: +st.peak.toFixed(4),
+      rms: +st.rms.toFixed(4),
+      nan: st.nan,
+    });
+  }
+
+  // Crossfeed must leave a MONO signal mathematically untouched: it is a shelf
+  // on the side signal, and a mono signal has no side signal.
+  {
+    const sr = 48000;
+    const ctx = new OfflineAudioContext(2, sr, sr);
+    const g = buildGraph(ctx, { venue: VENUES[0], volume: 1, wetDb: -1000, worklets: {} });
+    // measure just the crossfeed section
+    const src = ctx.createBufferSource();
+    const buf = ctx.createBuffer(2, sr, sr);
+    for (let i = 0; i < sr; i++) {
+      const v = Math.sin(2 * Math.PI * 200 * i / sr) * 0.5;
+      buf.getChannelData(0)[i] = v;
+      buf.getChannelData(1)[i] = v; // identical → pure mid, no side
+    }
+    src.buffer = buf;
+    src.connect(g.direct);
+    g.msMerge.connect(ctx.destination);
+    src.start(0);
+    const out = await ctx.startRendering();
+    let maxDiff = 0;
+    const L = out.getChannelData(0), R = out.getChannelData(1);
+    const inp = buf.getChannelData(0);
+    for (let i = 2000; i < sr - 2000; i++) {
+      maxDiff = Math.max(maxDiff, Math.abs(L[i] - inp[i]), Math.abs(L[i] - R[i]));
+    }
+    log({ test: 'crossfeed mono transparency', maxDeviation: +maxDiff.toExponential(2) });
+  }
+
+  // A four-channel response is only worth generating if the ConvolverNode
+  // actually applies it as a matrix. The spec says it should —
+  //   outL = inL ⊛ IR0 + inR ⊛ IR2 ,  outR = inL ⊛ IR1 + inR ⊛ IR3
+  // — but a browser that ignored channels 2 and 3 would still accept the buffer
+  // and still make sound, so accepting it proves nothing. Feeding one channel at
+  // a time distinguishes the two: with true stereo, a left-only input produces
+  // output on the right and a right-only input produces output on the left.
+  {
+    const sr = 48000;
+    const measure = async (side) => {
+      const ctx = new OfflineAudioContext(2, sr, sr);
+      const g = buildGraph(ctx, { venue: VENUES[1], volume: 1, wetDb: 0, worklets: {} });
+      const buf = ctx.createBuffer(2, 128, sr);
+      buf.getChannelData(side)[0] = 1; // an impulse into one channel only
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(g.convolver);
+      g.wet.connect(ctx.destination);
+      src.start(0);
+      const out = await ctx.startRendering();
+      const e = (c) => { let s = 0; const d = out.getChannelData(c); for (let i = 0; i < d.length; i++) s += d[i] * d[i]; return s; };
+      return { toL: e(0), toR: e(1) };
+    };
+    const fromL = await measure(0);
+    const fromR = await measure(1);
+    log({
+      test: 'true-stereo convolution',
+      leftInputReachesRightOutput: fromL.toR > fromL.toL * 0.01,
+      rightInputReachesLeftOutput: fromR.toL > fromR.toR * 0.01,
+      // The two source positions are mirrored, so a left input should favour the
+      // left output and a right input the right.
+      leftInputFavoursLeft: fromL.toL > fromL.toR,
+      rightInputFavoursRight: fromR.toR > fromR.toL,
+    });
+  }
+
+  // Impulse synthesis runs on the main thread when a venue is selected, so it
+  // has to stay under a frame budget or selecting a venue visibly stutters.
+  for (const venue of VENUES) {
+    const t0 = performance.now();
+    synthesizeIR({ venueId: venue.id, sampleRate: 44100, seed: venueSeed(venue.id) });
+    const cold = performance.now() - t0;
+    const t1 = performance.now();
+    synthesizeIR({ venueId: venue.id, sampleRate: 44100, seed: venueSeed(venue.id) });
+    log({ test: 'ir build time', venue: venue.id, coldMs: Math.round(cold), cachedMs: +(performance.now() - t1).toFixed(2) });
+  }
+
+  // The export path is separate code and has to be exercised separately. A WAV
+  // is assembled in memory and pushed through renderOffline exactly as a dropped
+  // file would be.
+  {
+    const sr = 44100, n = sr * 2;
+    const bytes = 44 + n * 4;
+    const dv = new DataView(new ArrayBuffer(bytes));
+    const ascii = (off, str) => { for (let i = 0; i < str.length; i++) dv.setUint8(off + i, str.charCodeAt(i)); };
+    ascii(0, 'RIFF'); dv.setUint32(4, bytes - 8, true); ascii(8, 'WAVEfmt ');
+    dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 2, true);
+    dv.setUint32(24, sr, true); dv.setUint32(28, sr * 4, true);
+    dv.setUint16(32, 4, true); dv.setUint16(34, 16, true);
+    ascii(36, 'data'); dv.setUint32(40, n * 4, true);
+    for (let i = 0; i < n; i++) {
+      const v = Math.round(12000 * Math.sin(2 * Math.PI * 220 * i / sr));
+      dv.setInt16(44 + i * 4, v, true); dv.setInt16(46 + i * 4, v, true);
+    }
+    const file = new File([dv.buffer], 'test.wav', { type: 'audio/wav' });
+    const engine = new ConcertEngine();
+    await engine.resume();
+    await engine.loadFile(file);
+    engine.setVenue(VENUES[1]);
+    const { buffer, bitDepth, sampleRate } = await engine.renderOffline(VENUES[1]);
+    let peak = 0;
+    for (let c = 0; c < buffer.numberOfChannels; c++) {
+      const d = buffer.getChannelData(c);
+      for (let i = 0; i < d.length; i++) if (Math.abs(d[i]) > peak) peak = Math.abs(d[i]);
+    }
+    log({ test: 'offline export', bitDepth, sampleRate, seconds: +buffer.duration.toFixed(2), peak: +peak.toFixed(4) });
+    engine.destroy();
+  }
+
+  document.getElementById('out').textContent = JSON.stringify(results, null, 1);
+  window.__done = true;
+}
+run().catch((e) => {
+  document.getElementById('out').textContent = 'ERROR ' + e.stack;
+  window.__done = true;
+});
+</script>
