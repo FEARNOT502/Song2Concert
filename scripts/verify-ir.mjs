@@ -10,8 +10,8 @@
 //   npm run verify:ir
 
 import { synthesizeIR } from '../src/audio/impulse.js';
-import { reverbTime, earlyDecayTime, clarity, iacc, energy } from '../src/audio/iranalysis.js';
-import { reverbTimes, midRT } from '../src/audio/roomacoustics.js';
+import { reverbTime, earlyDecayTime, clarity, iacc, energy, reverbTimeByBand } from '../src/audio/iranalysis.js';
+import { reverbTimes, midRT, bassRatio } from '../src/audio/roomacoustics.js';
 import { VENUE_ROOMS, roomAbsorption } from '../src/audio/venuerooms.js';
 import { venueSeed } from '../src/audio/impulse.js';
 
@@ -54,8 +54,25 @@ for (const id of Object.keys(VENUE_ROOMS)) {
   for (let i = 0; i < ir.length; i++) { left[i] = ll[i] + rl[i]; right[i] = lr[i] + rr[i]; }
 
   const modelRT = midRT(reverbTimes(roomAbsorption(id)));
-  const measured = (reverbTime(left, SR) + reverbTime(right, SR)) / 2;
+  // Measure the MID band, because that is what the model figure is. A broadband
+  // decay in a room with a bass ratio of 1.5 reads long — the low end is still
+  // going when the mids have finished — so comparing broadband against mid-band
+  // reported the Tokyo Dome response as 16 % out when it was correct.
+  // Fit past the reverberant build-up — see reverbTime().
+  const settled = ir.metrics.gap + ir.metrics.tMix;
+  const bandsL = reverbTimeByBand(left, SR, settled);
+  const bandsR = reverbTimeByBand(right, SR, settled);
+  const measured = (bandsL[2] + bandsL[3] + bandsR[2] + bandsR[3]) / 4;
+  const band = bandsL.map((v, i) => (v + bandsR[i]) / 2);
+  // Bass ratio is the claim this whole model rests on — a great hall's low end
+  // outlasting its mids — so it is checked on what was SYNTHESISED, not just on
+  // what the absorption tables predicted.
+  const measuredBass = (band[0] + band[1]) / (band[2] + band[3]);
+  const modelBass = bassRatio(reverbTimes(roomAbsorption(id)));
+  // And the tail has to actually darken: 4 kHz must not outlast the mids.
+  const hfRatio = band[5] / measured;
   const edt = (earlyDecayTime(left, SR) + earlyDecayTime(right, SR)) / 2;
+  void settled;
   // The dry path carries the direct sound at unity into both ears.
   const c80 = (clarity(left, SR, 80, 1) + clarity(right, SR, 80, 1)) / 2;
   const lateIacc = iacc(left, right, SR, 80, 500);
@@ -67,6 +84,8 @@ for (const id of Object.keys(VENUE_ROOMS)) {
   console.log(`   model RT60 ${modelRT.toFixed(2)} s  →  measured ${measured.toFixed(2)} s   (${((measured / modelRT - 1) * 100).toFixed(0)}%)`);
   console.log(`   direct/reverberant ${dr.toFixed(1)} dB    early IACC ${earlyIacc.toFixed(2)}`);
   check('RT60 vs model (ratio)', measured / modelRT, [0.85, 1.15]);
+  check('bass ratio vs model', measuredBass - modelBass, [-0.15, 0.15]);
+  check('4 kHz / mid (tail darkens)', hfRatio, [0.4, 1.0]);
   check('C80 (dB)', c80, t.c80);
   check('EDT / RT60', edt / measured, t.edtRatio);
   check('late IACC', lateIacc, t.lateIacc);

@@ -31,6 +31,18 @@ const paHangs = (halfWidth, height, y) => [
   [halfWidth, y, height],
 ];
 
+// How forward-facing each venue's sources are, 0 = omnidirectional. An acoustic
+// stage radiates nearly everywhere and a hall wants it to; a line array is aimed
+// at the audience and rejects its rear hard, which is both why big rooms stay
+// intelligible and why the structure behind a stage does not answer back.
+export const DIRECTIVITY = {
+  jazz: 0.30,
+  hall: 0.20,
+  arena: 0.88,
+  dome: 0.88,
+  stadium: 0.90,
+};
+
 export const VENUE_ROOMS = {
   jazz: {
     dims: [12, 16, 3.5],
@@ -58,69 +70,99 @@ export const VENUE_ROOMS = {
     listener: [12.5, 16, 1.2],  // ~13 m back, 2.5 m off centre
   },
 
+  // ── Saitama Super Arena, arena mode ──────────────────────────────────────
+  //
+  // The 15,000-tonne movable stand is slid in, closing off the stadium-mode
+  // volume and bringing capacity to about 22,500. Even closed it is a very large
+  // room for an arena, which is most of why it is a demanding one to mix in.
+  //
+  // Interior dimensions and volume here are estimated from the published
+  // capacity and the building's footprint, not measured — see the note in
+  // scripts/verify-acoustics.mjs about which figures are which.
   arena: {
-    dims: [70, 110, 25],
-    // The side and rear walls of a bowl are not walls, they are raked stands
-    // full of people. Modelling them as hard surface made the far stand throw
-    // back a mirror-bright return; modelling them as what they are does not.
+    reference: 'Saitama Super Arena (arena mode)',
+    dims: [110, 130, 33],
+    volume: 400000,
+    // Side and rear walls of a bowl are not walls, they are raked stands full of
+    // people. Behind the stage the movable block presents a treated face.
     surfaces: { x0: 'audience', x1: 'audience', y0: 'arenaTreated', y1: 'audience', z0: 'audience', z1: 'arenaTreated' },
     absorbers: [
-      { area: 12000, material: 'audience' },
-      { area: 12400, material: 'arenaTreated' },  // roof deck, behind the stage
+      { area: 20000, material: 'audience' },      // ~22,500 raked seats plus floor
+      { area: 22000, material: 'arenaTreated' },  // roof deck, walls, block face
     ],
-    stage: { center: [35, 8, 8], halfWidth: 10 },
-    listener: [37, 45, 1.6],  // FOH, ~37 m out
+    stage: { center: [55, 8, 8], halfWidth: 11 },
+    listener: [57, 43, 1.6],  // FOH, ~35 m out on the floor
   },
 
+  // ── Tokyo Dome ───────────────────────────────────────────────────────────
+  //
+  // 1,240,000 m³ under an air-supported double membrane — the volume is the
+  // published figure, and a well enough known one to be a unit of measurement in
+  // Japan. The roof spans roughly 201 m, so the box below is the equal-plan-area
+  // square; volume and surface area are stated directly rather than taken from
+  // it.
+  //
+  // Tokyo Dome's reputation for difficult concert sound is not modelled in as a
+  // penalty; it falls out. A light membrane is nearly transparent at low
+  // frequencies, so the roof absorbs little of what matters most, and 1.24
+  // million m³ is simply an enormous room. The result is the longest
+  // reverberation and the heaviest bass ratio of any venue here.
   dome: {
-    dims: [130, 180, 55],
-    // The bowl is treated, not bare concrete. Untreated, a volume this large
-    // reverberates for over seven seconds and the rear wall throws back a
-    // clearly audible slap — which is what real domes sound like and what an
-    // idealised one would have spent the money to fix.
+    reference: 'Tokyo Dome',
+    dims: [178, 178, 50],
+    volume: 1240000,
     surfaces: { x0: 'audience', x1: 'audience', y0: 'arenaTreated', y1: 'audience', z0: 'audience', z1: 'domeMembrane' },
     absorbers: [
-      { area: 30000, material: 'audience' },      // bowl seating
-      { area: 23400, material: 'domeMembrane' },  // roof
-      { area: 26100, material: 'arenaTreated' },  // structure
+      { area: 25000, material: 'audience' },      // ~45,000 at a concert
+      { area: 35000, material: 'domeMembrane' },  // the air-supported roof
+      { area: 13000, material: 'turf' },          // field not under the crowd
+      { area: 8000, material: 'concrete' },       // structure
     ],
-    stage: { center: [65, 12, 12], halfWidth: 14 },
-    listener: [68, 67, 1.6],  // FOH, ~55 m out
+    stage: { center: [89, 15, 11], halfWidth: 14 },
+    listener: [92, 70, 1.6],  // FOH, ~55 m out on the field
   },
 
+  // ── Wembley Stadium ──────────────────────────────────────────────────────
+  //
+  // 1,139,100 m³ inside the bowl, 90,000 seats, and a 40,000 m² roof that covers
+  // every seat but deliberately leaves the pitch open — which is exactly the
+  // 60/40 split of sky and structure the previous generic stadium was guessing
+  // at, now taken from the actual building.
+  //
+  // That open pitch is why a stadium is the driest venue here and not the
+  // wettest: whatever radiates upward over the pitch never returns.
   stadium: {
-    dims: [130, 200, 35],
-    // Roofed stands over an open pitch, as most modern large stadiums are: the
-    // overhead surface is 60 % sky and 40 % treated soffit. Bare soffits were
-    // tried: they absorb almost nothing at 125 Hz, and with the crowd absorbing
-    // little there either, the bass ratio ran to 1.45 — a boom no good venue
-    // has. Modelling the overhead as fully open
-    // was tried and is too hostile to reverberation — it left the venue drier
-    // than any real stadium, essentially dry playback with one late return.
-    // Whatever goes up through the open part never comes back, and that is still
-    // the reason an open-air show sounds thin next to a dome.
-    // The return off the far stand ~78 ms later is the sound of a stadium, and
-    // it survives here — but as one arrival from a real direction at the level
-    // the geometry gives it, rather than the cluster of invented echoes that
-    // used to stand in for it.
-    surfaces: { x0: 'audience', x1: 'audience', y0: 'concrete', y1: 'audience', z0: 'audience', z1: [0.84, 0.80, 0.75, 0.75, 0.76, 0.76, 0.75] },
+    reference: 'Wembley Stadium',
+    dims: [230, 250, 52],
+    volume: 1139100,
+    // Overhead is roughly 63 % roof over the seating and 37 % open sky above the
+    // pitch, blended into one surface.
+    surfaces: { x0: 'audience', x1: 'audience', y0: 'arenaTreated', y1: 'audience', z0: 'audience', z1: [0.41, 0.41, 0.41, 0.41, 0.42, 0.42, 0.42] },
     absorbers: [
-      { area: 45000, material: 'audience' },  // stands + the crowd on the pitch
-      { area: 15600, material: 'openSky' },   // open sky: nothing comes back
-      { area: 10400, material: 'arenaTreated' },  // treated stand soffits
-      { area: 8100, material: 'concrete' },   // structure
-      { area: 5000, material: 'turf' },
+      { area: 50000, material: 'audience' },      // 90,000 raked seats
+      { area: 7000, material: 'audience' },       // standing crowd on the pitch
+      { area: 24000, material: 'openSky' },       // open above the pitch
+      { area: 40000, material: 'arenaTreated' },  // roof soffit over the seating
+      { area: 15000, material: 'concrete' },      // structure and stage end
     ],
-    stage: { center: [65, 14, 14], halfWidth: 16 },
-    listener: [68, 72, 1.6],  // FOH, ~58 m out
+    stage: { center: [115, 20, 14], halfWidth: 16 },
+    listener: [118, 85, 1.6],  // FOH, ~65 m out on the pitch
   },
 };
 
 // Volume and the absorber list, in the shape reverbTimes() wants.
+//
+// `volume` may be given explicitly, and for the real buildings it is. A dome is
+// not a box and a stadium bowl is not a box, so the rectangular room the
+// image-source solver needs is only an approximation of their shape — matching
+// their true volume AND their true surface area with one set of box dimensions
+// is generally impossible. Sabine only cares about volume and surface area, and
+// both are published for these venues, so they are stated directly; `dims` is
+// left free to be whatever rectangle best reproduces the reflection geometry.
 export function roomAbsorption(id) {
   const r = VENUE_ROOMS[id];
   const [w, l, h] = r.dims;
-  return { volume: w * l * h, surfaces: r.absorbers };
+  return { volume: r.volume ?? w * l * h, surfaces: r.absorbers };
 }
 
 // Source positions for a venue: a single point for the acoustic rooms (a band on

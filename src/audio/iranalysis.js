@@ -29,13 +29,26 @@ export function decayCurve(ir) {
 // Reverberation time by least-squares fit over a decay range, extrapolated to
 // 60 dB. T20 (−5 → −25 dB) is used in practice because the last part of a decay
 // is buried in noise; here it also avoids the synthetic tail's end fade.
-export function reverbTime(ir, sampleRate, from = -5, to = -25) {
+//
+// `startAfter` excludes the reverberant BUILD-UP from the fit, and is not
+// optional in a large room. The diffuse field rises over roughly the mixing
+// time, and in Tokyo Dome that rise is a sizeable fraction of how long the high
+// bands take to decay at all — so the −5 dB point lands while the field is still
+// growing, the fitted slope comes out nearly flat, and the 8 kHz band reports
+// almost three times its actual reverberation time. Fitting only where the decay
+// is actually a decay is what an acoustician does with a real measurement of a
+// room like that, for the same reason.
+export function reverbTime(ir, sampleRate, from = -5, to = -25, startAfter = 0) {
   const edc = decayCurve(ir);
+  const skip = Math.floor(startAfter * sampleRate);
   let i0 = -1, i1 = -1;
-  for (let i = 0; i < edc.length; i++) {
+  for (let i = skip; i < edc.length; i++) {
     if (i0 < 0 && edc[i] <= from) i0 = i;
-    if (edc[i] <= to) { i1 = i; break; }
+    if (i0 >= 0 && edc[i] <= to) { i1 = i; break; }
   }
+  // With the build-up excluded the level may already be past `from`; start at
+  // the first usable sample rather than reporting nothing.
+  if (i0 < 0 && i1 < 0 && skip < edc.length - 2) { i0 = skip; i1 = edc.length - 1; }
   if (i0 < 0 || i1 < 0 || i1 <= i0) return 0;
   // least squares on the segment
   let sx = 0, sy = 0, sxx = 0, sxy = 0;
@@ -52,7 +65,7 @@ export function reverbTime(ir, sampleRate, from = -5, to = -25) {
 // Early decay time: the same fit over 0 → −10 dB. EDT tracks what a listener
 // actually perceives as reverberance far better than RT60 does; in a good seat
 // EDT/RT60 sits near 0.9–1.0.
-export const earlyDecayTime = (ir, sampleRate) => reverbTime(ir, sampleRate, 0, -10);
+export const earlyDecayTime = (ir, sampleRate, startAfter = 0) => reverbTime(ir, sampleRate, 0, -10, startAfter);
 
 // Clarity: the ratio of energy arriving in the first `ms` to everything after,
 // in dB. C80 is the music figure. Positive means the direct and early sound
@@ -94,22 +107,49 @@ export function iacc(left, right, sampleRate, fromMs, toMs, maxLagMs = 1) {
   return best;
 }
 
-// Per-octave reverberation time, via one-pole bandpass isolation. Coarse
-// filters, but they are the same ones the synthesiser used to build the bands,
-// so this reports what was actually produced.
-export function reverbTimeByBand(ir, sampleRate) {
+// Biquad section, run over a buffer in place. Direct form I.
+function biquad(buf, { b0, b1, b2, a1, a2 }) {
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  for (let i = 0; i < buf.length; i++) {
+    const x = buf[i];
+    const y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+    buf[i] = y;
+    x2 = x1; x1 = x;
+    y2 = y1; y1 = y;
+  }
+}
+
+// RBJ cookbook lowpass / highpass coefficients.
+function rbj(type, f0, q, sampleRate) {
+  const w = (2 * Math.PI * f0) / sampleRate;
+  const cw = Math.cos(w), sw = Math.sin(w);
+  const alpha = sw / (2 * q);
+  const a0 = 1 + alpha;
+  if (type === 'lowpass') {
+    return { b0: ((1 - cw) / 2) / a0, b1: (1 - cw) / a0, b2: ((1 - cw) / 2) / a0, a1: (-2 * cw) / a0, a2: (1 - alpha) / a0 };
+  }
+  return { b0: ((1 + cw) / 2) / a0, b1: (-(1 + cw)) / a0, b2: ((1 + cw) / 2) / a0, a1: (-2 * cw) / a0, a2: (1 - alpha) / a0 };
+}
+
+// Fourth-order Butterworth needs these two section Qs.
+const BUTTER_Q = [0.54119610, 1.30656296];
+
+// Per-octave reverberation time.
+//
+// The filters have to be steep. An earlier version used gentle one-pole slopes
+// and reported Tokyo Dome's mid band as decaying 45 % slower than the model
+// said. Nothing was wrong with the response: with a bass ratio of 1.5 its
+// 125 Hz band outlasts its mid band by seconds, so whatever low end leaks
+// through a shallow filter dominates the tail of the measurement and flattens
+// the fitted slope. Fourth-order Butterworth sections either side of each octave
+// put the leakage far enough down to measure what is actually there.
+export function reverbTimeByBand(ir, sampleRate, startAfter = 0) {
   return BANDS.map((f) => {
-    const lo = f / Math.SQRT2, hi = f * Math.SQRT2;
-    const aLo = 1 - Math.exp((-2 * Math.PI * hi) / sampleRate);
-    const aHi = 1 - Math.exp((-2 * Math.PI * lo) / sampleRate);
-    const band = new Float32Array(ir.length);
-    let l1 = 0, l2 = 0, h1 = 0, h2 = 0;
-    for (let i = 0; i < ir.length; i++) {
-      l1 += aLo * (ir[i] - l1); l2 += aLo * (l1 - l2);   // 2-pole lowpass at hi
-      h1 += aHi * (l2 - h1); h2 += aHi * (h1 - h2);      // subtract lowpass at lo
-      band[i] = l2 - h2;
-    }
-    return reverbTime(band, sampleRate);
+    const band = Float32Array.from(ir);
+    const lo = f / Math.SQRT2, hi = Math.min(f * Math.SQRT2, sampleRate * 0.45);
+    for (const q of BUTTER_Q) biquad(band, rbj('lowpass', hi, q, sampleRate));
+    for (const q of BUTTER_Q) biquad(band, rbj('highpass', lo, q, sampleRate));
+    return reverbTime(band, sampleRate, -5, -25, startAfter);
   });
 }
 
