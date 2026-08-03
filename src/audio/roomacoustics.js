@@ -284,6 +284,26 @@ export function lateralFraction(reflections, window = 0.08) {
   return total > 0 ? lateral / total : 0;
 }
 
+// Statistical reverberant-to-direct energy ratio at a listening distance:
+//   E_rev / E_dir = 16πr² / (Q·R),   R = Sα / (1 − ᾱ)
+// Q = 2 because a stage source radiates into a half space.
+//
+// This is what decides how wet a venue is, and it is not a taste setting. It is
+// also why the big rooms come out clearer than intuition suggests: the room
+// constant R grows with the room, so a listener 40 m into an arena can still sit
+// inside the critical distance and hear a direct-dominated sound.
+export function reverberantRatio({ volume, surfaces, distance, Q = 2 }) {
+  let area = 0;
+  for (const s of surfaces) area += s.area;
+  // Recover total absorption from the reverberation time rather than re-summing
+  // it, so the two can never disagree:  RT60 = 0.161V / A  →  A = 0.161V / RT60
+  const rts = reverbTimes({ volume, surfaces });
+  const A = (0.161 * volume) / midRT(rts);
+  const meanAlpha = Math.min(0.95, A / Math.max(area, 1));
+  const R = A / (1 - meanAlpha);
+  return (16 * Math.PI * distance * distance) / (Q * R);
+}
+
 // Mixing time: when discrete reflections give way to a statistically diffuse
 // tail. The usual estimate is ≈ √V milliseconds. Past this point there is no
 // point tracking individual images — the noise tail model takes over.

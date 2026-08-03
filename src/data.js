@@ -15,7 +15,7 @@
 // that has been through a mastering engineer's bus compressor, and a second
 // helping on top of that is what congestion sounds like.
 
-import { reverbTimes, imageSources, itdg, midRT, bassRatio } from './audio/roomacoustics.js';
+import { reverbTimes, imageSources, itdg, midRT, bassRatio, lateralFraction } from './audio/roomacoustics.js';
 import { VENUE_ROOMS, roomAbsorption, sourcePositions, listenerPosition, listeningDistance } from './audio/venuerooms.js';
 
 // Measure a venue from its room model, for display.
@@ -35,6 +35,7 @@ function derive(id) {
     rt60: midRT(rts),
     bass: bassRatio(rts),
     gap: itdg(refl),
+    lf: lateralFraction(refl),
     distance: listeningDistance(id),
     rts,
   };
@@ -48,10 +49,19 @@ const fmtPosition = (id, label, wet) => ({
   firstReflection: `+${(M[id].gap * 1000).toFixed(0)} ms`,
 });
 
+// Only quantities the room model computes exactly and cheaply are shown. A
+// predicted clarity figure was tried and dropped: approximating it well enough
+// to be worth displaying meant reimplementing the synthesiser's own build-up,
+// and it still read about 4 dB optimistic. Clarity is measured properly by
+// scripts/verify-ir.mjs, against the response actually generated.
 const fmtAcoustics = (id, level) => ({
   rt60: `${M[id].rt60.toFixed(2)} s`,
-  edt: `${(M[id].rts[0]).toFixed(1)} s @125Hz`,
-  c80: `${M[id].bass.toFixed(2)} bass ratio`,
+  'rt60 @125Hz': `${M[id].rts[0].toFixed(2)} s`,
+  'bass ratio': M[id].bass.toFixed(2),
+  // Share of early energy arriving from the sides — what makes a room feel like
+  // it wraps around you. The single figure that most separates a great hall from
+  // a large one.
+  spaciousness: M[id].lf.toFixed(2),
   warmth: M[id].bass >= 1.1 ? 'warm' : M[id].bass >= 0.95 ? 'neutral' : 'tight',
   level,
 });

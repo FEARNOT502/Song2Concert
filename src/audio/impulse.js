@@ -30,7 +30,7 @@
 // big room actually sound bigger instead of merely longer.
 
 import {
-  reverbTimes, imageSources, itdg, mixingTime, BANDS,
+  reverbTimes, imageSources, itdg, mixingTime, reverberantRatio, BANDS,
 } from './roomacoustics.js';
 import {
   VENUE_ROOMS, roomAbsorption, sourcePositions, listenerPosition, listeningDistance,
@@ -196,26 +196,6 @@ const energyOf = (buf) => {
   return e;
 };
 
-// Statistical reverberant-to-direct energy ratio at the listening distance:
-//   E_rev / E_dir = 16πr² / (Q·R),   R = Sα / (1 − ᾱ)
-// Q = 2 because a stage source radiates into a half space. This is what sets
-// how wet the venue is; it is not a taste setting.
-function reverberantRatio(id) {
-  const { volume, surfaces } = roomAbsorption(id);
-  let area = 0;
-  for (const s of surfaces) area += s.area;
-  // Recover the total absorption from the reverberation time rather than
-  // re-summing it, so the two can never disagree:
-  //   RT60 = 0.161V / A  →  A = 0.161V / RT60
-  const rts = reverbTimes({ volume, surfaces });
-  const A = (0.161 * volume) / ((rts[2] + rts[3]) / 2);
-  const meanAlpha = Math.min(0.95, A / Math.max(area, 1));
-  const R = A / (1 - meanAlpha);
-  const r = listeningDistance(id);
-  const Q = 2;
-  return (16 * Math.PI * r * r) / (Q * R);
-}
-
 // Build the four-channel response for a venue. Pure: no Web Audio, so the
 // verification script can measure it in Node.
 export function synthesizeIR({ venueId, sampleRate, seed = 1 }) {
@@ -237,7 +217,6 @@ export function synthesizeIR({ venueId, sampleRate, seed = 1 }) {
 
   const channels = [];
   const rng = mulberry32(seed * 7919 + 13);
-  let earlyEnergy = 0;
 
   for (let s = 0; s < 2; s++) {
     const refl = imageSources({
@@ -257,7 +236,6 @@ export function synthesizeIR({ venueId, sampleRate, seed = 1 }) {
       for (let i = from; i < erLen; i++) {
         ear[i] *= 0.5 + 0.5 * Math.cos((Math.PI * (i - from)) / (erLen - from));
       }
-      earlyEnergy += energyOf(ear);
     }
 
     for (const ear of [earL, earR]) {
@@ -270,7 +248,7 @@ export function synthesizeIR({ venueId, sampleRate, seed = 1 }) {
   // Scale the late field so the total reverberant energy matches the room's
   // statistical value at this distance, with what the enumerated reflections
   // already contribute taken off.
-  const targetRev = reverberantRatio(venueId);
+  const targetRev = reverberantRatio({ ...roomAbsorption(venueId), distance: listeningDistance(venueId) });
   const gap = channels[0].gap;
   const lateFull = gap + tMix;
   const lates = [];
@@ -280,9 +258,15 @@ export function synthesizeIR({ venueId, sampleRate, seed = 1 }) {
     lates.push(late);
     lateEnergy += energyOf(late);
   }
-  // The four responses are independent, and a centred source drives two of them
-  // into each ear, so the energy that actually reaches an ear is half the total.
-  const wantLate = Math.max(0, targetRev - earlyEnergy / 2) * 2;
+  // The diffuse field is scaled to the room's statistical reverberant energy.
+  // The enumerated reflections sit ON TOP of it rather than inside it: Sabine
+  // describes the diffuse field, and a few dominant specular paths are extra.
+  // Subtracting them was tried and collapses in the stadium, where one return
+  // off the far stand outweighs the entire statistical estimate.
+  //
+  // The four responses are independent and a centred source drives two of them
+  // into each ear, so an ear receives half the four-channel total.
+  const wantLate = targetRev * 2;
   const lateGain = lateEnergy > 0 ? Math.sqrt(wantLate / lateEnergy) : 0;
 
   const fadeSamp = Math.floor(length * 0.08);
