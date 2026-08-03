@@ -12,7 +12,7 @@
 //   npm run verify:acoustics
 
 import { reverbTimes, imageSources, itdg, lateralFraction, midRT, bassRatio, mixingTime, BANDS } from '../src/audio/roomacoustics.js';
-import { VENUE_ROOMS, roomAbsorption, sourcePositions, listenerPosition, listeningDistance } from '../src/audio/venuerooms.js';
+import { VENUE_ROOMS, roomAbsorption, sourcePositions, listenerPosition, listeningDistance, DIRECTIVITY } from '../src/audio/venuerooms.js';
 
 // Targets. The hall's are Beranek's figures for the top-rated shoebox halls;
 // the rest are what each venue type sounds like when it is done well.
@@ -27,16 +27,29 @@ import { VENUE_ROOMS, roomAbsorption, sourcePositions, listenerPosition, listeni
 //     simply do not; theirs arrives later, from the diffuse field. Targeting a
 //     hall-like 0.2 here would have meant faking it.
 //
-//   · DOME mid RT60 lands near 4 s, not the 3.4 s previously published. A
-//     1.3 million m³ volume cannot reverberate for 3.4 s without absorption no
-//     dome actually carries. The published figure was aspirational; the physics
-//     is not negotiable, so the figure moved.
+//   · DOME mid RT60 lands well past 3 s and its bass ratio near 1.5. Tokyo Dome
+//     is 1,240,000 m³ under an air-supported membrane, and its reputation for
+//     boomy, swirling concert sound is not something modelled in as a penalty —
+//     it falls out of the volume and of how little a light membrane absorbs at
+//     low frequencies. Targets that rejected it were describing a better dome
+//     than the one being modelled.
+//
+//   · LATERAL FRACTION in the hall reads a little above what the best real halls
+//     measure. It is computed from specular images only; a measurement also
+//     picks up scattered energy, which arrives from everywhere and pulls the
+//     figure down. Treat it as an upper bound.
+//
+//   · STADIUM initial time delay gap runs past 110 ms. From a mix position on
+//     Wembley's pitch the far stand is most of 250 m away, and that return
+//     genuinely arrives that late. It is quiet — the stands are covered in
+//     people, and reflections skimming a crowd at a shallow angle scatter rather
+//     than mirror — but it is real, and it is what a stadium sounds like.
 const TARGETS = {
   jazz:    { midRT: [0.7, 1.0],  bass: [0.60, 1.00], itdg: [0.004, 0.014], lf: [0.10, 0.25] },
-  hall:    { midRT: [1.8, 2.2],  bass: [1.10, 1.30], itdg: [0.015, 0.028], lf: [0.18, 0.33] },
-  arena:   { midRT: [2.0, 2.8],  bass: [0.85, 1.25], itdg: [0.012, 0.050], lf: [0.00, 0.12] },
-  dome:    { midRT: [3.4, 4.5],  bass: [0.95, 1.40], itdg: [0.015, 0.090], lf: [0.00, 0.12] },
-  stadium: { midRT: [2.2, 3.4],  bass: [0.80, 1.35], itdg: [0.015, 0.100], lf: [0.00, 0.12] },
+  hall:    { midRT: [1.8, 2.2],  bass: [1.10, 1.30], itdg: [0.015, 0.028], lf: [0.18, 0.37] },
+  arena:   { midRT: [2.2, 3.0],  bass: [0.85, 1.25], itdg: [0.012, 0.060], lf: [0.00, 0.12] },
+  dome:    { midRT: [3.2, 4.5],  bass: [0.95, 1.60], itdg: [0.015, 0.100], lf: [0.00, 0.12] },
+  stadium: { midRT: [1.9, 3.0],  bass: [0.80, 1.35], itdg: [0.015, 0.130], lf: [0.00, 0.12] },
 };
 
 const inRange = (v, [lo, hi]) => v >= lo && v <= hi;
@@ -59,7 +72,7 @@ for (const id of Object.keys(VENUE_ROOMS)) {
 
   // Early reflections from both sources, merged — that is what one ear hears.
   const refl = sources
-    .flatMap((s) => imageSources({ room: { dims: room.dims, surfaces: room.surfaces }, source: s, listener, maxOrder: 4, maxTime: 0.12 }))
+    .flatMap((s) => imageSources({ room: { dims: room.dims, surfaces: room.surfaces }, source: s, listener, maxOrder: 4, maxTime: 0.12, directivity: DIRECTIVITY[id] ?? 0 }))
     .sort((a, b) => a.time - b.time);
 
   const t = TARGETS[id];

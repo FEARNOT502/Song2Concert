@@ -33,7 +33,7 @@ import {
   reverbTimes, imageSources, itdg, mixingTime, reverberantRatio, BANDS,
 } from './roomacoustics.js';
 import {
-  VENUE_ROOMS, roomAbsorption, sourcePositions, listenerPosition, listeningDistance,
+  VENUE_ROOMS, roomAbsorption, sourcePositions, listenerPosition, listeningDistance, DIRECTIVITY,
 } from './venuerooms.js';
 import {
   interauralDelay, headShadowCoeffs, applyOnePole,
@@ -148,35 +148,67 @@ function accumulate(dst, src, delaySamples) {
 
 // The late field: noise whose every octave decays at its own rate.
 //
-// Bands are built as differences of cascaded one-pole lowpasses at the octave
-// crossovers, so band_0 + band_1 + … + band_n reconstructs the input exactly.
-// The tail therefore starts with a flat spectrum and darkens only because the
-// bands run out at different times — which is what a room does.
+// Bands are differences of lowpasses at the octave crossovers —
+//   band_b = LP_b(x) − LP_(b−1)(x),   band_last = x − LP_last(x)
+// — a telescoping sum, so they reconstruct the input EXACTLY no matter what the
+// filters are. The tail therefore starts spectrally flat and darkens only
+// because the bands run out at different times.
+//
+// The filters have to be steep, and one-poles are not. At 6 dB per octave a
+// lowpass at 177 Hz is only 9 dB down at 500 Hz, so the band carrying the
+// 125 Hz decay rate also carries a great deal of midrange — and hands it that
+// rate. In Tokyo Dome, where the low band outlasts the mid band by better than
+// five to one, that dragged the synthesised mid-band reverberation time to 4.9 s
+// against the 3.6 s the room model called for. Cascading three poles per
+// crossover puts the bleed far enough down for each band to decay at its own
+// rate. Perfect reconstruction is untouched: it follows from the telescoping,
+// not from the filter shape.
+//
+// Going beyond three poles buys almost nothing, because what remains is bleed
+// between ADJACENT octaves rather than across the spectrum, and that is partly
+// honest: real rooms have smooth reverberation-time curves, not steps. It does
+// mean the top octave measures longer than its own figure — it is sitting next
+// to a louder, slower neighbour — so the checks in verify-ir test the claims
+// that matter (mid-band time, bass ratio, a tail that darkens) rather than
+// demanding each octave hit its number in isolation.
+const BAND_ORDER = 3;
+// Cascaded identical one-poles pull the composite corner down, so each stage is
+// placed above the crossover to put the −3 dB point back on it.
+const CASCADE_CORRECTION = 1 / Math.sqrt(Math.pow(2, 1 / BAND_ORDER) - 1);
+
 function renderLate(rts, length, sampleRate, rng, fadeIn, fadeFull) {
   const out = new Float32Array(length);
   const nBands = BANDS.length;
   const crossovers = [];
   for (let b = 0; b < nBands - 1; b++) crossovers.push(Math.sqrt(BANDS[b] * BANDS[b + 1]));
-  const coefs = crossovers.map((f) => onePoleA(f, sampleRate));
-  const state = new Float32Array(crossovers.length);
-  const decay = rts.map((rt) => Math.log(1000) / Math.max(rt, 0.05));
+  const coefs = crossovers.map((f) => onePoleA(Math.min(f * CASCADE_CORRECTION, sampleRate * 0.45), sampleRate));
+  const state = new Float64Array(crossovers.length * BAND_ORDER);
+
+  // Envelopes are stepped by multiplication rather than recomputed with exp()
+  // every sample and band — same values, a great deal less arithmetic.
+  const env = new Float64Array(nBands).fill(1);
+  const step = rts.map((rt) => Math.exp(-Math.log(1000) / Math.max(rt, 0.05) / sampleRate));
 
   const inStart = Math.floor(fadeIn * sampleRate);
   const inEnd = Math.max(inStart + 1, Math.floor(fadeFull * sampleRate));
 
   for (let i = 0; i < length; i++) {
     const x = rng() * 2 - 1;
-    // cascade the lowpasses; each stage's state is that crossover's lowpass
-    let prev = x;
     let sum = 0;
     let lower = 0;
     for (let b = 0; b < crossovers.length; b++) {
-      state[b] += coefs[b] * (prev - state[b]);
-      const bandSignal = state[b] - lower;
-      lower = state[b];
-      sum += bandSignal * Math.exp((-decay[b] * i) / sampleRate);
+      let v = x;
+      const a = coefs[b];
+      for (let k = 0; k < BAND_ORDER; k++) {
+        const idx = b * BAND_ORDER + k;
+        state[idx] += a * (v - state[idx]);
+        v = state[idx];
+      }
+      sum += (v - lower) * env[b];
+      lower = v;
     }
-    sum += (x - lower) * Math.exp((-decay[nBands - 1] * i) / sampleRate);
+    sum += (x - lower) * env[nBands - 1];
+    for (let b = 0; b < nBands; b++) env[b] *= step[b];
 
     // Reverberant build-up starts with the first reflection, not at t = 0.
     // Filling the initial gap would erase the sense of distance that the gap is
@@ -247,6 +279,7 @@ function synthesize({ venueId, sampleRate, seed }) {
       listener,
       maxOrder: 4,
       maxTime: tMix,
+      directivity: DIRECTIVITY[venueId] ?? 0,
     });
     const erLen = Math.min(length, Math.floor((tMix + 0.02) * sampleRate));
     const { earL, earR } = renderEarly(refl, erLen, sampleRate);

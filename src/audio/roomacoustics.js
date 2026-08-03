@@ -133,10 +133,29 @@ export function shoebox(w, l, h) {
 //   source   [x,y,z]   listener [x,y,z]   (metres, origin at a room corner)
 //   maxOrder total wall bounces to enumerate
 //   maxTime  drop reflections arriving later than this (the late tail takes over)
+//   directivity how forward-facing the source is, 0 = omnidirectional
 //
 // Each entry: { time, gain (broadband, ≈ mid-band), band[] (per-octave gain),
 //               azimuth (rad, 0 = ahead, +right), elevation (rad) }
-export function imageSources({ room, source, listener, maxOrder = 3, maxTime = 0.12 }) {
+// How much of a source's output leaves in a given direction. θ is measured from
+// the way the source is pointing.
+//
+// Omitting this was a real error, not a simplification. A line array is aimed at
+// the audience and rejects its own rear by fifteen to twenty-five decibels;
+// treated as omnidirectional, the surface behind a stage throws back a
+// reflection as if the PA were shouting at it. In Wembley that produced a −4.7 dB
+// return 112 ms after the direct sound — an unmistakable slapback on every
+// transient, and one no stadium show actually has.
+//
+// It is also most of the reason big-venue sound works at all: directivity is why
+// a mix position can stay clear inside a room that reverberates for three
+// seconds.
+export function directivityGain(cosTheta, directivity) {
+  const forward = Math.pow(Math.max(0, (1 + cosTheta) / 2), 2);
+  return (1 - directivity) + directivity * forward;
+}
+
+export function imageSources({ room, source, listener, maxOrder = 3, maxTime = 0.12, directivity = 0 }) {
   const [W, L, H] = room.dims;
   const s = room.surfaces;
   // Absorption per wall, and how rough each wall is. The specular coefficient is
@@ -218,8 +237,21 @@ export function imageSources({ room, source, listener, maxOrder = 3, maxTime = 0
               };
               const wall = (key, b) => Math.sqrt(Math.max(0, 1 - alphaOf[key][b])) * spec[key];
 
+              // Which way this ray left the source. In the image method the
+              // straight line from image to listener stands in for a folded
+              // path, so the launch direction is recovered by unfolding it: each
+              // axis reflected an odd number of times has its sign flipped.
+              const nx = hx0 + hx1, ny = hy0 + hy1, nz = hz0 + hz1;
+              const lx = nx % 2 ? -dx : dx;
+              const ly = ny % 2 ? -dy : dy;
+              const lz = nz % 2 ? -dz : dz;
+              // The source points at the listener, along the forward vector.
+              const cosTheta = (lx * fx + ly * fy) / dist;
+              const directional = directivityGain(cosTheta, directivity);
+              if (directional < 1e-3) continue;
+
               // per-band gain: spherical spreading × every wall's β, per bounce
-              const spread = directDist / dist;
+              const spread = (directDist / dist) * directional;
               const band = BANDS.map((__, b) => (
                 spread
                 * Math.pow(wall('x0', b), hx0) * Math.pow(wall('x1', b), hx1)
@@ -256,11 +288,15 @@ export function imageSources({ room, source, listener, maxOrder = 3, maxTime = 0
 // that the room still feels present.
 //
 // The floor bounce is excluded, as it conventionally is: it arrives within a
-// millisecond at any seat, is diffuse rather than specular over an audience,
-// and says nothing about the room's size. Reflections more than 20 dB below the
-// direct sound are excluded too — they are present but not what the ear is
-// timing the room by.
-export function itdg(reflections, floor = 0.1) {
+// millisecond at any seat, is diffuse rather than specular over an audience, and
+// says nothing about the room's size.
+//
+// The level floor is deliberately far down, at −40 dB. This is a measure of WHEN
+// the room first answers, which is geometry; gating it at a level makes it
+// report a different reflection — or none — as soon as anything changes how loud
+// reflections are. Modelling source directivity dropped every big venue's first
+// return below a −20 dB gate at once, and the gap did not move a millisecond.
+export function itdg(reflections, floor = 0.01) {
   for (const r of reflections) {
     if (r.floorOnly) continue;
     if (r.gain < floor) continue;
