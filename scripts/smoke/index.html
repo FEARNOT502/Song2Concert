@@ -7,6 +7,7 @@ import { buildGraph, wetTrimDb, INPUT_TRIM_DB } from '/src/audio/graph.js';
 import { VENUES } from '/src/data.js';
 import { ConcertEngine } from '/src/audio/engine.js';
 import { synthesizeIR, venueSeed } from '/src/audio/impulse.js';
+import { clarity, octaveBand } from '/src/audio/iranalysis.js';
 
 const results = [];
 const log = (o) => results.push(o);
@@ -53,7 +54,8 @@ async function run() {
     try {
       await ctx.audioWorklet.addModule('/Song2Concert/transient-processor.js');
       await ctx.audioWorklet.addModule('/Song2Concert/vocal-anchor-processor.js');
-      worklets = { transient: true, vocalAnchor: true };
+      await ctx.audioWorklet.addModule('/Song2Concert/limiter-processor.js');
+      worklets = { transient: true, vocalAnchor: true, limiter: true };
     } catch (e) {
       log({ venue: venue.id, workletError: String(e.message) });
     }
@@ -137,6 +139,80 @@ async function run() {
       // left output and a right input the right.
       leftInputFavoursLeft: fromL.toL > fromL.toR,
       rightInputFavoursRight: fromR.toR > fromR.toL,
+    });
+  }
+
+  // Clarity measured through the WHOLE graph, not just the impulse response.
+  // The send tilt, the wet level and the response all decide how buried a vocal
+  // ends up, and only two of those live in the response — so measuring the
+  // response alone cannot see the thing being complained about. An impulse goes
+  // in at a level low enough to keep the compressor and limiter linear, and what
+  // comes out is the system's own response.
+  //
+  // C50 in the 2 kHz octave is the speech-intelligibility figure: energy in the
+  // first 50 ms against everything after it, in the band where consonants live.
+  // Above roughly +2 dB a lyric stays legible; below zero it starts to wash.
+  for (const venue of VENUES) {
+    const sr = 48000;
+    const ctx = new OfflineAudioContext(2, sr * 6, sr);
+    let worklets = {};
+    try {
+      await ctx.audioWorklet.addModule('/Song2Concert/transient-processor.js');
+      await ctx.audioWorklet.addModule('/Song2Concert/vocal-anchor-processor.js');
+      await ctx.audioWorklet.addModule('/Song2Concert/limiter-processor.js');
+      worklets = { transient: true, vocalAnchor: true, limiter: true };
+    } catch (e) { /* measured without them */ }
+    const g = buildGraph(ctx, { venue, volume: 1, wetDb: wetTrimDb(venue.position.wet, venue.position.wet), worklets });
+    g.limiter.connect(ctx.destination);
+    const buf = ctx.createBuffer(2, 128, sr);
+    buf.getChannelData(0)[0] = 0.05;
+    buf.getChannelData(1)[0] = 0.05;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(g.trim);
+    src.start(0);
+    const out = await ctx.startRendering();
+    const mono = new Float32Array(out.length);
+    const L = out.getChannelData(0), R = out.getChannelData(1);
+    for (let i = 0; i < out.length; i++) mono[i] = (L[i] + R[i]) / 2;
+    log({
+      test: 'system clarity',
+      venue: venue.id,
+      c80: +clarity(mono, sr, 80).toFixed(1),
+      c50vocal: +clarity(octaveBand(mono, sr, 2000), sr, 50).toFixed(1),
+    });
+  }
+  // A limiter must be a wire below its threshold. This check exists because the
+  // DynamicsCompressor previously used as one was not: fed an impulse 34 dB
+  // under threshold it applied 11.6 dB of gain reduction, ducking every
+  // transient and releasing into the reverberation behind it. Nothing in the
+  // build caught that, because the graph was connected correctly and did make
+  // sound — it was simply making the wrong one.
+  {
+    const sr = 48000;
+    const venue = VENUES.find((v) => v.id === 'hall');
+    const measure = async (node, worklets) => {
+      const ctx = new OfflineAudioContext(2, sr * 6, sr);
+      try { await ctx.audioWorklet.addModule('/Song2Concert/limiter-processor.js'); } catch (e) { /* noop */ }
+      const g = buildGraph(ctx, { venue, volume: 1, wetDb: 0, worklets });
+      g[node].connect(ctx.destination);
+      const buf = ctx.createBuffer(2, 128, sr);
+      buf.getChannelData(0)[0] = 0.05; buf.getChannelData(1)[0] = 0.05;
+      const src = ctx.createBufferSource(); src.buffer = buf; src.connect(g.trim); src.start(0);
+      const out = await ctx.startRendering();
+      const m = new Float32Array(out.length);
+      const L = out.getChannelData(0), R = out.getChannelData(1);
+      for (let i = 0; i < out.length; i++) m[i] = (L[i] + R[i]) / 2;
+      let peak = 0; for (let i = 0; i < m.length; i++) if (Math.abs(m[i]) > peak) peak = Math.abs(m[i]);
+      return { peak, c50: clarity(octaveBand(m, sr, 2000), sr, 50) };
+    };
+    const before = await measure('volume', { limiter: true });
+    const after = await measure('limiter', { limiter: true });
+    log({
+      test: 'limiter transparent below threshold',
+      inputPeak_dBFS: +(20 * Math.log10(before.peak)).toFixed(1),
+      gainChange_dB: +(20 * Math.log10(after.peak / before.peak)).toFixed(2),
+      clarityChange_dB: +(after.c50 - before.c50).toFixed(2),
     });
   }
 

@@ -322,12 +322,20 @@ export function lateralFraction(reflections, window = 0.08) {
 
 // Statistical reverberant-to-direct energy ratio at a listening distance:
 //   E_rev / E_dir = 16πr² / (Q·R),   R = Sα / (1 − ᾱ)
-// Q = 2 because a stage source radiates into a half space.
 //
-// This is what decides how wet a venue is, and it is not a taste setting. It is
-// also why the big rooms come out clearer than intuition suggests: the room
-// constant R grows with the room, so a listener 40 m into an arena can still sit
-// inside the critical distance and hear a direct-dominated sound.
+// Q is the source's directivity factor, and getting it wrong scales the whole
+// reverberant field. It was 2 here for every venue — the figure for a source
+// radiating into a half space — which is roughly right for an orchestra and
+// badly wrong for a large line array. An array covering perhaps 90° across and
+// 30° down has a Q nearer 10: it puts almost all of its power into the audience
+// and comparatively little into the building. Using 2 overstated the
+// reverberant field in the big venues by the better part of 6 dB, and they
+// sounded it.
+//
+// This is also why the big rooms are clearer than intuition suggests, and why
+// the mix position works at all: the room constant R grows with the room, and a
+// directional rig keeps the direct sound ahead of a field that would otherwise
+// swamp it.
 export function reverberantRatio({ volume, surfaces, distance, Q = 2 }) {
   let area = 0;
   for (const s of surfaces) area += s.area;

@@ -43,6 +43,33 @@ export const DIRECTIVITY = {
   stadium: 0.90,
 };
 
+// Directivity factor Q — the share of a source's power that goes where it is
+// aimed, which sets how hard it drives the reverberant field.
+//
+// DIRECTIVITY above shapes how individual REFLECTIONS are attenuated; this is
+// the integrated power figure, and the two are not the same number. It is kept
+// separate rather than derived, because the reflection curve is a broad cosine
+// chosen to behave well at every angle, and integrating it would understate how
+// tightly a real array concentrates its output.
+//
+// These are BROADBAND figures, deliberately below the pattern directivity a line
+// array shows at mid frequencies. Q collapses at low frequencies — a rig that
+// covers 90° by 30° at 2 kHz is close to omnidirectional at 60 Hz — so the
+// power-weighted average across the spectrum lands well under the number quoted
+// for the coverage pattern. The frequency dependence itself is handled where it
+// belongs, by the send tilt in graph.js, rather than by inflating this.
+//
+//   · a large-format line array, averaged across its range: about 5
+//   · a small club rig plus a vocal mic, heard from four metres: about 3
+//   · an orchestra inside a stage shell: only a little above omnidirectional
+export const DIRECTIVITY_Q = {
+  jazz: 3,
+  hall: 3,
+  arena: 5,
+  dome: 5,
+  stadium: 5,
+};
+
 export const VENUE_ROOMS = {
   jazz: {
     dims: [12, 16, 3.5],
