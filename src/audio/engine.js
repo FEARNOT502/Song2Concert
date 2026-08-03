@@ -19,6 +19,7 @@ import { roomAbsorption } from './venuerooms.js';
 const WORKLETS = {
   transient: `${import.meta.env.BASE_URL}transient-processor.js`,
   vocalAnchor: `${import.meta.env.BASE_URL}vocal-anchor-processor.js`,
+  limiter: `${import.meta.env.BASE_URL}limiter-processor.js`,
 };
 
 // Load every worklet module onto a context and report which ones took. Each is

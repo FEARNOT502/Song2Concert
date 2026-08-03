@@ -153,6 +153,15 @@ export function reverbTimeByBand(ir, sampleRate, startAfter = 0) {
   });
 }
 
+// Isolate one octave band of a response, for band-limited clarity measures.
+export function octaveBand(ir, sampleRate, centerHz) {
+  const band = Float32Array.from(ir);
+  const lo = centerHz / Math.SQRT2, hi = Math.min(centerHz * Math.SQRT2, sampleRate * 0.45);
+  for (const q of BUTTER_Q) biquad(band, rbj('lowpass', hi, q, sampleRate));
+  for (const q of BUTTER_Q) biquad(band, rbj('highpass', lo, q, sampleRate));
+  return band;
+}
+
 // Total energy of a response, for direct-to-reverberant bookkeeping.
 export function energy(ir) {
   let e = 0;

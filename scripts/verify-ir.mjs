@@ -25,15 +25,21 @@ const SR = 48000;
 // comparatively little — which is precisely WHY the mix position is the best
 // seat in an arena. Open air is the extreme: with most of the overhead surface
 // missing and eighty thousand people absorbing, a stadium is genuinely the
-// driest venue here, not the wettest. Its early decay time also runs at about
+// driest venue here, not the wettest.
+//
+// The upper bounds for the arena and dome were raised once the source directivity
+// factor was corrected. They had been fitted while every venue used Q = 2 — the
+// figure for a source radiating into a half space — which had a line array
+// putting several times more power into the building than one actually does.
+// They were describing a rig nobody deploys. Its early decay time also runs at about
 // half its reverberation time, which is the same fact from the other side: what
 // a listener perceives as reverberance there is far shorter than the tail
 // actually is, because the tail sits so far below the direct sound.
 const TARGETS = {
   jazz:    { c80: [2, 12],   edtRatio: [0.7, 1.25], lateIacc: [0, 0.55] },
   hall:    { c80: [-1, 5],   edtRatio: [0.7, 1.15], lateIacc: [0, 0.40] },
-  arena:   { c80: [-2, 6],   edtRatio: [0.6, 1.25], lateIacc: [0, 0.45] },
-  dome:    { c80: [-2, 6],   edtRatio: [0.6, 1.25], lateIacc: [0, 0.45] },
+  arena:   { c80: [-2, 9],   edtRatio: [0.6, 1.25], lateIacc: [0, 0.45] },
+  dome:    { c80: [-2, 9],   edtRatio: [0.6, 1.25], lateIacc: [0, 0.45] },
   stadium: { c80: [0, 12],   edtRatio: [0.4, 1.25], lateIacc: [0, 0.45] },
 };
 

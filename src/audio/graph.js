@@ -31,7 +31,7 @@
 
 import { buildImpulseResponse, venueSeed } from './impulse.js';
 import { SIDE_SHELF } from './binaural.js';
-import { listeningDistance } from './venuerooms.js';
+import { listeningDistance, DIRECTIVITY } from './venuerooms.js';
 
 // Headroom taken off the front so the boosts downstream have somewhere to go.
 // Without it the chain ran a limiter at −3 dBFS with 20:1 into a signal already
@@ -68,6 +68,30 @@ const AIR_10K = 12.0;
 // so far: holding 10 kHz flat across a stadium would need headroom no rig has
 // and would cook the drivers. This is the share that survives compensation.
 const AIR_RESIDUAL = 0.4;
+
+// ── How much of each band actually reaches the room ─────────────────────────
+//
+// Every real source is more directional as frequency rises, so the reverberant
+// field receives proportionally less high frequency than the direct sound does.
+// A human voice runs about 6 dB more directional at 4 kHz than at 250 Hz, and a
+// line array far more than that — so the baseline here is set near that 6 dB
+// rather than conservatively below it, because the presence band is exactly
+// where a buried vocal is buried. Modelling the source as equally loud in all
+// directions at all frequencies put the full presence band into the reverb,
+// where it sat on top of the consonants that carry intelligibility — which is
+// what buries a vocal in a reverberant room.
+//
+// The low shelf is the other half, and applies only to the large rigs: their
+// subwoofers are cardioid or end-fire arrays, deployed precisely so the building
+// is not excited at the frequencies it rings longest at. Tokyo Dome, whose
+// 125 Hz reverberation runs to six seconds, is exactly the room that exists for.
+export function reverbSendTilt(venueId) {
+  const d = DIRECTIVITY[venueId] ?? 0;
+  return {
+    hf: -(4.5 + 3 * d),
+    lf: -6 * Math.max(0, (d - 0.5) / 0.5),
+  };
+}
 
 export function airTiltFor(venueId) {
   const d = listeningDistance(venueId);
@@ -184,6 +208,11 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {} })
     }
   }
 
+  // Everything the FOH engineer decided — the transient emphasis, the vocal
+  // anchor — comes together here, and BOTH the listener and the room hear it.
+  n.mixOut = ctx.createGain();
+  n.direct.connect(n.mixOut);
+
   // ── crossfeed, as a shelf on the side signal ──────────────────────────────
   // Below ~700 Hz a head is small next to a wavelength and casts almost no
   // shadow, so real ears receive essentially no level difference there. Hard
@@ -206,7 +235,7 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {} })
   n.sideShelf.Q.value = SIDE_SHELF.q;
   n.sideNeg = ctx.createGain(); n.sideNeg.gain.value = -1;
 
-  n.direct.connect(n.msSplit);
+  n.mixOut.connect(n.msSplit);
   n.msSplit.connect(n.midL, 0); n.msSplit.connect(n.midR, 1);
   n.midL.connect(n.mid); n.midR.connect(n.mid);
   n.msSplit.connect(n.sideL, 0); n.msSplit.connect(n.sideR, 1);
@@ -221,9 +250,14 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {} })
   n.msMerge.connect(n.dry);
 
   // ── vocal anchor ──────────────────────────────────────────────────────────
-  // Feeds off the centre channel's presence band, referenced against the whole
-  // programme, and returns presence to the centre.
+  // Reads the centre's presence band against the whole programme and returns
+  // presence to the centre. It joins the mix BEFORE the room, not after — see
+  // the reverberant path below.
   if (worklets.vocalAnchor) {
+    n.vocalMono = ctx.createGain();
+    n.vocalMono.channelCount = 1;
+    n.vocalMono.channelCountMode = 'explicit';
+    n.vocalMono.channelInterpretation = 'speakers';
     n.vocalBand = ctx.createBiquadFilter();
     n.vocalBand.type = 'bandpass';
     n.vocalBand.frequency.value = 2600;
@@ -236,21 +270,42 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {} })
       numberOfInputs: 2, numberOfOutputs: 1, outputChannelCount: [1],
     });
     n.anchorReturn = ctx.createGain();
-    n.mid.connect(n.vocalBand);
+    n.direct.connect(n.vocalMono);
+    n.vocalMono.connect(n.vocalBand);
     n.vocalBand.connect(n.anchor, 0, 0);
     n.direct.connect(n.progMono);
     n.progMono.connect(n.anchor, 0, 1);
     n.anchor.connect(n.anchorReturn);
-    n.anchorReturn.connect(n.dry); // mono, up-mixed to the centre
+    n.anchorReturn.connect(n.mixOut); // mono, up-mixed to the centre
   }
 
   // ── reverberant path ──────────────────────────────────────────────────────
+  // Fed from the finished mix, not from the raw input.
+  //
+  // The send used to come off the input bus, so the room never heard any of the
+  // mix decisions: the emphasised drum attacks and the anchored vocal existed
+  // only in the direct sound and had no reverberation on them at all, while
+  // everything around them did. That is audible as the vocal sitting in a
+  // different space from the band — worst in the club, where the room is short
+  // and tight enough for the two to be told apart. A real venue hears whatever
+  // the engineer sends it.
+  const send = reverbSendTilt(venue.id);
+  n.sendLF = ctx.createBiquadFilter();
+  n.sendLF.type = 'lowshelf';
+  n.sendLF.frequency.value = 100;
+  n.sendLF.gain.value = send.lf;
+  n.sendHF = ctx.createBiquadFilter();
+  n.sendHF.type = 'highshelf';
+  n.sendHF.frequency.value = 2000;
+  n.sendHF.gain.value = send.hf;
   n.convolver = ctx.createConvolver();
   n.convolver.normalize = false; // levels in the response are already physical
   n.convolver.buffer = buildImpulseResponse(ctx, venue.id, venueSeed(venue.id));
   n.wet = ctx.createGain();
   n.wet.gain.value = dbToGain(wetDb);
-  n.in.connect(n.convolver);
+  n.mixOut.connect(n.sendLF);
+  n.sendLF.connect(n.sendHF);
+  n.sendHF.connect(n.convolver);
   n.convolver.connect(n.wet);
 
   // ── mix bus ───────────────────────────────────────────────────────────────
@@ -271,22 +326,32 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {} })
   n.mix.connect(n.loudShelf);
   n.loudShelf.connect(n.loudSub);
 
+  // Bus compression, and ONLY where there is a console to do it. A venue with no
+  // PA has nothing to glue, and leaving the node in the chain at a nominal
+  // setting was not free: measured on the hall, where glue is zero, it still
+  // took 2.8 dB off clarity in the vocal band. An unused stage is removed, not
+  // set to taste.
   const pa = venue.pa || {};
-  n.glue = ctx.createDynamicsCompressor();
-  const gs = glueSettings(pa.glue ?? 0.15);
-  n.glue.threshold.value = gs.threshold;
-  n.glue.ratio.value = gs.ratio;
-  n.glue.knee.value = gs.knee;
-  n.glue.attack.value = gs.attack;
-  n.glue.release.value = gs.release;
-  n.loudSub.connect(n.glue);
+  const glueAmount = pa.glue ?? 0;
+  let busTail = n.loudSub;
+  if (glueAmount > 0.05) {
+    n.glue = ctx.createDynamicsCompressor();
+    const gs = glueSettings(glueAmount);
+    n.glue.threshold.value = gs.threshold;
+    n.glue.ratio.value = gs.ratio;
+    n.glue.knee.value = gs.knee;
+    n.glue.attack.value = gs.attack;
+    n.glue.release.value = gs.release;
+    n.loudSub.connect(n.glue);
+    busTail = n.glue;
+  }
 
   n.satIn = ctx.createGain();
   n.satIn.gain.value = 1 / SAT_HEADROOM;
   n.sat = ctx.createWaveShaper();
   n.sat.oversample = '4x';
   n.sat.curve = makeSatCurve(pa.drive ?? 0);
-  n.glue.connect(n.satIn);
+  busTail.connect(n.satIn);
   n.satIn.connect(n.sat);
 
   // Put back most of the headroom taken at the input, less what the loudness
@@ -301,12 +366,22 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {} })
   n.volume.gain.value = volume;
   n.out.connect(n.volume);
 
-  n.limiter = ctx.createDynamicsCompressor();
-  n.limiter.threshold.value = -2;
-  n.limiter.knee.value = 0;
-  n.limiter.ratio.value = 20;
-  n.limiter.attack.value = 0.002;
-  n.limiter.release.value = 0.15;
+  // Look-ahead peak limiter — see limiter-processor.js for why the
+  // DynamicsCompressor it replaces could not do this job. Where the worklet is
+  // unavailable, fall back to the old node rather than to no protection at all.
+  if (worklets.limiter) {
+    n.limiter = new AudioWorkletNode(ctx, 'limiter', {
+      numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2],
+    });
+    n.limiter.parameters.get('threshold').value = -1.5;
+  } else {
+    n.limiter = ctx.createDynamicsCompressor();
+    n.limiter.threshold.value = -2;
+    n.limiter.knee.value = 0;
+    n.limiter.ratio.value = 20;
+    n.limiter.attack.value = 0.002;
+    n.limiter.release.value = 0.15;
+  }
   n.volume.connect(n.limiter);
 
   return n;

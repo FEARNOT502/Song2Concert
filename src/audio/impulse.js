@@ -33,7 +33,7 @@ import {
   reverbTimes, imageSources, itdg, mixingTime, reverberantRatio, BANDS,
 } from './roomacoustics.js';
 import {
-  VENUE_ROOMS, roomAbsorption, sourcePositions, listenerPosition, listeningDistance, DIRECTIVITY,
+  VENUE_ROOMS, roomAbsorption, sourcePositions, listenerPosition, listeningDistance, DIRECTIVITY, DIRECTIVITY_Q,
 } from './venuerooms.js';
 import {
   interauralDelay, headShadowCoeffs, applyOnePole,
@@ -303,7 +303,11 @@ function synthesize({ venueId, sampleRate, seed }) {
   // Scale the late field so the total reverberant energy matches the room's
   // statistical value at this distance, with what the enumerated reflections
   // already contribute taken off.
-  const targetRev = reverberantRatio({ ...roomAbsorption(venueId), distance: listeningDistance(venueId) });
+  const targetRev = reverberantRatio({
+    ...roomAbsorption(venueId),
+    distance: listeningDistance(venueId),
+    Q: DIRECTIVITY_Q[venueId] ?? 2,
+  });
   const gap = channels[0].gap;
   const lateFull = gap + tMix;
   const lates = [];
