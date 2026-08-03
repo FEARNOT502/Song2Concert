@@ -60,10 +60,13 @@ export const VENUE_ROOMS = {
 
   arena: {
     dims: [70, 110, 25],
-    surfaces: { x0: 'arenaTreated', x1: 'arenaTreated', y0: 'arenaTreated', y1: 'arenaTreated', z0: 'audience', z1: 'arenaTreated' },
+    // The side and rear walls of a bowl are not walls, they are raked stands
+    // full of people. Modelling them as hard surface made the far stand throw
+    // back a mirror-bright return; modelling them as what they are does not.
+    surfaces: { x0: 'audience', x1: 'audience', y0: 'arenaTreated', y1: 'audience', z0: 'audience', z1: 'arenaTreated' },
     absorbers: [
-      { area: 9000, material: 'audience' },
-      { area: 15400, material: 'arenaTreated' },
+      { area: 12000, material: 'audience' },
+      { area: 12400, material: 'arenaTreated' },  // roof deck, behind the stage
     ],
     stage: { center: [35, 8, 8], halfWidth: 10 },
     listener: [37, 45, 1.6],  // FOH, ~37 m out
@@ -75,11 +78,11 @@ export const VENUE_ROOMS = {
     // reverberates for over seven seconds and the rear wall throws back a
     // clearly audible slap — which is what real domes sound like and what an
     // idealised one would have spent the money to fix.
-    surfaces: { x0: 'arenaTreated', x1: 'arenaTreated', y0: 'arenaTreated', y1: 'arenaTreated', z0: 'audience', z1: 'domeMembrane' },
+    surfaces: { x0: 'audience', x1: 'audience', y0: 'arenaTreated', y1: 'audience', z0: 'audience', z1: 'domeMembrane' },
     absorbers: [
-      { area: 22000, material: 'audience' },
+      { area: 30000, material: 'audience' },      // bowl seating
       { area: 23400, material: 'domeMembrane' },  // roof
-      { area: 34100, material: 'arenaTreated' },  // bowl walls
+      { area: 26100, material: 'arenaTreated' },  // structure
     ],
     stage: { center: [65, 12, 12], halfWidth: 14 },
     listener: [68, 67, 1.6],  // FOH, ~55 m out
@@ -87,14 +90,25 @@ export const VENUE_ROOMS = {
 
   stadium: {
     dims: [130, 200, 35],
-    // No roof: whatever goes up never comes back. That single material choice is
-    // the entire reason an open-air show sounds thin and dry next to a dome — we
-    // do not have to fake it with a density setting.
-    surfaces: { x0: 'arenaTreated', x1: 'arenaTreated', y0: 'arenaTreated', y1: 'arenaTreated', z0: 'turf', z1: 'openSky' },
+    // Roofed stands over an open pitch, as most modern large stadiums are: the
+    // overhead surface is 60 % sky and 40 % treated soffit. Bare soffits were
+    // tried: they absorb almost nothing at 125 Hz, and with the crowd absorbing
+    // little there either, the bass ratio ran to 1.45 — a boom no good venue
+    // has. Modelling the overhead as fully open
+    // was tried and is too hostile to reverberation — it left the venue drier
+    // than any real stadium, essentially dry playback with one late return.
+    // Whatever goes up through the open part never comes back, and that is still
+    // the reason an open-air show sounds thin next to a dome.
+    // The return off the far stand ~78 ms later is the sound of a stadium, and
+    // it survives here — but as one arrival from a real direction at the level
+    // the geometry gives it, rather than the cluster of invented echoes that
+    // used to stand in for it.
+    surfaces: { x0: 'audience', x1: 'audience', y0: 'concrete', y1: 'audience', z0: 'audience', z1: [0.84, 0.80, 0.75, 0.75, 0.76, 0.76, 0.75] },
     absorbers: [
-      { area: 30000, material: 'audience' },
-      { area: 26000, material: 'openSky' },       // the sky
-      { area: 23100, material: 'arenaTreated' },  // treated rear bowl
+      { area: 45000, material: 'audience' },  // stands + the crowd on the pitch
+      { area: 15600, material: 'openSky' },   // open sky: nothing comes back
+      { area: 10400, material: 'arenaTreated' },  // treated stand soffits
+      { area: 8100, material: 'concrete' },   // structure
       { area: 5000, material: 'turf' },
     ],
     stage: { center: [65, 14, 14], halfWidth: 16 },

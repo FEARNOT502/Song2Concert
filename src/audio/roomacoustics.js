@@ -47,10 +47,12 @@ export const MATERIALS = {
   // eats LOW frequencies hardest. This is why a club is tight, not boomy.
   clubWood:      [0.28, 0.22, 0.15, 0.09, 0.09, 0.10, 0.10],
   // An idealised arena bowl: deep porous absorption on the deck with a membrane
-  // backing, plus banners. The LF figure is the expensive part and the part
-  // real arenas skimp on — thin treatment absorbs mids and lets the low end
-  // ring, which is why most arenas sound boomy. This one does not skimp.
-  arenaTreated:  [0.45, 0.42, 0.38, 0.38, 0.40, 0.40, 0.38],
+  // backing, plus banners. Absorption FALLING with frequency is what deep
+  // absorbers do, and the low-frequency end is the expensive part that real
+  // arenas skimp on — thin treatment eats mids and lets the low end ring, which
+  // is why most arenas boom. This one does not skimp; without it the crowd's own
+  // absorption, which is weak at 125 Hz, pushes the bass ratio past 1.3.
+  arenaTreated:  [0.60, 0.50, 0.38, 0.38, 0.40, 0.40, 0.38],
   // A dome roof with the deployed absorption an idealised one would carry. A
   // bare membrane is nearly transparent at LF, which is exactly why real domes
   // boom; treating it is the difference between 7 s and 4 s of reverberation.
@@ -137,19 +139,30 @@ export function shoebox(w, l, h) {
 export function imageSources({ room, source, listener, maxOrder = 3, maxTime = 0.12 }) {
   const [W, L, H] = room.dims;
   const s = room.surfaces;
-  // Specular pressure reflection coefficient per band, per wall:
-  //   β = sqrt(1 − α) · sqrt(1 − s)
-  // the first factor being what the surface does not absorb and the second what
-  // it does not scatter away from the specular direction.
-  const beta = {};
+  // Absorption per wall, and how rough each wall is. The specular coefficient is
+  // finished per reflection below, because it depends on the angle the ray meets
+  // the wall at.
+  const alphaOf = {};
+  const scatOf = {};
   for (const key of ['x0', 'x1', 'y0', 'y1', 'z0', 'z1']) {
     const name = s[key];
     const alpha = Array.isArray(name) ? name : MATERIALS[name];
     if (!alpha) throw new Error(`unknown material for wall ${key}: ${name}`);
-    const scat = Array.isArray(name) ? 0 : (SCATTERING[name] ?? 0);
-    const specular = Math.sqrt(Math.max(0, 1 - scat));
-    beta[key] = alpha.map((a) => Math.sqrt(Math.max(0, 1 - a)) * specular);
+    alphaOf[key] = alpha;
+    scatOf[key] = Array.isArray(name) ? 0 : (SCATTERING[name] ?? 0);
   }
+
+  // A surface scatters far more at grazing incidence than head-on: the rougher
+  // it looks along the ray, the less of a mirror it is. This matters enormously
+  // in the big rooms, where the path to the mix position skims the crowd for
+  // fifty metres at barely ten degrees. Treated as a mirror, that bounce comes
+  // back only 5 dB down and swamps the room's entire reverberant budget — which
+  // is exactly what it did here before this term existed, leaving the stadium
+  // with no audible reverberation at all.
+  //
+  // In a rectangular room a specular reflection preserves its angle with each
+  // axis, so one angle per axis covers every bounce order.
+  const grazingScatter = (base, sinAngle) => base + (1 - base) * Math.pow(1 - sinAngle, 2);
 
   const directDist = Math.hypot(
     source[0] - listener[0], source[1] - listener[1], source[2] - listener[2],
@@ -190,13 +203,28 @@ export function imageSources({ room, source, listener, maxOrder = 3, maxTime = 0
               const time = (dist - directDist) / SPEED_OF_SOUND; // relative to direct arrival
               if (time < 0 || time > maxTime) continue;
 
+              // Angle this ray makes with each pair of walls (sine of the
+              // grazing angle), used to decide how mirror-like each bounce is.
+              const sinX = Math.abs(dx) / dist;
+              const sinY = Math.abs(dy) / dist;
+              const sinZ = Math.abs(dz) / dist;
+              const spec = {
+                x0: Math.sqrt(Math.max(0, 1 - grazingScatter(scatOf.x0, sinX))),
+                x1: Math.sqrt(Math.max(0, 1 - grazingScatter(scatOf.x1, sinX))),
+                y0: Math.sqrt(Math.max(0, 1 - grazingScatter(scatOf.y0, sinY))),
+                y1: Math.sqrt(Math.max(0, 1 - grazingScatter(scatOf.y1, sinY))),
+                z0: Math.sqrt(Math.max(0, 1 - grazingScatter(scatOf.z0, sinZ))),
+                z1: Math.sqrt(Math.max(0, 1 - grazingScatter(scatOf.z1, sinZ))),
+              };
+              const wall = (key, b) => Math.sqrt(Math.max(0, 1 - alphaOf[key][b])) * spec[key];
+
               // per-band gain: spherical spreading × every wall's β, per bounce
               const spread = directDist / dist;
               const band = BANDS.map((__, b) => (
                 spread
-                * Math.pow(beta.x0[b], hx0) * Math.pow(beta.x1[b], hx1)
-                * Math.pow(beta.y0[b], hy0) * Math.pow(beta.y1[b], hy1)
-                * Math.pow(beta.z0[b], hz0) * Math.pow(beta.z1[b], hz1)
+                * Math.pow(wall('x0', b), hx0) * Math.pow(wall('x1', b), hx1)
+                * Math.pow(wall('y0', b), hy0) * Math.pow(wall('y1', b), hy1)
+                * Math.pow(wall('z0', b), hz0) * Math.pow(wall('z1', b), hz1)
               ));
               // broadband gain ≈ the 500 Hz/1 kHz mean, used for level bookkeeping
               const gain = (band[2] + band[3]) / 2;

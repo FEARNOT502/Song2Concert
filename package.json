@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "verify:acoustics": "node scripts/verify-acoustics.mjs"
+    "verify:acoustics": "node scripts/verify-acoustics.mjs",
+    "verify:ir": "node scripts/verify-ir.mjs",
+    "verify": "npm run verify:acoustics && npm run verify:ir"
   },
   "dependencies": {
     "@wasm-audio-decoders/flac": "^0.2.10",
