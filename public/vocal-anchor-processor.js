@@ -32,16 +32,21 @@
 //     collapse and the processor would try to boost the backing track into the
 //     hole where the singer used to be. Frozen, it does nothing and waits.
 //
-//   input[0] = centre (Mid) presence band     input[1] = full programme
+//   input[0] = centre (Mid) presence band     input[1] = full programme (stereo)
 //   output[0] = the presence to ADD to the centre
 
 class VocalAnchorProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
-      // Ceiling on the correction. Deliberately modest: this is a levelling
-      // stage, and a big boost would be audible as an effect rather than as
-      // consistency. 0.41 ≈ +3 dB.
-      { name: 'maxBoost', defaultValue: 0.41, minValue: 0, maxValue: 2 },
+      // Ceiling on the correction. 0.63 ≈ +4.2 dB.
+      //
+      // Raising this only affects dense passages, which is the point. The
+      // correction is rlong/r − 1, proportional to how far the vocal has fallen
+      // below its own norm, so a verse where the vocal already sits at or above
+      // that norm asks for nothing and gets nothing no matter what the ceiling
+      // is. Only the sections where the arrangement piles up — where the deficit
+      // is largest and the old ceiling was the binding constraint — move.
+      { name: 'maxBoost', defaultValue: 0.63, minValue: 0, maxValue: 2 },
       // How far below its running peak the centre band may fall before the
       // processor decides the singer has stopped and freezes.
       { name: 'gate', defaultValue: 0.12, minValue: 0, maxValue: 1 },
@@ -63,10 +68,11 @@ class VocalAnchorProcessor extends AudioWorkletProcessor {
     this.peakV = 1e-6;
     this.peakDecay = Math.exp(-1 / (8.0 * sr));
     this.g = 0;
-    // Asymmetric smoothing on the correction: come in gently over a third of a
-    // second, let go over a second and a half. Anything faster is audible as the
-    // vocal being ridden.
-    this.gUp = Math.exp(-1 / (0.30 * sr));
+    // Asymmetric smoothing on the correction: come in over a fifth of a second,
+    // let go over a second and a half. Anything faster is audible as the vocal
+    // being ridden; much slower and a chorus is half over before the correction
+    // has arrived.
+    this.gUp = Math.exp(-1 / (0.20 * sr));
     this.gDown = Math.exp(-1 / (1.50 * sr));
   }
 
@@ -75,7 +81,8 @@ class VocalAnchorProcessor extends AudioWorkletProcessor {
     if (!out || out.length === 0) return true;
     const o = out[0];
     const voc = inputs[0] && inputs[0][0] ? inputs[0][0] : null;
-    const prog = inputs[1] && inputs[1][0] ? inputs[1][0] : null;
+    const prog = inputs[1] && inputs[1].length ? inputs[1] : null;
+    const progChans = prog ? prog.length : 0;
     if (!voc) { o.fill(0); return true; }
 
     const frames = o.length;
@@ -87,8 +94,14 @@ class VocalAnchorProcessor extends AudioWorkletProcessor {
       const gateRatio = gateP.length > 1 ? gateP[i] : gateP[0];
       const vs = voc[i];
       const av = vs < 0 ? -vs : vs;
-      const ps = prog ? prog[i] : 0;
-      const ap = ps < 0 ? -ps : ps;
+      // Loudest channel, not the average of the two: a downmix lets wide
+      // material cancel itself out of the reference.
+      let ap = 0;
+      for (let c = 0; c < progChans; c++) {
+        const v = prog[c][i];
+        const m = v < 0 ? -v : v;
+        if (m > ap) ap = m;
+      }
 
       this.envV = av > this.envV ? this.atk * this.envV + (1 - this.atk) * av
                                  : this.rel * this.envV + (1 - this.rel) * av;

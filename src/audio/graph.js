@@ -248,10 +248,13 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {} })
     n.vocalBand.type = 'bandpass';
     n.vocalBand.frequency.value = 2600;
     n.vocalBand.Q.value = 0.8;
-    n.progMono = ctx.createGain();
-    n.progMono.channelCount = 1;
-    n.progMono.channelCountMode = 'explicit';
-    n.progMono.channelInterpretation = 'speakers';
+    // The programme reference stays STEREO. It was a mono downmix, which
+    // averages the two channels — so wide-panned material partially cancels and
+    // barely registers. That made the anchor least sensitive to exactly the
+    // arrangement it exists for: a chorus where the layers spread outward is
+    // where the vocal gets buried, and it was the one the reference could not
+    // see. The worklet takes the louder channel instead.
+    n.progTap = ctx.createGain();
     n.anchor = new AudioWorkletNode(ctx, 'vocal-anchor', {
       numberOfInputs: 2, numberOfOutputs: 1, outputChannelCount: [1],
     });
@@ -259,8 +262,8 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {} })
     n.direct.connect(n.vocalMono);
     n.vocalMono.connect(n.vocalBand);
     n.vocalBand.connect(n.anchor, 0, 0);
-    n.direct.connect(n.progMono);
-    n.progMono.connect(n.anchor, 0, 1);
+    n.direct.connect(n.progTap);
+    n.progTap.connect(n.anchor, 0, 1);
     n.anchor.connect(n.anchorReturn);
     n.anchorReturn.connect(n.mixOut); // mono, up-mixed to the centre
   }
@@ -282,6 +285,44 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {} })
   n.sendHF.type = 'highshelf';
   n.sendHF.frequency.value = 2000;
 
+  // ── Less room on the voice, without a drier room ──────────────────────────
+  //
+  // The lead sits in the centre and the band spreads around it, so cutting the
+  // vocal range out of the MID of the send takes reverberation off the voice
+  // while the guitars, keys and cymbals either side keep theirs. Dipping the
+  // send as a whole would have worked too, and would have dried out the room
+  // along with the singer.
+  //
+  // This is a mix decision rather than a property of the building — a room
+  // reverberates everything it is given. It is the one every live engineer
+  // makes: a lead vocal gets noticeably less reverb than the band, because at
+  // concert level the wash is what costs you the words.
+  n.sendSplit = ctx.createChannelSplitter(2);
+  n.sendMerge = ctx.createChannelMerger(2);
+  n.sendMidL = ctx.createGain(); n.sendMidL.gain.value = 0.5;
+  n.sendMidR = ctx.createGain(); n.sendMidR.gain.value = 0.5;
+  n.sendMid = ctx.createGain();
+  n.sendSideL = ctx.createGain(); n.sendSideL.gain.value = 0.5;
+  n.sendSideR = ctx.createGain(); n.sendSideR.gain.value = -0.5;
+  n.sendSide = ctx.createGain();
+  n.sendSideNeg = ctx.createGain(); n.sendSideNeg.gain.value = -1;
+  n.sendVocalDip = ctx.createBiquadFilter();
+  n.sendVocalDip.type = 'peaking';
+  n.sendVocalDip.frequency.value = 1400;
+  n.sendVocalDip.Q.value = 0.7;     // roughly 700 Hz – 2.8 kHz
+  n.sendVocalDip.gain.value = -3.5;
+
+  n.mixOut.connect(n.sendSplit);
+  n.sendSplit.connect(n.sendMidL, 0); n.sendSplit.connect(n.sendMidR, 1);
+  n.sendMidL.connect(n.sendMid); n.sendMidR.connect(n.sendMid);
+  n.sendSplit.connect(n.sendSideL, 0); n.sendSplit.connect(n.sendSideR, 1);
+  n.sendSideL.connect(n.sendSide); n.sendSideR.connect(n.sendSide);
+  n.sendSide.connect(n.sendSideNeg);
+  n.sendMid.connect(n.sendVocalDip);
+  // L = M + S, R = M − S
+  n.sendVocalDip.connect(n.sendMerge, 0, 0); n.sendSide.connect(n.sendMerge, 0, 0);
+  n.sendVocalDip.connect(n.sendMerge, 0, 1); n.sendSideNeg.connect(n.sendMerge, 0, 1);
+
   // TWO convolver slots, crossfaded. Changing venue swaps which one is live
   // rather than replacing the node, so the room being left rings out while the
   // new one comes up. Replacing it cut the tail dead mid-note, which is a large
@@ -300,7 +341,7 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {} })
   n.active = null; // no slot loaded until a venue is applied
   n.wet = ctx.createGain();
   n.wet.gain.value = dbToGain(wetDb);
-  n.mixOut.connect(n.sendLF);
+  n.sendMerge.connect(n.sendLF);
   n.sendLF.connect(n.sendHF);
   n.convA.connect(n.convGainA);
   n.convB.connect(n.convGainB);

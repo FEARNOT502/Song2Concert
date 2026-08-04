@@ -218,6 +218,97 @@ async function run() {
     });
   }
 
+  // Two things the reverb send has to do at once: take room off the VOICE
+  // without taking it off the BAND. Centred and wide impulses are measured
+  // separately — the centre should gain clarity, the sides should be left alone.
+  {
+    const sr = 48000;
+    const venue = VENUES.find((v) => v.id === 'hall');
+    const probe = async (wide) => {
+      const ctx = new OfflineAudioContext(2, sr * 6, sr);
+      try { await ctx.audioWorklet.addModule('/Song2Concert/limiter-processor.js'); } catch (e) { /* noop */ }
+      const g = buildGraph(ctx, { venue, volume: 1, wetDb: 0, worklets: { limiter: true } });
+      g.limiter.connect(ctx.destination);
+      const buf = ctx.createBuffer(2, 128, sr);
+      buf.getChannelData(0)[0] = 0.05;
+      buf.getChannelData(1)[0] = wide ? -0.05 : 0.05; // side vs centre
+      const src = ctx.createBufferSource(); src.buffer = buf; src.connect(g.trim); src.start(0);
+      const out = await ctx.startRendering();
+      const m = new Float32Array(out.length);
+      const L = out.getChannelData(0), R = out.getChannelData(1);
+      // Recover the component under test rather than the sum, so a side-only
+      // probe is not cancelled by the mono fold.
+      for (let i = 0; i < out.length; i++) m[i] = wide ? (L[i] - R[i]) / 2 : (L[i] + R[i]) / 2;
+      return clarity(octaveBand(m, sr, 2000), sr, 50);
+    };
+    const centre = await probe(false);
+    const sides = await probe(true);
+    log({
+      test: 'vocal gets less room than the band (hall)',
+      centreC50vocal: +centre.toFixed(1),
+      sideC50vocal: +sides.toFixed(1),
+      centreAdvantage_dB: +(centre - sides).toFixed(1),
+    });
+  }
+
+  // Does the anchor actually push the vocal forward when the arrangement piles
+  // up? A steady centred tone plays throughout while wide instrumentation stays
+  // quiet for the first half and loud for the second. Its level is read at its
+  // own frequency by Goertzel, so a second of averaging leaves the broadband
+  // instrumentation contributing almost nothing to the reading.
+  {
+    const sr = 48000;
+    const seconds = 20;
+    const venue = VENUES.find((v) => v.id === 'arena');
+    const run = async (anchorOn) => {
+      const ctx = new OfflineAudioContext(2, sr * seconds, sr);
+      try {
+        await ctx.audioWorklet.addModule('/Song2Concert/vocal-anchor-processor.js');
+        await ctx.audioWorklet.addModule('/Song2Concert/limiter-processor.js');
+      } catch (e) { /* noop */ }
+      const g = buildGraph(ctx, { venue, volume: 1, wetDb: -60, worklets: { limiter: true, vocalAnchor: anchorOn } });
+      g.limiter.connect(ctx.destination);
+      const buf = ctx.createBuffer(2, sr * seconds, sr);
+      const Lc = buf.getChannelData(0), Rc = buf.getChannelData(1);
+      let lp = 0;
+      for (let i = 0; i < buf.length; i++) {
+        const t = i / sr;
+        const vocal = 0.12 * Math.sin(2 * Math.PI * 2600 * t);   // centred, constant
+        lp += 0.25 * ((Math.random() * 2 - 1) - lp);
+        const dense = t > seconds / 2 ? 1 : 0.12;                 // sparse → dense
+        const band = lp * 1.2 * dense;
+        Lc[i] = vocal + band;
+        Rc[i] = vocal - band;                                     // instrumentation spread wide
+      }
+      const src = ctx.createBufferSource(); src.buffer = buf; src.connect(g.trim); src.start(0);
+      const out = await ctx.startRendering();
+      // Goertzel at the vocal's frequency over one second of the centre channel.
+      const level = (fromS) => {
+        const n = sr;
+        const k = (2 * Math.PI * 2600) / sr;
+        const coef = 2 * Math.cos(k);
+        let s1 = 0, s2 = 0;
+        const A = out.getChannelData(0), B = out.getChannelData(1);
+        for (let i = Math.floor(fromS * sr); i < Math.floor(fromS * sr) + n; i++) {
+          const x = (A[i] + B[i]) / 2;
+          const s0 = x + coef * s1 - s2;
+          s2 = s1; s1 = s0;
+        }
+        return Math.sqrt(s1 * s1 + s2 * s2 - coef * s1 * s2) / n;
+      };
+      return { sparse: level(seconds / 2 - 2), dense: level(seconds - 2) };
+    };
+    const on = await run(true);
+    const off = await run(false);
+    const dB = (a, b) => 20 * Math.log10(a / b);
+    log({
+      test: 'vocal pushed forward when the arrangement piles up',
+      withoutAnchor_denseVsSparse_dB: +dB(off.dense, off.sparse).toFixed(2),
+      withAnchor_denseVsSparse_dB: +dB(on.dense, on.sparse).toFixed(2),
+      anchorLiftInDenseSection_dB: +dB(on.dense / on.sparse, off.dense / off.sparse).toFixed(2),
+    });
+  }
+
   // Changing venue must not interrupt the audio. It used to rebuild the whole
   // graph, which detached the source, replaced the convolver so the tail was cut
   // dead, and left the old graph only partly disconnected so its worklets went
