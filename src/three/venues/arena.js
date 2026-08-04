@@ -23,7 +23,7 @@ export default function buildArena(u) {
   // drawn longer than the acoustic box, which stops at the stage-end wall — the
   // block behind the stage is part of the arena, just not part of the room the
   // reverb is computed in.
-  const BOWL_X = 32, BOWL_Z0 = -8, BOWL_Z1 = 64, BACKSTAGE = 30;
+  const BOWL_X = 26, BOWL_Z0 = 2, BOWL_Z1 = 64, BACKSTAGE = 30;
 
   const shell = roomShell({
     width: f.width, depth: f.depth + BACKSTAGE, height: f.height,
@@ -44,9 +44,20 @@ export default function buildArena(u) {
   }
 
   // ── stage ──
-  const mask = new THREE.Mesh(new THREE.BoxGeometry(46, 13, 0.6), lambert(0x0a0910));
-  mask.position.set(0, 6.5, -2.4);
-  root.add(mask);
+  // No seats behind or beside the stage: the stage end is closed off with flat
+  // masking, the way an end-stage production actually does it. One wall across
+  // the back, two returns out to the side stands.
+  const maskMat = lambert(0x0b0a11);
+  const backWall = new THREE.Mesh(new THREE.BoxGeometry(f.width, 21, 0.6), maskMat);
+  backWall.position.set(0, 10.5, -2.4);
+  root.add(backWall);
+  // the returns fill only the gap between the stage edge and the side stands;
+  // running them the full width would put a wall in front of the seating
+  for (const side of [-1, 1]) {
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(BOWL_X - 15, 13, 0.6), maskMat);
+    wing.position.set(side * (15 + (BOWL_X - 15) / 2), 6.5, BOWL_Z0 - 0.6);
+    root.add(wing);
+  }
   root.add(stageDeck({ width: 30, depth: 16, height: DECK, z: 7 }));
   root.add(footlights({ width: 28, count: 34, y: DECK + 0.06, z: 15.05 }));
 
@@ -126,26 +137,26 @@ export default function buildArena(u) {
   // The seats behind the stage are real and empty — that block is sold off, and
   // its treated face is the `arenaTreated` surface the room model puts there.
   const people = [];
-  people.push(...standingCrowd({ x0: -32, x1: 32, zNear: 16, zFar: f.eye.z - CLEAR, count: 950, seed: 3 }));
-  people.push(...standingCrowd({ x0: -32, x1: 32, zNear: f.eye.z + CLEAR, zFar: 70, count: 380, seed: 8 }));
+  people.push(...standingCrowd({ x0: -25, x1: 25, zNear: 16, zFar: f.eye.z - CLEAR, count: 1700, seed: 3 }));
+  people.push(...standingCrowd({ x0: -25, x1: 25, zNear: f.eye.z + CLEAR, zFar: 70, count: 700, seed: 8 }));
 
   const near = (x, z) => Math.hypot(x - f.eye.x, z - f.eye.z);
   const ring = bowl({
     halfWidth: BOWL_X, zFront: BOWL_Z0, zBack: BOWL_Z1,
+    // ~25° lower, ~31° upper. A bowl is a shallow thing; the steep rake it had
+    // was closer to a ski jump than to seating.
     tiers: [
-      { rows: 13, rise: 0.60, riseFar: 0.74, run: 0.82, yBase: 0.5, inset0: 0 },
-      { rows: 13, rise: 0.80, riseFar: 0.95, run: 0.85, yBase: 12.6, inset0: 11.3 },
+      { rows: 14, rise: 0.38, riseFar: 0.44, run: 0.82, yBase: 0.5, inset0: 0, sides: { front: false } },
+      { rows: 12, rise: 0.50, riseFar: 0.60, run: 0.86, yBase: 8.7, inset0: 12.9, sides: { front: false } },
     ],
     seatSpacing: 0.56, headHeight: 1.25, seed: 200, blockLength: 11,
-    crowdFrom: 6,                        // nobody sits behind the stage
-    density: (x, y, z) => (near(x, z) < 45 ? 0.85 : near(x, z) < 90 ? 0.45 : 0.18),
-    maxPeople: 2400, emissive: 0x16131f,
+    density: () => 1,                     // the house is full
+    maxPeople: 5200, emissive: 0x241f31,
   });
   root.add(ring.mesh);
   root.add(ring.blocks);
-  people.push(...ring.people);
   // the rows close enough that a bare block would read as wrong get real seats
-  root.add(seatBank(thin(ring.treads.filter((s) => near(s.x, s.z) < 42), 2600)));
+  root.add(seatBank(thin(ring.treads.filter((s) => near(s.x, s.z) < 34), 1800)));
 
   const ribbons = [];
   for (const { inset, yTop } of ring.fascias.slice(0, 1)) {
@@ -157,15 +168,16 @@ export default function buildArena(u) {
     ribbons.push(r);
   }
 
-  root.add(crowdField(people, { color: 0x0d0b18, react: 1, sway: 0.11 }, u));
+  root.add(crowdField(ring.people, { color: 0x2e2a3e, react: 1, sway: 0.066 }, u));
+  root.add(crowdField(people, { color: 0x0c0b14, react: 1, sway: 0.11 }, u));
 
   // phone torches over the floor and the near stands
   const rnd = prng(33);
   const phones = Array.from({ length: 620 }).map(() => {
     const inStand = rnd() < 0.62;
     return inStand
-      ? { x: (rnd() < 0.5 ? -1 : 1) * (33 + rnd() * 16), y: 2 + rnd() * 15, z: 8 + rnd() * 64, size: 0.11, color: 0xfff0c8, phase: rnd() * 6.283 }
-      : { x: (rnd() - 0.5) * 62, y: 1.5 + rnd() * 0.5, z: 16 + rnd() * 48, size: 0.1, color: 0xfff0c8, phase: rnd() * 6.283 };
+      ? { x: (rnd() < 0.5 ? -1 : 1) * (27 + rnd() * 20), y: 2 + rnd() * 14, z: 4 + rnd() * 68, size: 0.11, color: 0xfff0c8, phase: rnd() * 6.283 }
+      : { x: (rnd() - 0.5) * 50, y: 1.5 + rnd() * 0.5, z: 16 + rnd() * 48, size: 0.1, color: 0xfff0c8, phase: rnd() * 6.283 };
   });
   root.add(sparkField(phones.filter((p) => Math.abs(p.z - f.eye.z) > CLEAR), { react: 1.2, base: 0.18, twinkle: 4.2, maxPx: 20 }, u));
 
@@ -175,8 +187,8 @@ export default function buildArena(u) {
   }));
   root.add(sparkField(haze, { react: 0.5, base: 0.05, twinkle: 0.4, maxPx: 40 }, u));
 
-  root.add(new THREE.AmbientLight(0x1c1a28, 1.0));
-  const key = new THREE.PointLight(ACCENT, 900, 60, 2);
+  root.add(new THREE.AmbientLight(0x24222f, 1.3));
+  const key = new THREE.PointLight(ACCENT, 900, 78, 2);
   key.position.set(0, 14, 12);
   root.add(key);
   const rear = new THREE.PointLight(MAGENTA, 500, 80, 2);
@@ -203,10 +215,10 @@ export default function buildArena(u) {
       heads.forEach(({ fx, i }) => {
         // the rig dances: each head on its own phase, swinging harder as the
         // track pushes
-        const swing = Math.sin(t * 1.35 + i * 0.7);
-        fx.rotation.z = swing * (0.18 + pulse * 0.42);
-        fx.rotation.x = 0.24 + Math.sin(t * 0.9 + i * 1.3) * (0.08 + pulse * 0.2);
-        if (fx.userData.glare) fx.userData.glare.material.opacity = 0.25 + pulse * 0.6 * (0.5 + 0.5 * swing);
+        const swing = Math.sin(t * 1.05 + i * 0.7);
+        fx.rotation.z = swing * 0.34;
+        fx.rotation.x = 0.24 + Math.sin(t * 0.72 + i * 1.3) * 0.15;
+        if (fx.userData.glare) fx.userData.glare.material.opacity = 0.34 + pulse * 0.2 * (0.5 + 0.5 * swing);
       });
     },
   };

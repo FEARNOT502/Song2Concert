@@ -217,10 +217,10 @@ export default function buildConcertHall(u) {
       key.intensity = 240 + pulse * 45;
       clouds.forEach((c, i) => {
         c.position.y = 12.2 + Math.sin(t * 0.35 + i) * 0.05;
-        c.userData.panel.material.emissive.setHex(0x120a04).multiplyScalar(0.5 + pulse * 1.6);
+        c.userData.panel.material.emissive.setHex(0x120a04).multiplyScalar(0.9 + pulse * 0.4);
       });
       lamps.forEach((fx) => {
-        if (fx.userData.glare) fx.userData.glare.material.opacity = 0.18 + pulse * 0.2;
+        if (fx.userData.glare) fx.userData.glare.material.opacity = 0.22 + pulse * 0.1;
       });
     },
   };

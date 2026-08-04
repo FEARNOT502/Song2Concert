@@ -176,7 +176,7 @@ export function beamMaterial(color, opacity, u) {
         float body = pow(facing, 2.2);
         float fade = pow(clamp(vH, 0.0, 1.0), 1.7);
         float sway = 0.55 + 0.45 * sin(uTime * 2.4 + uPhase);
-        float a = uOpacity * body * fade * (0.62 + uPulse * uReact * 0.5 * sway);
+        float a = uOpacity * body * fade * (0.8 + uPulse * uReact * 0.28 * sway);
         gl_FragColor = vec4(uColor, a);
       }`,
     transparent: true,
@@ -280,9 +280,9 @@ let personGeo = null;
 // uniform scale IS the person's height.
 function personGeometry() {
   if (personGeo) return personGeo;
-  const torso = new THREE.CapsuleGeometry(0.15, 0.34, 3, 7);
+  const torso = new THREE.CapsuleGeometry(0.15, 0.34, 2, 6);
   torso.translate(0, 0.52, 0);
-  const head = new THREE.SphereGeometry(0.115, 7, 5);
+  const head = new THREE.SphereGeometry(0.115, 6, 4);
   head.translate(0, 0.92, 0);
   personGeo = mergeGeometries([torso, head]);
   return personGeo;

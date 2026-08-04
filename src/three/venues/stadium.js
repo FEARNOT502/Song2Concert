@@ -182,25 +182,24 @@ export default function buildStadium(u) {
   // stage carries no crowd: at a stadium show it is sold off and masked, and the
   // room model treats that end as structure rather than as people.
   const people = [];
-  people.push(...standingCrowd({ x0: -66, x1: 66, zNear: 34, zFar: f.eye.z - CLEAR, count: 1500, seed: 177 }));
-  people.push(...standingCrowd({ x0: -66, x1: 66, zNear: f.eye.z + CLEAR, zFar: 150, count: 800, seed: 181 }));
+  people.push(...standingCrowd({ x0: -66, x1: 66, zNear: 34, zFar: f.eye.z - CLEAR, count: 2600, seed: 177 }));
+  people.push(...standingCrowd({ x0: -66, x1: 66, zNear: f.eye.z + CLEAR, zFar: 150, count: 1400, seed: 181 }));
 
   const near = (x, z) => Math.hypot(x - f.eye.x, z - f.eye.z);
   const ring = bowl({
     halfWidth: BOWL_X, zFront: BOWL_Z0, zBack: BOWL_Z1,
     tiers: [
-      { rows: 16, rise: 0.65, riseFar: 0.82, run: 0.90, yBase: 0.6, inset0: 0 },
-      { rows: 17, rise: 0.90, riseFar: 1.10, run: 0.95, yBase: 16.5, inset0: 15.2 },
+      { rows: 18, rise: 0.42, riseFar: 0.50, run: 0.92, yBase: 0.6, inset0: 0 },
+      { rows: 20, rise: 0.56, riseFar: 0.70, run: 0.96, yBase: 12.3, inset0: 19.0 },
     ],
     seatSpacing: 0.56, headHeight: 1.25, seed: 600, blockLength: 14,
     crowdFrom: 14,
-    density: (x, y, z) => (near(x, z) < 65 ? 0.8 : near(x, z) < 130 ? 0.38 : 0.14),
-    maxPeople: 3000, emissive: 0x131120,
+    density: () => 1,
+    maxPeople: 6500, emissive: 0x131120,
   });
   root.add(ring.mesh);
   root.add(ring.blocks);
-  people.push(...ring.people);
-  root.add(seatBank(thin(ring.treads.filter((s) => near(s.x, s.z) < 60), 2800)));
+  root.add(seatBank(thin(ring.treads.filter((s) => near(s.x, s.z) < 48), 2000)));
 
   const ribbons = [];
   for (const { inset, yTop } of ring.fascias.slice(0, 1)) {
@@ -212,7 +211,8 @@ export default function buildStadium(u) {
     ribbons.push(r);
   }
 
-  root.add(crowdField(people, { color: 0x0e0c1a, react: 1, sway: 0.11 }, u));
+  root.add(crowdField(ring.people, { color: 0x2d283c, react: 1, sway: 0.066 }, u));
+  root.add(crowdField(people, { color: 0x0d0c16, react: 1, sway: 0.11 }, u));
 
   const phones = Array.from({ length: 1700 }).map(() => {
     const onPitch = rnd() < 0.38;
@@ -257,10 +257,10 @@ export default function buildStadium(u) {
       rear.intensity = 2100 + pulse * 700;
       heads.forEach(({ fx, i, flood }) => {
         if (flood) return;
-        const swing = Math.sin(t * 1.2 + i * 0.62);
-        fx.rotation.z = swing * (0.2 + pulse * 0.45);
-        fx.rotation.x = 0.42 + Math.sin(t * 0.8 + i * 1.1) * (0.09 + pulse * 0.22);
-        if (fx.userData.glare) fx.userData.glare.material.opacity = 0.22 + pulse * 0.6 * (0.5 + 0.5 * swing);
+        const swing = Math.sin(t * 0.95 + i * 0.62);
+        fx.rotation.z = swing * 0.36;
+        fx.rotation.x = 0.42 + Math.sin(t * 0.66 + i * 1.1) * 0.17;
+        if (fx.userData.glare) fx.userData.glare.material.opacity = 0.3 + pulse * 0.2 * (0.5 + 0.5 * swing);
       });
     },
   };

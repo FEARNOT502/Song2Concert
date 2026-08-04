@@ -141,25 +141,38 @@ export default function buildDome(u) {
   // as well. The block behind the stage is real and empty: at a dome show it is
   // curtained off, which is exactly the treated face the room model puts there.
   const people = [];
-  people.push(...standingCrowd({ x0: -52, x1: 52, zNear: 26, zFar: f.eye.z - CLEAR, count: 1300, seed: 55 }));
-  people.push(...standingCrowd({ x0: -52, x1: 52, zNear: f.eye.z + CLEAR, zFar: 110, count: 560, seed: 57 }));
+  people.push(...standingCrowd({ x0: -52, x1: 52, zNear: 26, zFar: f.eye.z - CLEAR, count: 2300, seed: 55 }));
+  people.push(...standingCrowd({ x0: -52, x1: 52, zNear: f.eye.z + CLEAR, zFar: 110, count: 1000, seed: 57 }));
 
   const near = (x, z) => Math.hypot(x - f.eye.x, z - f.eye.z);
   const ring = bowl({
     halfWidth: BOWL_X, zFront: BOWL_Z0, zBack: BOWL_Z1,
     tiers: [
-      { rows: 15, rise: 0.62, riseFar: 0.80, run: 0.85, yBase: 0.5, inset0: 0 },
-      { rows: 14, rise: 0.85, riseFar: 1.02, run: 0.90, yBase: 15.0, inset0: 13.6 },
+      // Tokyo Dome's outfield has no lower bowl: the seating starts above the
+      // fence. So the lower tier runs down both sides and stops there.
+      { rows: 16, rise: 0.40, riseFar: 0.48, run: 0.88, yBase: 0.5, inset0: 0, sides: { front: false } },
+      { rows: 18, rise: 0.52, riseFar: 0.64, run: 0.92, yBase: 10.5, inset0: 16.1 },
     ],
     seatSpacing: 0.56, headHeight: 1.25, seed: 400, blockLength: 13,
     crowdFrom: 8,
-    density: (x, y, z) => (near(x, z) < 55 ? 0.8 : near(x, z) < 110 ? 0.4 : 0.16),
-    maxPeople: 2800, emissive: 0x181524,
+    density: () => 1,
+    maxPeople: 6000, emissive: 0x181524,
   });
   root.add(ring.mesh);
   root.add(ring.blocks);
-  people.push(...ring.people);
-  root.add(seatBank(thin(ring.treads.filter((s) => near(s.x, s.z) < 55), 2800)));
+  root.add(seatBank(thin(ring.treads.filter((s) => near(s.x, s.z) < 45), 2000)));
+
+  // The outfield fence. Tokyo Dome has no lower bowl behind the outfield — the
+  // seating starts above a padded wall with a yellow line along the top, and
+  // that wall is the whole read of that end of the building from the field.
+  const fenceZ = BOWL_Z0 - 16.1;
+  const fenceW = BOWL_X * 2 + 34;
+  const fence = new THREE.Mesh(new THREE.BoxGeometry(fenceW, 3.6, 0.8), lambert(0x14322a, { emissive: 0x08130c }));
+  fence.position.set(0, 1.8, fenceZ + 0.4);
+  root.add(fence);
+  const fenceTop = new THREE.Mesh(new THREE.BoxGeometry(fenceW, 0.18, 1.0), basic(0xd8c24a));
+  fenceTop.position.set(0, 3.6, fenceZ + 0.4);
+  root.add(fenceTop);
 
   const ribbons = [];
   for (const { inset, yTop } of ring.fascias.slice(0, 1)) {
@@ -171,7 +184,8 @@ export default function buildDome(u) {
     ribbons.push(r);
   }
 
-  root.add(crowdField(people, { color: 0x0d0b18, react: 1, sway: 0.1 }, u));
+  root.add(crowdField(ring.people, { color: 0x2c2739, react: 1, sway: 0.060 }, u));
+  root.add(crowdField(people, { color: 0x0c0b14, react: 1, sway: 0.1 }, u));
 
   // ── the sea of lightsticks ──
   const rnd = prng(77);
@@ -220,10 +234,10 @@ export default function buildDome(u) {
       rear.intensity = 1600 + pulse * 600;
       bRim.material.color.setHex(ACCENT).multiplyScalar(0.5 + pulse * 0.7);
       heads.forEach(({ fx, i }) => {
-        const swing = Math.sin(t * 1.15 + i * 0.55);
-        fx.rotation.z = swing * (0.2 + pulse * 0.5);
-        fx.rotation.x = 0.5 + Math.sin(t * 0.7 + i) * (0.1 + pulse * 0.24);
-        if (fx.userData.glare) fx.userData.glare.material.opacity = 0.2 + pulse * 0.6 * (0.5 + 0.5 * swing);
+        const swing = Math.sin(t * 0.92 + i * 0.55);
+        fx.rotation.z = swing * 0.38;
+        fx.rotation.x = 0.5 + Math.sin(t * 0.58 + i) * 0.18;
+        if (fx.userData.glare) fx.userData.glare.material.opacity = 0.3 + pulse * 0.2 * (0.5 + 0.5 * swing);
       });
     },
   };

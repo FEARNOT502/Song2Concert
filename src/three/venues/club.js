@@ -150,8 +150,8 @@ export default function buildClub(u) {
       deck.userData.lip.material.color.setHex(ACCENT).multiplyScalar(0.6 + pulse * 0.5);
       cans.forEach((fx, i) => {
         const sway = 0.5 + 0.5 * Math.sin(t * 1.1 + i * 0.9);
-        fx.rotation.z = Math.sin(t * 0.6 + i) * 0.1 * (0.3 + pulse);
-        if (fx.userData.glare) fx.userData.glare.material.opacity = 0.28 + pulse * 0.5 * sway;
+        fx.rotation.z = Math.sin(t * 0.6 + i) * 0.09;
+        if (fx.userData.glare) fx.userData.glare.material.opacity = 0.34 + pulse * 0.18 * sway;
       });
     },
   };

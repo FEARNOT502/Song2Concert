@@ -194,8 +194,8 @@ export default function buildTheater(u) {
       screen.userData.update(pulse);
       key.intensity = 110 + pulse * 30;
       lamps.forEach((fx, i) => {
-        fx.rotation.z = Math.sin(t * 0.5 + i * 1.3) * 0.06 * (0.4 + pulse);
-        if (fx.userData.glare) fx.userData.glare.material.opacity = 0.2 + pulse * 0.45 * (0.5 + 0.5 * Math.sin(t * 2 + i));
+        fx.rotation.z = Math.sin(t * 0.5 + i * 1.3) * 0.055;
+        if (fx.userData.glare) fx.userData.glare.material.opacity = 0.26 + pulse * 0.16 * (0.5 + 0.5 * Math.sin(t * 2 + i));
       });
     },
   };

@@ -198,6 +198,10 @@ export function bowl({
 
   tiers.forEach((tier, ti) => {
     const { rows, rise, riseFar = rise, run, yBase, inset0 = 0 } = tier;
+    // Which sides of the ring this tier has. A tier with no front is an arena
+    // with the stage end masked off rather than seated; a tier with no back is
+    // Tokyo Dome, where the lower bowl stops at the outfield fence.
+    const has = { front: true, back: true, ...(tier.sides || {}) };
     const tops = [];
     let y = yBase;
     for (let r = 0; r < rows; r++) {
@@ -219,20 +223,24 @@ export function bowl({
         g.translate((x0 + x1) / 2, top / 2, (z0 + z1) / 2);
         rake.push(g);
       };
-      step(-xo, -xi, zo0, zo1);   // the side runs take the full depth …
-      step(xi, xo, zo0, zo1);
-      step(-xi, xi, zo0, zi0);    // … and the ends fill between them
-      step(-xi, xi, zi1, zo1);
+      // the side runs stop where a missing end would otherwise leave them
+      // reaching out past the seating into nothing
+      const sz0 = has.front ? zo0 : zFront;
+      const sz1 = has.back ? zo1 : zBack;
+      step(-xo, -xi, sz0, sz1);
+      step(xi, xo, sz0, sz1);
+      if (has.front) step(-xi, xi, zo0, zi0);
+      if (has.back) step(-xi, xi, zi1, zo1);
 
       // seating on the tread, split into blocks by the aisles
       const mx = halfWidth + inIn + run * 0.5;
       const mz0 = zFront - inIn - run * 0.5, mz1 = zBack + inIn + run * 0.5;
       const seatD = run * 0.72, seatH = 0.42;
       const runsOfRing = [
-        { along: 'z', at: -mx, from: mz0, to: mz1 },
-        { along: 'z', at: mx, from: mz0, to: mz1 },
-        { along: 'x', at: mz0, from: -mx, to: mx },
-        { along: 'x', at: mz1, from: -mx, to: mx },
+        { along: 'z', at: -mx, from: has.front ? mz0 : zFront, to: has.back ? mz1 : zBack },
+        { along: 'z', at: mx, from: has.front ? mz0 : zFront, to: has.back ? mz1 : zBack },
+        ...(has.front ? [{ along: 'x', at: mz0, from: -mx, to: mx }] : []),
+        ...(has.back ? [{ along: 'x', at: mz1, from: -mx, to: mx }] : []),
       ];
       runsOfRing.forEach((seg, si) => {
         const len = seg.to - seg.from;
