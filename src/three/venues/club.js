@@ -14,6 +14,7 @@ export default function buildClub(u) {
   const f = frame('club');
   const root = new THREE.Group();
   const DECK = 0.5;
+  const PLAYER = 0x241c1c;
 
   // ── the room ──
   const brick = brickTexture([Math.round(f.depth / 1.6), Math.round(f.height / 1.6)]);
@@ -41,35 +42,35 @@ export default function buildClub(u) {
 
   // ── the combo. Centre stage stays clear so the art is never masked. ──
   const kit = drumKit();
-  kit.position.set(-1.55, DECK, 1.35);
+  kit.position.set(-1.35, DECK, 1.4);
   kit.rotation.y = 0.22;
   root.add(kit);
-  const drummer = performer({ height: 1.35 });
-  drummer.position.set(-1.6, DECK, 0.85);
+  const drummer = performer({ height: 1.35, color: PLAYER });
+  drummer.position.set(-1.4, DECK, 0.9);
   root.add(drummer);
 
   const piano = grandPiano();
-  piano.position.set(-3.1, DECK, 2.2);
+  piano.position.set(-2.6, DECK, 2.4);
   piano.rotation.y = 0.95;
   piano.scale.setScalar(0.82);
   root.add(piano);
-  const pianist = performer({ height: 1.4 });
-  pianist.position.set(-2.4, DECK, 2.8);
+  const pianist = performer({ height: 1.4, color: PLAYER });
+  pianist.position.set(-2.05, DECK, 2.9);
   root.add(pianist);
 
   const bass = uprightBass();
-  bass.position.set(3.6, DECK, 1.3);
+  bass.position.set(3.3, DECK, 0.85);
   root.add(bass);
-  const bassist = performer({ height: 1.78 });
-  bassist.position.set(3.95, DECK, 1.5);
+  const bassist = performer({ height: 1.78, color: PLAYER });
+  bassist.position.set(3.55, DECK, 1.05);
   root.add(bassist);
 
   // downstage right, well clear of the sight line to the back wall
-  const singer = performer({ height: 1.72, arms: true });
-  singer.position.set(2.55, DECK, 2.5);
+  const singer = performer({ height: 1.72, arms: true, color: PLAYER });
+  singer.position.set(2.05, DECK, 1.8);
   root.add(singer);
   const mic = micStand({ height: 1.48 });
-  mic.position.set(2.3, DECK, 2.55);
+  mic.position.set(1.8, DECK, 1.85);
   root.add(mic);
 
   // ── the pipe, and the six cans on it ──
@@ -102,7 +103,7 @@ export default function buildClub(u) {
       const x = (s + 0.5) / seats * (f.width - 1.4) + f.xMin + 0.7 + (rnd() - 0.5) * 0.4;
       // the two seats dead ahead are ours and our neighbour's — leave the sight
       // line to the stage open
-      if (row === 0 && Math.abs(x - f.seat.x) < 1.6) continue;
+      if (row === 0 && Math.abs(x - f.eye.x) < 1.6) continue;
       people.push({ x, y: 0, z, height: 1.28 + rnd() * 0.12, turn: (rnd() - 0.5) * 0.7 });
     }
     for (let t = 0; t < 3; t++) {
@@ -138,7 +139,7 @@ export default function buildClub(u) {
   return {
     root,
     screen,
-    camera: { position: f.seat.clone(), target: new THREE.Vector3(0, 1.85, 0.6), fov: 58 },
+    camera: { position: f.eye.clone(), target: new THREE.Vector3(0, 1.95, 0.6), fov: 58 },
     background: new THREE.Color(0x05040a),
     fog: new THREE.Fog(0x0a0709, 5, 26),
     bloom: { strength: 0.42, radius: 0.75, threshold: 0.5 },

@@ -122,11 +122,11 @@ export default function buildTheater(u) {
   });
   root.add(stalls.mesh);
   // our own seat, and the one beside it, stay empty
-  const seated = stalls.people.filter((p) => !(Math.abs(p.z - f.seat.z) < 1.1 && Math.abs(p.x - f.seat.x) < 1.4));
+  const seated = stalls.people.filter((p) => !(Math.abs(p.z - f.eye.z) < 1.1 && Math.abs(p.x - f.eye.x) < 1.4));
   root.add(crowdField(seated.concat(boxPeople), { color: 0x040409, react: 0.35, sway: 0.035 }, u));
 
   // the rake under our feet decides the eye height, not a guess
-  const seatFloor = 0.12 + Math.floor((f.seat.z - 8.5) / ((36 - 8.5) / 28)) * 0.13;
+  const seatFloor = 0.12 + Math.floor((f.eye.z - 8.5) / ((36 - 8.5) / 28)) * 0.13;
 
   // ── front-of-house bar + the bridge over the apron ──
   const bar = truss(16, { size: 0.42, color: 0x231a12 });
@@ -181,9 +181,9 @@ export default function buildTheater(u) {
     root,
     screen,
     camera: {
-      position: new THREE.Vector3(f.seat.x, seatFloor + f.seat.y, f.seat.z),
-      target: new THREE.Vector3(0, 5.0, 3.4),
-      fov: 50,
+      position: new THREE.Vector3(0, seatFloor + f.eye.y, f.eye.z),
+      target: new THREE.Vector3(0, 5.2, 3.4),
+      fov: 54,
     },
     background: new THREE.Color(0x040308),
     fog: new THREE.Fog(0x0a0709, 12, 62),

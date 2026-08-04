@@ -158,6 +158,17 @@ export function orientBlock(block, { rotY = 0, x = 0, y = 0, z = 0 }) {
   return block;
 }
 
+// The lit fascia along the front of a bowl's lower tier. In a room this size it
+// is what tells you there is a stand out there at all — the seating itself is
+// dark grey people on dark grey concrete, 40 m off the axis, and without a
+// ribbon the sides of the frame read as a black band rather than as seats.
+export function ribbon({ length, height = 0.5, color = ACCENT, along = 'z' }) {
+  const geo = along === 'z'
+    ? new THREE.BoxGeometry(0.26, height, length)
+    : new THREE.BoxGeometry(length, height, 0.26);
+  return new THREE.Mesh(geo, basic(color));
+}
+
 // A standing floor crowd: no steps, just people on flat ground getting denser
 // toward the stage.
 export function standingCrowd({ x0, x1, zNear, zFar, count, y = 0, seed = 3, height = 1.7 }) {

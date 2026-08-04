@@ -10,7 +10,7 @@
 import * as THREE from 'three';
 import { ACCENT, COOL, MAGENTA, WARM, basic, crowdField, lambert, makeScreen, prng, sparkField } from '../kit.js';
 import {
-  fixture, footlights, lineArray, orientBlock, performer, rakedBlock,
+  fixture, footlights, lineArray, orientBlock, performer, rakedBlock, ribbon,
   speakerStack, stageDeck, standingCrowd, truss,
 } from '../props.js';
 import { frame } from './frame.js';
@@ -46,14 +46,14 @@ export default function buildDome(u) {
   root.add(stageDeck({ width: 40, depth: 20, height: DECK, z: 12 }));
   root.add(footlights({ width: 38, count: 44, y: DECK + 0.06, z: 22.05 }));
 
-  const screen = makeScreen({ w: 30, h: 16 }, u);
-  screen.position.set(0, DECK + 9.6, 3.4);
+  const screen = makeScreen({ w: 33, h: 17.5 }, u);
+  screen.position.set(0, DECK + 10.2, 3.4);
   root.add(screen);
 
   const wings = [];
   for (const side of [-1, 1]) {
     const wing = makeScreen({ w: 9, h: 14, halo: MAGENTA, bezel: 0x8a4a2a, content: COOL }, u);
-    wing.position.set(side * 24, DECK + 8.4, 5);
+    wing.position.set(side * 26, DECK + 8.8, 5);
     wing.rotation.y = -side * 0.36;
     root.add(wing);
     wings.push(wing);
@@ -121,24 +121,35 @@ export default function buildDome(u) {
 
   // ── the crowd: field, then the tiers ──
   const people = [];
-  people.push(...standingCrowd({ x0: -52, x1: 52, zNear: 26, zFar: f.seat.z - CLEAR, count: 2100, seed: 55 }));
-  people.push(...standingCrowd({ x0: -52, x1: 52, zNear: f.seat.z + CLEAR, zFar: 110, count: 1100, seed: 57 }));
+  const ribbons = [];
+  people.push(...standingCrowd({ x0: -52, x1: 52, zNear: 26, zFar: f.eye.z - CLEAR, count: 2100, seed: 55 }));
+  people.push(...standingCrowd({ x0: -52, x1: 52, zNear: f.eye.z + CLEAR, zFar: 110, count: 1100, seed: 57 }));
 
   for (const side of [-1, 1]) {
     for (const [yBase, rows, seed] of [[0.5, 14, 400], [13, 16, 430], [24, 12, 460]]) {
       const stand = orientBlock(rakedBlock({
         x0: -62, x1: 62, zNear: 0, zFar: rows * 0.95, rows,
         riseFirst: 0.6, rise: 0.78, seatSpacing: 0.55, headHeight: 1.25,
-        yBase, seed: seed + side, fill: 0.85, emissive: 0x15111e,
+        yBase, seed: seed + side, fill: 0.85, emissive: 0x241e36,
       }), { rotY: side * Math.PI / 2, x: side * (56 + (yBase > 20 ? 8 : yBase > 10 ? 4 : 0)), z: 62 });
       root.add(stand.mesh);
       people.push(...stand.people);
+      if (yBase < 1) {
+        const fascia = ribbon({ length: 124, height: 0.9 });
+        fascia.position.set(side * 55.5, 1.1, 62);
+        root.add(fascia);
+        ribbons.push(fascia);
+      }
     }
   }
+  const backFascia = ribbon({ length: 120, height: 0.9, along: 'x' });
+  backFascia.position.set(0, 1.1, 111.4);
+  root.add(backFascia);
+  ribbons.push(backFascia);
   for (const [zNear, yBase, rows, seed] of [[112, 0.5, 14, 500], [118, 13, 16, 530], [126, 24, 12, 560]]) {
     const back = rakedBlock({
       x0: -60, x1: 60, zNear, zFar: zNear + rows * 0.95, rows,
-      riseFirst: 0.6, rise: 0.78, seatSpacing: 0.55, headHeight: 1.25, yBase, seed, fill: 0.85, emissive: 0x15111e,
+      riseFirst: 0.6, rise: 0.78, seatSpacing: 0.55, headHeight: 1.25, yBase, seed, fill: 0.85, emissive: 0x241e36,
     });
     root.add(back.mesh);
     people.push(...back.people);
@@ -149,7 +160,7 @@ export default function buildDome(u) {
   const rnd = prng(77);
   const HUES = [MAGENTA, ACCENT, COOL, 0xff5f9e, 0x8affd0];
   const sticks = Array.from({ length: 2600 }).map(() => {
-    const onField = rnd() < 0.55;
+    const onField = rnd() < 0.4;
     const color = HUES[Math.floor(rnd() * HUES.length)];
     return onField
       ? { x: (rnd() - 0.5) * 104, y: 1.7 + rnd() * 0.7, z: 26 + rnd() * 78, size: 0.2, color, phase: rnd() * 6.283 }
@@ -158,7 +169,7 @@ export default function buildDome(u) {
           z: 6 + rnd() * 130, size: 0.2, color, phase: rnd() * 6.283,
         };
   });
-  root.add(sparkField(sticks.filter((p) => Math.abs(p.z - f.seat.z) > CLEAR), { react: 1.35, base: 0.14, twinkle: 5.0, maxPx: 20 }, u));
+  root.add(sparkField(sticks.filter((p) => Math.abs(p.z - f.eye.z) > CLEAR), { react: 1.35, base: 0.14, twinkle: 5.0, maxPx: 20 }, u));
 
   const haze = Array.from({ length: 260 }).map(() => ({
     x: (rnd() - 0.5) * 90, y: 3 + rnd() * 26, z: rnd() * 60,
@@ -180,7 +191,7 @@ export default function buildDome(u) {
   return {
     root,
     screen,
-    camera: { position: f.seat.clone(), target: new THREE.Vector3(0, DECK + 9.0, 6), fov: 54 },
+    camera: { position: f.eye.clone(), target: new THREE.Vector3(0, DECK + 9.6, 6), fov: 62 },
     background: new THREE.Color(0x04040a),
     fog: new THREE.Fog(0x0a0a14, 40, 300),
     bloom: { strength: 0.8, radius: 0.8, threshold: 0.34 },
@@ -188,6 +199,7 @@ export default function buildDome(u) {
       screen.userData.update(pulse);
       wings.forEach((w) => w.userData.update(pulse));
       key.intensity = 1400 + pulse * 3600;
+      ribbons.forEach((r) => r.material.color.setHex(ACCENT).multiplyScalar(0.3 + pulse * 0.8));
       rear.intensity = 800 + pulse * 2200;
       bRim.material.color.setHex(ACCENT).multiplyScalar(0.5 + pulse * 0.7);
       heads.forEach(({ fx, i }) => {
