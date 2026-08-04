@@ -197,10 +197,10 @@ export function makeSatCurve(k) {
 
 const dbToGain = (db) => Math.pow(10, db / 20);
 
-// Transient emphasis bands, all carried by one parallel send: the worklet
-// extracts each band, returns only the attack increment, and the sum is added
-// back. The main path is never filtered, so with no transient present the result
-// is identical to the send not existing.
+// Transient emphasis bands. Each is a parallel send: the band is extracted, the
+// worklet returns only the attack increment, and that is summed back. The main
+// path is never filtered, so with no transient present the result is identical
+// to the send not existing.
 //
 // Leaning on these is the safe way to add definition to a kit. They raise the
 // ATTACK and not the sustain, so a kick gets more front without getting longer —
@@ -209,13 +209,13 @@ const dbToGain = (db) => Math.pow(10, db / 20);
 const TRANSIENT_BANDS = [
   // The kick's chest thump. Low enough to sit under the bass guitar's body
   // rather than on top of it.
-  { name: 'kickThump', frequency: 70, Q: 1.2, amount: 1.5, gain: 1.0 },
+  { name: 'kickThump', type: 'bandpass', frequency: 70, Q: 1.2, amount: 1.5, gain: 1.0 },
   // The snare's body — the wooden thwack, distinct from its crack.
-  { name: 'snareBody', frequency: 220, Q: 1.2, amount: 1.3, gain: 0.9 },
+  { name: 'snareBody', type: 'bandpass', frequency: 220, Q: 1.2, amount: 1.3, gain: 0.9 },
   // Kick beater click and snare crack together. On in-ears this band does most
   // of the work: there is no chest to feel a kick with, so the attack has to be
   // heard rather than felt.
-  { name: 'attack', frequency: 4200, Q: 0.9, amount: 1.35, gain: 0.8 },
+  { name: 'attack', type: 'bandpass', frequency: 4200, Q: 0.9, amount: 1.35, gain: 0.8 },
 ];
 
 // Build the whole chain on any context. `worklets` says which AudioWorklet
@@ -252,20 +252,28 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {} })
   n.in.connect(n.air4k);
   n.air4k.connect(n.air10k);
 
-  // Transient emphasis — one parallel send carrying all three bands. It was
-  // nine nodes (a filter, a worklet and a gain per band); the worklet does its
-  // own band-splitting now, which is two biquads' worth of arithmetic against
-  // eight nodes' worth of per-quantum overhead.
+  // transient emphasis sends
   n.direct = ctx.createGain();
   n.air10k.connect(n.direct);
-  n.transient = null;
+  n.transients = [];
   if (worklets.transient) {
-    n.transient = new AudioWorkletNode(ctx, 'transient', {
-      numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2],
-      processorOptions: { bands: TRANSIENT_BANDS },
-    });
-    n.air10k.connect(n.transient);
-    n.transient.connect(n.direct);
+    for (const band of TRANSIENT_BANDS) {
+      const bp = ctx.createBiquadFilter();
+      bp.type = band.type;
+      bp.frequency.value = band.frequency;
+      bp.Q.value = band.Q;
+      const node = new AudioWorkletNode(ctx, 'transient', {
+        numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2],
+      });
+      node.parameters.get('amount').value = band.amount;
+      const g = ctx.createGain();
+      g.gain.value = band.gain;
+      n.air10k.connect(bp);
+      bp.connect(node);
+      node.connect(g);
+      g.connect(n.direct);
+      n.transients.push({ name: band.name, bp, node, gain: g });
+    }
   }
 
   // Everything the FOH engineer decided — the transient emphasis, the vocal
