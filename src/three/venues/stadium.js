@@ -182,27 +182,31 @@ export default function buildStadium(u) {
   // stage carries no crowd: at a stadium show it is sold off and masked, and the
   // room model treats that end as structure rather than as people.
   const people = [];
-  people.push(...standingCrowd({ x0: -66, x1: 66, zNear: 34, zFar: f.eye.z - CLEAR, count: 2500, seed: 177 }));
-  people.push(...standingCrowd({ x0: -66, x1: 66, zNear: f.eye.z + CLEAR, zFar: 150, count: 1600, seed: 181 }));
+  people.push(...standingCrowd({ x0: -66, x1: 66, zNear: 34, zFar: f.eye.z - CLEAR, count: 1500, seed: 177 }));
+  people.push(...standingCrowd({ x0: -66, x1: 66, zNear: f.eye.z + CLEAR, zFar: 150, count: 800, seed: 181 }));
 
   const near = (x, z) => Math.hypot(x - f.eye.x, z - f.eye.z);
   const ring = bowl({
-    halfWidth: BOWL_X, zFront: BOWL_Z0, zBack: BOWL_Z1, rows: 38,
-    rise: 0.68, riseFar: 1.02, run: 0.95, yBase: 0.6,
-    seatSpacing: 0.56, headHeight: 1.25, seed: 600,
+    halfWidth: BOWL_X, zFront: BOWL_Z0, zBack: BOWL_Z1,
+    tiers: [
+      { rows: 16, rise: 0.65, riseFar: 0.82, run: 0.90, yBase: 0.6, inset0: 0 },
+      { rows: 17, rise: 0.90, riseFar: 1.10, run: 0.95, yBase: 16.5, inset0: 15.2 },
+    ],
+    seatSpacing: 0.56, headHeight: 1.25, seed: 600, blockLength: 14,
     crowdFrom: 14,
-    density: (x, y, z) => (near(x, z) < 65 ? 0.9 : near(x, z) < 130 ? 0.55 : 0.26),
-    maxPeople: 5600, emissive: 0x131120,
+    density: (x, y, z) => (near(x, z) < 65 ? 0.8 : near(x, z) < 130 ? 0.38 : 0.14),
+    maxPeople: 3000, emissive: 0x131120,
   });
   root.add(ring.mesh);
+  root.add(ring.blocks);
   people.push(...ring.people);
-  root.add(seatBank(thin(ring.treads.filter((s) => near(s.x, s.z) < 110), 9000)));
+  root.add(seatBank(thin(ring.treads.filter((s) => near(s.x, s.z) < 60), 2800)));
 
   const ribbons = [];
-  for (const [inset, y] of [[0.8, 2.3]]) {
+  for (const { inset, yTop } of ring.fascias.slice(0, 1)) {
     const r = ribbonRing({
       halfWidth: BOWL_X + inset, zFront: BOWL_Z0 - inset, zBack: BOWL_Z1 + inset,
-      y, height: 0.34, thickness: 0.26,
+      y: yTop + 1.9, height: 0.95, thickness: 0.32,
     });
     root.add(r);
     ribbons.push(r);
@@ -210,7 +214,7 @@ export default function buildStadium(u) {
 
   root.add(crowdField(people, { color: 0x0e0c1a, react: 1, sway: 0.11 }, u));
 
-  const phones = Array.from({ length: 2400 }).map(() => {
+  const phones = Array.from({ length: 1700 }).map(() => {
     const onPitch = rnd() < 0.38;
     return onPitch
       ? { x: (rnd() - 0.5) * 132, y: 1.7 + rnd() * 0.6, z: 34 + rnd() * 116, size: 0.22, color: 0xfff0c8, phase: rnd() * 6.283 }
@@ -221,7 +225,7 @@ export default function buildStadium(u) {
   });
   root.add(sparkField(phones.filter((p) => Math.abs(p.z - f.eye.z) > CLEAR), { react: 1.25, base: 0.2, twinkle: 4.4, maxPx: 22 }, u));
 
-  const haze = Array.from({ length: 240 }).map(() => ({
+  const haze = Array.from({ length: 140 }).map(() => ({
     x: (rnd() - 0.5) * 110, y: 3 + rnd() * 30, z: rnd() * 70,
     size: 0.16 + rnd() * 0.26, color: 0xffb070, phase: rnd() * 6.283,
   }));
@@ -248,9 +252,9 @@ export default function buildStadium(u) {
     update(t, pulse) {
       screen.userData.update(pulse);
       wings.forEach((w) => w.userData.update(pulse));
-      key.intensity = 1800 + pulse * 4600;
+      key.intensity = 3800 + pulse * 1300;
       ribbons.forEach((r) => r.material.color.setHex(ACCENT).multiplyScalar(0.10 + pulse * 0.3));
-      rear.intensity = 1000 + pulse * 2600;
+      rear.intensity = 2100 + pulse * 700;
       heads.forEach(({ fx, i, flood }) => {
         if (flood) return;
         const swing = Math.sin(t * 1.2 + i * 0.62);

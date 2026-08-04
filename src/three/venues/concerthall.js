@@ -214,7 +214,7 @@ export default function buildConcertHall(u) {
     bloom: { strength: 0.34, radius: 0.8, threshold: 0.58 },
     update(t, pulse) {
       screen.userData.update(pulse);
-      key.intensity = 180 + pulse * 130;
+      key.intensity = 240 + pulse * 45;
       clouds.forEach((c, i) => {
         c.position.y = 12.2 + Math.sin(t * 0.35 + i) * 0.05;
         c.userData.panel.material.emissive.setHex(0x120a04).multiplyScalar(0.5 + pulse * 1.6);

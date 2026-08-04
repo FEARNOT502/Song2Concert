@@ -145,8 +145,8 @@ export default function buildClub(u) {
     bloom: { strength: 0.42, radius: 0.75, threshold: 0.5 },
     update(t, pulse) {
       screen.userData.update(pulse);
-      key.intensity = 22 + pulse * 22;
-      wash.intensity = 10 + pulse * 20;
+      key.intensity = 30 + pulse * 8;
+      wash.intensity = 18 + pulse * 7;
       deck.userData.lip.material.color.setHex(ACCENT).multiplyScalar(0.6 + pulse * 0.5);
       cans.forEach((fx, i) => {
         const sway = 0.5 + 0.5 * Math.sin(t * 1.1 + i * 0.9);

@@ -192,7 +192,7 @@ export default function buildTheater(u) {
     bloom: { strength: 0.5, radius: 0.7, threshold: 0.48 },
     update(t, pulse) {
       screen.userData.update(pulse);
-      key.intensity = 70 + pulse * 90;
+      key.intensity = 110 + pulse * 30;
       lamps.forEach((fx, i) => {
         fx.rotation.z = Math.sin(t * 0.5 + i * 1.3) * 0.06 * (0.4 + pulse);
         if (fx.userData.glare) fx.userData.glare.material.opacity = 0.2 + pulse * 0.45 * (0.5 + 0.5 * Math.sin(t * 2 + i));

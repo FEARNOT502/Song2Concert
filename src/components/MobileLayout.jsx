@@ -76,7 +76,7 @@ function StatRow({ k, v }) {
 }
 
 export default function MobileLayout({
-  venue, displayFile, coverSrc, pulse, upload, audioStatus, hasAudio,
+  venue, displayFile, coverSrc, pulse, pulseRef, upload, audioStatus, hasAudio,
   // transport
   playing, onToggle, onPrev, onNext, hasNext, hasPrev,
   time, durSec, wetDry, onWetChange, onSeek, onExport, exporting,
@@ -111,6 +111,7 @@ export default function MobileLayout({
             coverId={displayFile.cover}
             coverSrc={coverSrc}
             pulse={pulse}
+            pulseRef={pulseRef}
             title={upload ? upload.name : null}
             artist={upload ? upload.artist : null}
           />

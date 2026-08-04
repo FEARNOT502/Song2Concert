@@ -38,6 +38,8 @@ export default function App() {
   const [filePickerOpen, setFilePickerOpen] = useState(false);
   const [venuePickerOpen, setVenuePickerOpen] = useState(false);
   const [pulse, setPulse] = useState(0);
+  // the scene reads this every frame; `pulse` state exists only for the DOM
+  const pulseRef = useRef(0);
   const [exporting, setExporting] = useState(false);
 
   // playback queue. The track at index 0 is ALWAYS the one currently loaded;
@@ -92,46 +94,49 @@ export default function App() {
     return () => { if (engine.onended === handleEnded) engine.onended = null; };
   }, [engine, handleEnded]);
 
+  // ── playback clock + pulse, in one loop ──────────────────────────────────
+  //
+  // These used to be two requestAnimationFrame loops, each calling setState on
+  // every frame, which re-rendered the whole tree sixty times a second next to a
+  // convolution engine and a stack of audio worklets. That is what was breaking
+  // playback up: the audio thread is separate, but it does not get a whole core
+  // to itself, and a main thread that never yields starves it.
+  //
+  // Now one loop. The 3D scene reads the pulse straight off `pulseRef` every
+  // frame — no React involved — and state is written only fast enough for what
+  // it actually drives: a clock that shows seconds, and a glow behind the art.
   useEffect(() => {
-    if (!playing || !hasAudio) return undefined;
+    if (!playing || !hasAudio) { pulseRef.current = 0; setPulse(0); return undefined; }
     let raf;
     let stopped = false;
-    const tick = () => {
-      if (stopped) return;
-      if (engine.isEnded) {
-        // Track finished → advance (foreground fallback; the engine event above
-        // is the primary trigger and also covers the backgrounded case). We keep
-        // the RAF loop alive across the advance (do NOT stop it): `playing` stays
-        // true while auto-advancing, so this effect never re-runs to restart the
-        // loop — if we stopped here, the clock would freeze on the next track.
-        handleEnded();
-        raf = requestAnimationFrame(tick);
-        return;
-      }
-      setTime(engine.currentTime);
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => { stopped = true; cancelAnimationFrame(raf); };
-  }, [playing, hasAudio, engine, handleEnded]);
-
-  // ── pulse animation — AnalyserNode RMS, frozen on pause ──────────────────
-  useEffect(() => {
-    if (!playing || !hasAudio) { setPulse(0); return undefined; }
-    let raf;
-    let stopped = false;
+    let lastTime = -1;
+    let lastPulse = -1;
     const smooth = { v: 0 };
     const loop = () => {
       if (stopped) return;
+      raf = requestAnimationFrame(loop);
+      if (engine.isEnded) {
+        // Track finished → advance (foreground fallback; the engine event above
+        // is the primary trigger and also covers the backgrounded case). The
+        // loop stays alive across the advance: `playing` stays true while
+        // auto-advancing, so this effect never re-runs to restart it.
+        handleEnded();
+        return;
+      }
       const rms = engine.getRMS();
       const target = Math.min(1, rms * 6);
-      smooth.v += (target - smooth.v) * (target > smooth.v ? 0.5 : 0.08);
-      setPulse(Math.max(0, smooth.v));
-      raf = requestAnimationFrame(loop);
+      // gentler attack than before: the lights should swell, not snap
+      smooth.v += (target - smooth.v) * (target > smooth.v ? 0.22 : 0.06);
+      const p = Math.max(0, smooth.v);
+      pulseRef.current = p;
+
+      const t = engine.currentTime;
+      if (Math.abs(t - lastTime) >= 0.2) { lastTime = t; setTime(t); }
+      if (Math.abs(p - lastPulse) >= 0.06) { lastPulse = p; setPulse(p); }
     };
     raf = requestAnimationFrame(loop);
     return () => { stopped = true; cancelAnimationFrame(raf); };
-  }, [playing, hasAudio, engine]);
+  }, [playing, hasAudio, engine, handleEnded]);
 
   // ── transport handlers ──────────────────────────────────────────────────
   const togglePlay = useCallback(async () => {
@@ -304,6 +309,7 @@ export default function App() {
           displayFile={displayFile}
           coverSrc={coverSrc}
           pulse={pulse}
+          pulseRef={pulseRef}
           upload={upload}
           audioStatus={audioStatus}
           hasAudio={hasAudio}
@@ -337,6 +343,7 @@ export default function App() {
         coverId={displayFile.cover}
         coverSrc={coverSrc}
         pulse={pulse}
+        pulseRef={pulseRef}
         title={upload ? upload.name : null}
         artist={upload ? upload.artist : null}
       />

@@ -14,7 +14,7 @@ import { useEffect, useRef, useState } from 'react';
 import StageArt from './StageArt.jsx';
 import { createStage } from '../three/stage.js';
 
-export default function Scene({ venueId, coverId, coverSrc, pulse, title, artist }) {
+export default function Scene({ venueId, coverId, coverSrc, pulse, pulseRef, title, artist }) {
   const hostRef = useRef(null);
   const canvasRef = useRef(null);
   const stageRef = useRef(null);
@@ -54,7 +54,10 @@ export default function Scene({ venueId, coverId, coverSrc, pulse, title, artist
   }, []);
 
   useEffect(() => { stageRef.current?.setVenue(venueId); }, [venueId]);
-  useEffect(() => { stageRef.current?.setPulse(pulse); }, [pulse]);
+  // the scene samples the pulse itself, once per rendered frame, so a loud track
+  // does not turn into sixty React renders a second
+  useEffect(() => { stageRef.current?.setPulseRef(pulseRef); }, [pulseRef]);
+  useEffect(() => { if (!pulseRef) stageRef.current?.setPulse(pulse); }, [pulse, pulseRef]);
 
   // Without WebGL the room cannot be drawn, but the record still plays — so the
   // art is laid out in the middle of a black frame instead of vanishing with it.

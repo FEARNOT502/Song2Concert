@@ -40,8 +40,8 @@ function StageArt({ rect, coverId, coverSrc, pulse, title, artist, bezel = true 
         left: box.x, top: box.y, width: box.w, height: box.h,
         pointerEvents: 'none',
         visibility: rect ? 'visible' : 'hidden',
-        filter: `drop-shadow(0 0 ${28 + pulse * 30}px oklch(0.78 0.16 55 / ${0.26 + pulse * 0.16}))`,
-        transition: 'filter 140ms',
+        filter: `drop-shadow(0 0 ${34 + pulse * 9}px oklch(0.78 0.16 55 / ${0.3 + pulse * 0.07}))`,
+        transition: 'filter 260ms',
       }}
     >
       <div

@@ -26,7 +26,11 @@ const DEG = Math.PI / 180;
 
 export function createStage(canvas, { quality = 'high' } = {}) {
   const bloomOn = quality !== 'low';
-  const maxRatio = quality === 'low' ? 1.25 : 1.75;
+  // Device pixel ratio is the single biggest lever on GPU cost — 1.75 on a
+  // retina panel is three times the pixels of 1.0 — and this scene shares a
+  // machine with a convolution reverb and five audio worklets. 1.35 keeps the
+  // LED bezels and the type crisp without spending the audio's headroom.
+  const maxRatio = quality === 'low' ? 1 : 1.35;
 
   let renderer;
   try {
@@ -55,7 +59,9 @@ export function createStage(canvas, { quality = 'high' } = {}) {
   let venue = null;
   let size = { w: 1, h: 1 };
   let pulse = 0;
+  let pulseRef = null;
   let raf = 0;
+  let frameBudget = 0;      // ms of headroom; see the adaptive skip in frame()
   let running = false;
   let onLayout = null;
   const clock = new THREE.Clock();
@@ -134,14 +140,29 @@ export function createStage(canvas, { quality = 'high' } = {}) {
     u.uScale.value = (size.h * pr * 0.5) / Math.tan(camera.fov * 0.5 * DEG);
   }
 
+  // If the machine cannot hold 60, render every other frame rather than letting
+  // every frame run long. A steady 30 looks like a choice; a wobbling 45 looks
+  // like a fault, and the frames it drops come out of the audio thread.
+  let heavy = false;
+  let parity = 0;
+
   function frame() {
     raf = requestAnimationFrame(frame);
     if (!venue || document.hidden) return;
+    if (heavy && (parity ^= 1)) return;
+
+    const started = performance.now();
     const t = clock.getElapsedTime();
+    const p = pulseRef ? pulseRef.current : pulse;
     u.uTime.value = t;
-    u.uPulse.value = pulse;
-    venue.update(t, pulse);
+    u.uPulse.value = p;
+    venue.update(t, p);
     composer.render();
+
+    // rolling average of how long a rendered frame costs us
+    frameBudget += ((performance.now() - started) - frameBudget) * 0.05;
+    if (!heavy && frameBudget > 13) heavy = true;
+    else if (heavy && frameBudget < 7) heavy = false;
   }
 
   // ── plumbing ───────────────────────────────────────────────────────────────
@@ -161,6 +182,7 @@ export function createStage(canvas, { quality = 'high' } = {}) {
   return {
     setVenue,
     setPulse: (p) => { pulse = p; },
+    setPulseRef: (ref) => { pulseRef = ref || null; },
     resize,
     onLayout(fn) { onLayout = fn; if (layoutRect) fn({ ...layoutRect }); },
     start() { if (!running) { running = true; clock.start(); raf = requestAnimationFrame(frame); } },

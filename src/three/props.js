@@ -145,87 +145,148 @@ export function rakedBlock({
 
 // ── the bowl ────────────────────────────────────────────────────────────────
 
-// One continuous rake wrapping the whole field — first row to last, no tier
-// break, no gap where the stage is. `rakedBlock` builds a single straight block
-// and a bowl used to be four of them stacked in tiers, which left the sides
-// stopping in mid-air and a hole behind the stage. This closes the ring.
+// Section colours. A real stand is not one colour: it is blocks of seats in two
+// or three shades, split by aisles, and that banding is most of what tells you
+// you are looking at seating rather than at a ramp.
+const BLOCK_TINTS = [0x2b2a3c, 0x343148, 0x262636, 0x3a3450, 0x2f2d42];
+const AISLE_TINT = 0x585468;
+
+// A bowl in tiers. Each tier is a continuous rake — first row to last, no break
+// inside it — and the tiers are separated by the concourse fascia, which is what
+// the vertical face between them actually is. Two tiers, because three read as
+// a stack of unrelated bands and one reads as a ramp.
 //
-// Every row is a rectangular annulus one tread deep, stepped `run` further out
-// and `rise` higher than the one inside it, so the whole bowl is one surface.
-// `rise` may grow with the row — real bowls steepen as they climb, and it reads
-// as a bowl rather than a ramp — but it never breaks.
+// The whole ring is solid from the floor up, so the face between tiers falls out
+// of the geometry rather than being drawn on, and it closes behind the stage:
+// those seats exist, they are simply not sold.
 //
-// Returns { mesh, people, treads }. `treads` is every seat position in the ring,
-// occupied or not: the venue picks the near ones and puts actual seat geometry
-// on them, and lets the far ones stay texture.
+// Returns { mesh, blocks, people, treads, fascias }:
+//   mesh     the structural rake, one merged geometry
+//   blocks   the seating itself — one box per section per row, tinted per block,
+//            with the aisles left as gaps. One draw call, and it reads as blocks
+//            at any distance, which no texture on a merged box can.
+//   treads   every seat position, for the near rows that get real seat geometry
+//   fascias  where each tier ends, so a venue can hang a ribbon board there
 export function bowl({
-  halfWidth, zFront, zBack, rows,
-  rise = 0.78, riseFar = null, run = 0.92, yBase = 0.4,
-  seatSpacing = 0.58, headHeight = 1.25, seed = 1,
+  halfWidth, zFront, zBack, tiers,
+  seatSpacing = 0.56, headHeight = 1.25, seed = 1,
   crowdFrom = -Infinity,          // no audience in front of this z — behind the stage
-  density = () => 0.8,            // 0..1, per seat, so near rows can be denser
-  maxPeople = 6000,
+  density = () => 0.8,
+  maxPeople = 3000,
+  blockLength = 13,               // metres of seating between aisles
+  aisle = 1.8,
   color = 0x6d6680, emissive = 0x000000,
 }) {
-  const parts = [];
+  const rake = [];
+  const blocks = [];
   const people = [];
   const treads = [];
+  const fascias = [];
   const rnd = prng(seed);
-  const riseEnd = riseFar ?? rise;
 
-  const tops = [];
-  let y = yBase;
-  for (let r = 0; r < rows; r++) {
-    const t = rows === 1 ? 0 : r / (rows - 1);
-    y += rise + (riseEnd - rise) * t;
-    tops.push(y);
-  }
+  // a box carrying a flat vertex colour, so a few thousand of them can merge
+  // into one draw and still be individually tinted
+  const tinted = (w, h, d, x, y, z, hex) => {
+    const g = new THREE.BoxGeometry(w, h, d);
+    g.translate(x, y, z);
+    const c = new THREE.Color(hex);
+    const col = new Float32Array(g.attributes.position.count * 3);
+    for (let i = 0; i < col.length; i += 3) { col[i] = c.r; col[i + 1] = c.g; col[i + 2] = c.b; }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    return g;
+  };
 
-  for (let r = 0; r < rows; r++) {
-    const inIn = r * run, inOut = inIn + run;
-    const h = tops[r] - yBase;
-    const xi = halfWidth + inIn, xo = halfWidth + inOut;
-    const zi0 = zFront - inIn, zi1 = zBack + inIn;
-    const zo0 = zFront - inOut, zo1 = zBack + inOut;
-    const box = (x0, x1, z0, z1) => {
-      const g = new THREE.BoxGeometry(x1 - x0, h, z1 - z0);
-      boxUvInMetres(g, x1 - x0, h, z1 - z0);
-      g.translate((x0 + x1) / 2, yBase + h / 2, (z0 + z1) / 2);
-      parts.push(g);
-    };
-    box(-xo, -xi, zo0, zo1);   // the two side runs take the full depth …
-    box(xi, xo, zo0, zo1);
-    box(-xi, xi, zo0, zi0);    // … and the ends fill between them, so the ring
-    box(-xi, xi, zi1, zo1);    //     closes without overlapping at the corners
-
-    // seats sit along the middle of the tread
-    const mx = halfWidth + inIn + run * 0.5;
-    const mz0 = zFront - inIn - run * 0.5, mz1 = zBack + inIn + run * 0.5;
-    const rowY = tops[r];
-    const runs = [
-      { n: Math.floor((mz1 - mz0) / seatSpacing), at: (i, n) => [-mx, mz0 + (i + 0.5) * ((mz1 - mz0) / n)] },
-      { n: Math.floor((mz1 - mz0) / seatSpacing), at: (i, n) => [mx, mz0 + (i + 0.5) * ((mz1 - mz0) / n)] },
-      { n: Math.floor((2 * mx) / seatSpacing), at: (i, n) => [-mx + (i + 0.5) * ((2 * mx) / n), mz0] },
-      { n: Math.floor((2 * mx) / seatSpacing), at: (i, n) => [-mx + (i + 0.5) * ((2 * mx) / n), mz1] },
-    ];
-    for (const seg of runs) {
-      for (let i = 0; i < seg.n; i++) {
-        const [x, z] = seg.at(i, seg.n);
-        if (z < crowdFrom) continue;
-        const turn = Math.atan2(-x, zFront - z);
-        treads.push({ x, y: rowY, z, turn });
-        if (rnd() < density(x, rowY, z)) {
-          people.push({ x, y: rowY, z, height: headHeight * (0.93 + rnd() * 0.14), turn });
-        }
-      }
+  tiers.forEach((tier, ti) => {
+    const { rows, rise, riseFar = rise, run, yBase, inset0 = 0 } = tier;
+    const tops = [];
+    let y = yBase;
+    for (let r = 0; r < rows; r++) {
+      const t = rows === 1 ? 0 : r / (rows - 1);
+      y += rise + (riseFar - rise) * t;
+      tops.push(y);
     }
-  }
+
+    for (let r = 0; r < rows; r++) {
+      const inIn = inset0 + r * run, inOut = inIn + run;
+      const top = tops[r];
+      const xi = halfWidth + inIn, xo = halfWidth + inOut;
+      const zi0 = zFront - inIn, zi1 = zBack + inIn;
+      const zo0 = zFront - inOut, zo1 = zBack + inOut;
+      // solid from the floor: the face between tiers is then the concourse wall
+      const step = (x0, x1, z0, z1) => {
+        const g = new THREE.BoxGeometry(x1 - x0, top, z1 - z0);
+        boxUvInMetres(g, x1 - x0, top, z1 - z0);
+        g.translate((x0 + x1) / 2, top / 2, (z0 + z1) / 2);
+        rake.push(g);
+      };
+      step(-xo, -xi, zo0, zo1);   // the side runs take the full depth …
+      step(xi, xo, zo0, zo1);
+      step(-xi, xi, zo0, zi0);    // … and the ends fill between them
+      step(-xi, xi, zi1, zo1);
+
+      // seating on the tread, split into blocks by the aisles
+      const mx = halfWidth + inIn + run * 0.5;
+      const mz0 = zFront - inIn - run * 0.5, mz1 = zBack + inIn + run * 0.5;
+      const seatD = run * 0.72, seatH = 0.42;
+      const runsOfRing = [
+        { along: 'z', at: -mx, from: mz0, to: mz1 },
+        { along: 'z', at: mx, from: mz0, to: mz1 },
+        { along: 'x', at: mz0, from: -mx, to: mx },
+        { along: 'x', at: mz1, from: -mx, to: mx },
+      ];
+      runsOfRing.forEach((seg, si) => {
+        const len = seg.to - seg.from;
+        const n = Math.max(1, Math.round(len / blockLength));
+        const span = len / n;
+        for (let bi = 0; bi < n; bi++) {
+          const a0 = seg.from + bi * span + aisle / 2;
+          const a1 = seg.from + (bi + 1) * span - aisle / 2;
+          if (a1 <= a0) continue;
+          const mid = (a0 + a1) / 2, w = a1 - a0;
+          const tint = BLOCK_TINTS[(ti * 3 + si * 7 + bi) % BLOCK_TINTS.length];
+          const [bx, bz, bw, bd] = seg.along === 'z'
+            ? [seg.at, mid, seatD, w]
+            : [mid, seg.at, w, seatD];
+          if (seg.along === 'z' ? bz + bd / 2 > crowdFrom : bz > crowdFrom - 1) {
+            blocks.push(tinted(bw, seatH, bd, bx, top + seatH / 2, bz, tint));
+          } else {
+            // behind the stage the seats are there but unsold; keep them plain
+            blocks.push(tinted(bw, seatH, bd, bx, top + seatH / 2, bz, 0x1d1c28));
+          }
+          // the aisle beside this block, as a lit run of steps
+          const gapMid = seg.from + bi * span;
+          const [gx, gz, gw, gd] = seg.along === 'z'
+            ? [seg.at, gapMid, seatD, aisle]
+            : [gapMid, seg.at, aisle, seatD];
+          if (bi > 0) blocks.push(tinted(gw, 0.1, gd, gx, top + 0.05, gz, AISLE_TINT));
+
+          // occupants
+          const seats = Math.floor(w / seatSpacing);
+          for (let i = 0; i < seats; i++) {
+            const t = a0 + (i + 0.5) * (w / seats);
+            const x = seg.along === 'z' ? seg.at : t;
+            const z = seg.along === 'z' ? t : seg.at;
+            if (z < crowdFrom) continue;
+            const turn = Math.atan2(-x, zFront - z);
+            treads.push({ x, y: top, z, turn });
+            if (rnd() < density(x, top, z)) {
+              people.push({ x, y: top, z, height: headHeight * (0.93 + rnd() * 0.14), turn });
+            }
+          }
+        }
+      });
+    }
+    fascias.push({ inset: inset0 + rows * run, yTop: tops[rows - 1] });
+  });
 
   const mat = lambert(color, { map: bowlSeatTexture(), emissive });
+  const blockMat = lambert(0xffffff, { vertexColors: true });
   return {
-    mesh: new THREE.Mesh(mergeGeometries(parts), mat),
+    mesh: new THREE.Mesh(mergeGeometries(rake), mat),
+    blocks: new THREE.Mesh(mergeGeometries(blocks), blockMat),
     people: thin(people, maxPeople),
     treads,
+    fascias,
   };
 }
 

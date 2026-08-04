@@ -126,28 +126,32 @@ export default function buildArena(u) {
   // The seats behind the stage are real and empty — that block is sold off, and
   // its treated face is the `arenaTreated` surface the room model puts there.
   const people = [];
-  people.push(...standingCrowd({ x0: -32, x1: 32, zNear: 16, zFar: f.eye.z - CLEAR, count: 1500, seed: 3 }));
-  people.push(...standingCrowd({ x0: -32, x1: 32, zNear: f.eye.z + CLEAR, zFar: 70, count: 700, seed: 8 }));
+  people.push(...standingCrowd({ x0: -32, x1: 32, zNear: 16, zFar: f.eye.z - CLEAR, count: 950, seed: 3 }));
+  people.push(...standingCrowd({ x0: -32, x1: 32, zNear: f.eye.z + CLEAR, zFar: 70, count: 380, seed: 8 }));
 
   const near = (x, z) => Math.hypot(x - f.eye.x, z - f.eye.z);
   const ring = bowl({
-    halfWidth: BOWL_X, zFront: BOWL_Z0, zBack: BOWL_Z1, rows: 24,
-    rise: 0.62, riseFar: 0.9, run: 0.8, yBase: 0.5,
-    seatSpacing: 0.56, headHeight: 1.25, seed: 200,
+    halfWidth: BOWL_X, zFront: BOWL_Z0, zBack: BOWL_Z1,
+    tiers: [
+      { rows: 13, rise: 0.60, riseFar: 0.74, run: 0.82, yBase: 0.5, inset0: 0 },
+      { rows: 13, rise: 0.80, riseFar: 0.95, run: 0.85, yBase: 12.6, inset0: 11.3 },
+    ],
+    seatSpacing: 0.56, headHeight: 1.25, seed: 200, blockLength: 11,
     crowdFrom: 6,                        // nobody sits behind the stage
-    density: (x, y, z) => (near(x, z) < 45 ? 0.92 : near(x, z) < 90 ? 0.6 : 0.3),
-    maxPeople: 4200, emissive: 0x16131f,
+    density: (x, y, z) => (near(x, z) < 45 ? 0.85 : near(x, z) < 90 ? 0.45 : 0.18),
+    maxPeople: 2400, emissive: 0x16131f,
   });
   root.add(ring.mesh);
+  root.add(ring.blocks);
   people.push(...ring.people);
-  // the rows close enough that a bare step would read as wrong get real seats
-  root.add(seatBank(thin(ring.treads.filter((s) => near(s.x, s.z) < 62), 9000)));
+  // the rows close enough that a bare block would read as wrong get real seats
+  root.add(seatBank(thin(ring.treads.filter((s) => near(s.x, s.z) < 42), 2600)));
 
   const ribbons = [];
-  for (const [inset, y] of [[0.5, 1.9]]) {
+  for (const { inset, yTop } of ring.fascias.slice(0, 1)) {
     const r = ribbonRing({
       halfWidth: BOWL_X + inset, zFront: BOWL_Z0 - inset, zBack: BOWL_Z1 + inset,
-      y, height: 0.26, thickness: 0.2,
+      y: yTop + 1.4, height: 0.7, thickness: 0.24,
     });
     root.add(r);
     ribbons.push(r);
@@ -157,7 +161,7 @@ export default function buildArena(u) {
 
   // phone torches over the floor and the near stands
   const rnd = prng(33);
-  const phones = Array.from({ length: 900 }).map(() => {
+  const phones = Array.from({ length: 620 }).map(() => {
     const inStand = rnd() < 0.62;
     return inStand
       ? { x: (rnd() < 0.5 ? -1 : 1) * (33 + rnd() * 16), y: 2 + rnd() * 15, z: 8 + rnd() * 64, size: 0.11, color: 0xfff0c8, phase: rnd() * 6.283 }
@@ -165,7 +169,7 @@ export default function buildArena(u) {
   });
   root.add(sparkField(phones.filter((p) => Math.abs(p.z - f.eye.z) > CLEAR), { react: 1.2, base: 0.18, twinkle: 4.2, maxPx: 20 }, u));
 
-  const haze = Array.from({ length: 200 }).map(() => ({
+  const haze = Array.from({ length: 130 }).map(() => ({
     x: (rnd() - 0.5) * 60, y: 2 + rnd() * 16, z: rnd() * 34,
     size: 0.09 + rnd() * 0.14, color: 0xffb070, phase: rnd() * 6.283,
   }));
@@ -193,9 +197,9 @@ export default function buildArena(u) {
     update(t, pulse) {
       screen.userData.update(pulse);
       wings.forEach((w) => w.userData.update(pulse));
-      key.intensity = 500 + pulse * 1400;
+      key.intensity = 1000 + pulse * 380;
       ribbons.forEach((r) => r.material.color.setHex(ACCENT).multiplyScalar(0.10 + pulse * 0.3));
-      rear.intensity = 260 + pulse * 700;
+      rear.intensity = 500 + pulse * 190;
       heads.forEach(({ fx, i }) => {
         // the rig dances: each head on its own phase, swinging harder as the
         // track pushes

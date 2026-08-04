@@ -141,27 +141,31 @@ export default function buildDome(u) {
   // as well. The block behind the stage is real and empty: at a dome show it is
   // curtained off, which is exactly the treated face the room model puts there.
   const people = [];
-  people.push(...standingCrowd({ x0: -52, x1: 52, zNear: 26, zFar: f.eye.z - CLEAR, count: 2100, seed: 55 }));
-  people.push(...standingCrowd({ x0: -52, x1: 52, zNear: f.eye.z + CLEAR, zFar: 110, count: 1100, seed: 57 }));
+  people.push(...standingCrowd({ x0: -52, x1: 52, zNear: 26, zFar: f.eye.z - CLEAR, count: 1300, seed: 55 }));
+  people.push(...standingCrowd({ x0: -52, x1: 52, zNear: f.eye.z + CLEAR, zFar: 110, count: 560, seed: 57 }));
 
   const near = (x, z) => Math.hypot(x - f.eye.x, z - f.eye.z);
   const ring = bowl({
-    halfWidth: BOWL_X, zFront: BOWL_Z0, zBack: BOWL_Z1, rows: 32,
-    rise: 0.66, riseFar: 0.98, run: 0.9, yBase: 0.5,
-    seatSpacing: 0.56, headHeight: 1.25, seed: 400,
+    halfWidth: BOWL_X, zFront: BOWL_Z0, zBack: BOWL_Z1,
+    tiers: [
+      { rows: 15, rise: 0.62, riseFar: 0.80, run: 0.85, yBase: 0.5, inset0: 0 },
+      { rows: 14, rise: 0.85, riseFar: 1.02, run: 0.90, yBase: 15.0, inset0: 13.6 },
+    ],
+    seatSpacing: 0.56, headHeight: 1.25, seed: 400, blockLength: 13,
     crowdFrom: 8,
-    density: (x, y, z) => (near(x, z) < 55 ? 0.9 : near(x, z) < 110 ? 0.55 : 0.28),
-    maxPeople: 5200, emissive: 0x181524,
+    density: (x, y, z) => (near(x, z) < 55 ? 0.8 : near(x, z) < 110 ? 0.4 : 0.16),
+    maxPeople: 2800, emissive: 0x181524,
   });
   root.add(ring.mesh);
+  root.add(ring.blocks);
   people.push(...ring.people);
-  root.add(seatBank(thin(ring.treads.filter((s) => near(s.x, s.z) < 90), 9000)));
+  root.add(seatBank(thin(ring.treads.filter((s) => near(s.x, s.z) < 55), 2800)));
 
   const ribbons = [];
-  for (const [inset, y] of [[0.6, 2.1]]) {
+  for (const { inset, yTop } of ring.fascias.slice(0, 1)) {
     const r = ribbonRing({
       halfWidth: BOWL_X + inset, zFront: BOWL_Z0 - inset, zBack: BOWL_Z1 + inset,
-      y, height: 0.32, thickness: 0.24,
+      y: yTop + 1.7, height: 0.85, thickness: 0.3,
     });
     root.add(r);
     ribbons.push(r);
@@ -172,7 +176,7 @@ export default function buildDome(u) {
   // ── the sea of lightsticks ──
   const rnd = prng(77);
   const HUES = [MAGENTA, ACCENT, COOL, 0xff5f9e, 0x8affd0];
-  const sticks = Array.from({ length: 2600 }).map(() => {
+  const sticks = Array.from({ length: 1900 }).map(() => {
     const onField = rnd() < 0.4;
     const color = HUES[Math.floor(rnd() * HUES.length)];
     return onField
@@ -184,7 +188,7 @@ export default function buildDome(u) {
   });
   root.add(sparkField(sticks.filter((p) => Math.abs(p.z - f.eye.z) > CLEAR), { react: 1.35, base: 0.14, twinkle: 5.0, maxPx: 20 }, u));
 
-  const haze = Array.from({ length: 260 }).map(() => ({
+  const haze = Array.from({ length: 150 }).map(() => ({
     x: (rnd() - 0.5) * 90, y: 3 + rnd() * 26, z: rnd() * 60,
     size: 0.14 + rnd() * 0.22, color: 0xd8a0ff, phase: rnd() * 6.283,
   }));
@@ -211,9 +215,9 @@ export default function buildDome(u) {
     update(t, pulse) {
       screen.userData.update(pulse);
       wings.forEach((w) => w.userData.update(pulse));
-      key.intensity = 1400 + pulse * 3600;
+      key.intensity = 2800 + pulse * 1000;
       ribbons.forEach((r) => r.material.color.setHex(ACCENT).multiplyScalar(0.10 + pulse * 0.3));
-      rear.intensity = 800 + pulse * 2200;
+      rear.intensity = 1600 + pulse * 600;
       bRim.material.color.setHex(ACCENT).multiplyScalar(0.5 + pulse * 0.7);
       heads.forEach(({ fx, i }) => {
         const swing = Math.sin(t * 1.15 + i * 0.55);

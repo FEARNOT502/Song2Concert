@@ -176,7 +176,7 @@ export function beamMaterial(color, opacity, u) {
         float body = pow(facing, 2.2);
         float fade = pow(clamp(vH, 0.0, 1.0), 1.7);
         float sway = 0.55 + 0.45 * sin(uTime * 2.4 + uPhase);
-        float a = uOpacity * body * fade * (0.42 + uPulse * uReact * 1.2 * sway);
+        float a = uOpacity * body * fade * (0.62 + uPulse * uReact * 0.5 * sway);
         gl_FragColor = vec4(uColor, a);
       }`,
     transparent: true,
@@ -242,15 +242,16 @@ export function sparkField(points, { react = 1, base = 0.3, twinkle = 3.6, addit
       varying vec3 vColor; varying float vAlpha; varying float vDepth;
       void main() {
         float beat = 0.5 + 0.5 * sin(uTime * uTwinkle + aPhase);
-        float lit = uBase + uPulse * uReact * 1.15 * beat;
+        float lit = uBase + uPulse * uReact * 0.55 * beat;
         vAlpha = clamp(lit, 0.0, 1.0);
         vColor = aColor;
         vec4 mv = modelViewMatrix * vec4(position, 1.0);
         vDepth = -mv.z;
-        // Clamped: a torch a metre from the camera is still a torch, not a
-        // dinner plate. Without this the nearest points in a stadium crowd blow
-        // up to hundreds of pixels and swallow the picture.
-        float px = aSize * (1.0 + uPulse * uReact * 1.1 * beat) * uScale / max(vDepth, 0.001);
+        // Size is fixed. It used to grow with the beat, and a field of thousands
+        // of glows swelling by half on every kick reads as the whole view
+        // zooming rather than as lights responding. Brightness carries it now.
+        // Still clamped: a torch a metre from the camera is a torch, not a plate.
+        float px = aSize * uScale / max(vDepth, 0.001);
         gl_PointSize = clamp(px, 1.0, uMax);
         gl_Position = projectionMatrix * mv;
       }`,
@@ -306,8 +307,8 @@ export function crowdField(people, { color = 0x05040a, react = 1, sway = 0.09 },
       '#include <begin_vertex>',
       `#include <begin_vertex>
        float beat = sin(uTime * 5.4 + aPhase);
-       transformed.y += beat * uPulse * uReact * uSway;
-       transformed.x += sin(uTime * 2.7 + aPhase * 1.7) * uPulse * uReact * uSway * 0.55;`
+       transformed.y += beat * uPulse * uReact * uSway * 0.5;
+       transformed.x += sin(uTime * 2.7 + aPhase * 1.7) * uPulse * uReact * uSway * 0.3;`
     );
   };
   const mesh = new THREE.InstancedMesh(geo, mat, people.length);
@@ -384,7 +385,7 @@ export function makeScreen({ w, h, bezel = ACCENT, halo = ACCENT, pixels = true,
           float lit = step(vUv.y, level);
           float grid = step(0.18, fract(vUv.x * 22.0)) * step(0.2, fract(vUv.y * 26.0));
           vec3 c = mix(uA, uB, vUv.y);
-          gl_FragColor = vec4(c * lit * grid, (0.10 + uPulse * 0.5) * lit * grid);
+          gl_FragColor = vec4(c * lit * grid, (0.20 + uPulse * 0.22) * lit * grid);
         }`,
       transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
     }));
@@ -421,9 +422,9 @@ export function makeScreen({ w, h, bezel = ACCENT, halo = ACCENT, pixels = true,
 
   g.userData.size = { w, h };
   g.userData.update = (pulse) => {
-    glow.material.opacity = 0.16 + pulse * 0.34;
+    glow.material.opacity = 0.24 + pulse * 0.12;
     bm.color.setHex(bezel);
-    bm.color.multiplyScalar(0.75 + pulse * 0.35);
+    bm.color.multiplyScalar(0.85 + pulse * 0.18);
   };
   // keep the reactive uniforms reachable for venues that want to drive more
   g.userData.u = u;
