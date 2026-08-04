@@ -56,14 +56,66 @@ function mulberry32(seed) {
 // put every corner an octave high on a hi-res export.)
 const onePoleA = (hz, sampleRate) => 1 - Math.exp((-2 * Math.PI * hz) / sampleRate);
 
-// Deposit a single reflection at a fractional sample position.
-function depositTap(buf, position, gain) {
-  const i = Math.floor(position);
-  if (i < 0 || i + 1 >= buf.length) return;
-  const frac = position - i;
-  buf[i] += gain * (1 - frac);
-  buf[i + 1] += gain * frac;
+// Deposit a reflection, SPREAD IN TIME by how rough and how far away the surface
+// it came from was.
+//
+// A reflection is only a single impulse if it came off a mirror. The surfaces
+// that actually return sound in these venues are tiered stands packed with
+// people — structures tens of metres deep — and the path lengths across such a
+// surface differ by tens of metres, so what comes back is a short wash rather
+// than a hit.
+//
+// Treating them as mirrors is what left a looped kick with a hollow extra beat
+// after it: at Wembley the return off the far stand landed as one clean event
+// 112 ms later, standing some 7 dB above the diffuse field around it and
+// arriving almost exactly a sixteenth note behind every kick. Spread across the
+// depth of the stand it is a wash, which is what a stadium actually sounds like.
+//
+// Spread grows with arrival time as well as roughness, and that is the same
+// fact: a reflection arriving late came off something far away, and something
+// far away subtends a large structure.
+function depositTap(buf, position, gain, spreadSamples, rng) {
+  const place = (pos, g) => {
+    const i = Math.floor(pos);
+    if (i < 0 || i + 1 >= buf.length) return;
+    const frac = pos - i;
+    buf[i] += g * (1 - frac);
+    buf[i + 1] += g * frac;
+  };
+  if (!(spreadSamples > 2)) { place(position, gain); return; }
+
+  // A decaying cluster of SAME-POLARITY arrivals, normalised so the sum of the
+  // weights — not the sum of their squares — equals the original tap.
+  //
+  // Both details matter. A reflection does not invert, and randomising polarity
+  // was tried: over a spread short against a bass wavelength the taps cancel
+  // each other, and the early reverberation of a kick lost 13 dB. Normalising on
+  // energy rather than on the sum has the same effect from the other direction,
+  // since coherent arrivals add on amplitude.
+  //
+  // Summing delayed copies is a lowpass, and that is the physics rather than a
+  // side effect: a tiered stand is rough compared with a short wavelength and
+  // smooth compared with a long one, so it returns the low end intact and
+  // scatters the top. The late return keeps its weight and loses the snap that
+  // made it read as a separate hit.
+  const n = Math.min(96, Math.max(8, Math.round(spreadSamples / 6)));
+  const weights = new Float64Array(n);
+  let sum = 0;
+  for (let k = 0; k < n; k++) {
+    weights[k] = Math.exp((-2.5 * k) / (n - 1));
+    sum += weights[k];
+  }
+  const norm = gain / sum;
+  for (let k = 0; k < n; k++) {
+    const jitter = (rng() - 0.5) * (spreadSamples / n);
+    const pos = position + (k / (n - 1)) * spreadSamples + jitter;
+    place(pos, weights[k] * norm);
+  }
 }
+
+// How far a reflection is smeared: proportional to its own arrival time (how far
+// away the structure is) and to how rough that structure is.
+const SPREAD_FACTOR = 0.4;
 
 // Reflections are grouped before filtering: by arrival direction, and by how
 // much high frequency their surfaces took out. One filter pass per group rather
@@ -84,7 +136,7 @@ function brightnessBin(band) {
 }
 
 // Render one source position's early reflections into a pair of ear signals.
-function renderEarly(reflections, length, sampleRate) {
+function renderEarly(reflections, length, sampleRate, spreadRng) {
   const earL = new Float32Array(length);
   const earR = new Float32Array(length);
 
@@ -107,7 +159,10 @@ function renderEarly(reflections, length, sampleRate) {
 
   for (const g of groups.values()) {
     scratch.fill(0);
-    for (const r of g.taps) depositTap(scratch, r.time * sampleRate, r.gain);
+    for (const r of g.taps) {
+      const spread = r.time * (r.scatter ?? 0) * SPREAD_FACTOR * sampleRate;
+      depositTap(scratch, r.time * sampleRate, r.gain, spread, spreadRng);
+    }
 
     // The surfaces' absorption, as a single rolloff for the whole group.
     const a = onePoleA(BRIGHTNESS[g.br].cutoff, sampleRate);
@@ -283,6 +338,7 @@ function synthesize({ venueId, sampleRate, seed }) {
 
   const channels = [];
   const rng = mulberry32(seed * 7919 + 13);
+  let earlyEnergy = 0;
 
   for (let s = 0; s < 2; s++) {
     const refl = imageSources({
@@ -294,7 +350,7 @@ function synthesize({ venueId, sampleRate, seed }) {
       directivity: DIRECTIVITY[venueId] ?? 0,
     });
     const erLen = Math.min(length, Math.floor((tMix + 0.02) * sampleRate));
-    const { earL, earR } = renderEarly(refl, erLen, sampleRate);
+    const { earL, earR } = renderEarly(refl, erLen, sampleRate, mulberry32(seed * 40503 + s * 7919 + 3));
 
     const gap = Math.max(0.004, itdg(refl));
     // When the room first returns ANYTHING, scattered energy included. This is
@@ -310,6 +366,7 @@ function synthesize({ venueId, sampleRate, seed }) {
     }
 
     for (const ear of [earL, earR]) {
+      earlyEnergy += energyOf(ear);
       const full = new Float32Array(length);
       full.set(ear);
       channels.push({ buf: full, gap, onset });
@@ -328,29 +385,39 @@ function synthesize({ venueId, sampleRate, seed }) {
   // The diffuse field begins when the room first returns anything at all, and
   // rises over a few tens of milliseconds — NOT at the first boundary
   // reflection. See renderLate() for what tying it to the latter did.
-  // Only the START moves. The build-up still COMPLETES where it did, over the
-  // room's mixing time, which is what keeps a big room feeling big and keeps the
-  // tail at the right level: total reverberant energy is fixed, so front-loading
-  // the whole rise would have to make the tail quieter, and it did — the hall's
-  // early decay time fell to 0.58 of its reverberation time when the rise was
-  // shortened as well as started earlier.
+  // The diffuse field rises over a few tens of milliseconds and then decays. It
+  // does NOT swell for a quarter of a second first.
+  //
+  // A reverberant field building slowly is a fact about CONTINUOUS excitation;
+  // the impulse response of a room is loudest at its start, because reflection
+  // density is still growing while every individual reflection is already
+  // decaying. Ramping over the mixing time instead made the reverberation of a
+  // hit PEAK 130 ms later at Wembley and 440 ms later in the dome — a second,
+  // hollow event landing between the beats, which is exactly what a looped kick
+  // exposes.
   const onset = channels[0].onset;
+  const rise = Math.min(0.03, Math.max(0.008, mixingTime(volume) * 0.25));
   const lates = [];
   let lateEnergy = 0;
   for (let c = 0; c < 4; c++) {
-    const late = renderLate(rts, length, sampleRate, mulberry32(seed * 2654435761 + c * 40503 + 7), onset, gap + tMix);
+    const late = renderLate(rts, length, sampleRate, mulberry32(seed * 2654435761 + c * 40503 + 7), onset, onset + rise);
     lates.push(late);
     lateEnergy += energyOf(late);
   }
-  // The diffuse field is scaled to the room's statistical reverberant energy.
-  // The enumerated reflections sit ON TOP of it rather than inside it: Sabine
-  // describes the diffuse field, and a few dominant specular paths are extra.
-  // Subtracting them was tried and collapses in the stadium, where one return
-  // off the far stand outweighs the entire statistical estimate.
+  // The diffuse field is scaled to the room's statistical reverberant energy,
+  // with the enumerated reflections sitting on top rather than being deducted.
+  //
+  // Deducting them was tried, on the reasoning that they are part of the room's
+  // answer rather than extra. It goes the wrong way: taking energy out of the
+  // TAIL while the early reflections stay put makes the early portion even more
+  // dominant, and the early decay time — already the thing under pressure — fell
+  // further. It also collapses in the stadium, where one return off the far
+  // stand can outweigh the whole statistical estimate.
   //
   // The four responses are independent and a centred source drives two of them
   // into each ear, so an ear receives half the four-channel total.
   const wantLate = targetRev * 2;
+  void earlyEnergy;
   const lateGain = lateEnergy > 0 ? Math.sqrt(wantLate / lateEnergy) : 0;
 
   const fadeSamp = Math.floor(length * 0.08);

@@ -251,6 +251,80 @@ async function run() {
     });
   }
 
+  // Does a kick's REVERB still sound like a kick? A room changes the timing and
+  // the level of what it is given, not its identity — so if the direct sound is
+  // mostly low end and its reverberation is mostly midrange, the tail stops
+  // reading as the kick's room and starts reading as a separate, hollow hit
+  // behind the beat.
+  //
+  // The test kick is an EDM one: a pitch-dropping body, a hard beater click and
+  // the saturation such a kick is normally printed with, so it has the harmonic
+  // content a real one has. A pure sine had almost nothing above 300 Hz and the
+  // measurement could not see anything at all.
+  for (const venue of [VENUES[3], VENUES[4]]) {
+    const sr = 48000;
+    const kick = (ctx) => {
+      const b = ctx.createBuffer(2, Math.floor(sr * 0.5), sr);
+      for (let c = 0; c < 2; c++) {
+        const d = b.getChannelData(c);
+        for (let i = 0; i < d.length; i++) {
+          const t = i / sr;
+          const f = 160 * Math.exp(-t * 55) + 48;
+          const body = Math.sin(2 * Math.PI * f * t) * Math.exp(-t * 20);
+          const click = t < 0.006 ? Math.exp(-t * 700) * (Math.random() * 2 - 1) : 0;
+          d[i] = Math.tanh(2.2 * (body + 0.35 * click)) * 0.55; // printed hot, as they are
+        }
+      }
+      return b;
+    };
+    const tap = async (which, transient) => {
+      const ctx = new OfflineAudioContext(2, sr * 4, sr);
+      try {
+        await ctx.audioWorklet.addModule('/Song2Concert/transient-processor.js');
+        await ctx.audioWorklet.addModule('/Song2Concert/limiter-processor.js');
+      } catch (e) { /* noop */ }
+      const g = buildGraph(ctx, { venue, volume: 1, wetDb: wetTrimDb(venue.position.wet, venue.position.wet), worklets: { transient, limiter: true } });
+      g[which].connect(ctx.destination);
+      const src = ctx.createBufferSource(); src.buffer = kick(ctx); src.connect(g.trim); src.start(0);
+      const out = await ctx.startRendering();
+      const m = new Float32Array(out.length);
+      const L = out.getChannelData(0), R = out.getChannelData(1);
+      for (let i = 0; i < out.length; i++) m[i] = (L[i] + R[i]) / 2;
+      let hi = 0, lo = 0;
+      for (const f of [63, 125, 250]) { const bd = octaveBand(m, sr, f); for (let i = 0; i < bd.length; i++) lo += bd[i] * bd[i]; }
+      for (const f of [500, 1000, 2000, 4000]) { const bd = octaveBand(m, sr, f); for (let i = 0; i < bd.length; i++) hi += bd[i] * bd[i]; }
+      return (100 * hi) / (hi + lo);
+    };
+    // WHEN the reverb of a hit is loudest. A room's answer is loudest at the
+    // start and decays; if instead it swells and peaks a tenth of a second
+    // later, that peak is a second event the ear hears as an extra hit sitting
+    // between the beats.
+    const peakTime = await (async () => {
+      const ctx = new OfflineAudioContext(2, sr * 4, sr);
+      try { await ctx.audioWorklet.addModule('/Song2Concert/limiter-processor.js'); } catch (e) { /* noop */ }
+      const g = buildGraph(ctx, { venue, volume: 1, wetDb: wetTrimDb(venue.position.wet, venue.position.wet), worklets: { limiter: true } });
+      g.wet.connect(ctx.destination);
+      const src = ctx.createBufferSource(); src.buffer = kick(ctx); src.connect(g.trim); src.start(0);
+      const out = await ctx.startRendering();
+      const L = out.getChannelData(0), R = out.getChannelData(1);
+      const win = Math.floor(sr * 0.01);
+      let best = 0, at = 0;
+      for (let start = 0; start + win < sr; start += win) {
+        let e = 0;
+        for (let i = start; i < start + win; i++) e += L[i] * L[i] + R[i] * R[i];
+        if (e > best) { best = e; at = (start / sr) * 1000; }
+      }
+      return at;
+    })();
+    log({
+      test: 'kick reverb still sounds like a kick',
+      venue: venue.id,
+      directAbove300Hz_pct: +(await tap('dry', true)).toFixed(1),
+      reverbAbove300Hz_pct: +(await tap('wet', true)).toFixed(1),
+      reverbPeaksAt_ms: +peakTime.toFixed(0),
+    });
+  }
+
   // How long after a hit the room starts answering. This is the difference
   // between reverberation and a delay effect: if the wet path is silent for a
   // tenth of a second and then swells, a sparse repeating figure hears it as an

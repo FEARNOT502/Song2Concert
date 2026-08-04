@@ -271,7 +271,14 @@ export function imageSources({ room, source, listener, maxOrder = 3, maxTime = 0
               // Bounced off nothing but the floor: still a real arrival, but by
               // convention it is not what the initial time delay gap measures.
               const floorOnly = hz0 === order;
-              out.push({ time, gain, band, azimuth, elevation, order, floorOnly });
+              // How rough, on average, the surfaces this ray met were. Used to
+              // spread the arrival in time: a rough surface is also a DEEP one,
+              // and returns energy over the spread of path lengths across it.
+              const scatter = (
+                scatOf.x0 * hx0 + scatOf.x1 * hx1 + scatOf.y0 * hy0
+                + scatOf.y1 * hy1 + scatOf.z0 * hz0 + scatOf.z1 * hz1
+              ) / order;
+              out.push({ time, gain, band, azimuth, elevation, order, floorOnly, scatter });
             }
           }
         }

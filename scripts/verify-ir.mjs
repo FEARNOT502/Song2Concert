@@ -31,15 +31,23 @@ const SR = 48000;
 // factor was corrected. They had been fitted while every venue used Q = 2 — the
 // figure for a source radiating into a half space — which had a line array
 // putting several times more power into the building than one actually does.
-// They were describing a rig nobody deploys. Its early decay time also runs at about
+// They were describing a rig nobody deploys.
+//
+// Clarity and early decay both moved again when the diffuse field stopped
+// starting late and swelling. Some of the headroom those figures used to have
+// was the artefact: with the reverberation of a hit absent for a tenth of a
+// second and then rising for another quarter, the first 80 ms held less energy
+// and the initial decay looked flatter than the room warranted. An impulse
+// response is loudest at its start, so more energy lands early and the early
+// decay steepens. The bounds follow the corrected shape rather than the old one. Its early decay time also runs at about
 // half its reverberation time, which is the same fact from the other side: what
 // a listener perceives as reverberance there is far shorter than the tail
 // actually is, because the tail sits so far below the direct sound.
 const TARGETS = {
   jazz:    { c80: [2, 12],   edtRatio: [0.7, 1.25], lateIacc: [0, 0.55] },
-  hall:    { c80: [-1, 5],   edtRatio: [0.7, 1.15], lateIacc: [0, 0.40] },
-  arena:   { c80: [-2, 9],   edtRatio: [0.6, 1.25], lateIacc: [0, 0.45] },
-  dome:    { c80: [-2, 9],   edtRatio: [0.6, 1.25], lateIacc: [0, 0.45] },
+  hall:    { c80: [-1, 6],   edtRatio: [0.6, 1.15], lateIacc: [0, 0.40] },
+  arena:   { c80: [-2, 11],  edtRatio: [0.5, 1.25], lateIacc: [0, 0.45] },
+  dome:    { c80: [-2, 11],  edtRatio: [0.5, 1.25], lateIacc: [0, 0.45] },
   stadium: { c80: [0, 12],   edtRatio: [0.4, 1.25], lateIacc: [0, 0.45] },
 };
 
