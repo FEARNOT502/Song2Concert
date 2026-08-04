@@ -5,6 +5,9 @@
 <script type="module">
 import { buildGraph, applyVenue, wetTrimDb, INPUT_TRIM_DB } from '/src/audio/graph.js';
 import { VENUES } from '/src/data.js';
+// Look venues up by id. Indices silently pointed at the wrong rooms the moment
+// the lineup changed.
+const venueById = (id) => VENUES.find((v) => v.id === id);
 import { ConcertEngine } from '/src/audio/engine.js';
 import { synthesizeIR, venueSeed } from '/src/audio/impulse.js';
 import { clarity, octaveBand, reverbTime } from '/src/audio/iranalysis.js';
@@ -84,7 +87,7 @@ async function run() {
   {
     const sr = 48000;
     const ctx = new OfflineAudioContext(2, sr, sr);
-    const g = buildGraph(ctx, { venue: VENUES[0], volume: 1, wetDb: -1000, worklets: {} });
+    const g = buildGraph(ctx, { venue: venueById('club'), volume: 1, wetDb: -1000, worklets: {} });
     // measure just the crossfeed section
     const src = ctx.createBufferSource();
     const buf = ctx.createBuffer(2, sr, sr);
@@ -118,7 +121,7 @@ async function run() {
     const sr = 48000;
     const measure = async (side) => {
       const ctx = new OfflineAudioContext(2, sr, sr);
-      const g = buildGraph(ctx, { venue: VENUES[1], volume: 1, wetDb: 0, worklets: {} });
+      const g = buildGraph(ctx, { venue: venueById('concerthall'), volume: 1, wetDb: 0, worklets: {} });
       const buf = ctx.createBuffer(2, 128, sr);
       buf.getChannelData(side)[0] = 1; // an impulse into one channel only
       const src = ctx.createBufferSource();
@@ -225,7 +228,7 @@ async function run() {
   // sound — it was simply making the wrong one.
   {
     const sr = 48000;
-    const venue = VENUES.find((v) => v.id === 'hall');
+    const venue = venueById('concerthall');
     const measure = async (node, worklets) => {
       const ctx = new OfflineAudioContext(2, sr * 6, sr);
       try { await ctx.audioWorklet.addModule('/Song2Concert/limiter-processor.js'); } catch (e) { /* noop */ }
@@ -261,7 +264,7 @@ async function run() {
   // the saturation such a kick is normally printed with, so it has the harmonic
   // content a real one has. A pure sine had almost nothing above 300 Hz and the
   // measurement could not see anything at all.
-  for (const venue of [VENUES[3], VENUES[4]]) {
+  for (const venue of [venueById('dome'), venueById('stadium')]) {
     const sr = 48000;
     const kick = (ctx) => {
       const b = ctx.createBuffer(2, Math.floor(sr * 0.5), sr);
@@ -363,7 +366,7 @@ async function run() {
   // separately — the centre should gain clarity, the sides should be left alone.
   {
     const sr = 48000;
-    const venue = VENUES.find((v) => v.id === 'hall');
+    const venue = venueById('concerthall');
     const probe = async (wide) => {
       const ctx = new OfflineAudioContext(2, sr * 6, sr);
       try { await ctx.audioWorklet.addModule('/Song2Concert/limiter-processor.js'); } catch (e) { /* noop */ }
@@ -384,7 +387,7 @@ async function run() {
     const centre = await probe(false);
     const sides = await probe(true);
     log({
-      test: 'vocal gets less room than the band (hall)',
+      test: 'vocal gets less room than the band (concert hall)',
       centreC50vocal: +centre.toFixed(1),
       sideC50vocal: +sides.toFixed(1),
       centreAdvantage_dB: +(centre - sides).toFixed(1),
@@ -399,7 +402,7 @@ async function run() {
   {
     const sr = 48000;
     const seconds = 20;
-    const venue = VENUES.find((v) => v.id === 'arena');
+    const venue = venueById('arena');
     const run = async (anchorOn) => {
       const ctx = new OfflineAudioContext(2, sr * seconds, sr);
       try {
@@ -474,7 +477,7 @@ async function run() {
       await ctx.audioWorklet.addModule('/Song2Concert/glue-processor.js');
     } catch (e) { /* noop */ }
     const wk = { transient: true, vocalAnchor: true, limiter: true, glue: true };
-    const g = buildGraph(ctx, { venue: VENUES[1], volume: 1, wetDb: 0, worklets: wk });
+    const g = buildGraph(ctx, { venue: venueById('concerthall'), volume: 1, wetDb: 0, worklets: wk });
     const nodeKeys = (o) => Object.keys(o).filter((k) => o[k] && typeof o[k].connect === 'function').sort().join(',');
     const keysBefore = nodeKeys(g);
 
@@ -500,7 +503,7 @@ async function run() {
     src.connect(g.trim);
     src.start(0);
 
-    ctx.suspend(1.0).then(() => { applyVenue(ctx, g, VENUES[3]); ctx.resume(); });
+    ctx.suspend(1.0).then(() => { applyVenue(ctx, g, venueById('dome')); ctx.resume(); });
     const out = await ctx.startRendering();
 
     // Compare the moment of the change against the half second before it. That
@@ -557,8 +560,8 @@ async function run() {
     const engine = new ConcertEngine();
     await engine.resume();
     await engine.loadFile(file);
-    engine.setVenue(VENUES[1]);
-    const { buffer, bitDepth, sampleRate } = await engine.renderOffline(VENUES[1]);
+    engine.setVenue(venueById('concerthall'));
+    const { buffer, bitDepth, sampleRate } = await engine.renderOffline(venueById('concerthall'));
     let peak = 0;
     for (let c = 0; c < buffer.numberOfChannels; c++) {
       const d = buffer.getChannelData(c);

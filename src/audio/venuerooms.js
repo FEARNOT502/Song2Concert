@@ -36,8 +36,9 @@ const paHangs = (halfWidth, height, y) => [
 // at the audience and rejects its rear hard, which is both why big rooms stay
 // intelligible and why the structure behind a stage does not answer back.
 export const DIRECTIVITY = {
-  jazz: 0.30,
-  hall: 0.20,
+  club: 0.30,
+  theater: 0.55,
+  concerthall: 0.18,
   arena: 0.88,
   dome: 0.88,
   stadium: 0.90,
@@ -63,15 +64,16 @@ export const DIRECTIVITY = {
 //   · a small club rig plus a vocal mic, heard from four metres: about 3
 //   · an orchestra inside a stage shell: only a little above omnidirectional
 export const DIRECTIVITY_Q = {
-  jazz: 3,
-  hall: 3,
+  club: 3,
+  theater: 4,
+  concerthall: 2.2,
   arena: 5,
   dome: 5,
   stadium: 5,
 };
 
 export const VENUE_ROOMS = {
-  jazz: {
+  club: {
     dims: [12, 16, 3.5],
     // Wood everywhere; the audience sits on the floor plane close to the stage.
     surfaces: { x0: 'clubWood', x1: 'clubWood', y0: 'clubWood', y1: 'clubWood', z0: 'clubWood', z1: 'clubWood' },
@@ -84,17 +86,49 @@ export const VENUE_ROOMS = {
     listener: [6.8, 5.5, 1.2],  // front table, one seat off the centre line
   },
 
-  hall: {
-    dims: [20, 45, 18],
-    surfaces: { x0: 'hallMasonry', x1: 'hallMasonry', y0: 'hallMasonry', y1: 'hallMasonry', z0: 'audience', z1: 'hallMasonry' },
+  // ── Theatre ──────────────────────────────────────────────────────────────
+  //
+  // A 3,000-seat proscenium house. Built for sightlines and for speech, so it is
+  // drier and flatter than a concert hall of similar size: heavier upholstery,
+  // drapes, light framed construction that flexes at low frequencies, and a
+  // stage house behind the arch that swallows whatever goes into it.
+  theater: {
+    dims: [26, 40, 16],
+    volume: 15000,
+    surfaces: { x0: 'theaterFinish', x1: 'theaterFinish', y0: 'stageHouse', y1: 'theaterFinish', z0: 'theaterSeating', z1: 'theaterFinish' },
     absorbers: [
-      // Raked stalls plus balconies: the seated area is far larger than the
-      // floor's plan projection, and it is the room's dominant absorber.
-      { area: 1600, material: 'audience' },
-      { area: 3240, material: 'hallMasonry' },
+      { area: 1600, material: 'theaterSeating' },  // stalls plus balconies
+      { area: 2800, material: 'theaterFinish' },
+      { area: 180, material: 'stageHouse' },       // the proscenium opening
     ],
-    stage: { center: [10, 3, 1.5], halfWidth: 4 },
-    listener: [12.5, 16, 1.2],  // ~13 m back, 2.5 m off centre
+    stage: { center: [13, 3, 1.6], halfWidth: 5 },
+    listener: [14.5, 17, 1.2],  // mid stalls, a seat off the centre line
+  },
+
+  // ── Concert hall, vineyard ───────────────────────────────────────────────
+  //
+  // Terraced blocks of seating stepping down around a central stage, as at the
+  // Berlin Philharmonie or Suntory Hall. What makes the form work acoustically
+  // is that every block is bounded by its own low wall, so each seat gets a
+  // strong lateral reflection from a surface a few metres away — a shoebox gets
+  // that from side walls twenty metres apart, and only in the stalls.
+  //
+  // That is also why `dims` describes the listener's BLOCK rather than the whole
+  // building. The room the image-source solver needs is the local geometry, the
+  // terrace walls that actually return early sound; the hall's true volume and
+  // surface area are stated separately, and Sabine only wants those. Modelling
+  // the outer shell instead would put every early reflection tens of
+  // milliseconds late and lose the very thing a vineyard is for.
+  concerthall: {
+    dims: [18, 34, 19],
+    volume: 22000,
+    surfaces: { x0: 'vineyardTerrace', x1: 'vineyardTerrace', y0: 'vineyardTerrace', y1: 'vineyardTerrace', z0: 'audience', z1: 'hallMasonry' },
+    absorbers: [
+      { area: 2050, material: 'audience' },         // ~2,000 seats over terraces
+      { area: 3200, material: 'vineyardTerrace' },
+    ],
+    stage: { center: [9, 6, 1.5], halfWidth: 4 },
+    listener: [6.5, 19, 1.4],  // 13 m out, 6.5 m from the terrace wall beside it
   },
 
   // ── Saitama Super Arena, arena mode ──────────────────────────────────────
@@ -198,7 +232,7 @@ export function sourcePositions(id) {
   const r = VENUE_ROOMS[id];
   const [cx, cy, cz] = r.stage.center;
   const hw = r.stage.halfWidth;
-  if (id === 'jazz' || id === 'hall') {
+  if (id === 'club' || id === 'theater' || id === 'concerthall') {
     // Acoustic stages still spread across their width; two points at ±halfWidth
     // give the left and right of the mix distinguishable room responses without
     // pretending we know where each instrument stood.

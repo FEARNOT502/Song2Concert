@@ -44,8 +44,11 @@ const SR = 48000;
 // a listener perceives as reverberance there is far shorter than the tail
 // actually is, because the tail sits so far below the direct sound.
 const TARGETS = {
-  jazz:    { c80: [2, 12],   edtRatio: [0.7, 1.25], lateIacc: [0, 0.55] },
-  hall:    { c80: [-1, 6],   edtRatio: [0.6, 1.15], lateIacc: [0, 0.40] },
+  // Bass ratio tolerance is wider here only because the club is hard to MEASURE:
+  // at 0.75 s the fit window per octave is short, so band leakage weighs more.
+  club:        { c80: [2, 14],  edtRatio: [0.7, 1.25], lateIacc: [0, 0.55], bass: 0.2 },
+  theater:     { c80: [1, 12],  edtRatio: [0.6, 1.20], lateIacc: [0, 0.45] },
+  concerthall: { c80: [-1, 7],  edtRatio: [0.6, 1.15], lateIacc: [0, 0.40] },
   arena:   { c80: [-2, 11],  edtRatio: [0.5, 1.25], lateIacc: [0, 0.45] },
   dome:    { c80: [-2, 11],  edtRatio: [0.5, 1.25], lateIacc: [0, 0.45] },
   stadium: { c80: [0, 12],   edtRatio: [0.4, 1.25], lateIacc: [0, 0.45] },
@@ -98,7 +101,8 @@ for (const id of Object.keys(VENUE_ROOMS)) {
   console.log(`   model RT60 ${modelRT.toFixed(2)} s  →  measured ${measured.toFixed(2)} s   (${((measured / modelRT - 1) * 100).toFixed(0)}%)`);
   console.log(`   direct/reverberant ${dr.toFixed(1)} dB    early IACC ${earlyIacc.toFixed(2)}`);
   check('RT60 vs model (ratio)', measured / modelRT, [0.85, 1.15]);
-  check('bass ratio vs model', measuredBass - modelBass, [-0.15, 0.15]);
+  const bassTol = t.bass ?? 0.15;
+  check('bass ratio vs model', measuredBass - modelBass, [-bassTol, bassTol]);
   check('4 kHz / mid (tail darkens)', hfRatio, [0.4, 1.0]);
   check('C80 (dB)', c80, t.c80);
   check('EDT / RT60', edt / measured, t.edtRatio);

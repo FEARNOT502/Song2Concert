@@ -588,7 +588,14 @@ export function disposeGraph(n) {
 // The dry level never moves. A room does not turn its direct sound down when it
 // has more reverberation — the ratio changes because the LISTENER moved, and the
 // old equal-power crossfade modelled that backwards.
+// A standing offset on top of the venue's physical level. The reverberation got
+// quieter when the diffuse field stopped starting late and swelling for a
+// quarter of a second: total reverberant energy is fixed, so a response that
+// decays from its start puts more of it inside the first 80 ms and less into the
+// tail you hear as the room. This puts the audible level back where it was.
+export const WET_OFFSET_DB = 2.5;
+
 export function wetTrimDb(percent, venueDefault) {
   const delta = (percent - venueDefault) / 100;
-  return Math.max(-40, delta * 24);
+  return Math.max(-40, WET_OFFSET_DB + delta * 24);
 }

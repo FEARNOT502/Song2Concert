@@ -1,7 +1,6 @@
-// Scene.jsx — 5 first-person audience-POV venue scenes (ported from the V2
-// variants in venues/venue-variants.jsx). Each is a rich, venue-specific stage:
-// jazz club combo, concert-hall organ + orchestra, arena LED wall + sea of
-// crowd, domed stadium, and open night-sky stadium.
+// Scene.jsx — 6 first-person audience-POV venue scenes. Each is a rich,
+// venue-specific stage: club combo, proscenium theatre, vineyard concert hall,
+// arena LED wall + sea of crowd, domed stadium, and open night-sky stadium.
 //
 // The album art + "Title — Artist" caption are mounted INSIDE each venue's
 // on-stage screen (the amber-outlined LED rectangle), sized and spaced to sit
@@ -150,9 +149,9 @@ function PhoneField({ phones, pulse, now }) {
   });
 }
 
-// ═══════════════════════════════════════════ 1. JAZZ CLUB — Blue Note
+// ═══════════════════════════════════════════ 1. CLUB
 // No LED wall; the album art mounts on the lit back wall behind the combo.
-function SceneJazz({ coverId, coverSrc, pulse, title, artist }) {
+function SceneClub({ coverId, coverSrc, pulse, title, artist }) {
   const particles = useMemo(() => dust(30, 7), []);
   const now = performance.now();
   return (
@@ -255,90 +254,213 @@ function SceneJazz({ coverId, coverSrc, pulse, title, artist }) {
   );
 }
 
-// ═══════════════════════════════════════════ 2. CONCERT HALL — Symphony Hall
-function SceneHall({ coverId, coverSrc, pulse, title, artist }) {
-  const particles = useMemo(() => dust(40, 23), []);
+// ═══════════════════════════════════════════ 2. THEATRE
+// A proscenium house: the arch frames the stage, drapes hang either side of it,
+// and tiers of boxes climb the side walls. What you cannot see is the stage
+// house behind the arch, which is most of why this room is drier than the hall.
+function SceneTheater({ coverId, coverSrc, pulse, title, artist }) {
+  const particles = useMemo(() => dust(34, 23), []);
   const now = performance.now();
   return (
     <SceneShell>
       <svg viewBox="0 0 1440 760" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 w-full h-full">
         <defs>
-          <radialGradient id="h2Spot" cx="0.5" cy="0" r="0.6">
-            <stop offset="0" stopColor="oklch(0.85 0.16 55)" stopOpacity="0.28" />
-            <stop offset="1" stopColor="oklch(0.85 0.16 55)" stopOpacity="0" />
+          <radialGradient id="thSpot" cx="0.5" cy="0" r="0.62">
+            <stop offset="0" stopColor="oklch(0.85 0.16 45)" stopOpacity="0.3" />
+            <stop offset="1" stopColor="oklch(0.85 0.16 45)" stopOpacity="0" />
           </radialGradient>
+          <linearGradient id="thDrape" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#2a0d0b" />
+            <stop offset="1" stopColor="#120504" />
+          </linearGradient>
         </defs>
-        <polygon points="0,0 1440,0 1020,180 420,180" fill="#040302" />
-        {Array.from({ length: 7 }).map((_, i) => (
-          <line key={i} x1={420 + i * 100} y1="180" x2={i * 200} y2="0" stroke="#15100a" strokeWidth="1" />
+        <polygon points="0,0 1440,0 1040,150 400,150" fill="#040302" />
+        {Array.from({ length: 6 }).map((_, i) => (
+          <line key={i} x1={400 + i * 128} y1="150" x2={i * 240} y2="0" stroke="#160f0a" strokeWidth="1" />
         ))}
-        {/* chandelier — each bulb glows with the music */}
-        <g opacity={0.75 + pulse * 0.25}>
-          <line x1="720" y1="0" x2="720" y2="80" stroke="#3a2a14" strokeWidth="1" />
-          <ellipse cx="720" cy="100" rx="46" ry="16" fill="#1a1208" />
-          {Array.from({ length: 18 }).map((_, i) => {
-            const tw = 0.5 + 0.5 * Math.sin(now * 0.005 + i * 0.8);
-            return <circle key={i} cx={720 + Math.cos(i / 18 * Math.PI * 2) * 40} cy={100 + Math.sin(i / 18 * Math.PI * 2) * 14} r={1.8 + pulse * 2 * tw} fill={`oklch(${0.82 + pulse * 0.1} 0.15 60)`} opacity={Math.min(1, 0.7 + pulse * 0.3 * tw)} />;
-          })}
-        </g>
-        <polygon points="0,0 420,180 420,500 0,720" fill="#0a0604" />
-        <polygon points="1440,0 1020,180 1020,500 1440,720" fill="#0a0604" />
-        {/* balcony boxes filled */}
-        {[260, 360, 460].map((y, i) => (
+        <polygon points="0,0 400,150 400,520 0,730" fill="#0a0604" />
+        <polygon points="1440,0 1040,150 1040,520 1440,730" fill="#0a0604" />
+
+        {/* tiers of boxes up the side walls */}
+        {[240, 330, 420].map((y, i) => (
           <g key={i}>
-            <rect x="0" y={y} width="420" height="32" fill="#15100a" />
-            {Array.from({ length: 12 }).map((_, k) => <Head key={k} cx={30 + k * 32} cy={y + 14} size={6} />)}
-            <rect x="1020" y={y} width="420" height="32" fill="#15100a" />
-            {Array.from({ length: 12 }).map((_, k) => <Head key={`r${k}`} cx={1050 + k * 32} cy={y + 14} size={6} />)}
+            <rect x="0" y={y} width="400" height="30" fill="#160f0a" />
+            <line x1="0" y1={y} x2="400" y2={y} stroke="oklch(0.62 0.11 55)" strokeWidth="0.8" opacity="0.6" />
+            {Array.from({ length: 11 }).map((_, k) => <Head key={k} cx={26 + k * 34} cy={y + 13} size={6} />)}
+            <rect x="1040" y={y} width="400" height="30" fill="#160f0a" />
+            <line x1="1040" y1={y} x2="1440" y2={y} stroke="oklch(0.62 0.11 55)" strokeWidth="0.8" opacity="0.6" />
+            {Array.from({ length: 11 }).map((_, k) => <Head key={`r${k}`} cx={1066 + k * 34} cy={y + 13} size={6} />)}
           </g>
         ))}
-        <path d="M 420,180 L 420,500 L 1020,500 L 1020,180 Q 720,140 420,180 Z" fill="none" stroke="oklch(0.7 0.12 55)" strokeWidth="1" opacity="0.7" />
-        <rect x="460" y="200" width="520" height="295" fill="#050403" />
-        {/* organ pipes behind */}
-        {Array.from({ length: 24 }).map((_, i) => {
-          const x = 480 + i * 21;
-          const h = 80 + ((i * 7) % 60);
-          return <rect key={i} x={x} y={200 + 60 - h * 0.5} width="14" height={h + 60} fill="#0e0a06" stroke="#1a1208" strokeWidth="0.5" />;
+
+        {/* the proscenium arch itself, and the drapes it frames */}
+        <path d="M 400,150 L 400,520 L 1040,520 L 1040,150 Q 720,96 400,150 Z" fill="#050403" />
+        <path d="M 400,150 L 400,520 L 1040,520 L 1040,150 Q 720,96 400,150 Z" fill="none" stroke="oklch(0.72 0.13 55)" strokeWidth="2.5" opacity="0.85" />
+        <path d="M 412,158 L 412,512 L 1028,512 L 1028,158 Q 720,108 412,158 Z" fill="none" stroke="oklch(0.6 0.1 55)" strokeWidth="0.8" opacity="0.5" />
+        {[0, 1].map((side) => (
+          <g key={side}>
+            {Array.from({ length: 7 }).map((_, i) => {
+              const x = side ? 1028 - i * 22 : 412 + i * 22;
+              return <path key={i} d={`M ${x},160 Q ${x + (side ? -9 : 9)},330 ${x},512`} stroke="url(#thDrape)" strokeWidth="20" fill="none" opacity="0.95" />;
+            })}
+          </g>
+        ))}
+
+        <rect x="556" y="200" width="328" height="244" fill="#020108" stroke={ACCENT} strokeWidth="1.4" opacity="0.9" />
+        <polygon points="620,150 820,150 890,520 550,520" fill="url(#thSpot)" opacity={0.55 + pulse * 0.5} />
+
+        {/* apron and orchestra pit rail */}
+        <polygon points="540,516 900,516 940,534 500,534" fill="#160f0a" />
+        <line x1="500" y1="534" x2="940" y2="534" stroke="oklch(0.7 0.12 55)" strokeWidth="1.4" opacity={0.7 + pulse * 0.3} />
+        <path d="M 470,556 Q 720,540 970,556" fill="none" stroke="#241708" strokeWidth="10" />
+
+        {/* performers downstage */}
+        {[-118, -40, 40, 118].map((dx, i) => (
+          <g key={i} opacity={0.9}>
+            <ellipse cx={720 + dx} cy={498} rx="7" ry="15" fill="#000" />
+            <circle cx={720 + dx} cy={480} r="5.2" fill="#000" />
+          </g>
+        ))}
+
+        {/* raked stalls */}
+        {Array.from({ length: 9 }).map((_, row) => {
+          const y = 566 + row * 21 + row * row * 1.0;
+          const xMargin = 360 - row * 36;
+          const headSize = 6 + row * 1.4;
+          const cols = 27 - row * 2;
+          const spacing = (1440 - xMargin * 2) / cols;
+          return Array.from({ length: cols }).map((_, c) => (
+            <Head key={`${row}-${c}`} cx={xMargin + spacing * (c + 0.5)} cy={y} size={headSize} />
+          ));
         })}
-        {/* on-stage screen frame in front of the organ */}
-        <rect x="556" y="226" width="328" height="244" fill="#020108" stroke={ACCENT} strokeWidth="1.4" opacity="0.9" />
-        <polygon points="620,180 820,180 880,500 560,500" fill="url(#h2Spot)" opacity={0.6 + pulse * 0.5} />
-        <polygon points="460,495 980,495 980,510 460,510" fill="#1a1208" />
-        <line x1="460" y1="495" x2="980" y2="495" stroke={ACCENT} strokeWidth="1.4" />
+        {particles.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={p.r} fill="oklch(0.85 0.16 50)" opacity={p.o} />)}
+        <g opacity={0.5 + pulse * 0.4}>
+          {Array.from({ length: 5 }).map((_, i) => {
+            const tw = 0.5 + 0.5 * Math.sin(now * 0.004 + i * 1.3);
+            return <circle key={i} cx={480 + i * 120} cy={132} r={2 + pulse * 1.6 * tw} fill="oklch(0.86 0.14 55)" />;
+          })}
+        </g>
+      </svg>
+      <StageArt coverId={coverId} coverSrc={coverSrc} pulse={pulse} title={title} artist={artist}
+        screen={{ x: 556, y: 200, w: 328, h: 244 }} />
+    </SceneShell>
+  );
+}
+
+// ═══════════════════════════════════════════ 2b. CONCERT HALL — vineyard
+// Terraced blocks of seating step down around a central platform, and the
+// audience wraps behind the orchestra as well as in front of it. The panels
+// hanging overhead are the hall's reflectors; the low walls bounding each block
+// are what give every seat a lateral reflection from a few metres away.
+function SceneConcertHall({ coverId, coverSrc, pulse, title, artist }) {
+  const particles = useMemo(() => dust(46, 71), []);
+  const now = performance.now();
+  const terrace = (x, y, w, h, seats, size) => (
+    <g>
+      <path d={`M ${x},${y + h} L ${x},${y} L ${x + w},${y} L ${x + w},${y + h} Z`} fill="#0d0906" />
+      <line x1={x} y1={y} x2={x + w} y2={y} stroke="oklch(0.68 0.11 60)" strokeWidth="1.2" opacity="0.75" />
+      {Array.from({ length: seats }).map((_, i) => (
+        <Head key={i} cx={x + (w / seats) * (i + 0.5)} cy={y + h * 0.55} size={size} />
+      ))}
+    </g>
+  );
+  return (
+    <SceneShell>
+      <svg viewBox="0 0 1440 760" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 w-full h-full">
+        <defs>
+          <radialGradient id="chSpot" cx="0.5" cy="0.1" r="0.62">
+            <stop offset="0" stopColor="oklch(0.88 0.13 70)" stopOpacity="0.3" />
+            <stop offset="1" stopColor="oklch(0.88 0.13 70)" stopOpacity="0" />
+          </radialGradient>
+        </defs>
+        <rect x="0" y="0" width="1440" height="760" fill="#050403" />
+
+        {/* organ and the rear terrace above the platform */}
+        {Array.from({ length: 30 }).map((_, i) => {
+          const x = 500 + i * 15;
+          const h = 66 + ((i * 11) % 74);
+          return <rect key={i} x={x} y={150 - h * 0.4} width="10" height={h + 54} fill="#0e0a06" stroke="#1c1409" strokeWidth="0.5" />;
+        })}
+        {terrace(470, 232, 500, 34, 16, 6)}
+
+        {/* suspended reflector clouds — a vineyard hall's signature */}
+        <g opacity={0.85}>
+          {[
+            { x: 470, y: 92, w: 210, rot: -6 },
+            { x: 700, y: 74, w: 250, rot: 2 },
+            { x: 962, y: 96, w: 190, rot: 7 },
+          ].map((c, i) => (
+            <g key={i} transform={`rotate(${c.rot} ${c.x + c.w / 2} ${c.y})`}>
+              <line x1={c.x + c.w * 0.25} y1="0" x2={c.x + c.w * 0.25} y2={c.y} stroke="#2a1e10" strokeWidth="1" />
+              <line x1={c.x + c.w * 0.75} y1="0" x2={c.x + c.w * 0.75} y2={c.y} stroke="#2a1e10" strokeWidth="1" />
+              <rect x={c.x} y={c.y} width={c.w} height="13" rx="5" fill="#181008" stroke={`oklch(${0.6 + pulse * 0.2} 0.1 60)`} strokeWidth="1" opacity={0.7 + pulse * 0.3} />
+            </g>
+          ))}
+        </g>
+
+        <rect x="556" y="150" width="328" height="244" fill="#020108" stroke={ACCENT} strokeWidth="1.4" opacity="0.9" />
+        <polygon points="600,120 840,120 940,470 500,470" fill="url(#chSpot)" opacity={0.55 + pulse * 0.5} />
+
+        {/* the platform, and the orchestra on it */}
+        <ellipse cx="720" cy="470" rx="272" ry="48" fill="#0b0806" stroke="oklch(0.66 0.11 58)" strokeWidth="1.2" opacity="0.9" />
         {[
-          { r: 200, cy: 530, count: 16, size: 5 },
-          { r: 160, cy: 510, count: 13, size: 5 },
-          { r: 120, cy: 490, count: 10, size: 5 },
+          { r: 214, cy: 480, count: 17 },
+          { r: 168, cy: 462, count: 13 },
+          { r: 118, cy: 446, count: 9 },
         ].map((row, ri) => Array.from({ length: row.count }).map((_, i) => {
-          const t = i / (row.count - 1);
-          const angle = Math.PI * (0.15 + t * 0.7);
+          const t = row.count === 1 ? 0.5 : i / (row.count - 1);
+          const angle = Math.PI * (0.12 + t * 0.76);
           const cx = 720 - Math.cos(angle) * row.r;
-          const cy = row.cy - Math.sin(angle) * 12;
+          const cy = row.cy - Math.sin(angle) * 14;
           return (
-            <g key={`s${ri}-${i}`}>
+            <g key={`p${ri}-${i}`}>
               <ellipse cx={cx} cy={cy} rx="5" ry="9" fill="#000" />
               <circle cx={cx} cy={cy - 8} r="3.5" fill="#000" />
             </g>
           );
         }))}
-        <rect x="710" y="525" width="20" height="4" fill="#1a1208" />
-        <ellipse cx="720" cy="510" rx="7" ry="14" fill="#000" />
-        <circle cx="720" cy="494" r="5" fill="#000" />
-        {Array.from({ length: 9 }).map((_, row) => {
-          const y = 545 + row * 22 + row * row * 1.0;
-          const xMargin = 380 - row * 38;
-          const headSize = 6 + row * 1.4;
-          const cols = 28 - row * 2;
+        {/* conductor */}
+        <ellipse cx="720" cy="432" rx="7" ry="14" fill="#000" />
+        <circle cx="720" cy="416" r="5" fill="#000" />
+
+        {/* terraced blocks stepping down either side, each with its own low wall */}
+        {[
+          { x: 0, y: 300, w: 300, h: 46, seats: 9, size: 7 },
+          { x: 0, y: 372, w: 350, h: 52, seats: 10, size: 8 },
+          { x: 0, y: 452, w: 400, h: 58, seats: 11, size: 9 },
+        ].map((t, i) => <g key={`l${i}`}>{terrace(t.x, t.y, t.w, t.h, t.seats, t.size)}</g>)}
+        {[
+          { x: 1140, y: 300, w: 300, h: 46, seats: 9, size: 7 },
+          { x: 1090, y: 372, w: 350, h: 52, seats: 10, size: 8 },
+          { x: 1040, y: 452, w: 400, h: 58, seats: 11, size: 9 },
+        ].map((t, i) => <g key={`r${i}`}>{terrace(t.x, t.y, t.w, t.h, t.seats, t.size)}</g>)}
+
+        {/* the block we are sitting in, stepping toward us */}
+        {Array.from({ length: 7 }).map((_, row) => {
+          const y = 552 + row * 24 + row * row * 1.6;
+          const xMargin = 300 - row * 42;
+          const headSize = 7 + row * 1.5;
+          const cols = 22 - row * 2;
           const spacing = (1440 - xMargin * 2) / cols;
-          return Array.from({ length: cols }).map((_, c) => {
-            const cx = xMargin + spacing * (c + 0.5);
-            return <Head key={`${row}-${c}`} cx={cx} cy={y} size={headSize} />;
-          });
+          return (
+            <g key={row}>
+              <line x1={xMargin - 14} y1={y - 13} x2={1440 - xMargin + 14} y2={y - 13} stroke="oklch(0.5 0.08 58)" strokeWidth="0.8" opacity="0.35" />
+              {Array.from({ length: cols }).map((_, c) => (
+                <Head key={c} cx={xMargin + spacing * (c + 0.5)} cy={y} size={headSize} />
+              ))}
+            </g>
+          );
         })}
-        {particles.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={p.r} fill="oklch(0.85 0.16 55)" opacity={p.o} />)}
+        {particles.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={p.r} fill="oklch(0.88 0.13 65)" opacity={p.o} />)}
+        <g opacity={0.45 + pulse * 0.35}>
+          {Array.from({ length: 6 }).map((_, i) => {
+            const tw = 0.5 + 0.5 * Math.sin(now * 0.0035 + i * 1.1);
+            return <circle key={i} cx={420 + i * 120} cy={44} r={1.8 + pulse * 1.5 * tw} fill="oklch(0.9 0.11 65)" />;
+          })}
+        </g>
       </svg>
       <StageArt coverId={coverId} coverSrc={coverSrc} pulse={pulse} title={title} artist={artist}
-        screen={{ x: 556, y: 226, w: 328, h: 244 }} />
+        screen={{ x: 556, y: 150, w: 328, h: 244 }} />
     </SceneShell>
   );
 }
@@ -728,14 +850,15 @@ function SceneStadium({ coverId, coverSrc, pulse, title, artist }) {
 }
 
 const SCENE_MAP = {
-  jazz: SceneJazz,
-  hall: SceneHall,
+  club: SceneClub,
+  theater: SceneTheater,
+  concerthall: SceneConcertHall,
   arena: SceneArena,
   dome: SceneDome,
   stadium: SceneStadium,
 };
 
 export default function Scene({ venueId, coverId, coverSrc, pulse, title, artist }) {
-  const C = SCENE_MAP[venueId] || SceneJazz;
+  const C = SCENE_MAP[venueId] || SceneClub;
   return <C coverId={coverId} coverSrc={coverSrc} pulse={pulse} title={title} artist={artist} />;
 }

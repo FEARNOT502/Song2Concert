@@ -45,8 +45,13 @@ import { VENUE_ROOMS, roomAbsorption, sourcePositions, listenerPosition, listeni
 //     people, and reflections skimming a crowd at a shallow angle scatter rather
 //     than mirror — but it is real, and it is what a stadium sounds like.
 const TARGETS = {
-  jazz:    { midRT: [0.7, 1.0],  bass: [0.60, 1.00], itdg: [0.004, 0.014], lf: [0.10, 0.25] },
-  hall:    { midRT: [1.8, 2.2],  bass: [1.10, 1.30], itdg: [0.015, 0.028], lf: [0.18, 0.37] },
+  club:        { midRT: [0.7, 1.0],  bass: [0.60, 1.00], itdg: [0.004, 0.014], lf: [0.10, 0.25] },
+  // A theatre is built for speech and sightlines: shorter than a hall its size
+  // and close to flat with frequency, because light framed construction and
+  // heavy upholstery take the low end a masonry hall keeps.
+  theater:     { midRT: [1.1, 1.6],  bass: [0.85, 1.15], itdg: [0.010, 0.035], lf: [0.10, 0.42] },
+  // Beranek's figures for the best-regarded halls.
+  concerthall: { midRT: [1.9, 2.3],  bass: [1.10, 1.35], itdg: [0.010, 0.025], lf: [0.18, 0.40] },
   arena:   { midRT: [2.2, 3.0],  bass: [0.85, 1.25], itdg: [0.012, 0.060], lf: [0.00, 0.12] },
   dome:    { midRT: [3.2, 4.5],  bass: [0.95, 1.60], itdg: [0.015, 0.100], lf: [0.00, 0.12] },
   stadium: { midRT: [1.9, 3.0],  bass: [0.80, 1.35], itdg: [0.015, 0.130], lf: [0.00, 0.12] },

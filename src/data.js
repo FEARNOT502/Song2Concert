@@ -71,40 +71,49 @@ const M = Object.fromEntries(Object.keys(VENUE_ROOMS).map((id) => [id, derive(id
 
 export const VENUES = [
   {
-    id: 'jazz',
-    name: 'Blue Note',
-    type: 'JAZZ CLUB',
+    id: 'club',
+    name: 'Club',
+    type: 'CLUB',
     capacity: '300 seats',
     descKo: '낮은 천장 · 우드 디퓨저 · 친밀한 거리',
-    position: fmtPosition('jazz', 'Front table', 50),
-    acoustics: fmtAcoustics('jazz', '90 dB SPL'),
-    // A small wood-lined club: gentle console glue, a touch of system drive.
+    position: fmtPosition('club', 'Front table', 50),
+    acoustics: fmtAcoustics('club', '90 dB SPL'),
     pa: { glue: 0.20, drive: 0.20 },
   },
   {
-    id: 'hall',
-    name: 'Symphony Hall',
-    type: 'CONCERT HALL',
+    id: 'theater',
+    name: 'Theater',
+    type: 'THEATER',
     capacity: '3,000 seats',
-    descKo: '슈박스 · 코퍼드 천장 · 자연 음향',
-    position: fmtPosition('hall', 'Mid stalls', 50),
-    acoustics: fmtAcoustics('hall', '84 dB SPL'),
+    descKo: '프로시니엄 · 발코니 박스 · 짧고 또렷한 잔향',
+    position: fmtPosition('theater', 'Mid stalls', 50),
+    acoustics: fmtAcoustics('theater', '96 dB SPL'),
+    pa: { glue: 0.15, drive: 0.12 },
+  },
+  {
+    id: 'concerthall',
+    name: 'Concert Hall',
+    type: 'CONCERT HALL · VINEYARD',
+    capacity: '2,000 seats',
+    descKo: '빈야드 테라스 · 반사판 · 완전 자연 음향',
+    position: fmtPosition('concerthall', 'Terrace block', 50),
+    acoustics: fmtAcoustics('concerthall', '86 dB SPL'),
     // No PA at all: nothing to glue, nothing to drive.
     pa: { glue: 0, drive: 0 },
   },
   {
     id: 'arena',
-    name: 'Saitama Super Arena',
-    type: 'ARENA · 아레나 모드',
+    name: 'Arena',
+    type: 'ARENA',
     capacity: '22,500 seats',
-    descKo: '가동석 폐쇄 · 라인 어레이 PA · 대형 아레나',
+    descKo: '라인 어레이 PA · 대형 아레나 · FOH 자리',
     position: fmtPosition('arena', 'FOH, floor', 50),
     acoustics: fmtAcoustics('arena', '104 dB SPL'),
     pa: { glue: 0.25, drive: 0.20 },
   },
   {
     id: 'dome',
-    name: 'Tokyo Dome',
+    name: 'Dome',
     type: 'DOMED STADIUM',
     capacity: '45,000 (concert)',
     descKo: '에어 서포트 돔 · 124만 m³ · 가장 긴 잔향',
@@ -114,7 +123,7 @@ export const VENUES = [
   },
   {
     id: 'stadium',
-    name: 'Wembley Stadium',
+    name: 'Stadium',
     type: 'OPEN STADIUM',
     capacity: '90,000 seats',
     descKo: '관중석만 지붕 · 피치는 개방 · 가장 건조',
@@ -132,7 +141,7 @@ export const findVenue = (id) => VENUES.find((v) => v.id === id) || VENUES[0];
 const chip = (id) => `RT60 ${M[id].rt60.toFixed(2)}s · 베이스비 ${M[id].bass.toFixed(2)} · 첫 반사 +${(M[id].gap * 1000).toFixed(0)}ms · 거리 ${M[id].distance.toFixed(0)}m`;
 
 export const SOUND_NOTES = {
-  jazz: {
+  club: {
     headline: '짧고 타이트한 잔향 — 클럽의 친밀함',
     points: [
       '벽·천장의 우드 패널은 전형적인 판 흡음체라 저역을 가장 많이 먹습니다. 그래서 베이스비가 1보다 작게(0.85) 나오고, 작은 클럽 특유의 "따뜻하지만 붕 뜨지 않는" 저역이 됩니다 — 설정값이 아니라 재질에서 나온 결과입니다.',
@@ -140,22 +149,32 @@ export const SOUND_NOTES = {
       '초기 반사 밀도가 80ms 안에 2,000회/초를 넘습니다. 좁은 방이라 사방의 벽이 가깝고, 그 촘촘함이 밀착감의 정체입니다.',
       '측면 반사 비율 0.17 — 무대가 가까워 직접음이 지배하지만 옆에서 감싸는 성분도 분명히 있습니다.',
     ],
-    params: chip('jazz'),
+    params: chip('club'),
   },
-  hall: {
-    headline: '길고 따뜻한 잔향 — 자연 음향 홀',
+  theater: {
+    headline: '프로시니엄 극장 — 짧고 또렷하게',
     points: [
-      '베이스비 1.20. 좋은 콘서트홀의 결정적 지표로, 저역이 중역보다 더 오래 울린다는 뜻입니다. 흡음의 대부분을 담당하는 관객이 125Hz에서는 1kHz의 절반도 흡수하지 못하기 때문에 물리적으로 그렇게 됩니다.',
-      '첫 반사가 +16ms — 좋은 좌석의 조건입니다. 직접음을 깨끗하게 먼저 듣고 나서 공간이 열립니다.',
-      '측면 반사 비율 0.31로 5개 공연장 중 가장 높습니다. 소리가 좌우 측면에서 감싸오는 포위감(envelopment)은 거의 전적으로 이 측면 반사에서 나옵니다.',
-      '각 반사음은 도달 방향에 맞는 양귀 시간차와 머리 그림자를 거쳐 임펄스에 새겨집니다. 직접음은 건드리지 않으므로 음색은 그대로입니다.',
+      '같은 규모의 콘서트홀보다 건조합니다. 두꺼운 업홀스터리, 드레이프, 그리고 저역에서 휘는 경량 골조 마감이 홀의 석조가 남겨두는 저역을 가져갑니다 — 베이스비가 1.01로 거의 평탄합니다.',
+      '프로시니엄 아치 뒤의 무대 공간(플라이 타워)은 음향적으로 벽에 뚫린 구멍에 가깝습니다. 무대로 들어간 소리는 상당수가 돌아오지 않습니다.',
+      'RT60 1.28초 — 대사와 또렷함을 위해 지어진 방입니다. 잔향이 짧아 리듬이 뭉치지 않습니다.',
+      '첫 반사 +16ms, 측면 반사 비율 0.39. 객석이 좁고 발코니 박스가 양옆에 붙어 있어 측면 에너지는 오히려 풍부합니다.',
     ],
-    params: chip('hall'),
+    params: chip('theater'),
+  },
+  concerthall: {
+    headline: '빈야드 콘서트홀 — 완전 자연 음향',
+    points: [
+      '베를린 필하모니나 산토리 홀처럼, 중앙 무대를 둘러싸고 객석이 테라스로 계단을 이룹니다. 이 형식이 음향적으로 통하는 이유는 각 블록이 자기 낮은 벽으로 둘려 있어 **모든 좌석이 몇 미터 옆의 면에서 측면 반사를 받는다**는 점입니다 — 슈박스는 20m 떨어진 옆벽에서, 그것도 1층에서만 받습니다.',
+      '첫 반사 +12ms. 무대가 가깝고 테라스 벽이 바로 옆이라 친밀함(intimacy)이 최고 수준입니다.',
+      '베이스비 1.20 · RT60 2.02초 · 측면 반사 비율 0.31 — 좋은 콘서트홀의 지표를 모두 만족합니다. PA가 없으므로 버스 컴프레션도 새추레이션도 걸리지 않습니다.',
+      '천장에 매달린 반사판(클라우드)과 테라스 앞면이 이 홀에서 가장 확산이 강한 표면입니다. 테라스는 방을 모든 좌석 가까이의 작은 반사면들로 쪼개기 위해 존재합니다.',
+    ],
+    params: chip('concerthall'),
   },
   arena: {
-    headline: '사이타마 슈퍼 아레나 (아레나 모드) — FOH 자리',
+    headline: '대형 아레나 — FOH 자리',
     points: [
-      '15,000톤 가동석을 밀어 넣어 공간을 닫은 아레나 모드(약 22,500석)를 모델링합니다. 닫아도 아레나치고는 대단히 큰 방이고, 믹스하기 까다로운 공연장으로 꼽히는 이유가 대부분 여기 있습니다.',
+      '가동석을 닫은 22,500석 구성을 모델링합니다(사이타마 슈퍼 아레나 아레나 모드 기준). 닫아도 아레나치고는 대단히 큰 방이고, 믹스하기 까다로운 이유가 대부분 여기 있습니다.',
       '청취 위치는 FOH(콘솔) 자리입니다. 타협이 아니라, 공연이 실제로 그 지점에서 제대로 들리도록 믹스되는 자리입니다.',
       '라인 어레이는 뒤쪽으로 약 20dB를 죽입니다. 그래서 RT60이 2.6초여도 FOH에서는 직접음이 명확히 앞서고, 무대 뒤 구조물이 되받아치지 않습니다 — 대형 공연장 음향이 성립하는 핵심입니다.',
       '80ms 안의 측면 반사가 사실상 0입니다. 폭 110m 공간에서 옆 스탠드가 너무 멀어 초기 반사가 도달할 시간이 없습니다. 큰 공간이 홀만큼 감싸주지 않는 이유이고, 억지로 만들어 넣지 않았습니다.',
@@ -163,7 +182,7 @@ export const SOUND_NOTES = {
     params: chip('arena'),
   },
   dome: {
-    headline: '도쿄 돔 — 124만 m³, 가장 긴 잔향',
+    headline: '돔 구장 — 124만 m³, 가장 긴 잔향',
     points: [
       '부피 1,240,000 m³는 공표된 수치이고, 일본에서는 부피의 단위로 쓰일 만큼 알려진 값입니다. 스팬 약 201m의 에어 서포트 이중막 지붕 아래 공간입니다.',
       '도쿄 돔이 공연 음향으로 악명 높은 이유를 페널티로 넣지 않았습니다 — 계산에서 나옵니다. 가벼운 막은 저역을 거의 흡수하지 못하고, 124만 m³는 그냥 거대합니다. 결과가 5개 중 가장 긴 잔향(3.6초)과 가장 무거운 베이스비(1.50)입니다.',
@@ -173,7 +192,7 @@ export const SOUND_NOTES = {
     params: chip('dome'),
   },
   stadium: {
-    headline: '웸블리 스타디움 — 5개 중 가장 건조',
+    headline: '개방형 스타디움 — 가장 건조한 공간',
     points: [
       '보울 내부 1,139,100 m³, 90,000석, 그리고 40,000 m²의 지붕. 지붕은 모든 좌석을 덮지만 피치는 일부러 열어 둡니다 — 머리 위 약 63%가 구조물, 37%가 하늘입니다.',
       '그 열린 피치가 5개 중 가장 건조한 이유입니다. 위로 나간 소리는 돌아오지 않고, 9만 명이 나머지를 흡수합니다. 야외 공연이 얇게 들리는 이유가 그대로 재현됩니다.',

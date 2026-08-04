@@ -65,6 +65,21 @@ export const MATERIALS = {
   openSky:       [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
   // Grass / pitch surface.
   turf:          [0.25, 0.30, 0.40, 0.50, 0.55, 0.60, 0.60],
+  // A proscenium theatre's finishes: plaster over framing, drapes, decorative
+  // panelling and carpet. Absorptive at LOW frequencies in a way a concert
+  // hall's masonry is not — light framed construction flexes — which is part of
+  // why a theatre sounds tighter and less warm than a hall of the same size.
+  theaterFinish: [0.34, 0.24, 0.15, 0.12, 0.11, 0.11, 0.11],
+  // Occupied theatre seating: heavier upholstery than a concert hall's, chosen
+  // for comfort and for speech rather than to keep the room's strength up.
+  theaterSeating:[0.50, 0.68, 0.82, 0.86, 0.87, 0.85, 0.84],
+  // The proscenium opening and the stage house behind it — scenery, drapes and
+  // a fly tower. Acoustically close to a hole in the wall.
+  stageHouse:    [0.45, 0.52, 0.58, 0.62, 0.62, 0.62, 0.62],
+  // Vineyard terrace fronts: timber and plaster over solid backing, absorbing
+  // little, but broken into steps, balustrades and angled faces. The point of a
+  // vineyard hall is that these surfaces are everywhere and they scatter.
+  vineyardTerrace:[0.20, 0.13, 0.06, 0.05, 0.05, 0.06, 0.07],
 };
 
 // Scattering coefficient s per surface: the share of NON-absorbed energy that
@@ -87,6 +102,12 @@ export const SCATTERING = {
   concrete: 0.15,
   turf: 0.50,
   openSky: 0.0,         // nothing comes back anyway
+  theaterFinish: 0.35,
+  theaterSeating: 0.80,
+  stageHouse: 0.30,
+  // The most diffusive surface in any of these venues, by design. Terraces exist
+  // to break the room into small reflecting faces close to every seat.
+  vineyardTerrace: 0.75,
 };
 
 // Reverberation time per octave band, Sabine with the air-absorption term:

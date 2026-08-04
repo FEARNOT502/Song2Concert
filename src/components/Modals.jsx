@@ -27,19 +27,43 @@ export function Modal({ open, onClose, title, subtitle, children }) {
 export function VenueThumb({ id }) {
   const common = { width: '100%', height: '100%' };
   const palette = { fill: 'rgba(255,255,255,0.18)', stroke: 'rgba(255,255,255,0.4)', accent: 'oklch(0.78 0.16 55)' };
-  if (id === 'jazz') return (
+  if (id === 'club') return (
     <svg viewBox="0 0 120 80" style={common}>
       <rect x="6" y="20" width="108" height="40" fill="none" stroke={palette.stroke} />
       <rect x="46" y="18" width="28" height="14" fill={palette.accent} />
       {Array.from({ length: 12 }).map((_, i) => <circle key={i} cx={12 + i * 9} cy="68" r="2.4" fill={palette.fill} />)}
     </svg>
   );
-  if (id === 'hall') return (
+  if (id === 'theater') return (
     <svg viewBox="0 0 120 80" style={common}>
-      <path d="M 6 60 L 6 30 Q 60 12 114 30 L 114 60 Z" fill="none" stroke={palette.stroke} />
-      <rect x="48" y="28" width="24" height="14" fill={palette.accent} />
-      {Array.from({ length: 7 }).map((_, r) => Array.from({ length: 16 - r }).map((_, c) => (
-        <circle key={`${r}-${c}`} cx={12 + r * 3 + c * (96 / (16 - r))} cy={48 + r * 3.5} r="1" fill={palette.fill} />
+      {/* proscenium arch with drapes either side */}
+      <path d="M 30 58 L 30 22 Q 60 14 90 22 L 90 58 Z" fill="none" stroke={palette.stroke} />
+      <rect x="48" y="24" width="24" height="16" fill={palette.accent} />
+      <path d="M 33 24 Q 37 40 33 56" stroke={palette.fill} strokeWidth="3" fill="none" />
+      <path d="M 87 24 Q 83 40 87 56" stroke={palette.fill} strokeWidth="3" fill="none" />
+      <rect x="4" y="28" width="24" height="5" fill={palette.fill} />
+      <rect x="92" y="28" width="24" height="5" fill={palette.fill} />
+      {Array.from({ length: 5 }).map((_, r) => Array.from({ length: 15 - r }).map((_, c) => (
+        <circle key={`${r}-${c}`} cx={12 + r * 3 + c * (96 / (15 - r))} cy={62 + r * 3.2} r="1" fill={palette.fill} />
+      )))}
+    </svg>
+  );
+  if (id === 'concerthall') return (
+    <svg viewBox="0 0 120 80" style={common}>
+      {/* terraced blocks stepping down around a central platform */}
+      <rect x="34" y="16" width="52" height="6" fill={palette.fill} opacity="0.5" />
+      <rect x="48" y="24" width="24" height="14" fill={palette.accent} />
+      <ellipse cx="60" cy="46" rx="26" ry="7" fill="none" stroke={palette.stroke} />
+      {[[4, 30, 26], [4, 40, 30], [4, 52, 34]].map(([x, y, w], i) => (
+        <g key={`l${i}`}><rect x={x} y={y} width={w} height="7" fill="none" stroke={palette.stroke} />
+          {Array.from({ length: 4 }).map((_, k) => <circle key={k} cx={x + (w / 4) * (k + 0.5)} cy={y + 3.5} r="1" fill={palette.fill} />)}</g>
+      ))}
+      {[[90, 30, 26], [86, 40, 30], [82, 52, 34]].map(([x, y, w], i) => (
+        <g key={`r${i}`}><rect x={x} y={y} width={w} height="7" fill="none" stroke={palette.stroke} />
+          {Array.from({ length: 4 }).map((_, k) => <circle key={k} cx={x + (w / 4) * (k + 0.5)} cy={y + 3.5} r="1" fill={palette.fill} />)}</g>
+      ))}
+      {Array.from({ length: 3 }).map((_, r) => Array.from({ length: 12 - r * 2 }).map((_, c) => (
+        <circle key={`${r}-${c}`} cx={26 + r * 5 + c * (68 / (12 - r * 2))} cy={64 + r * 4} r="1.2" fill={palette.fill} />
       )))}
     </svg>
   );
