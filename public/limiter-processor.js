@@ -1,15 +1,21 @@
-// limiter-processor.js — look-ahead peak limiter.
+// limiter-processor.js — two-band look-ahead peak limiter.
 //
 // This replaces a DynamicsCompressor configured as a limiter, which was not
 // behaving as one. Measured with an impulse 34 dB BELOW its threshold, that node
-// applied 11.6 dB of gain reduction and dropped clarity in the vocal band from
-// −2.1 dB to −12.3 dB. It was ducking every transient and then releasing into
-// the reverberation behind it — which on music means each drum hit pulls the
-// vocal down and lets the room up, and is a large part of why the reverb was
-// described as too much and the vocal as buried.
+// applied 11.6 dB of gain reduction, ducking every transient and then releasing
+// into the reverberation behind it. A limiter has one job: below the threshold
+// it must be a wire.
 //
-// A limiter has one job: below the threshold it must be a wire. This one is,
-// because it is written to be:
+// It is TWO-BAND for a second reason, found later and just as damaging. The low
+// end is by far the loudest thing on this bus — the loudness compensation lifts
+// it 11 dB — so a broadband limiter hands the bass a gain pedal for the entire
+// mix. Measured under a heavy low end, the voice was pulled down 5.2 dB with
+// nothing wrong with the voice at all: a kick landed, and the limiter turned the
+// whole record down to make room for it. Splitting at 160 Hz means a bass peak
+// reduces the bass and leaves the mids where they were, which is what a
+// mastering chain does and why it does it.
+//
+// The properties that make it a limiter rather than a compressor:
 //
 //   · A LOOK-AHEAD DELAY, so gain is already reduced by the time the peak it was
 //     computed from arrives. That is what lets the attack be gentle without
@@ -21,6 +27,52 @@
 //     on a 50 Hz wave rides the waveform itself and reads as grind.
 
 const LOOKAHEAD_MS = 2.0;
+const CROSSOVER_HZ = 160;
+
+// One Linkwitz-Riley 4th-order section pair: two cascaded Butterworth biquads
+// per side. LR4 low and high sum back to flat magnitude, so splitting and
+// rejoining a signal that needs no limiting returns it unchanged.
+function butter(type, f0, sampleRate) {
+  const w = Math.tan((Math.PI * f0) / sampleRate);
+  const n = 1 / (1 + Math.SQRT2 * w + w * w);
+  return type === 'low'
+    ? { b0: w * w * n, b1: 2 * w * w * n, b2: w * w * n,
+      a1: 2 * (w * w - 1) * n, a2: (1 - Math.SQRT2 * w + w * w) * n }
+    : { b0: n, b1: -2 * n, b2: n,
+      a1: 2 * (w * w - 1) * n, a2: (1 - Math.SQRT2 * w + w * w) * n };
+}
+
+class Biquad {
+  constructor(c) { this.c = c; this.x1 = 0; this.x2 = 0; this.y1 = 0; this.y2 = 0; }
+  run(x) {
+    const c = this.c;
+    const y = c.b0 * x + c.b1 * this.x1 + c.b2 * this.x2 - c.a1 * this.y1 - c.a2 * this.y2;
+    this.x2 = this.x1; this.x1 = x;
+    this.y2 = this.y1; this.y1 = y;
+    return y;
+  }
+}
+
+// One band's gain control: a decaying peak hold feeding a gain that falls over
+// the look-ahead window and recovers over the release.
+class BandGain {
+  constructor(len, sampleRate) {
+    this.hold = 0;
+    this.gain = 1;
+    this.holdDecay = Math.exp(-1 / (len * 0.7));
+    this.attackCoef = Math.exp(-1 / (len * 0.5));
+    this.sampleRate = sampleRate;
+  }
+
+  step(peak, threshold, releaseCoef) {
+    this.hold *= this.holdDecay;
+    if (peak > this.hold) this.hold = peak;
+    const target = this.hold > threshold ? threshold / this.hold : 1;
+    const coef = target < this.gain ? this.attackCoef : releaseCoef;
+    this.gain = coef * this.gain + (1 - coef) * target;
+    return this.gain;
+  }
+}
 
 class LimiterProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
@@ -34,14 +86,30 @@ class LimiterProcessor extends AudioWorkletProcessor {
     super();
     const sr = sampleRate;
     this.len = Math.max(8, Math.round((LOOKAHEAD_MS / 1000) * sr));
-    this.delay = [];      // per-channel look-ahead buffers, allocated on first use
     this.pos = 0;
-    // Peak hold decaying over the look-ahead window: a cheap sliding maximum.
-    // It is what makes the gain reach its target exactly as the peak arrives.
-    this.holdDecay = Math.exp(-1 / (this.len * 0.7));
-    this.hold = 0;
-    this.gain = 1;
-    this.attackCoef = Math.exp(-1 / (this.len * 0.5));
+    this.chans = 0;
+    this.lowDelay = [];
+    this.highDelay = [];
+    this.split = [];
+    this.low = new BandGain(this.len, sr);
+    this.high = new BandGain(this.len, sr);
+  }
+
+  alloc(chans) {
+    this.chans = chans;
+    this.lowDelay = [];
+    this.highDelay = [];
+    this.split = [];
+    const sr = sampleRate;
+    for (let c = 0; c < chans; c++) {
+      this.lowDelay.push(new Float32Array(this.len));
+      this.highDelay.push(new Float32Array(this.len));
+      this.split.push({
+        lp: [new Biquad(butter('low', CROSSOVER_HZ, sr)), new Biquad(butter('low', CROSSOVER_HZ, sr))],
+        hp: [new Biquad(butter('high', CROSSOVER_HZ, sr)), new Biquad(butter('high', CROSSOVER_HZ, sr))],
+      });
+    }
+    this.pos = 0;
   }
 
   process(inputs, outputs, parameters) {
@@ -56,11 +124,7 @@ class LimiterProcessor extends AudioWorkletProcessor {
     }
 
     const chans = out.length;
-    if (this.delay.length !== chans) {
-      this.delay = [];
-      for (let c = 0; c < chans; c++) this.delay.push(new Float32Array(this.len));
-      this.pos = 0;
-    }
+    if (this.chans !== chans) this.alloc(chans);
 
     const thrP = parameters.threshold;
     const relP = parameters.release;
@@ -71,32 +135,37 @@ class LimiterProcessor extends AudioWorkletProcessor {
       const threshold = Math.pow(10, thrDb / 20);
       const releaseCoef = Math.exp(-1 / (relSec * sampleRate));
 
-      // Loudest channel of the incoming (not yet delayed) frame.
-      let peak = 0;
+      // Split, and find each band's loudest channel this frame.
+      let lowPeak = 0, highPeak = 0;
       for (let c = 0; c < chans; c++) {
         const src = input[c] || input[0];
-        const v = src ? src[i] : 0;
-        const a = v < 0 ? -v : v;
-        if (a > peak) peak = a;
+        const x = src ? src[i] : 0;
+        const s = this.split[c];
+        const lo = s.lp[1].run(s.lp[0].run(x));
+        const hi = s.hp[1].run(s.hp[0].run(x));
+        this.lowDelay[c][this.pos] = lo;
+        this.highDelay[c][this.pos] = hi;
+        const la = lo < 0 ? -lo : lo;
+        const ha = hi < 0 ? -hi : hi;
+        if (la > lowPeak) lowPeak = la;
+        if (ha > highPeak) highPeak = ha;
       }
 
-      this.hold *= this.holdDecay;
-      if (peak > this.hold) this.hold = peak;
+      const lowGain = this.low.step(lowPeak, threshold, releaseCoef);
+      const highGain = this.high.step(highPeak, threshold, releaseCoef);
 
-      // Exactly 1 unless the threshold is actually exceeded.
-      const target = this.hold > threshold ? threshold / this.hold : 1;
-      // Move down over the look-ahead window, back up over the release.
-      const coef = target < this.gain ? this.attackCoef : releaseCoef;
-      this.gain = coef * this.gain + (1 - coef) * target;
-
+      // Read the delayed bands back out and rejoin them.
+      const read = (this.pos + 1) % this.len;
       for (let c = 0; c < chans; c++) {
-        const src = input[c] || input[0];
-        const buf = this.delay[c];
-        const delayed = buf[this.pos];
-        buf[this.pos] = src ? src[i] : 0;
-        out[c][i] = delayed * this.gain;
+        const sum = this.lowDelay[c][read] * lowGain + this.highDelay[c][read] * highGain;
+        // The two bands are controlled separately, so their sum can exceed the
+        // ceiling where both are loud at once. A soft knee at the very top is
+        // the last resort — it is inaudible at the fraction of a decibel it ever
+        // has to work over, and it cannot be got round.
+        const a = sum < 0 ? -sum : sum;
+        out[c][i] = a <= threshold ? sum : Math.sign(sum) * (threshold + (a - threshold) / (1 + ((a - threshold) / threshold) * 4));
       }
-      this.pos = (this.pos + 1) % this.len;
+      this.pos = read;
     }
     return true;
   }

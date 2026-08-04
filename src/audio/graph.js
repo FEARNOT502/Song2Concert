@@ -31,7 +31,7 @@
 
 import { buildImpulseResponse, venueSeed } from './impulse.js';
 import { SIDE_SHELF } from './binaural.js';
-import { listeningDistance, roomAbsorption, DIRECTIVITY, DIRECTIVITY_Q, SYSTEM_LF_HZ } from './venuerooms.js';
+import { listeningDistance, roomAbsorption, DIRECTIVITY, DIRECTIVITY_Q, SYSTEM_LF_HZ, REVERB_WIDTH } from './venuerooms.js';
 import { reverbTimes, reverberantRatio } from './roomacoustics.js';
 
 // Headroom taken off the front so the boosts downstream have somewhere to go.
@@ -309,6 +309,24 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {} })
     // arrangement it exists for: a chorus where the layers spread outward is
     // where the vocal gets buried, and it was the one the reference could not
     // see. The worklet takes the louder channel instead.
+    // The programme level the anchor compares the voice against is weighted for
+    // MASKING rather than measured flat.
+    //
+    // Masking is not symmetric: a loud low band raises the threshold well above
+    // itself, while a loud top band barely touches what is below it. Measured
+    // flat, a heavy sub and a bright hi-hat counted the same, so the anchor did
+    // not react to the one case where a vocal actually disappears — a loud low
+    // end. Weighting the reference toward the frequencies that do the masking
+    // makes a bass-heavy passage read as a busier programme, which is what it is
+    // as far as the voice is concerned.
+    n.maskLow = ctx.createBiquadFilter();
+    n.maskLow.type = 'lowshelf';
+    n.maskLow.frequency.value = 300;
+    n.maskLow.gain.value = 7;
+    n.maskHigh = ctx.createBiquadFilter();
+    n.maskHigh.type = 'highshelf';
+    n.maskHigh.frequency.value = 5000;
+    n.maskHigh.gain.value = -6;
     n.progTap = ctx.createGain();
     n.anchor = new AudioWorkletNode(ctx, 'vocal-anchor', {
       numberOfInputs: 2, numberOfOutputs: 1, outputChannelCount: [1],
@@ -317,7 +335,9 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {} })
     n.direct.connect(n.vocalMono);
     n.vocalMono.connect(n.vocalBand);
     n.vocalBand.connect(n.anchor, 0, 0);
-    n.direct.connect(n.progTap);
+    n.direct.connect(n.maskLow);
+    n.maskLow.connect(n.maskHigh);
+    n.maskHigh.connect(n.progTap);
     n.progTap.connect(n.anchor, 0, 1);
     n.anchor.connect(n.anchorReturn);
     n.anchorReturn.connect(n.mixOut); // mono, up-mixed to the centre
@@ -411,7 +431,28 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {} })
   // ── mix bus ───────────────────────────────────────────────────────────────
   n.mix = ctx.createGain();
   n.dry.connect(n.mix);
-  n.wet.connect(n.mix);
+  // ── Widen the room, not the source ────────────────────────────────────────
+  // Mid/side on the RETURN, boosting side only. See REVERB_WIDTH.
+  n.wSplit = ctx.createChannelSplitter(2);
+  n.wMerge = ctx.createChannelMerger(2);
+  n.wMidL = ctx.createGain(); n.wMidL.gain.value = 0.5;
+  n.wMidR = ctx.createGain(); n.wMidR.gain.value = 0.5;
+  n.wMid = ctx.createGain();
+  n.wSideL = ctx.createGain(); n.wSideL.gain.value = 0.5;
+  n.wSideR = ctx.createGain(); n.wSideR.gain.value = -0.5;
+  n.wSide = ctx.createGain();
+  n.wWidth = ctx.createGain();
+  n.wSideNeg = ctx.createGain(); n.wSideNeg.gain.value = -1;
+  n.wet.connect(n.wSplit);
+  n.wSplit.connect(n.wMidL, 0); n.wSplit.connect(n.wMidR, 1);
+  n.wMidL.connect(n.wMid); n.wMidR.connect(n.wMid);
+  n.wSplit.connect(n.wSideL, 0); n.wSplit.connect(n.wSideR, 1);
+  n.wSideL.connect(n.wSide); n.wSideR.connect(n.wSide);
+  n.wSide.connect(n.wWidth);
+  n.wWidth.connect(n.wSideNeg);
+  n.wMid.connect(n.wMerge, 0, 0); n.wWidth.connect(n.wMerge, 0, 0);
+  n.wMid.connect(n.wMerge, 0, 1); n.wSideNeg.connect(n.wMerge, 0, 1);
+  n.wMerge.connect(n.mix);
 
   n.loudShelf = ctx.createBiquadFilter();
   n.loudShelf.type = 'lowshelf';
@@ -535,6 +576,7 @@ export function applyVenue(ctx, n, venue, { fadeIn = VENUE_FADE_IN, fadeOut = VE
   ramp(n.sendMud.gain, send.mud);
   ramp(n.sendVocalDip.gain, send.vocal);
   ramp(n.subCut.frequency, systemLowCut(venue.id));
+  if (n.wWidth) ramp(n.wWidth.gain, REVERB_WIDTH[venue.id] ?? 1);
   ramp(n.sendHF.gain, send.hf);
 
   const pa = venue.pa || {};

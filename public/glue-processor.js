@@ -24,6 +24,15 @@
 
 const KNEE_DB = 12;
 
+// The detector listens through a high-pass. Every mix-bus compressor made has
+// this control, and for exactly the reason it is needed here: the low end is the
+// loudest thing on the bus — more so with the loudness compensation lifting it
+// 11 dB — so a broadband detector hands the bass a gain pedal for the whole mix,
+// and every loud note pulls the vocal down with it. Measured, that was 3.8 dB of
+// duck on the voice under a heavy low end. The AUDIO path is untouched; only
+// what the compressor listens to is filtered.
+const DETECTOR_HP_HZ = 120;
+
 class GlueProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [{ name: 'amount', defaultValue: 0, minValue: 0, maxValue: 1 }];
@@ -38,6 +47,27 @@ class GlueProcessor extends AudioWorkletProcessor {
     this.rel = Math.exp(-1 / (0.250 * sr));
     this.envDb = -100;
     this.grDb = 0;
+    // Two-pole high-pass on the detector, per channel.
+    const w = Math.tan(Math.PI * DETECTOR_HP_HZ / sr);
+    const n0 = 1 / (1 + Math.SQRT2 * w + w * w);
+    this.hp = { b0: n0, b1: -2 * n0, b2: n0,
+      a1: 2 * (w * w - 1) * n0, a2: (1 - Math.SQRT2 * w + w * w) * n0 };
+    this.hpState = [];
+  }
+
+  detect(input, i) {
+    let peak = 0;
+    for (let c = 0; c < input.length; c++) {
+      if (!this.hpState[c]) this.hpState[c] = { x1: 0, x2: 0, y1: 0, y2: 0 };
+      const st = this.hpState[c];
+      const x = input[c][i];
+      const y = this.hp.b0 * x + this.hp.b1 * st.x1 + this.hp.b2 * st.x2
+        - this.hp.a1 * st.y1 - this.hp.a2 * st.y2;
+      st.x2 = st.x1; st.x1 = x; st.y2 = st.y1; st.y1 = y;
+      const m = y < 0 ? -y : y;
+      if (m > peak) peak = m;
+    }
+    return peak;
   }
 
   process(inputs, outputs, parameters) {
@@ -69,12 +99,7 @@ class GlueProcessor extends AudioWorkletProcessor {
       const thresholdDb = -12 - 6 * a;
       const ratio = 1.2 + 0.8 * a;
 
-      let peak = 0;
-      for (let c = 0; c < input.length; c++) {
-        const v = input[c][i];
-        const m = v < 0 ? -v : v;
-        if (m > peak) peak = m;
-      }
+      const peak = this.detect(input, i);
       const peakDb = peak > 1e-7 ? 20 * Math.log10(peak) : -140;
 
       this.envDb = peakDb > this.envDb

@@ -265,16 +265,28 @@ async function run() {
       const m = new Float32Array(out.length);
       const L = out.getChannelData(0), R = out.getChannelData(1);
       for (let i = 0; i < out.length; i++) m[i] = (L[i] + R[i]) / 2;
-      let peak = 0; for (let i = 0; i < m.length; i++) if (Math.abs(m[i]) > peak) peak = Math.abs(m[i]);
-      return { peak, c50: clarity(octaveBand(m, sr, 2000), sr, 50) };
+      // ENERGY, not peak. The limiter splits the signal into bands and rejoins
+      // them, and a Linkwitz-Riley pair sums to flat magnitude with a phase
+      // shift — which smears an impulse in time and lowers its peak while
+      // changing nothing audible. Peak would report that as gain reduction.
+      let energy = 0; for (let i = 0; i < m.length; i++) energy += m[i] * m[i];
+      const perBand = [125, 500, 2000, 8000].map((f) => {
+        const bd = octaveBand(m, sr, f);
+        let e = 0; for (let i = 0; i < bd.length; i++) e += bd[i] * bd[i];
+        return e;
+      });
+      return { energy, perBand, c50: clarity(octaveBand(m, sr, 2000), sr, 50) };
     };
     const before = await measure('volume', { limiter: true });
     const after = await measure('limiter', { limiter: true });
+    // Splitting and rejoining must also leave the BALANCE alone, or the
+    // crossover is a tone control. Checked per octave, either side of it.
+    const bandShift = before.perBand.map((e, i) => +(10 * Math.log10(after.perBand[i] / e)).toFixed(2));
     log({
       test: 'limiter transparent below threshold',
-      inputPeak_dBFS: +(20 * Math.log10(before.peak)).toFixed(1),
-      gainChange_dB: +(20 * Math.log10(after.peak / before.peak)).toFixed(2),
+      energyChange_dB: +(10 * Math.log10(after.energy / before.energy)).toFixed(2),
       clarityChange_dB: +(after.c50 - before.c50).toFixed(2),
+      perOctaveChange_dB: bandShift.join(' '),
     });
   }
 
@@ -385,6 +397,48 @@ async function run() {
     log({ test: 'room answers promptly', venue: venue.id, reverbOnset_ms: +onset.toFixed(1) });
   }
 
+  // How wide the room arrives. A centred impulse comes back decorrelated because
+  // the four response channels differ, so the side component of the OUTPUT is
+  // the room's own width — the source contributes none of it. Reported as side
+  // against mid, which is exactly what envelopment is made of.
+  for (const venue of VENUES) {
+    const sr = 48000;
+    const ctx = new OfflineAudioContext(2, sr * 4, sr);
+    try { await ctx.audioWorklet.addModule('/Song2Concert/limiter-processor.js'); } catch (e) { /* noop */ }
+    const g = buildGraph(ctx, { venue, volume: 1, wetDb: wetTrimDb(venue.position.wet, venue.position.wet), worklets: { limiter: true } });
+    g.limiter.connect(ctx.destination);
+    const buf = ctx.createBuffer(2, 128, sr);
+    buf.getChannelData(0)[0] = 0.05; buf.getChannelData(1)[0] = 0.05; // centred
+    const src = ctx.createBufferSource(); src.buffer = buf; src.connect(g.trim); src.start(0);
+    const out = await ctx.startRendering();
+    const L = out.getChannelData(0), R = out.getChannelData(1);
+    let mid = 0, side = 0;
+    for (let i = 0; i < out.length; i++) {
+      const m = (L[i] + R[i]) / 2, sd = (L[i] - R[i]) / 2;
+      mid += m * m; side += sd * sd;
+    }
+    // Also on the wet bus alone, which isolates the ROOM's width from how much
+    // of it there is: at the output a dry-dominated venue reads narrow simply
+    // because the direct sound is centred and loud.
+    const wetOnly = await (async () => {
+      const c = new OfflineAudioContext(2, sr * 4, sr);
+      try { await c.audioWorklet.addModule('/Song2Concert/limiter-processor.js'); } catch (e) { /* noop */ }
+      const gg = buildGraph(c, { venue, volume: 1, wetDb: 0, worklets: { limiter: true } });
+      gg.wMerge.connect(c.destination);
+      const b = c.createBuffer(2, 128, sr);
+      b.getChannelData(0)[0] = 0.05; b.getChannelData(1)[0] = 0.05;
+      const s2 = c.createBufferSource(); s2.buffer = b; s2.connect(gg.trim); s2.start(0);
+      const o = await c.startRendering();
+      const A = o.getChannelData(0), B = o.getChannelData(1);
+      let m2 = 0, s3 = 0;
+      for (let i = 0; i < o.length; i++) { const mm = (A[i] + B[i]) / 2, ss = (A[i] - B[i]) / 2; m2 += mm * mm; s3 += ss * ss; }
+      return 10 * Math.log10(s3 / m2);
+    })();
+    log({ test: 'how wide the room arrives', venue: venue.id,
+      atOutput_sideVsMid_dB: +(10 * Math.log10(side / mid)).toFixed(1),
+      roomItself_sideVsMid_dB: +wetOnly.toFixed(1) });
+  }
+
   // Two things the reverb send has to do at once: take room off the VOICE
   // without taking it off the BAND. Centred and wide impulses are measured
   // separately — the centre should gain clarity, the sides should be left alone.
@@ -473,6 +527,90 @@ async function run() {
       withoutAnchor_denseVsSparse_dB: +dB(off.dense, off.sparse).toFixed(2),
       withAnchor_denseVsSparse_dB: +dB(on.dense, on.sparse).toFixed(2),
       anchorLiftInDenseSection_dB: +dB(on.dense / on.sparse, off.dense / off.sparse).toFixed(2),
+    });
+
+    // The same test again, but the instrumentation is LOW rather than wide, at
+    // matched level. Masking is not symmetric — a loud low band raises the
+    // threshold well above itself while a loud top band barely touches what is
+    // below it — so a bass-heavy passage should draw MORE correction than a
+    // treble-heavy one of the same loudness. Measured flat, as the reference
+    // used to be, the two came out the same and a heavy low end buried the voice
+    // with nothing responding to it.
+    const runBand = async (lowHeavy, bypassLimiter = false) => {
+      const ctx = new OfflineAudioContext(2, sr * seconds, sr);
+      try {
+        await ctx.audioWorklet.addModule('/Song2Concert/vocal-anchor-processor.js');
+        await ctx.audioWorklet.addModule('/Song2Concert/limiter-processor.js');
+      } catch (e) { /* noop */ }
+      const g = buildGraph(ctx, { venue, volume: 1, wetDb: -60, worklets: { limiter: true, vocalAnchor: true } });
+      if (bypassLimiter) g.limiter.parameters.get('threshold').value = 0;
+      g.limiter.connect(ctx.destination);
+      const buf = ctx.createBuffer(2, sr * seconds, sr);
+      const Lc = buf.getChannelData(0), Rc = buf.getChannelData(1);
+      let lp = 0, hp = 0;
+      for (let i = 0; i < buf.length; i++) {
+        const t = i / sr;
+        const vocal = 0.12 * Math.sin(2 * Math.PI * 2600 * t);
+        const n = Math.random() * 2 - 1;
+        lp += 0.010 * (n - lp);          // low bed
+        hp += 0.55 * (n - hp);           // high bed
+        const bed = (lowHeavy ? lp * 26 : hp * 0.62) * (t > seconds / 2 ? 1 : 0.12);
+        Lc[i] = vocal + bed;
+        Rc[i] = vocal + bed;
+      }
+      const src = ctx.createBufferSource(); src.buffer = buf; src.connect(g.trim); src.start(0);
+      const out = await ctx.startRendering();
+      const level = (fromS) => {
+        const n = sr, k = (2 * Math.PI * 2600) / sr, coef = 2 * Math.cos(k);
+        let s1 = 0, s2 = 0;
+        const A = out.getChannelData(0), B = out.getChannelData(1);
+        for (let i = Math.floor(fromS * sr); i < Math.floor(fromS * sr) + n; i++) {
+          const s0 = (A[i] + B[i]) / 2 + coef * s1 - s2;
+          s2 = s1; s1 = s0;
+        }
+        return Math.sqrt(s1 * s1 + s2 * s2 - coef * s1 * s2) / n;
+      };
+      return dB(level(seconds - 2), level(seconds / 2 - 2));
+    };
+    // Which stage ducks the voice when the low end gets loud?
+    const walk = {};
+    for (const node of ['mix', 'loudSub', 'satIn', 'sat', 'out', 'limiter']) {
+      const ctx = new OfflineAudioContext(2, sr * seconds, sr);
+      try { await ctx.audioWorklet.addModule('/Song2Concert/limiter-processor.js'); } catch (e) { /* noop */ }
+      try { await ctx.audioWorklet.addModule('/Song2Concert/glue-processor.js'); } catch (e) { /* noop */ }
+      const g = buildGraph(ctx, { venue, volume: 1, wetDb: -60, worklets: { limiter: true, glue: true } });
+      g[node].connect(ctx.destination);
+      const buf = ctx.createBuffer(2, sr * seconds, sr);
+      const Lc = buf.getChannelData(0), Rc = buf.getChannelData(1);
+      let lp = 0;
+      for (let i = 0; i < buf.length; i++) {
+        const t = i / sr;
+        const vocal = 0.12 * Math.sin(2 * Math.PI * 2600 * t);
+        lp += 0.010 * ((Math.random() * 2 - 1) - lp);
+        const bed = lp * 26 * (t > seconds / 2 ? 1 : 0.12);
+        Lc[i] = vocal + bed; Rc[i] = vocal + bed;
+      }
+      const src = ctx.createBufferSource(); src.buffer = buf; src.connect(g.trim); src.start(0);
+      const out = await ctx.startRendering();
+      const level = (fromS) => {
+        const n = sr, k = (2 * Math.PI * 2600) / sr, coef = 2 * Math.cos(k);
+        let s1 = 0, s2 = 0;
+        const A = out.getChannelData(0), B = out.getChannelData(1);
+        for (let i = Math.floor(fromS * sr); i < Math.floor(fromS * sr) + n; i++) {
+          const s0 = (A[i] + B[i]) / 2 + coef * s1 - s2;
+          s2 = s1; s1 = s0;
+        }
+        return Math.sqrt(s1 * s1 + s2 * s2 - coef * s1 * s2) / n;
+      };
+      walk[node] = +dB(level(seconds - 2), level(seconds / 2 - 2)).toFixed(2);
+    }
+    log({ test: 'which stage ducks the voice under a loud low end', venue: venue.id, ...walk });
+
+    log({
+      test: 'a loud low end draws more correction than a loud top end',
+      lowHeavyBed_dB: +(await runBand(true)).toFixed(2),
+      trebleHeavyBed_dB: +(await runBand(false)).toFixed(2),
+      lowHeavy_limiterBypassed_dB: +(await runBand(true, true)).toFixed(2),
     });
   }
 

@@ -90,6 +90,33 @@ export const SYSTEM_LF_HZ = {
   stadium: 28,
 };
 
+// How much the reverberant return is widened on its way to the ears.
+//
+// A real diffuse field arrives from every direction at once, including behind
+// and above. Two channels cannot deliver that, so a response measured as highly
+// decorrelated — these run an interaural cross-correlation of 0.02 to 0.09 late,
+// which is as diffuse as a great hall — still arrives narrower than the room it
+// came from. Widening the side component of the RETURN is the standard partial
+// compensation, and it costs the direct sound nothing: the source stays where it
+// is and only the room opens up, which is the right way round.
+//
+// Scaled to what each venue actually feels like:
+//   · club        a small room heard close: intimate, not enveloping
+//   · theatre     boxes up both side walls wrap the stalls
+//   · concert hall the vineyard's terraces surround every seat — the highest
+//                 lateral fraction here, and the form exists for that
+//   · arena/dome  large enclosed volumes; the dome is the biggest
+//   · stadium     open above the pitch, so much of what would envelop you
+//                 leaves and never comes back
+export const REVERB_WIDTH = {
+  club: 1.15,
+  theater: 1.25,
+  concerthall: 1.45,
+  arena: 1.32,
+  dome: 1.38,
+  stadium: 1.20,
+};
+
 export const VENUE_ROOMS = {
   club: {
     dims: [12, 16, 3.5],
