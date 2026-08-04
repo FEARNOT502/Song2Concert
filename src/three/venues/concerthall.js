@@ -96,7 +96,7 @@ export default function buildConcertHall(u) {
     seed: 71, fill: 0.95, color: 0x2e2115, tint: '#4a331a', emissive: 0x0e0a06,
   }, root, people);
   const ownRowDepth = (30 - 11.5) / 14;
-  const seatFloor = 0.55 + Math.floor((f.seat.z - 11.5) / ownRowDepth) * 0.42;
+  const seatFloor = 0.55 + Math.floor((f.eye.z - 11.5) / ownRowDepth) * 0.42;
 
   // side blocks, stepping down toward the platform
   for (const side of [-1, 1]) {
@@ -201,9 +201,9 @@ export default function buildConcertHall(u) {
     root,
     screen,
     camera: {
-      position: new THREE.Vector3(f.seat.x, seatFloor + f.seat.y, f.seat.z),
-      target: new THREE.Vector3(0, 5.6, PLATFORM_Z - 3),
-      fov: 50,
+      position: new THREE.Vector3(0, seatFloor + f.eye.y, f.eye.z),
+      target: new THREE.Vector3(0, 5.8, PLATFORM_Z - 3),
+      fov: 54,
     },
     background: new THREE.Color(0x07050a),
     fog: new THREE.Fog(0x120d0b, 16, 78),

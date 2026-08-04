@@ -45,6 +45,21 @@ export function frame(id) {
     source: { x: 0, y: sz, z: sy, halfWidth: r.stage.halfWidth },
     // the seat, in three.js space. `y` still needs whatever the seat stands on.
     seat: new THREE.Vector3(lx - sx, lz + RISER[id], ly),
+    // Where the camera goes. Same row, same height — but on the stage centre
+    // line rather than at the seat's exact x.
+    //
+    // The room model puts the listener two or three metres off centre on
+    // purpose: dead centre gets its side reflections as a symmetric pair, which
+    // narrows the image, so the seat critics travel for is never quite on the
+    // axis. That is worth a couple of metres in the acoustics and it costs
+    // nothing there. It costs a lot in the picture: from 5 m back in a club it
+    // is a 9° yaw, which turns a front-of-house view into an oblique one and
+    // slides the album art off to one side of the frame.
+    //
+    // So the camera gives up the x and keeps the two things that actually set
+    // the perspective — how far back the seat is and how high it sits. The
+    // engine still listens from the offset seat; nothing about the sound moves.
+    eye: new THREE.Vector3(0, lz + RISER[id], ly),
     riser: RISER[id],
     distance: Math.hypot(sx - lx, sy - ly, sz - lz),
   };
