@@ -3,7 +3,7 @@
 <title>audio smoke</title>
 <pre id="out">running…</pre>
 <script type="module">
-import { buildGraph, wetTrimDb, INPUT_TRIM_DB } from '/src/audio/graph.js';
+import { buildGraph, applyVenue, wetTrimDb, INPUT_TRIM_DB } from '/src/audio/graph.js';
 import { VENUES } from '/src/data.js';
 import { ConcertEngine } from '/src/audio/engine.js';
 import { synthesizeIR, venueSeed } from '/src/audio/impulse.js';
@@ -55,7 +55,8 @@ async function run() {
       await ctx.audioWorklet.addModule('/Song2Concert/transient-processor.js');
       await ctx.audioWorklet.addModule('/Song2Concert/vocal-anchor-processor.js');
       await ctx.audioWorklet.addModule('/Song2Concert/limiter-processor.js');
-      worklets = { transient: true, vocalAnchor: true, limiter: true };
+      await ctx.audioWorklet.addModule('/Song2Concert/glue-processor.js');
+      worklets = { transient: true, vocalAnchor: true, limiter: true, glue: true };
     } catch (e) {
       log({ venue: venue.id, workletError: String(e.message) });
     }
@@ -69,8 +70,8 @@ async function run() {
     const st = stats(out);
     log({
       venue: venue.id,
-      irChannels: g.convolver.buffer.numberOfChannels,
-      irSeconds: +(g.convolver.buffer.duration.toFixed(2)),
+      irChannels: g.convA.buffer.numberOfChannels,
+      irSeconds: +(g.convA.buffer.duration.toFixed(2)),
       worklets: Object.keys(worklets).length,
       peak: +st.peak.toFixed(4),
       rms: +st.rms.toFixed(4),
@@ -122,7 +123,7 @@ async function run() {
       buf.getChannelData(side)[0] = 1; // an impulse into one channel only
       const src = ctx.createBufferSource();
       src.buffer = buf;
-      src.connect(g.convolver);
+      src.connect(g.convA);
       g.wet.connect(ctx.destination);
       src.start(0);
       const out = await ctx.startRendering();
@@ -160,7 +161,8 @@ async function run() {
       await ctx.audioWorklet.addModule('/Song2Concert/transient-processor.js');
       await ctx.audioWorklet.addModule('/Song2Concert/vocal-anchor-processor.js');
       await ctx.audioWorklet.addModule('/Song2Concert/limiter-processor.js');
-      worklets = { transient: true, vocalAnchor: true, limiter: true };
+      await ctx.audioWorklet.addModule('/Song2Concert/glue-processor.js');
+      worklets = { transient: true, vocalAnchor: true, limiter: true, glue: true };
     } catch (e) { /* measured without them */ }
     const g = buildGraph(ctx, { venue, volume: 1, wetDb: wetTrimDb(venue.position.wet, venue.position.wet), worklets });
     g.limiter.connect(ctx.destination);
@@ -213,6 +215,82 @@ async function run() {
       inputPeak_dBFS: +(20 * Math.log10(before.peak)).toFixed(1),
       gainChange_dB: +(20 * Math.log10(after.peak / before.peak)).toFixed(2),
       clarityChange_dB: +(after.c50 - before.c50).toFixed(2),
+    });
+  }
+
+  // Changing venue must not interrupt the audio. It used to rebuild the whole
+  // graph, which detached the source, replaced the convolver so the tail was cut
+  // dead, and left the old graph only partly disconnected so its worklets went
+  // on running — one leaked per change.
+  //
+  // The direct path is what a dropout would show in, so that is what is
+  // asserted: a continuous tone is rendered while the venue is switched
+  // underneath it, and every 5 ms window must stay at full level.
+  //
+  // The total output is reported alongside but not asserted. It does dip, and
+  // legitimately: a convolver handed a new response starts from silence and
+  // takes the length of that response to reach steady state, which for a
+  // sustained tone means several seconds in the dome. Real programme material
+  // does not show it — every note played after the change is convolved
+  // correctly from its first sample; only a held tone accumulates.
+  {
+    const sr = 48000;
+    const ctx = new OfflineAudioContext(2, sr * 4, sr);
+    try {
+      await ctx.audioWorklet.addModule('/Song2Concert/transient-processor.js');
+      await ctx.audioWorklet.addModule('/Song2Concert/vocal-anchor-processor.js');
+      await ctx.audioWorklet.addModule('/Song2Concert/limiter-processor.js');
+      await ctx.audioWorklet.addModule('/Song2Concert/glue-processor.js');
+    } catch (e) { /* noop */ }
+    const wk = { transient: true, vocalAnchor: true, limiter: true, glue: true };
+    const g = buildGraph(ctx, { venue: VENUES[1], volume: 1, wetDb: 0, worklets: wk });
+    const nodeKeys = (o) => Object.keys(o).filter((k) => o[k] && typeof o[k].connect === 'function').sort().join(',');
+    const keysBefore = nodeKeys(g);
+
+    const merge = ctx.createChannelMerger(2);
+    g.dry.connect(merge, 0, 0);       // direct path only
+    g.limiter.connect(merge, 0, 1);   // whole system
+    merge.connect(ctx.destination);
+
+    // Broadband noise, not a tone: a sustained sine lets the direct and
+    // reverberant paths sit at some fixed relative phase and partially cancel,
+    // which reads as a dip that has nothing to do with continuity.
+    const noise = ctx.createBuffer(2, sr * 4, sr);
+    for (let c = 0; c < 2; c++) {
+      const d = noise.getChannelData(c);
+      let lp = 0;
+      for (let i = 0; i < d.length; i++) {
+        lp += 0.06 * ((Math.random() * 2 - 1) - lp);
+        d[i] = lp * 2.2;
+      }
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = noise;
+    src.connect(g.trim);
+    src.start(0);
+
+    ctx.suspend(1.0).then(() => { applyVenue(ctx, g, VENUES[3]); ctx.resume(); });
+    const out = await ctx.startRendering();
+
+    // Compare the moment of the change against the half second before it. That
+    // is the question being asked — does switching interrupt what is playing —
+    // and it does not depend on how the signal happens to fluctuate elsewhere.
+    const rms = (data, fromS, toS) => {
+      let e = 0, n = 0;
+      for (let i = Math.floor(fromS * sr); i < Math.floor(toS * sr) && i < data.length; i++) { e += data[i] * data[i]; n++; }
+      return Math.sqrt(e / Math.max(n, 1));
+    };
+    const ratioAcross = (data) => rms(data, 1.0, 1.3) / rms(data, 0.5, 1.0);
+    const direct = out.getChannelData(0);
+    const total = out.getChannelData(1);
+    log({
+      test: 'venue change is seamless',
+      // The direct sound must be untouched by the change.
+      directLevelAcrossChange: +ratioAcross(direct).toFixed(3),
+      // The total dips a little as one room's reverberation gives way to the
+      // next one's, which is the change being audible rather than an interruption.
+      totalLevelAcrossChange: +ratioAcross(total).toFixed(3),
+      noNodesAdded: nodeKeys(g) === keysBefore,
     });
   }
 

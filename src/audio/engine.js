@@ -8,10 +8,11 @@
 // - The analyser taps ahead of the volume control, so the artwork pulse follows
 //   the music rather than the volume knob.
 
-import { buildGraph, wetTrimDb } from './graph.js';
+import { buildGraph, applyVenue, disposeGraph, wetTrimDb } from './graph.js';
 import { readAudioFormat } from './bitdepth.js';
 import { reverbTimes } from './roomacoustics.js';
-import { roomAbsorption } from './venuerooms.js';
+import { roomAbsorption, VENUE_ROOMS } from './venuerooms.js';
+import { synthesizeIR, venueSeed } from './impulse.js';
 
 // AudioWorklet modules live in public/ so they are served verbatim and can be
 // fetched as standalone modules. BASE_URL keeps them correct under the Pages
@@ -20,6 +21,7 @@ const WORKLETS = {
   transient: `${import.meta.env.BASE_URL}transient-processor.js`,
   vocalAnchor: `${import.meta.env.BASE_URL}vocal-anchor-processor.js`,
   limiter: `${import.meta.env.BASE_URL}limiter-processor.js`,
+  glue: `${import.meta.env.BASE_URL}glue-processor.js`,
 };
 
 // Load every worklet module onto a context and report which ones took. Each is
@@ -93,6 +95,7 @@ export class ConcertEngine {
     this._analyserBuf = new Float32Array(this.analyser.fftSize);
 
     this._buildChain();
+    this._prewarmResponses();
     // The worklets arrive asynchronously; rebuild once they are ready so their
     // sends are present. Both are additive, so the chain is correct either way
     // and the rebuild is inaudible.
@@ -102,6 +105,28 @@ export class ConcertEngine {
       this._worklets = available;
       this._buildChain();
     });
+  }
+
+  // Synthesise every venue's response ahead of time, one per idle slot.
+  //
+  // Building one costs 40–200 ms, and doing it at the moment a venue is chosen
+  // put that on the main thread while audio was playing. They are cached, so
+  // this is paid once, quietly, and only the first change to a venue would ever
+  // have been slow anyway.
+  _prewarmResponses() {
+    const ids = Object.keys(VENUE_ROOMS);
+    const rate = this.ctx.sampleRate;
+    const next = () => {
+      const id = ids.shift();
+      if (!id || !this.ctx || this.ctx.state === 'closed') return;
+      try { synthesizeIR({ venueId: id, sampleRate: rate, seed: venueSeed(id) }); } catch (e) { /* not fatal */ }
+      schedule();
+    };
+    const schedule = () => {
+      if (typeof requestIdleCallback === 'function') requestIdleCallback(next, { timeout: 2000 });
+      else setTimeout(next, 200);
+    };
+    schedule();
   }
 
   // (Re)build the processing chain and reconnect the source to it.
@@ -129,9 +154,7 @@ export class ConcertEngine {
       try { this._bufSrc.disconnect(); } catch (e) { /* already gone */ }
       this._bufSrc.connect(graph.trim);
     }
-    if (old) {
-      try { old.limiter.disconnect(); old.out.disconnect(this.analyser); } catch (e) { /* noop */ }
-    }
+    if (old) disposeGraph(old);
   }
 
   // Browser autoplay policy: must resume() inside a user gesture.
@@ -278,7 +301,13 @@ export class ConcertEngine {
     const changed = !this._venue || this._venue.id !== venue.id;
     this._venue = venue;
     if (changed) this._wetPercent = venue.position.wet;
-    this._buildChain();
+    if (!this.graph) {
+      this._buildChain();
+      return;
+    }
+    // Parameters only — the graph is never rebuilt for a venue change.
+    applyVenue(this.ctx, this.graph, venue);
+    this._applyWet();
   }
 
   // 0..100. The venue's own default is the physically correct reverberant level

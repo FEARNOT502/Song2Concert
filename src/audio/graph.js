@@ -101,20 +101,6 @@ export function airTiltFor(venueId) {
   };
 }
 
-// Live mix-bus compression. Kept far lighter than before: the source is already
-// a finished master that has been through a mastering engineer's bus, and a
-// second helping of 3:1 on top of that is what "congested" sounds like.
-export function glueSettings(glue) {
-  const g = Math.max(0, Math.min(1, glue));
-  return {
-    threshold: -12 - 6 * g,
-    ratio: 1.2 + 0.8 * g,   // 1.2:1 … 2:1
-    knee: 12,
-    attack: 0.03,
-    release: 0.25,
-  };
-}
-
 // tanh soft saturation. Normalised by 1/k rather than tanh(k) so quiet material
 // passes through bit-identical and only peaks are compressed — the saturator can
 // never push the limiter harder than the clean signal would. k ≈ 0 is the exact
@@ -289,24 +275,37 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {} })
   // different space from the band — worst in the club, where the room is short
   // and tight enough for the two to be told apart. A real venue hears whatever
   // the engineer sends it.
-  const send = reverbSendTilt(venue.id);
   n.sendLF = ctx.createBiquadFilter();
   n.sendLF.type = 'lowshelf';
   n.sendLF.frequency.value = 100;
-  n.sendLF.gain.value = send.lf;
   n.sendHF = ctx.createBiquadFilter();
   n.sendHF.type = 'highshelf';
   n.sendHF.frequency.value = 2000;
-  n.sendHF.gain.value = send.hf;
-  n.convolver = ctx.createConvolver();
-  n.convolver.normalize = false; // levels in the response are already physical
-  n.convolver.buffer = buildImpulseResponse(ctx, venue.id, venueSeed(venue.id));
+
+  // TWO convolver slots, crossfaded. Changing venue swaps which one is live
+  // rather than replacing the node, so the room being left rings out while the
+  // new one comes up. Replacing it cut the tail dead mid-note, which is a large
+  // part of what made switching venues sound like a dropout.
+  //
+  // The idle slot is disconnected and emptied once a crossfade finishes, so only
+  // one convolution is ever running.
+  n.convA = ctx.createConvolver();
+  n.convA.normalize = false; // levels in the response are already physical
+  n.convB = ctx.createConvolver();
+  n.convB.normalize = false;
+  n.convGainA = ctx.createGain();
+  n.convGainB = ctx.createGain();
+  n.convGainA.gain.value = 0;
+  n.convGainB.gain.value = 0;
+  n.active = null; // no slot loaded until a venue is applied
   n.wet = ctx.createGain();
   n.wet.gain.value = dbToGain(wetDb);
   n.mixOut.connect(n.sendLF);
   n.sendLF.connect(n.sendHF);
-  n.sendHF.connect(n.convolver);
-  n.convolver.connect(n.wet);
+  n.convA.connect(n.convGainA);
+  n.convB.connect(n.convGainB);
+  n.convGainA.connect(n.wet);
+  n.convGainB.connect(n.wet);
 
   // ── mix bus ───────────────────────────────────────────────────────────────
   n.mix = ctx.createGain();
@@ -326,32 +325,26 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {} })
   n.mix.connect(n.loudShelf);
   n.loudShelf.connect(n.loudSub);
 
-  // Bus compression, and ONLY where there is a console to do it. A venue with no
-  // PA has nothing to glue, and leaving the node in the chain at a nominal
-  // setting was not free: measured on the hall, where glue is zero, it still
-  // took 2.8 dB off clarity in the vocal band. An unused stage is removed, not
-  // set to taste.
-  const pa = venue.pa || {};
-  const glueAmount = pa.glue ?? 0;
-  let busTail = n.loudSub;
-  if (glueAmount > 0.05) {
-    n.glue = ctx.createDynamicsCompressor();
-    const gs = glueSettings(glueAmount);
-    n.glue.threshold.value = gs.threshold;
-    n.glue.ratio.value = gs.ratio;
-    n.glue.knee.value = gs.knee;
-    n.glue.attack.value = gs.attack;
-    n.glue.release.value = gs.release;
-    n.loudSub.connect(n.glue);
-    busTail = n.glue;
-  }
-
+  // Bus compression as a single serial stage whose depth is one ramped
+  // parameter — see glue-processor.js. It replaced both a DynamicsCompressor
+  // (which cost the hall 2.8 dB of vocal-band clarity even set to do nothing)
+  // and the parallel bypass that was tried instead of it (whose latency
+  // mismatch comb-filtered the two paths together on every venue change).
   n.satIn = ctx.createGain();
   n.satIn.gain.value = 1 / SAT_HEADROOM;
   n.sat = ctx.createWaveShaper();
   n.sat.oversample = '4x';
-  n.sat.curve = makeSatCurve(pa.drive ?? 0);
-  busTail.connect(n.satIn);
+  if (worklets.glue) {
+    n.glue = new AudioWorkletNode(ctx, 'glue', {
+      numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2],
+    });
+    n.loudSub.connect(n.glue);
+    n.glue.connect(n.satIn);
+  } else {
+    // No worklet, no glue. Going without a light bus compressor is a far smaller
+    // loss than the node it would have to fall back to.
+    n.loudSub.connect(n.satIn);
+  }
   n.satIn.connect(n.sat);
 
   // Put back most of the headroom taken at the input, less what the loudness
@@ -384,7 +377,132 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {} })
   }
   n.volume.connect(n.limiter);
 
+  applyVenue(ctx, n, venue, { fadeIn: 0, fadeOut: 0 });
   return n;
+}
+
+// A venue change is blended ASYMMETRICALLY: the new room comes up quickly, the
+// old one is left to ring out.
+//
+// A symmetric fade dips, and unavoidably so. A convolver that has just been
+// given a response starts from silence and takes the length of that response to
+// reach steady state — seconds, in the dome — so fading the old one out on the
+// same schedule removes reverberation faster than the new one can supply it.
+// Measured on a steady tone, the total signal dropped nearly 4 dB.
+//
+// Letting the outgoing room decay over more than a second fixes it, and is what
+// the change should sound like anyway: not a switch, but one space giving way to
+// another.
+export const VENUE_FADE_IN = 0.25;
+export const VENUE_FADE_OUT = 1.2;
+
+// Apply a venue to an already-built graph.
+//
+// Everything a venue decides is a parameter: the response, the air absorption
+// over the listening distance, how much of each band reaches the room, the bus
+// compression and the saturation. None of it needs new nodes, and building new
+// ones was costing an audible gap on every change — the source had to be
+// detached and reattached, the reverberation tail was cut dead, and the graph
+// left behind was only partly disconnected, so its worklets went on running.
+export function applyVenue(ctx, n, venue, { fadeIn = VENUE_FADE_IN, fadeOut = VENUE_FADE_OUT } = {}) {
+  const t = ctx.currentTime;
+
+  // A change arriving before the previous one has finished blending is queued,
+  // not applied on top. There are two slots, so the one a second change would
+  // need is the one still fading out — and replacing a convolver's buffer while
+  // it is audible resets its state and cuts its tail mid-ring. Interleaving two
+  // fades also made the gain curves restart from zero rather than from where
+  // they had got to, which measured as an 8 dB dip. Waiting is both simpler and
+  // what the listener wants: the last venue asked for is the one they get.
+  if (n.fadeUntil && t < n.fadeUntil) {
+    n.pendingVenue = venue;
+    return;
+  }
+  n.pendingVenue = null;
+  const ramp = (param, value) => {
+    param.cancelScheduledValues(t);
+    param.setValueAtTime(param.value, t);
+    param.linearRampToValueAtTime(value, t + fadeIn);
+  };
+
+  const air = airTiltFor(venue.id);
+  ramp(n.air4k.gain, air.hf4k);
+  ramp(n.air10k.gain, air.hf10k - air.hf4k);
+
+  const send = reverbSendTilt(venue.id);
+  ramp(n.sendLF.gain, send.lf);
+  ramp(n.sendHF.gain, send.hf);
+
+  const pa = venue.pa || {};
+  if (n.glue) ramp(n.glue.parameters.get('amount'), pa.glue ?? 0);
+
+  n.sat.curve = makeSatCurve(pa.drive ?? 0);
+
+  // Load the idle convolver slot and blend across to it. On the first call
+  // there is no slot in use yet, so it simply comes up.
+  const from = n.active;
+  const to = from === 'A' ? 'B' : 'A';
+  const fromConv = from ? n[`conv${from}`] : null;
+  const toConv = n[`conv${to}`];
+  const fromGain = from ? n[`convGain${from}`].gain : null;
+  const toGain = n[`convGain${to}`].gain;
+
+  toConv.buffer = buildImpulseResponse(ctx, venue.id, venueSeed(venue.id));
+  try { n.sendHF.connect(toConv); } catch (e) { /* already connected */ }
+  n.active = to;
+
+  if (fadeIn <= 0 || !fromConv) {
+    if (fromGain) fromGain.value = 0;
+    toGain.value = 1;
+    if (fromConv) { try { n.sendHF.disconnect(fromConv); } catch (e) { /* noop */ } }
+    return;
+  }
+
+  const steps = 64;
+  const curve = (fn) => {
+    const c = new Float32Array(steps);
+    for (let i = 0; i < steps; i++) c[i] = fn((i / (steps - 1)) * (Math.PI / 2));
+    return c;
+  };
+  toGain.cancelScheduledValues(t);
+  toGain.setValueCurveAtTime(curve(Math.sin), t, fadeIn);
+  fromGain.cancelScheduledValues(t);
+  fromGain.setValueCurveAtTime(curve(Math.cos), t, fadeOut);
+
+  // Free the room that was left, once it has finished ringing out.
+  n.fadeUntil = t + fadeOut;
+  n.releaseIdle = setTimeout(() => {
+    n.releaseIdle = null;
+    n.fadeUntil = 0;
+    try { n.sendHF.disconnect(fromConv); } catch (e) { /* noop */ }
+    fromConv.buffer = null;
+    if (n.pendingVenue) {
+      const queued = n.pendingVenue;
+      n.pendingVenue = null;
+      applyVenue(ctx, n, queued, { fadeIn, fadeOut });
+    }
+  }, (fadeOut + 0.05) * 1000);
+}
+
+// Disconnect every node, so nothing is left running. Only needed for the one
+// legitimate rebuild — when the worklets finish loading — but a partly
+// disconnected graph keeps its worklet processors alive, and one was leaked per
+// venue change before venue changes stopped rebuilding anything.
+export function disposeGraph(n) {
+  if (n.releaseIdle) clearTimeout(n.releaseIdle);
+  for (const value of Object.values(n)) {
+    if (value && typeof value.disconnect === 'function') {
+      try { value.disconnect(); } catch (e) { /* already gone */ }
+    } else if (Array.isArray(value)) {
+      for (const entry of value) {
+        for (const node of Object.values(entry || {})) {
+          if (node && typeof node.disconnect === 'function') {
+            try { node.disconnect(); } catch (e) { /* already gone */ }
+          }
+        }
+      }
+    }
+  }
 }
 
 // The venue's physically correct reverberant level is what the impulse response
