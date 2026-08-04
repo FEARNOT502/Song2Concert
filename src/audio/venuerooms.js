@@ -72,6 +72,24 @@ export const DIRECTIVITY_Q = {
   stadium: 5,
 };
 
+// Where each venue's low end stops, in Hz.
+//
+// This was one number for every venue, and a 300-seat club reproducing 25 Hz is
+// not a thing that happens. Low-frequency extension is bought with cabinet
+// volume and amplifier power, so it scales with the venue: a club rig runs out
+// in the mid-fifties, a stadium sub array goes into the high twenties. An
+// acoustic hall's floor is set by its instruments instead — a contrabass's
+// lowest string is about 41 Hz and the organ goes below, but nothing in an
+// orchestra radiates the sub content a modern master carries.
+export const SYSTEM_LF_HZ = {
+  club: 55,
+  theater: 42,
+  concerthall: 38,
+  arena: 32,
+  dome: 30,
+  stadium: 28,
+};
+
 export const VENUE_ROOMS = {
   club: {
     dims: [12, 16, 3.5],

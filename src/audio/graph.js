@@ -31,8 +31,8 @@
 
 import { buildImpulseResponse, venueSeed } from './impulse.js';
 import { SIDE_SHELF } from './binaural.js';
-import { listeningDistance, roomAbsorption, DIRECTIVITY } from './venuerooms.js';
-import { reverbTimes } from './roomacoustics.js';
+import { listeningDistance, roomAbsorption, DIRECTIVITY, DIRECTIVITY_Q, SYSTEM_LF_HZ } from './venuerooms.js';
+import { reverbTimes, reverberantRatio } from './roomacoustics.js';
 
 // Headroom taken off the front so the boosts downstream have somewhere to go.
 // Without it the chain ran a limiter at −3 dBFS with 20:1 into a signal already
@@ -108,14 +108,41 @@ const AIR_RESIDUAL = 0.4;
 export function reverbSendTilt(venueId) {
   const d = DIRECTIVITY[venueId] ?? 0;
   const lf125 = reverbTimes(roomAbsorption(venueId))[0];
-  // Only a venue with a deployed sub array has anything to steer.
-  const subControl = d > 0.5 ? Math.min(10, 3 + 1.3 * lf125) : 0;
+
+  // How little low end reaches the room, and why, differs by venue — but it is
+  // never nothing. A venue with a rig steers its sub array; a venue without one
+  // is driven by instruments that radiate very little below 60 Hz, so an
+  // orchestra excites a hall's low end far less than a modern master would.
+  //
+  // Acoustic venues previously got no control at all, on the reasoning that
+  // there is no array to steer. That left the concert hall — 2.6 s at 125 Hz and
+  // warm by design — taking the full sub content of a pop master straight into
+  // the one band it rings longest in, and it boomed.
+  const subControl = d > 0.5
+    ? Math.min(10, 3 + 1.3 * lf125)
+    : Math.min(5, 1.5 + 0.8 * lf125);
+
+  // Ducking the voice out of the reverberation is what an engineer does when the
+  // wash threatens the words. How much depends on how much wash there is, and
+  // this was a flat figure regardless — so the arena, dome and stadium, whose
+  // reverberation already sits 7 dB below the direct sound at the mix position,
+  // were having a vocal ducked out of a room that was barely there.
+  const rev = reverberantRatio({
+    ...roomAbsorption(venueId),
+    distance: listeningDistance(venueId),
+    Q: DIRECTIVITY_Q[venueId] ?? 2,
+  });
+
   return {
     lf: -subControl,
     mud: -2.5,
     hf: -(4.5 + 3 * d),
+    vocal: -(1 + 2.5 * Math.min(1, rev)),
   };
 }
+
+// Where the venue's low end stops — see SYSTEM_LF_HZ.
+export const systemLowCut = (venueId) => SYSTEM_LF_HZ[venueId] ?? 30;
 
 export function airTiltFor(venueId) {
   const d = listeningDistance(venueId);
@@ -173,13 +200,12 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {} })
   n.trim = ctx.createGain();
   n.trim.gain.value = dbToGain(INPUT_TRIM_DB);
 
-  // A real rig reproduces almost nothing below the sub array's tuning, and the
-  // system processor high-passes the feed to protect drivers. 25 Hz rather than
-  // 30: in-ears do reproduce that octave, and both an orchestra and a stadium
-  // sub array genuinely have content there.
+  // A real rig reproduces almost nothing below its own tuning, and the system
+  // processor high-passes the feed to protect drivers. Per venue: see
+  // SYSTEM_LF_HZ for why a club and a stadium cannot stop in the same place.
   n.subCut = ctx.createBiquadFilter();
   n.subCut.type = 'highpass';
-  n.subCut.frequency.value = 25;
+  n.subCut.frequency.value = systemLowCut(venue.id);
   n.subCut.Q.value = 0.7;
 
   n.in = ctx.createGain();
@@ -343,7 +369,7 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {} })
   n.sendVocalDip.type = 'peaking';
   n.sendVocalDip.frequency.value = 1400;
   n.sendVocalDip.Q.value = 0.7;     // roughly 700 Hz – 2.8 kHz
-  n.sendVocalDip.gain.value = -3.5;
+  // set per venue in applyVenue
 
   n.mixOut.connect(n.sendSplit);
   n.sendSplit.connect(n.sendMidL, 0); n.sendSplit.connect(n.sendMidR, 1);
@@ -507,6 +533,8 @@ export function applyVenue(ctx, n, venue, { fadeIn = VENUE_FADE_IN, fadeOut = VE
   const send = reverbSendTilt(venue.id);
   ramp(n.sendLF.gain, send.lf);
   ramp(n.sendMud.gain, send.mud);
+  ramp(n.sendVocalDip.gain, send.vocal);
+  ramp(n.subCut.frequency, systemLowCut(venue.id));
   ramp(n.sendHF.gain, send.hf);
 
   const pa = venue.pa || {};
