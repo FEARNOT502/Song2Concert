@@ -430,15 +430,67 @@ function synthesize({ venueId, sampleRate, seed }) {
   void earlyEnergy;
   const lateGain = lateEnergy > 0 ? Math.sqrt(wantLate / lateEnergy) : 0;
 
-  const fadeSamp = Math.floor(length * 0.08);
-  const out = [];
+  const summed = [];
   for (let c = 0; c < 4; c++) {
     const buf = channels[c].buf;
     const late = lates[c];
     for (let i = 0; i < length; i++) buf[i] += late[i] * lateGain;
+    summed.push(buf);
+  }
+
+  // ── trim the tail where it stops being audible ─────────────────────────────
+  //
+  // The length used to come from the reverberation time — the longest band, plus
+  // a margin — which is how long the room RINGS, not how long any of it can be
+  // heard. Those are different by a wide margin, because the slowest band is
+  // also a small share of the total energy: every venue here has 99.99 % of its
+  // response inside half of the buffer it was given.
+  //
+  // This matters because the convolver is the single most expensive node in the
+  // graph and its cost is proportional to this number, four times over — the
+  // response has four channels. A phone rendering a five-second convolution on a
+  // small core, plus the worklets, plus a WebGL scene, is where the underruns
+  // come from, and they are heard rather than measured.
+  //
+  // So the cut is made on the MEASURED envelope rather than on a formula: find
+  // where the response has fallen 60 dB below its own loudest fiftieth of a
+  // second and stop shortly after. It is 60 dB under a tail that already sits
+  // well below the direct sound, so it is 70–80 dB under the music. Measured
+  // afterwards, the reverberation times, early decay and clarity do not move.
+  const block = Math.max(1, Math.floor(sampleRate * 0.02));
+  let envPeak = 0;
+  let lastAudible = 0;
+  for (let i = 0; i + block <= length; i += block) {
+    let e = 0;
+    for (let c = 0; c < 4; c++) {
+      const buf = summed[c];
+      for (let k = i; k < i + block; k++) e += buf[k] * buf[k];
+    }
+    if (e > envPeak) envPeak = e;
+  }
+  const floor = envPeak * 1e-6;    // −60 dB in energy
+  for (let i = 0; i + block <= length; i += block) {
+    let e = 0;
+    for (let c = 0; c < 4; c++) {
+      const buf = summed[c];
+      for (let k = i; k < i + block; k++) e += buf[k] * buf[k];
+    }
+    if (e > floor) lastAudible = i + block;
+  }
+  // Never below the mixing time plus a little, so a short room keeps a tail at
+  // all, and never longer than what was synthesised.
+  const trimmed = Math.min(length, Math.max(
+    Math.floor((tMix + 0.1) * sampleRate),
+    lastAudible + Math.floor(sampleRate * 0.08),
+  ));
+
+  const fadeSamp = Math.floor(trimmed * 0.08);
+  const out = [];
+  for (let c = 0; c < 4; c++) {
+    const buf = summed[c].subarray(0, trimmed);
     // end in silence rather than a truncation step
     for (let i = 0; i < fadeSamp; i++) {
-      const idx = length - fadeSamp + i;
+      const idx = trimmed - fadeSamp + i;
       buf[idx] *= 0.5 + 0.5 * Math.cos((Math.PI * i) / fadeSamp);
     }
     out.push(buf);
@@ -447,8 +499,8 @@ function synthesize({ venueId, sampleRate, seed }) {
   return {
     channels: out,
     sampleRate,
-    length,
-    metrics: { rts, tMix, gap, targetRev, seconds },
+    length: trimmed,
+    metrics: { rts, tMix, gap, targetRev, seconds: trimmed / sampleRate, synthesized: seconds },
   };
 }
 

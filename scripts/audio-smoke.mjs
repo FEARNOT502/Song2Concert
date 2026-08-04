@@ -71,18 +71,22 @@ const life = await page.evaluate(async () => {
   };
   const r = {};
 
+  // Leaving the tab does not stop the music. Suspending the context while hidden
+  // was tried and does cut the load, but a player that goes quiet when you look
+  // at something else is a worse thing to be than one that occasionally
+  // glitches; the load is dealt with by costing less instead.
   setVisibility('hidden');
   await new Promise((res) => setTimeout(res, 300));
-  r.suspendsWhenHidden = engine.ctx.state === 'suspended';
-  const frozenAt = engine.ctx.currentTime;
+  r.keepsRunningWhileHidden = engine.ctx.state === 'running';
+  r.keepsPlayingWhileHidden = engine._bufPlaying;
+  const markAt = engine.ctx.currentTime;
   await new Promise((res) => setTimeout(res, 400));
-  // The clock stopping with it is why no position bookkeeping is needed.
-  r.clockStopsWhileHidden = engine.ctx.currentTime - frozenAt < 0.05;
+  r.clockAdvancesWhileHidden = engine.ctx.currentTime - markAt > 0.1;
 
   setVisibility('visible');
   await new Promise((res) => setTimeout(res, 700));
-  r.resumesWhenVisible = engine.ctx.state === 'running';
-  r.stillPlayingAfterResume = engine._bufPlaying;
+  r.runningWhenVisible = engine.ctx.state === 'running';
+  r.stillPlayingAfterReturn = engine._bufPlaying;
 
   const c0 = engine.ctx.currentTime;
   const w0 = performance.now();

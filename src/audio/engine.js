@@ -58,7 +58,6 @@ export class ConcertEngine {
     this._volume = 0.85;        // 0..1
     this._worklets = {};
     this.ready = false;
-    this._parked = false;          // context suspended because the page is hidden
     this._detachLifecycle = null;
     // Fired once when a track reaches its NATURAL end, from real audio events
     // rather than the UI's animation clock, so auto-advance keeps working while
@@ -157,30 +156,32 @@ export class ConcertEngine {
   //   into the back/forward cache to be restored. So switching tabs, or opening
   //   the file picker, closed the AudioContext out from under a running graph.
   //
-  //   NOTHING SUSPENDED THE RENDERING. A backgrounded tab that keeps an
-  //   AudioContext running keeps a convolver and six worklets running, on a CPU
-  //   the phone has just moved to its small cores, with no output device to pace
-  //   it. Suspending while hidden is the fix and it costs nothing: the context
-  //   clock stops with it, so an AudioBufferSourceNode resumes exactly where it
-  //   was without any position bookkeeping.
+  //   NOTHING CHECKED THE CONTEXT ON THE WAY BACK. If the output device is
+  //   reinitialised underneath a context — a route change, a sample-rate change —
+  //   the context is left rendering against a sink that does not match it, and
+  //   no amount of correct application code fixes that from the inside. It IS
+  //   measurable, though: the context clock stops tracking the wall clock, and
+  //   the ratio between them is exactly how fast playback sounds. When it
+  //   diverges the context is rebuilt at the same position.
   //
-  // The clock check afterwards is the backstop for what neither of those covers.
-  // If the output device is reinitialised underneath a context — a route change,
-  // a sample-rate change — the context can be left rendering against a sink that
-  // does not match it, and no amount of correct application code fixes that from
-  // the inside. It IS measurable, though: the context clock stops tracking the
-  // wall clock. When it does, the context is rebuilt.
+  // PLAYBACK IS NOT PAUSED WHILE HIDDEN. Suspending the context on the way out
+  // was tried, and it does reduce the load: a convolver and six worklets stop
+  // rendering on a CPU the phone has just moved to its small cores. But leaving
+  // a tab is not asking for the music to stop, and a player that goes quiet when
+  // you look at something else is a worse thing to be than one that occasionally
+  // glitches. The load is dealt with by costing less, not by doing nothing — see
+  // the impulse response trimming in impulse.js and the merged transient stage.
   attachPageLifecycle() {
     if (typeof document === 'undefined') return () => {};
     const onVisibility = () => {
       if (!this.ctx || this.ctx.state === 'closed') return;
-      if (document.visibilityState === 'hidden') {
-        this._parked = this.ctx.state === 'running';
-        if (this._parked) this.ctx.suspend().catch(() => {});
-      } else if (this._parked) {
-        this._parked = false;
-        this.ctx.resume().then(() => this._verifyClock()).catch(() => {});
-      }
+      if (document.visibilityState !== 'visible') return;
+      // Some browsers suspend a backgrounded context on their own account even
+      // though we did not ask them to. Undo that, then check the clock.
+      const resumed = this.ctx.state === 'suspended'
+        ? this.ctx.resume().catch(() => {})
+        : Promise.resolve();
+      resumed.then(() => this._verifyClock());
     };
     document.addEventListener('visibilitychange', onVisibility);
     this._detachLifecycle = () => document.removeEventListener('visibilitychange', onVisibility);

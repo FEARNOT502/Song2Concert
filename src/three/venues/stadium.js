@@ -62,10 +62,13 @@ export default function buildStadium(u) {
   root.add(pitch);
 
   // ── the roof: a plate over the seating with the pitch cut out of it ──
+  // The front edge reaches −82 rather than −66: the third tier steps back 52 m
+  // from the pitch boundary, and a roof that stopped where the two-tier bowl
+  // ended would have left the back of the upper deck standing out in the open.
   const plate = new THREE.Shape();
-  plate.moveTo(-f.width / 2 - 14, -66); plate.lineTo(f.width / 2 + 14, -66);
+  plate.moveTo(-f.width / 2 - 14, -82); plate.lineTo(f.width / 2 + 14, -82);
   plate.lineTo(f.width / 2 + 14, f.depth - 30); plate.lineTo(-f.width / 2 - 14, f.depth - 30);
-  plate.lineTo(-f.width / 2 - 14, -66);
+  plate.lineTo(-f.width / 2 - 14, -82);
   const hole = new THREE.Path();
   hole.moveTo(-BOWL_X, BOWL_Z0); hole.lineTo(BOWL_X, BOWL_Z0);
   hole.lineTo(BOWL_X, BOWL_Z1); hole.lineTo(-BOWL_X, BOWL_Z1); hole.lineTo(-BOWL_X, BOWL_Z0);
@@ -186,23 +189,40 @@ export default function buildStadium(u) {
   people.push(...standingCrowd({ x0: -66, x1: 66, zNear: f.eye.z + CLEAR, zFar: 150, count: 1400, seed: 181 }));
 
   const near = (x, z) => Math.hypot(x - f.eye.x, z - f.eye.z);
+  // THREE TIERS, not two. Wembley is a three-tier bowl — a deep lower rake, a
+  // shallow middle deck of club seating, and an upper tier that carries most of
+  // the ninety thousand — and drawing it with two made the biggest venue here
+  // read as no taller than the arena. The arena and the dome keep two, which is
+  // what those buildings have.
+  //
+  // The tiers stack: each starts above the last and steps back by its predecessor's
+  // full depth, so the face between them is the concourse wall. The top row of
+  // the upper tier lands at about 36 m against a roof at 48, which leaves the
+  // headroom a stadium roof actually has over its back row.
   const ring = bowl({
     halfWidth: BOWL_X, zFront: BOWL_Z0, zBack: BOWL_Z1,
     tiers: [
       { rows: 18, rise: 0.42, riseFar: 0.50, run: 0.92, yBase: 0.6, inset0: 0 },
-      { rows: 20, rise: 0.56, riseFar: 0.70, run: 0.96, yBase: 12.3, inset0: 19.0 },
+      { rows: 13, rise: 0.52, riseFar: 0.62, run: 0.94, yBase: 11.8, inset0: 18.6 },
+      { rows: 20, rise: 0.60, riseFar: 0.74, run: 0.98, yBase: 22.6, inset0: 33.0 },
     ],
     seatSpacing: 0.56, headHeight: 1.25, seed: 600, blockLength: 14,
     crowdFrom: 14,
     density: () => 1,
-    maxPeople: 6500, emissive: 0x131120,
+    // Raised with the seat count so the house stays as full as it looked: the
+    // crowd is thinned to this cap, so leaving it where it was would have spread
+    // the same people over half again as many rows.
+    maxPeople: 8500, emissive: 0x131120,
   });
   root.add(ring.mesh);
   root.add(ring.blocks);
   root.add(seatBank(thin(ring.treads.filter((s) => near(s.x, s.z) < 48), 2000)));
 
+  // A lit fascia on each of the two lower tiers. In a room this size the ribbons
+  // are what tell you there is a stand out there at all, and with three tiers
+  // they are also what tells you how many there are.
   const ribbons = [];
-  for (const { inset, yTop } of ring.fascias.slice(0, 1)) {
+  for (const { inset, yTop } of ring.fascias.slice(0, 2)) {
     const r = ribbonRing({
       halfWidth: BOWL_X + inset, zFront: BOWL_Z0 - inset, zBack: BOWL_Z1 + inset,
       y: yTop + 1.9, height: 0.95, thickness: 0.32,

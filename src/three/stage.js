@@ -140,16 +140,36 @@ export function createStage(canvas, { quality = 'high' } = {}) {
     u.uScale.value = (size.h * pr * 0.5) / Math.tan(camera.fov * 0.5 * DEG);
   }
 
-  // If the machine cannot hold 60, render every other frame rather than letting
-  // every frame run long. A steady 30 looks like a choice; a wobbling 45 looks
-  // like a fault, and the frames it drops come out of the audio thread.
+  // ── how often to draw ──────────────────────────────────────────────────────
+  //
+  // A PHONE IS CAPPED AT 30. Nothing in this scene moves fast — lights swing over
+  // seconds, the screen pulses with the music — so the second thirty frames buy
+  // almost nothing to look at, and they are drawn on the same small cores the
+  // audio thread is trying to meet a deadline on. Halving the work here is the
+  // largest single saving available on mobile, and it is larger than anything
+  // left in the audio graph.
+  //
+  // The gate is on ELAPSED TIME rather than on frame parity. Parity assumes the
+  // panel runs at 60: on a 120 Hz phone — which is most of them now — skipping
+  // every other frame still leaves 60, and the saving never happened. On a panel
+  // already struggling at 40 it gives 20.
+  //
+  // If a rendered frame still costs too much, the interval doubles. A steady 30
+  // looks like a choice; a wobbling 45 looks like a fault, and the frames it
+  // drops come out of the audio thread.
+  const targetMs = 1000 / (quality === 'low' ? 30 : 60);
   let heavy = false;
-  let parity = 0;
+  let lastDrawn = -1e9;
+  let drawn = 0;
 
-  function frame() {
+  function frame(now) {
     raf = requestAnimationFrame(frame);
     if (!venue || document.hidden) return;
-    if (heavy && (parity ^= 1)) return;
+    // A millisecond of slack, so a frame arriving a hair early is not held back
+    // to the one after it — which would halve the rate rather than cap it.
+    if (now - lastDrawn < (heavy ? targetMs * 2 : targetMs) - 1) return;
+    lastDrawn = now;
+    drawn++;
 
     const started = performance.now();
     const t = clock.getElapsedTime();
@@ -159,10 +179,11 @@ export function createStage(canvas, { quality = 'high' } = {}) {
     venue.update(t, p);
     composer.render();
 
-    // rolling average of how long a rendered frame costs us
+    // rolling average of how long a rendered frame costs us, against the
+    // interval we are actually trying to hold
     frameBudget += ((performance.now() - started) - frameBudget) * 0.05;
-    if (!heavy && frameBudget > 13) heavy = true;
-    else if (heavy && frameBudget < 7) heavy = false;
+    if (!heavy && frameBudget > targetMs * 0.78) heavy = true;
+    else if (heavy && frameBudget < targetMs * 0.42) heavy = false;
   }
 
   // ── plumbing ───────────────────────────────────────────────────────────────
@@ -186,6 +207,9 @@ export function createStage(canvas, { quality = 'high' } = {}) {
     resize,
     onLayout(fn) { onLayout = fn; if (layoutRect) fn({ ...layoutRect }); },
     start() { if (!running) { running = true; clock.start(); raf = requestAnimationFrame(frame); } },
+    // Frames actually drawn, for the frame-rate check in scripts/audio-smoke.mjs.
+    // Nothing in the app reads it.
+    stats: () => ({ drawn, heavy, frameMs: +frameBudget.toFixed(2) }),
     dispose() {
       running = false;
       cancelAnimationFrame(raf);
