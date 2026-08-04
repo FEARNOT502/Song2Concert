@@ -210,10 +210,22 @@ function renderLate(rts, length, sampleRate, rng, fadeIn, fadeFull) {
     sum += (x - lower) * env[nBands - 1];
     for (let b = 0; b < nBands; b++) env[b] *= step[b];
 
-    // Reverberant build-up starts with the first reflection, not at t = 0.
-    // Filling the initial gap would erase the sense of distance that the gap is
-    // the entire cue for — most of all in the big rooms, where it is tens of
-    // milliseconds long.
+    // The diffuse field starts when the room first returns ANYTHING — including
+    // energy scattered off the crowd a couple of metres away — and rises over a
+    // few tens of milliseconds.
+    //
+    // It used to start at the first SPECULAR BOUNDARY reflection instead, which
+    // is a different and much later event: 44 ms in the arena, 84 in the dome,
+    // 112 at Wembley. That left the reverberation of every transient literally
+    // absent for a tenth of a second and then swelling in, which is not what a
+    // room does and is unmistakable on a sparse repeating figure — an EDM intro
+    // at 128 BPM puts a sixteenth note at 117 ms, so the reverb of each kick
+    // arrived on the offbeat and read as a delay effect fighting the groove.
+    //
+    // The reasoning behind the old behaviour was that the gap carries the sense
+    // of distance, and it does — but the SPECULAR reflections carry it, and they
+    // still arrive when the geometry says. The diffuse field is fed by scattered
+    // energy, and scattering starts at the first surface the sound reaches.
     let ramp = 1;
     if (i < inStart) ramp = 0;
     else if (i < inEnd) ramp = 0.5 - 0.5 * Math.cos((Math.PI * (i - inStart)) / (inEnd - inStart));
@@ -285,6 +297,10 @@ function synthesize({ venueId, sampleRate, seed }) {
     const { earL, earR } = renderEarly(refl, erLen, sampleRate);
 
     const gap = Math.max(0.004, itdg(refl));
+    // When the room first returns ANYTHING, scattered energy included. This is
+    // not the same as the first boundary reflection, and conflating the two was
+    // a mistake — see renderLate().
+    const onset = refl.length ? Math.max(0.002, refl[0].time) : 0.004;
     for (const ear of [earL, earR]) {
       // taper the enumerated field out as the statistical one takes over
       const from = Math.floor(erLen * 0.75);
@@ -296,7 +312,7 @@ function synthesize({ venueId, sampleRate, seed }) {
     for (const ear of [earL, earR]) {
       const full = new Float32Array(length);
       full.set(ear);
-      channels.push({ buf: full, gap });
+      channels.push({ buf: full, gap, onset });
     }
   }
 
@@ -309,11 +325,20 @@ function synthesize({ venueId, sampleRate, seed }) {
     Q: DIRECTIVITY_Q[venueId] ?? 2,
   });
   const gap = channels[0].gap;
-  const lateFull = gap + tMix;
+  // The diffuse field begins when the room first returns anything at all, and
+  // rises over a few tens of milliseconds — NOT at the first boundary
+  // reflection. See renderLate() for what tying it to the latter did.
+  // Only the START moves. The build-up still COMPLETES where it did, over the
+  // room's mixing time, which is what keeps a big room feeling big and keeps the
+  // tail at the right level: total reverberant energy is fixed, so front-loading
+  // the whole rise would have to make the tail quieter, and it did — the hall's
+  // early decay time fell to 0.58 of its reverberation time when the rise was
+  // shortened as well as started earlier.
+  const onset = channels[0].onset;
   const lates = [];
   let lateEnergy = 0;
   for (let c = 0; c < 4; c++) {
-    const late = renderLate(rts, length, sampleRate, mulberry32(seed * 2654435761 + c * 40503 + 7), gap, lateFull);
+    const late = renderLate(rts, length, sampleRate, mulberry32(seed * 2654435761 + c * 40503 + 7), onset, gap + tMix);
     lates.push(late);
     lateEnergy += energyOf(late);
   }

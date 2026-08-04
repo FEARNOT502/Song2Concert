@@ -251,6 +251,39 @@ async function run() {
     });
   }
 
+  // How long after a hit the room starts answering. This is the difference
+  // between reverberation and a delay effect: if the wet path is silent for a
+  // tenth of a second and then swells, a sparse repeating figure hears it as an
+  // echo landing off the grid. An EDM intro at 128 BPM puts a sixteenth note at
+  // 117 ms, which is roughly where Wembley's first boundary reflection arrives —
+  // so tying the diffuse field's onset to that reflection, as this once did, put
+  // the reverb of every kick squarely on the offbeat.
+  //
+  // Reported as the time by which the wet path has delivered 5 % of its first
+  // 300 ms of energy. It has to be small enough that no musical subdivision can
+  // line up with it.
+  for (const venue of VENUES) {
+    const sr = 48000;
+    const ctx = new OfflineAudioContext(2, sr * 2, sr);
+    try { await ctx.audioWorklet.addModule('/Song2Concert/limiter-processor.js'); } catch (e) { /* noop */ }
+    const g = buildGraph(ctx, { venue, volume: 1, wetDb: wetTrimDb(venue.position.wet, venue.position.wet), worklets: { limiter: true } });
+    g.wet.connect(ctx.destination);
+    const buf = ctx.createBuffer(2, 128, sr);
+    buf.getChannelData(0)[0] = 0.05; buf.getChannelData(1)[0] = 0.05;
+    const src = ctx.createBufferSource(); src.buffer = buf; src.connect(g.trim); src.start(0);
+    const out = await ctx.startRendering();
+    const L = out.getChannelData(0), R = out.getChannelData(1);
+    const win = Math.floor(sr * 0.3);
+    let total = 0;
+    for (let i = 0; i < win; i++) total += L[i] * L[i] + R[i] * R[i];
+    let acc = 0, onset = 0;
+    for (let i = 0; i < win; i++) {
+      acc += L[i] * L[i] + R[i] * R[i];
+      if (acc >= total * 0.05) { onset = (i / sr) * 1000; break; }
+    }
+    log({ test: 'room answers promptly', venue: venue.id, reverbOnset_ms: +onset.toFixed(1) });
+  }
+
   // Two things the reverb send has to do at once: take room off the VOICE
   // without taking it off the BAND. Centred and wide impulses are measured
   // separately — the centre should gain clarity, the sides should be left alone.
