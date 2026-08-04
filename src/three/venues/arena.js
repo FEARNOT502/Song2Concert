@@ -10,8 +10,8 @@
 import * as THREE from 'three';
 import { ACCENT, COOL, MAGENTA, crowdField, lambert, makeScreen, prng, sparkField } from '../kit.js';
 import {
-  fixture, footlights, lineArray, orientBlock, performer, rakedBlock, ribbon,
-  roomShell, speakerStack, stageDeck, standingCrowd, truss,
+  ampStack, bowl, fixture, footlights, lineArray, monitorWedge, performer,
+  ribbonRing, roomShell, seatBank, thin, speakerStack, stageDeck, standingCrowd, truss,
 } from '../props.js';
 import { frame } from './frame.js';
 
@@ -19,15 +19,22 @@ export default function buildArena(u) {
   const f = frame('arena');
   const root = new THREE.Group();
   const DECK = 2.2, RIG_Y = 19, CLEAR = 9;
+  // The bowl's inner edge. It runs behind the stage as well, so the building is
+  // drawn longer than the acoustic box, which stops at the stage-end wall — the
+  // block behind the stage is part of the arena, just not part of the room the
+  // reverb is computed in.
+  const BOWL_X = 32, BOWL_Z0 = -8, BOWL_Z1 = 64, BACKSTAGE = 30;
 
-  root.add(roomShell({
-    width: f.width, depth: f.depth, height: f.height,
+  const shell = roomShell({
+    width: f.width, depth: f.depth + BACKSTAGE, height: f.height,
     faces: {
       right: lambert(0x0d0c12), left: lambert(0x0d0c12),
       ceiling: lambert(0x0a0910), floor: lambert(0x0c0b10),
       back: lambert(0x0b0a10), stageEnd: lambert(0x070610),
     },
-  }));
+  });
+  shell.position.z -= BACKSTAGE;
+  root.add(shell);
 
   // roof structure — girders across the ceiling give the volume a scale
   for (let i = 0; i < 7; i++) {
@@ -37,6 +44,9 @@ export default function buildArena(u) {
   }
 
   // ── stage ──
+  const mask = new THREE.Mesh(new THREE.BoxGeometry(46, 13, 0.6), lambert(0x0a0910));
+  mask.position.set(0, 6.5, -2.4);
+  root.add(mask);
   root.add(stageDeck({ width: 30, depth: 16, height: DECK, z: 7 }));
   root.add(footlights({ width: 28, count: 34, y: DECK + 0.06, z: 15.05 }));
 
@@ -65,6 +75,18 @@ export default function buildArena(u) {
     const p = performer({ height: 1.78 });
     p.position.set(x, DECK, z);
     root.add(p);
+  }
+  // backline and wedges — the floor of a stage this size is never empty
+  for (const [x, z] of [[-10.5, 5.2], [10.5, 5.2]]) {
+    const amp = ampStack({ count: 2 });
+    amp.position.set(x, DECK, z);
+    root.add(amp);
+  }
+  for (let i = 0; i < 7; i++) {
+    const wedge = monitorWedge();
+    wedge.position.set(-12 + i * 4, DECK, 13.4);
+    wedge.rotation.y = Math.PI;
+    root.add(wedge);
   }
 
   // ── rig ──
@@ -100,44 +122,35 @@ export default function buildArena(u) {
   }
 
   // ── the bowl ──
+  // One ring, first row to last, all the way round including behind the stage.
+  // The seats behind the stage are real and empty — that block is sold off, and
+  // its treated face is the `arenaTreated` surface the room model puts there.
   const people = [];
-  const ribbons = [];
   people.push(...standingCrowd({ x0: -32, x1: 32, zNear: 16, zFar: f.eye.z - CLEAR, count: 1500, seed: 3 }));
   people.push(...standingCrowd({ x0: -32, x1: 32, zNear: f.eye.z + CLEAR, zFar: 70, count: 700, seed: 8 }));
 
-  for (const side of [-1, 1]) {
-    // lower side stand: raked away from the floor, so it is built along z and
-    // then turned a quarter turn
-    const lower = orientBlock(rakedBlock({
-      x0: -42, x1: 32, zNear: 0, zFar: 13, rows: 16,
-      riseFirst: 0.6, rise: 0.72, seatSpacing: 0.55, headHeight: 1.25, seed: 200 + side, fill: 0.9, emissive: 0x2e2742,
-    }), { rotY: side * Math.PI / 2, x: side * 34, z: 38 });
-    root.add(lower.mesh);
-    people.push(...lower.people);
-    const fascia = ribbon({ length: 74, height: 0.7 });
-    fascia.position.set(side * 33.8, 2.2, 33);
-    root.add(fascia);
-    ribbons.push(fascia);
+  const near = (x, z) => Math.hypot(x - f.eye.x, z - f.eye.z);
+  const ring = bowl({
+    halfWidth: BOWL_X, zFront: BOWL_Z0, zBack: BOWL_Z1, rows: 24,
+    rise: 0.62, riseFar: 0.9, run: 0.8, yBase: 0.5,
+    seatSpacing: 0.56, headHeight: 1.25, seed: 200,
+    crowdFrom: 6,                        // nobody sits behind the stage
+    density: (x, y, z) => (near(x, z) < 45 ? 0.92 : near(x, z) < 90 ? 0.6 : 0.3),
+    maxPeople: 4200, emissive: 0x16131f,
+  });
+  root.add(ring.mesh);
+  people.push(...ring.people);
+  // the rows close enough that a bare step would read as wrong get real seats
+  root.add(seatBank(thin(ring.treads.filter((s) => near(s.x, s.z) < 62), 9000)));
 
-    const upper = orientBlock(rakedBlock({
-      x0: -44, x1: 34, zNear: 0, zFar: 15, rows: 16,
-      riseFirst: 0.6, rise: 0.8, seatSpacing: 0.55, headHeight: 1.25, yBase: 14, seed: 260 + side, fill: 0.88, emissive: 0x2e2742,
-    }), { rotY: side * Math.PI / 2, x: side * 40, z: 38 });
-    root.add(upper.mesh);
-    people.push(...upper.people);
-  }
-
-  const backFascia = ribbon({ length: 80, height: 0.6, along: 'x' });
-  backFascia.position.set(0, 1.0, 71.6);
-  root.add(backFascia);
-  ribbons.push(backFascia);
-  for (const [zNear, yBase, rows, seed] of [[72, 0, 16, 300], [76, 14, 16, 330]]) {
-    const back = rakedBlock({
-      x0: -40, x1: 40, zNear, zFar: zNear + 14, rows,
-      riseFirst: 0.6, rise: 0.78, seatSpacing: 0.55, headHeight: 1.25, yBase, seed, fill: 0.88, emissive: 0x2e2742,
+  const ribbons = [];
+  for (const [inset, y] of [[0.5, 1.9]]) {
+    const r = ribbonRing({
+      halfWidth: BOWL_X + inset, zFront: BOWL_Z0 - inset, zBack: BOWL_Z1 + inset,
+      y, height: 0.26, thickness: 0.2,
     });
-    root.add(back.mesh);
-    people.push(...back.people);
+    root.add(r);
+    ribbons.push(r);
   }
 
   root.add(crowdField(people, { color: 0x0d0b18, react: 1, sway: 0.11 }, u));
@@ -147,7 +160,7 @@ export default function buildArena(u) {
   const phones = Array.from({ length: 900 }).map(() => {
     const inStand = rnd() < 0.62;
     return inStand
-      ? { x: (rnd() < 0.5 ? -1 : 1) * (34 + rnd() * 10), y: 2 + rnd() * 16, z: 12 + rnd() * 56, size: 0.11, color: 0xfff0c8, phase: rnd() * 6.283 }
+      ? { x: (rnd() < 0.5 ? -1 : 1) * (33 + rnd() * 16), y: 2 + rnd() * 15, z: 8 + rnd() * 64, size: 0.11, color: 0xfff0c8, phase: rnd() * 6.283 }
       : { x: (rnd() - 0.5) * 62, y: 1.5 + rnd() * 0.5, z: 16 + rnd() * 48, size: 0.1, color: 0xfff0c8, phase: rnd() * 6.283 };
   });
   root.add(sparkField(phones.filter((p) => Math.abs(p.z - f.eye.z) > CLEAR), { react: 1.2, base: 0.18, twinkle: 4.2, maxPx: 20 }, u));
@@ -159,10 +172,10 @@ export default function buildArena(u) {
   root.add(sparkField(haze, { react: 0.5, base: 0.05, twinkle: 0.4, maxPx: 40 }, u));
 
   root.add(new THREE.AmbientLight(0x1c1a28, 1.0));
-  const key = new THREE.PointLight(ACCENT, 900, 90, 2);
+  const key = new THREE.PointLight(ACCENT, 900, 60, 2);
   key.position.set(0, 14, 12);
   root.add(key);
-  const rear = new THREE.PointLight(MAGENTA, 500, 120, 2);
+  const rear = new THREE.PointLight(MAGENTA, 500, 80, 2);
   rear.position.set(0, 18, 40);
   root.add(rear);
   // grazes the top of the floor crowd so the heads read as heads
@@ -181,7 +194,7 @@ export default function buildArena(u) {
       screen.userData.update(pulse);
       wings.forEach((w) => w.userData.update(pulse));
       key.intensity = 500 + pulse * 1400;
-      ribbons.forEach((r) => r.material.color.setHex(ACCENT).multiplyScalar(0.3 + pulse * 0.8));
+      ribbons.forEach((r) => r.material.color.setHex(ACCENT).multiplyScalar(0.10 + pulse * 0.3));
       rear.intensity = 260 + pulse * 700;
       heads.forEach(({ fx, i }) => {
         // the rig dances: each head on its own phase, swinging harder as the

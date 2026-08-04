@@ -8,8 +8,7 @@
 //
 // This component owns very little: a canvas, a stage (src/three/stage.js), and
 // the HTML overlay carrying the album art and title. The overlay's box is
-// projected from the 3D screen inside the room, so the art sits on that screen
-// and rides with the camera.
+// projected from the 3D screen inside the room, so the art sits on that screen.
 
 import { useEffect, useRef, useState } from 'react';
 import StageArt from './StageArt.jsx';
@@ -18,7 +17,6 @@ import { createStage } from '../three/stage.js';
 export default function Scene({ venueId, coverId, coverSrc, pulse, title, artist }) {
   const hostRef = useRef(null);
   const canvasRef = useRef(null);
-  const overlayRef = useRef(null);
   const stageRef = useRef(null);
   const [rect, setRect] = useState(null);
   const [host, setHost] = useState({ w: 0, h: 0 });
@@ -34,7 +32,6 @@ export default function Scene({ venueId, coverId, coverSrc, pulse, title, artist
 
     if (stage) {
       stageRef.current = stage;
-      stage.attachOverlay(overlayRef.current);
       stage.onLayout(setRect);
     } else {
       setOk(false);
@@ -70,7 +67,6 @@ export default function Scene({ venueId, coverId, coverSrc, pulse, title, artist
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full block" style={{ display: ok ? 'block' : 'none' }} />
       <StageArt
         rect={box}
-        overlayRef={overlayRef}
         coverId={coverId}
         coverSrc={coverSrc}
         pulse={pulse}

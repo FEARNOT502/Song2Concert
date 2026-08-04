@@ -341,15 +341,6 @@ export default function App() {
         artist={upload ? upload.artist : null}
       />
 
-      {/* hairline grid overlay — "instrument" signal */}
-      <div
-        className="absolute inset-0 z-[1] pointer-events-none opacity-[0.04]"
-        style={{
-          backgroundImage: 'linear-gradient(#fff 1px,transparent 1px),linear-gradient(90deg,#fff 1px,transparent 1px)',
-          backgroundSize: '80px 80px',
-        }}
-      />
-
       <TopBar
         file={displayFile}
         venue={venue}

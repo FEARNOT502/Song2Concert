@@ -4,14 +4,15 @@
 // and builds the new one; nothing else is recreated. The React layer talks to it
 // through four calls: setVenue, setPulse, resize and attachOverlay.
 //
-// The overlay is the interesting one. The album art and title are still DOM —
-// keeping them as HTML is what keeps the type crisp at any size and lets the
-// existing <Cover> components render unchanged — but they have to sit exactly on
-// the screen inside the 3D room. So every frame the stage projects that screen's
-// four corners through the camera and writes the difference onto the overlay as a
-// transform. React owns the overlay's LAYOUT (recomputed on venue change and
-// resize); the render loop owns its MOTION. That split means the camera can drift
-// and the art rides along with it without a re-render per frame.
+// The album art and title are still DOM — keeping them as HTML is what keeps the
+// type crisp at any size and lets the existing <Cover> components render
+// unchanged — but they have to sit exactly on the screen inside the 3D room. So
+// on every venue change and every resize the stage projects that screen's four
+// corners through the camera and hands the rectangle to React, which lays the
+// overlay out on it.
+//
+// The camera does not move. It stands at the seat and stays there, which is what
+// a seat does; the room in front of it is what moves.
 
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -53,16 +54,11 @@ export function createStage(canvas, { quality = 'high' } = {}) {
 
   let venue = null;
   let size = { w: 1, h: 1 };
-  let layoutRect = null;      // what React laid the overlay out against
-  let overlayEl = null;
   let pulse = 0;
   let raf = 0;
   let running = false;
   let onLayout = null;
   const clock = new THREE.Clock();
-  const base = { position: new THREE.Vector3(), target: new THREE.Vector3() };
-  const drift = new THREE.Vector3();
-  const forward = new THREE.Vector3();
   const corner = new THREE.Vector3();
 
   // ── venue ──────────────────────────────────────────────────────────────────
@@ -77,11 +73,9 @@ export function createStage(canvas, { quality = 'high' } = {}) {
     scene.add(venue.root);
     scene.background = venue.background;
     scene.fog = venue.fog;
-    base.position.copy(venue.camera.position);
-    base.target.copy(venue.camera.target);
     camera.fov = venue.camera.fov;
-    camera.position.copy(base.position);
-    camera.lookAt(base.target);
+    camera.position.copy(venue.camera.position);
+    camera.lookAt(venue.camera.target);
     camera.updateProjectionMatrix();
     if (bloom && venue.bloom) {
       bloom.strength = venue.bloom.strength;
@@ -122,25 +116,15 @@ export function createStage(canvas, { quality = 'high' } = {}) {
     return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
   }
 
-  // The rect at the camera's rest pose — what React lays the overlay out against.
+  // Where the overlay goes. Recomputed when the venue or the viewport changes,
+  // which is the only time it can move.
+  let layoutRect = null;
   function publishLayout() {
     if (!venue) return;
-    camera.position.copy(base.position);
-    camera.lookAt(base.target);
     camera.updateMatrixWorld(true);
     scene.updateMatrixWorld(true);
     layoutRect = projectScreen();
-    if (overlayEl) overlayEl.style.transform = 'translate(0px, 0px) scale(1)';
     if (onLayout && layoutRect) onLayout({ ...layoutRect });
-  }
-
-  function trackOverlay() {
-    if (!overlayEl || !layoutRect || !venue) return;
-    const r = projectScreen();
-    if (!r || !(r.w > 0)) return;
-    const s = r.w / layoutRect.w;
-    overlayEl.style.transform =
-      `translate(${(r.x - layoutRect.x).toFixed(2)}px, ${(r.y - layoutRect.y).toFixed(2)}px) scale(${s.toFixed(4)})`;
   }
 
   // ── frame ──────────────────────────────────────────────────────────────────
@@ -156,24 +140,8 @@ export function createStage(canvas, { quality = 'high' } = {}) {
     const t = clock.getElapsedTime();
     u.uTime.value = t;
     u.uPulse.value = pulse;
-
-    // The room breathes. Amplitude scales with how far away the stage is, so a
-    // club sways centimetres and a stadium sways half a metre — the same angular
-    // amount either way.
-    const amp = Math.min(0.7, Math.max(0.035, base.position.distanceTo(base.target) * 0.011));
-    drift.set(
-      (Math.sin(t * 0.21) * 0.6 + Math.sin(t * 0.13 + 1.1) * 0.4) * amp,
-      Math.sin(t * 0.17 + 1.3) * 0.5 * amp,
-      Math.sin(t * 0.11 + 2.1) * 0.6 * amp,
-    );
-    camera.position.copy(base.position).add(drift);
-    forward.copy(base.target).sub(base.position).normalize();
-    camera.position.addScaledVector(forward, pulse * amp * 1.6);
-    camera.lookAt(base.target);
-
     venue.update(t, pulse);
     composer.render();
-    trackOverlay();
   }
 
   // ── plumbing ───────────────────────────────────────────────────────────────
@@ -194,7 +162,6 @@ export function createStage(canvas, { quality = 'high' } = {}) {
     setVenue,
     setPulse: (p) => { pulse = p; },
     resize,
-    attachOverlay(el) { overlayEl = el; },
     onLayout(fn) { onLayout = fn; if (layoutRect) fn({ ...layoutRect }); },
     start() { if (!running) { running = true; clock.start(); raf = requestAnimationFrame(frame); } },
     dispose() {

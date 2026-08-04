@@ -4,8 +4,7 @@
 // the fictional covers are React components, uploaded art is an <img>, and type
 // rendered by the browser stays crisp at any size. What makes it read as part of
 // the room is that its box comes from the 3D screen — `stage.js` projects that
-// screen's corners and hands the rectangle back — and the render loop keeps it
-// glued there as the camera drifts.
+// screen's corners and hands the rectangle back.
 
 import { memo, useMemo } from 'react';
 import Cover from './Cover.jsx';
@@ -22,7 +21,7 @@ const Art = memo(function Art({ coverId, coverSrc, size, bezel }) {
   );
 });
 
-function StageArt({ rect, coverId, coverSrc, pulse, title, artist, overlayRef, bezel = true }) {
+function StageArt({ rect, coverId, coverSrc, pulse, title, artist, bezel = true }) {
   const box = rect || { x: 0, y: 0, w: 0, h: 0 };
   const metrics = useMemo(() => {
     const cover = Math.max(24, Math.round(Math.min(box.w * 0.60, box.h * 0.58)));
@@ -36,16 +35,13 @@ function StageArt({ rect, coverId, coverSrc, pulse, title, artist, overlayRef, b
 
   return (
     <div
-      ref={overlayRef}
       className="absolute z-10 flex flex-col items-center justify-center"
       style={{
         left: box.x, top: box.y, width: box.w, height: box.h,
-        transformOrigin: 'top left',
         pointerEvents: 'none',
         visibility: rect ? 'visible' : 'hidden',
         filter: `drop-shadow(0 0 ${28 + pulse * 30}px oklch(0.78 0.16 55 / ${0.26 + pulse * 0.16}))`,
         transition: 'filter 140ms',
-        willChange: 'transform',
       }}
     >
       <div

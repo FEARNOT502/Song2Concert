@@ -80,7 +80,10 @@ export const ledTexture = (repeat) => tileTexture('led', 32, (g, s) => {
   g.fillStyle = '#04030a';
   g.fillRect(0, 0, s, s);
   g.fillStyle = 'rgba(255,151,69,0.34)';
-  for (let y = 2; y < s; y += 4) for (let x = 2; x < s; x += 4) g.fillRect(x, y, 1.4, 1.4);
+  for (let y = 3; y < s - 1; y += 4) for (let x = 3; x < s - 1; x += 4) g.fillRect(x, y, 1.4, 1.4);
+  g.strokeStyle = 'rgba(150,140,160,0.16)';       // the seam between panels
+  g.lineWidth = 1;
+  g.strokeRect(0.5, 0.5, s - 1, s - 1);
 }, repeat);
 
 // Brick, for the club's side walls.
@@ -99,6 +102,37 @@ export const brickTexture = (repeat) => tileTexture('brick', 64, (g, s) => {
     }
   }
 }, repeat);
+
+// Bowl seating at one tile per metre. Paired with `boxUvInMetres` below it makes
+// a 90,000-seat rake read as seats from any distance and at any size of box,
+// which a 0..1-per-face UV cannot: the same texture on a 168 m run and on a 2 m
+// return would be stretched a hundred to one.
+export const bowlSeatTexture = () => tileTexture('bowlseat', 64, (g, s) => {
+  g.fillStyle = '#0b0a11';
+  g.fillRect(0, 0, s, s);
+  g.fillStyle = '#231e30';                       // one row of seatbacks per metre
+  g.fillRect(0, s * 0.34, s, s * 0.42);
+  g.fillStyle = '#0b0a11';                       // gaps between seats
+  for (let x = 0; x < s; x += s * 0.28) g.fillRect(x, s * 0.34, 1.6, s * 0.42);
+  g.fillStyle = 'rgba(210,210,235,0.09)';        // the nosing catches the light
+  g.fillRect(0, s * 0.31, s, 1.6);
+}, [1, 1]);
+
+// Rewrite a one-segment BoxGeometry's UVs so one unit of UV is one metre of the
+// face it is on, whichever face that is. BoxGeometry lays its 24 vertices out
+// four per face in the order +x, -x, +y, -y, +z, -z.
+export function boxUvInMetres(geo, w, h, d) {
+  const uv = geo.attributes.uv;
+  const faces = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
+  for (let fq = 0; fq < 6; fq++) {
+    const [su, sv] = faces[fq];
+    for (let v = fq * 4; v < fq * 4 + 4; v++) {
+      uv.setXY(v, uv.getX(v) * su, uv.getY(v) * sv);
+    }
+  }
+  uv.needsUpdate = true;
+  return geo;
+}
 
 // Raked seating, seen edge-on from a distance: rows of seatbacks.
 export const seatTexture = (repeat, tint = '#1b1408') => tileTexture(`seat${tint}`, 32, (g, s) => {

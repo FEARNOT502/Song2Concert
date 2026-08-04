@@ -8,7 +8,7 @@
 
 import * as THREE from 'three';
 import { ACCENT, WARM, basic, crowdField, lambert, makeScreen, prng, sparkField } from '../kit.js';
-import { drape, fixture, footlights, performer, rakedBlock, roomShell, stageDeck, truss } from '../props.js';
+import { drape, fixture, footlights, performer, rakedBlock, roomShell, seatBank, stageDeck, truss } from '../props.js';
 import { frame } from './frame.js';
 
 // The proscenium opening, as a closed 2D path. Both the wall's hole and the gilt
@@ -121,6 +121,8 @@ export default function buildTheater(u) {
     headHeight: 1.26, seed: 41, fill: 0.94, color: 0x120c0a, tint: '#241708',
   });
   root.add(stalls.mesh);
+  // real seats in the rows you can actually resolve from mid-stalls
+  root.add(seatBank(stalls.treads.filter((s) => s.z < f.eye.z + 6), { color: 0x2a1a12 }));
   // our own seat, and the one beside it, stay empty
   const seated = stalls.people.filter((p) => !(Math.abs(p.z - f.eye.z) < 1.1 && Math.abs(p.x - f.eye.x) < 1.4));
   root.add(crowdField(seated.concat(boxPeople), { color: 0x040409, react: 0.35, sway: 0.035 }, u));

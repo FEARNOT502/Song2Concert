@@ -12,13 +12,14 @@
 
 import * as THREE from 'three';
 import { WARM, basic, crowdField, lambert, makeScreen, prng, sparkField } from '../kit.js';
-import { fixture, organFacade, performer, rakedBlock, reflectorCloud } from '../props.js';
+import { fixture, organFacade, performer, rakedBlock, reflectorCloud, seatBank, thin } from '../props.js';
 import { frame } from './frame.js';
 
 // A terrace: raked seats behind a low reflecting wall, with a lit coping.
-function terrace(opts, root, people) {
+function terrace(opts, root, people, treads) {
   const block = rakedBlock(opts);
   root.add(block.mesh);
+  if (treads) treads.push(...block.treads);
   const w = opts.x1 - opts.x0;
   const wall = new THREE.Mesh(new THREE.BoxGeometry(w, opts.parapet ?? 1.05, 0.32), lambert(0x3a2c1c, { emissive: 0x0c0805 }));
   wall.position.set((opts.x0 + opts.x1) / 2, (opts.yBase ?? 0) + (opts.parapet ?? 1.05) / 2, opts.zNear - 0.16);
@@ -77,6 +78,7 @@ export default function buildConcertHall(u) {
   root.add(screen);
 
   const people = [];
+  const treads = [];
   const rnd = prng(71);
 
   // choir/rear block, behind the orchestra, facing us
@@ -94,7 +96,7 @@ export default function buildConcertHall(u) {
     x0: f.xMin, x1: f.xMax, zNear: 11.5, zFar: 30, rows: 14,
     riseFirst: 0.55, rise: 0.42, seatSpacing: 0.6, headHeight: 1.26,
     seed: 71, fill: 0.95, color: 0x2e2115, tint: '#4a331a', emissive: 0x0e0a06,
-  }, root, people);
+  }, root, people, treads);
   const ownRowDepth = (30 - 11.5) / 14;
   const seatFloor = 0.55 + Math.floor((f.eye.z - 11.5) / ownRowDepth) * 0.42;
 
@@ -105,13 +107,13 @@ export default function buildConcertHall(u) {
       zNear: 2.5, zFar: 13, rows: 8, yBase: 3.4,
       riseFirst: 0.5, rise: 0.46, seatSpacing: 0.62, headHeight: 1.24,
       seed: 91 + side, fill: 0.9, parapet: 1.2, color: 0x2a1e13, tint: '#452f18', emissive: 0x0e0a06,
-    }, root, people);
+    }, root, people, treads);
     terrace({
       x0: side > 0 ? 10 : -22, x1: side > 0 ? 22 : -10,
       zNear: 14, zFar: 26, rows: 9, yBase: 1.4,
       riseFirst: 0.5, rise: 0.44, seatSpacing: 0.62, headHeight: 1.24,
       seed: 131 + side, fill: 0.9, parapet: 1.1, color: 0x2a1e13, tint: '#452f18', emissive: 0x0e0a06,
-    }, root, people);
+    }, root, people, treads);
   }
 
   // ── the orchestra ──
@@ -152,6 +154,8 @@ export default function buildConcertHall(u) {
   rostrum.position.set(0, DECK + 0.15, PLATFORM_Z + 4.6);
   root.add(rostrum);
 
+  // the terraces are what you look at in this room, so they carry real seats
+  root.add(seatBank(thin(treads, 4200), { color: 0x3a2a18 }));
   root.add(crowdField(people, { color: 0x050409, react: 0.3, sway: 0.03 }, u));
 
   // ── reflectors overhead ──
@@ -185,8 +189,8 @@ export default function buildConcertHall(u) {
   }));
   root.add(sparkField(dust, { react: 0.25, base: 0.12, twinkle: 0.5, maxPx: 18 }, u));
 
-  root.add(new THREE.AmbientLight(0x3a3028, 1.5));
-  const key = new THREE.PointLight(0xffd2a0, 300, 46, 2);
+  root.add(new THREE.AmbientLight(0x342b24, 1.35));
+  const key = new THREE.PointLight(0xffd2a0, 210, 40, 2);
   key.position.set(0, 10, PLATFORM_Z + 1);
   root.add(key);
   // house light: four soft sources over the terraces. Without them the seats
@@ -210,7 +214,7 @@ export default function buildConcertHall(u) {
     bloom: { strength: 0.34, radius: 0.8, threshold: 0.58 },
     update(t, pulse) {
       screen.userData.update(pulse);
-      key.intensity = 260 + pulse * 180;
+      key.intensity = 180 + pulse * 130;
       clouds.forEach((c, i) => {
         c.position.y = 12.2 + Math.sin(t * 0.35 + i) * 0.05;
         c.userData.panel.material.emissive.setHex(0x120a04).multiplyScalar(0.5 + pulse * 1.6);

@@ -90,7 +90,7 @@ z-40  TopBar + BottomTransport (always visible)
 z-50  Modals (file / venue / seat picker)
 ```
 
-The 80px-square hairline grid overlays everything at opacity 0.04 — anchors the eye and signals "instrument".
+(The 80px-square hairline grid that used to overlay everything was removed once the scenes became 3D: over a photographic room it read as a scratched lens rather than as an instrument.)
 
 ---
 

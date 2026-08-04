@@ -9,8 +9,8 @@
 import * as THREE from 'three';
 import { ACCENT, COOL, MAGENTA, WARM, basic, crowdField, lambert, makeScreen, prng, sparkField } from '../kit.js';
 import {
-  fixture, footlights, lineArray, orientBlock, performer, rakedBlock, ribbon,
-  speakerStack, stageDeck, standingCrowd, truss,
+  ampStack, bowl, fixture, footlights, lineArray, monitorWedge, performer,
+  ribbonRing, seatBank, thin, speakerStack, stageDeck, standingCrowd, truss,
 } from '../props.js';
 import { frame } from './frame.js';
 
@@ -18,6 +18,9 @@ export default function buildStadium(u) {
   const f = frame('stadium');
   const root = new THREE.Group();
   const DECK = 3.0, RIG_Y = 34, ROOF_Y = 48, BOWL_Z = 125;
+  // the bowl's inner edge — the boundary between the open pitch and the seating,
+  // and therefore also the edge of the hole in the roof
+  const BOWL_X = 66, BOWL_Z0 = -20, BOWL_Z1 = 148;
   // nothing stands closer than this to the camera: at FOH you are in a pocket
   const CLEAR = 14;
 
@@ -53,34 +56,38 @@ export default function buildStadium(u) {
   moon.lookAt(0, 3, BOWL_Z);
   root.add(moon);
 
-  const pitch = new THREE.Mesh(new THREE.PlaneGeometry(f.width, f.depth), lambert(0x0a1010));
+  const pitch = new THREE.Mesh(new THREE.PlaneGeometry(f.width, f.depth + 80), lambert(0x0a1010));
   pitch.rotation.x = -Math.PI / 2;
-  pitch.position.z = f.depth / 2 - 25;
+  pitch.position.z = f.depth / 2 - 60;
   root.add(pitch);
 
   // ── the roof: a plate over the seating with the pitch cut out of it ──
   const plate = new THREE.Shape();
-  plate.moveTo(-f.width / 2 - 14, -30); plate.lineTo(f.width / 2 + 14, -30);
+  plate.moveTo(-f.width / 2 - 14, -66); plate.lineTo(f.width / 2 + 14, -66);
   plate.lineTo(f.width / 2 + 14, f.depth - 30); plate.lineTo(-f.width / 2 - 14, f.depth - 30);
-  plate.lineTo(-f.width / 2 - 14, -30);
+  plate.lineTo(-f.width / 2 - 14, -66);
   const hole = new THREE.Path();
-  hole.moveTo(-76, 8); hole.lineTo(76, 8); hole.lineTo(76, 178); hole.lineTo(-76, 178); hole.lineTo(-76, 8);
+  hole.moveTo(-BOWL_X, BOWL_Z0); hole.lineTo(BOWL_X, BOWL_Z0);
+  hole.lineTo(BOWL_X, BOWL_Z1); hole.lineTo(-BOWL_X, BOWL_Z1); hole.lineTo(-BOWL_X, BOWL_Z0);
   plate.holes.push(hole);
   const roof = new THREE.Mesh(
     new THREE.ExtrudeGeometry(plate, { depth: 3.5, bevelEnabled: false }),
-    lambert(0x1a1a26, { emissive: 0x0c0d16 }),
+    lambert(0x121219, { emissive: 0x08090f }),
   );
   roof.rotation.x = Math.PI / 2;
   roof.position.y = ROOF_Y + 3.5;
   root.add(roof);
   // soffit lighting under the roof edge — reads the ring at a glance
   for (const side of [-1, 1]) {
-    const strip = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.3, 168), basic(0x2a3550));
-    strip.position.set(side * 76, ROOF_Y - 0.4, 93);
+    const strip = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.3, BOWL_Z1 - BOWL_Z0), basic(0x1c2437));
+    strip.position.set(side * BOWL_X, ROOF_Y - 0.4, (BOWL_Z0 + BOWL_Z1) / 2);
     root.add(strip);
   }
 
   // ── stage ──
+  const mask = new THREE.Mesh(new THREE.BoxGeometry(78, 24, 1.2), lambert(0x0b0b12));
+  mask.position.set(0, 12, 6.4);
+  root.add(mask);
   root.add(stageDeck({ width: 46, depth: 24, height: DECK, z: 20 }));
   root.add(footlights({ width: 44, count: 50, y: DECK + 0.06, z: 32.05 }));
 
@@ -107,6 +114,17 @@ export default function buildStadium(u) {
     const p = performer({ height: 1.78 });
     p.position.set(x, DECK, z);
     root.add(p);
+  }
+  for (const [x, z] of [[-18, 13], [18, 13]]) {
+    const amp = ampStack({ count: 3, w: 1.0, h: 0.6 });
+    amp.position.set(x, DECK, z);
+    root.add(amp);
+  }
+  for (let i = 0; i < 11; i++) {
+    const wedge = monitorWedge({ w: 0.9 });
+    wedge.position.set(-20 + i * 4, DECK, 30.4);
+    wedge.rotation.y = Math.PI;
+    root.add(wedge);
   }
 
   // ── rig ──
@@ -149,9 +167,9 @@ export default function buildStadium(u) {
       const rigTruss = truss(14, { size: 1.2, color: 0x1c1c28 });
       rigTruss.position.set(side * 78, ROOF_Y + 2, z);
       root.add(rigTruss);
-      for (let k = 0; k < 6; k++) {
-        const fx = fixture({ color: 0xf4f0e0, beamLength: 70, spread: 8, opacity: 0.014, react: 0.4 }, u);
-        fx.position.set(side * (72 + (k % 3) * 4), ROOF_Y + 1.4, z - 4 + Math.floor(k / 3) * 8);
+      for (let k = 0; k < 3; k++) {
+        const fx = fixture({ color: 0xf4f0e0, beamLength: 62, spread: 5, opacity: 0.005, react: 0.35 }, u);
+        fx.position.set(side * (72 + k * 5), ROOF_Y + 1.4, z - 2 + (k % 2) * 6);
         fx.rotation.z = -side * 0.5;
         root.add(fx);
         heads.push({ fx, i: 100 + k, flood: true });
@@ -160,44 +178,35 @@ export default function buildStadium(u) {
   }
 
   // ── the bowl ──
+  // 90,000 seats as one continuous rake, all the way round. The block behind the
+  // stage carries no crowd: at a stadium show it is sold off and masked, and the
+  // room model treats that end as structure rather than as people.
   const people = [];
-  const ribbons = [];
   people.push(...standingCrowd({ x0: -66, x1: 66, zNear: 34, zFar: f.eye.z - CLEAR, count: 2500, seed: 177 }));
   people.push(...standingCrowd({ x0: -66, x1: 66, zNear: f.eye.z + CLEAR, zFar: 150, count: 1600, seed: 181 }));
 
-  for (const side of [-1, 1]) {
-    for (const [yBase, rows, out, seed] of [[0.6, 16, 0, 600], [15, 18, 6, 630], [30, 14, 12, 660]]) {
-      const stand = orientBlock(rakedBlock({
-        x0: -84, x1: 84, zNear: 0, zFar: rows * 0.98, rows,
-        riseFirst: 0.6, rise: 0.82, seatSpacing: 0.55, headHeight: 1.25,
-        yBase, seed: seed + side, fill: 0.85, emissive: 0x252038,
-      }), { rotY: side * Math.PI / 2, x: side * (72 + out), z: 88 });
-      root.add(stand.mesh);
-      people.push(...stand.people);
-      if (yBase < 1) {
-        const fascia = ribbon({ length: 168, height: 1.1 });
-        fascia.position.set(side * 71.4, 1.3, 88);
-        root.add(fascia);
-        ribbons.push(fascia);
-      }
-    }
-  }
-  const backFascia = ribbon({ length: 156, height: 1.1, along: 'x' });
-  backFascia.position.set(0, 1.3, 151.4);
-  root.add(backFascia);
-  ribbons.push(backFascia);
-  for (const [zNear, yBase, rows, seed] of [[152, 0.6, 16, 700], [158, 15, 18, 730], [166, 30, 14, 760]]) {
-    const back = rakedBlock({
-      x0: -78, x1: 78, zNear, zFar: zNear + rows * 0.98, rows,
-      riseFirst: 0.6, rise: 0.82, seatSpacing: 0.55, headHeight: 1.25, yBase, seed, fill: 0.85, emissive: 0x252038,
+  const near = (x, z) => Math.hypot(x - f.eye.x, z - f.eye.z);
+  const ring = bowl({
+    halfWidth: BOWL_X, zFront: BOWL_Z0, zBack: BOWL_Z1, rows: 38,
+    rise: 0.68, riseFar: 1.02, run: 0.95, yBase: 0.6,
+    seatSpacing: 0.56, headHeight: 1.25, seed: 600,
+    crowdFrom: 14,
+    density: (x, y, z) => (near(x, z) < 65 ? 0.9 : near(x, z) < 130 ? 0.55 : 0.26),
+    maxPeople: 5600, emissive: 0x131120,
+  });
+  root.add(ring.mesh);
+  people.push(...ring.people);
+  root.add(seatBank(thin(ring.treads.filter((s) => near(s.x, s.z) < 110), 9000)));
+
+  const ribbons = [];
+  for (const [inset, y] of [[0.8, 2.3]]) {
+    const r = ribbonRing({
+      halfWidth: BOWL_X + inset, zFront: BOWL_Z0 - inset, zBack: BOWL_Z1 + inset,
+      y, height: 0.34, thickness: 0.26,
     });
-    root.add(back.mesh);
-    people.push(...back.people);
+    root.add(r);
+    ribbons.push(r);
   }
-  // the stage-end stand: treated face, no crowd (the model's `arenaTreated` wall)
-  const backdrop = new THREE.Mesh(new THREE.BoxGeometry(150, 44, 2), lambert(0x0c0c14));
-  backdrop.position.set(0, 22, -6);
-  root.add(backdrop);
 
   root.add(crowdField(people, { color: 0x0e0c1a, react: 1, sway: 0.11 }, u));
 
@@ -219,10 +228,10 @@ export default function buildStadium(u) {
   root.add(sparkField(haze, { react: 0.5, base: 0.04, twinkle: 0.35, maxPx: 46 }, u));
 
   root.add(new THREE.AmbientLight(0x171a2a, 1.0));
-  const key = new THREE.PointLight(ACCENT, 3600, 170, 2);
+  const key = new THREE.PointLight(ACCENT, 3600, 96, 2);
   key.position.set(0, 20, 22);
   root.add(key);
-  const rear = new THREE.PointLight(MAGENTA, 2000, 240, 2);
+  const rear = new THREE.PointLight(MAGENTA, 2000, 120, 2);
   rear.position.set(0, 34, 80);
   root.add(rear);
   const floorFill = new THREE.PointLight(ACCENT, 1500, 80, 2);
@@ -240,7 +249,7 @@ export default function buildStadium(u) {
       screen.userData.update(pulse);
       wings.forEach((w) => w.userData.update(pulse));
       key.intensity = 1800 + pulse * 4600;
-      ribbons.forEach((r) => r.material.color.setHex(ACCENT).multiplyScalar(0.3 + pulse * 0.8));
+      ribbons.forEach((r) => r.material.color.setHex(ACCENT).multiplyScalar(0.10 + pulse * 0.3));
       rear.intensity = 1000 + pulse * 2600;
       heads.forEach(({ fx, i, flood }) => {
         if (flood) return;

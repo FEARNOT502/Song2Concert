@@ -10,8 +10,8 @@
 import * as THREE from 'three';
 import { ACCENT, COOL, MAGENTA, WARM, basic, crowdField, lambert, makeScreen, prng, sparkField } from '../kit.js';
 import {
-  fixture, footlights, lineArray, orientBlock, performer, rakedBlock, ribbon,
-  speakerStack, stageDeck, standingCrowd, truss,
+  ampStack, bowl, fixture, footlights, lineArray, monitorWedge, performer,
+  ribbonRing, seatBank, thin, speakerStack, stageDeck, standingCrowd, truss,
 } from '../props.js';
 import { frame } from './frame.js';
 
@@ -19,6 +19,9 @@ export default function buildDome(u) {
   const f = frame('dome');
   const root = new THREE.Group();
   const DECK = 2.6, RIG_Y = 30, STAND_TOP = 27, CLEAR = 12;
+  // the bowl's inner edge; it runs behind the stage too, so the field is drawn
+  // longer than the acoustic box, which stops at the stage-end wall
+  const BOWL_X = 52, BOWL_Z0 = -16, BOWL_Z1 = 104;
 
   // ── the membrane roof ──
   // cap radius from the span it covers and the rise over the stands
@@ -37,12 +40,15 @@ export default function buildDome(u) {
   ribs.position.copy(cap.position);
   root.add(ribs);
 
-  const turf = new THREE.Mesh(new THREE.PlaneGeometry(f.width, f.depth), lambert(0x0b0d10));
+  const turf = new THREE.Mesh(new THREE.PlaneGeometry(f.width, f.depth + 60), lambert(0x0b0d10));
   turf.rotation.x = -Math.PI / 2;
-  turf.position.z = f.depth / 2 - 20;
+  turf.position.z = f.depth / 2 - 46;
   root.add(turf);
 
   // ── stage ──
+  const mask = new THREE.Mesh(new THREE.BoxGeometry(62, 17, 0.8), lambert(0x0a0a12));
+  mask.position.set(0, 8.5, -1.6);
+  root.add(mask);
   root.add(stageDeck({ width: 40, depth: 20, height: DECK, z: 12 }));
   root.add(footlights({ width: 38, count: 44, y: DECK + 0.06, z: 22.05 }));
 
@@ -78,6 +84,17 @@ export default function buildDome(u) {
     const p = performer({ height: 1.78 });
     p.position.set(x, DECK, z);
     root.add(p);
+  }
+  for (const [x, z] of [[-15, 7], [15, 7]]) {
+    const amp = ampStack({ count: 3, w: 0.9, h: 0.55 });
+    amp.position.set(x, DECK, z);
+    root.add(amp);
+  }
+  for (let i = 0; i < 9; i++) {
+    const wedge = monitorWedge({ w: 0.8 });
+    wedge.position.set(-16 + i * 4, DECK, 20.4);
+    wedge.rotation.y = Math.PI;
+    root.add(wedge);
   }
 
   // ── rig ──
@@ -119,41 +136,37 @@ export default function buildDome(u) {
     heads.push({ fx, i: i + 24, ang: i });
   }
 
-  // ── the crowd: field, then the tiers ──
+  // ── the crowd: field, then the bowl ──
+  // One unbroken ring of seating, first row to last, wrapping behind the stage
+  // as well. The block behind the stage is real and empty: at a dome show it is
+  // curtained off, which is exactly the treated face the room model puts there.
   const people = [];
-  const ribbons = [];
   people.push(...standingCrowd({ x0: -52, x1: 52, zNear: 26, zFar: f.eye.z - CLEAR, count: 2100, seed: 55 }));
   people.push(...standingCrowd({ x0: -52, x1: 52, zNear: f.eye.z + CLEAR, zFar: 110, count: 1100, seed: 57 }));
 
-  for (const side of [-1, 1]) {
-    for (const [yBase, rows, seed] of [[0.5, 14, 400], [13, 16, 430], [24, 12, 460]]) {
-      const stand = orientBlock(rakedBlock({
-        x0: -62, x1: 62, zNear: 0, zFar: rows * 0.95, rows,
-        riseFirst: 0.6, rise: 0.78, seatSpacing: 0.55, headHeight: 1.25,
-        yBase, seed: seed + side, fill: 0.85, emissive: 0x241e36,
-      }), { rotY: side * Math.PI / 2, x: side * (56 + (yBase > 20 ? 8 : yBase > 10 ? 4 : 0)), z: 62 });
-      root.add(stand.mesh);
-      people.push(...stand.people);
-      if (yBase < 1) {
-        const fascia = ribbon({ length: 124, height: 0.9 });
-        fascia.position.set(side * 55.5, 1.1, 62);
-        root.add(fascia);
-        ribbons.push(fascia);
-      }
-    }
-  }
-  const backFascia = ribbon({ length: 120, height: 0.9, along: 'x' });
-  backFascia.position.set(0, 1.1, 111.4);
-  root.add(backFascia);
-  ribbons.push(backFascia);
-  for (const [zNear, yBase, rows, seed] of [[112, 0.5, 14, 500], [118, 13, 16, 530], [126, 24, 12, 560]]) {
-    const back = rakedBlock({
-      x0: -60, x1: 60, zNear, zFar: zNear + rows * 0.95, rows,
-      riseFirst: 0.6, rise: 0.78, seatSpacing: 0.55, headHeight: 1.25, yBase, seed, fill: 0.85, emissive: 0x241e36,
+  const near = (x, z) => Math.hypot(x - f.eye.x, z - f.eye.z);
+  const ring = bowl({
+    halfWidth: BOWL_X, zFront: BOWL_Z0, zBack: BOWL_Z1, rows: 32,
+    rise: 0.66, riseFar: 0.98, run: 0.9, yBase: 0.5,
+    seatSpacing: 0.56, headHeight: 1.25, seed: 400,
+    crowdFrom: 8,
+    density: (x, y, z) => (near(x, z) < 55 ? 0.9 : near(x, z) < 110 ? 0.55 : 0.28),
+    maxPeople: 5200, emissive: 0x181524,
+  });
+  root.add(ring.mesh);
+  people.push(...ring.people);
+  root.add(seatBank(thin(ring.treads.filter((s) => near(s.x, s.z) < 90), 9000)));
+
+  const ribbons = [];
+  for (const [inset, y] of [[0.6, 2.1]]) {
+    const r = ribbonRing({
+      halfWidth: BOWL_X + inset, zFront: BOWL_Z0 - inset, zBack: BOWL_Z1 + inset,
+      y, height: 0.32, thickness: 0.24,
     });
-    root.add(back.mesh);
-    people.push(...back.people);
+    root.add(r);
+    ribbons.push(r);
   }
+
   root.add(crowdField(people, { color: 0x0d0b18, react: 1, sway: 0.1 }, u));
 
   // ── the sea of lightsticks ──
@@ -177,11 +190,11 @@ export default function buildDome(u) {
   }));
   root.add(sparkField(haze, { react: 0.5, base: 0.045, twinkle: 0.35, maxPx: 42 }, u));
 
-  root.add(new THREE.AmbientLight(0x181828, 1.0));
-  const key = new THREE.PointLight(ACCENT, 2600, 140, 2);
+  root.add(new THREE.AmbientLight(0x1e1e30, 1.25));
+  const key = new THREE.PointLight(ACCENT, 2600, 80, 2);
   key.position.set(0, 18, 16);
   root.add(key);
-  const rear = new THREE.PointLight(MAGENTA, 1600, 200, 2);
+  const rear = new THREE.PointLight(MAGENTA, 1600, 110, 2);
   rear.position.set(0, 26, 60);
   root.add(rear);
   const floorFill = new THREE.PointLight(ACCENT, 1100, 70, 2);
@@ -199,7 +212,7 @@ export default function buildDome(u) {
       screen.userData.update(pulse);
       wings.forEach((w) => w.userData.update(pulse));
       key.intensity = 1400 + pulse * 3600;
-      ribbons.forEach((r) => r.material.color.setHex(ACCENT).multiplyScalar(0.3 + pulse * 0.8));
+      ribbons.forEach((r) => r.material.color.setHex(ACCENT).multiplyScalar(0.10 + pulse * 0.3));
       rear.intensity = 800 + pulse * 2200;
       bRim.material.color.setHex(ACCENT).multiplyScalar(0.5 + pulse * 0.7);
       heads.forEach(({ fx, i }) => {

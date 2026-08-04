@@ -8,7 +8,7 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { ACCENT, WARM, basic, lambert, flare, makeBeam, prng, seatTexture } from './kit.js';
+import { ACCENT, WARM, basic, bowlSeatTexture, boxUvInMetres, lambert, flare, makeBeam, prng, seatTexture } from './kit.js';
 
 // ── room shell ──────────────────────────────────────────────────────────────
 
@@ -119,6 +119,7 @@ export function rakedBlock({
   const width = x1 - x0;
   const parts = [];
   const people = [];
+  const treads = [];
   const rnd = prng(seed);
   for (let r = 0; r < rows; r++) {
     const y = yBase + riseFirst + r * rise;
@@ -128,45 +129,185 @@ export function rakedBlock({
     parts.push(step);
     const seats = Math.max(1, Math.floor(width / seatSpacing));
     for (let s = 0; s < seats; s++) {
+      const x = x0 + (s + 0.5) * (width / seats) + (rnd() - 0.5) * 0.14;
+      treads.push({ x, y, z: z + depth * 0.55, turn: 0 });
       if (rnd() > fill) continue;
       people.push({
-        x: x0 + (s + 0.5) * (width / seats) + (rnd() - 0.5) * 0.14,
-        y,
-        z: z + depth * 0.55,
+        x, y, z: z + depth * 0.55,
         height: headHeight * (0.92 + rnd() * 0.16),
         turn: (rnd() - 0.5) * 0.5,
       });
     }
   }
   const mat = lambert(color, { map: seatTexture([Math.max(1, Math.round(width / 3)), rows], tint), emissive });
-  return { mesh: new THREE.Mesh(mergeGeometries(parts), mat), people };
+  return { mesh: new THREE.Mesh(mergeGeometries(parts), mat), people, treads };
 }
 
-// `rakedBlock` always rakes toward +z, which is what a block facing the stage
-// wants. A bowl also needs stands down the sides, so this rotates a finished
-// block — mesh and people together, which is the part that is easy to get wrong.
-export function orientBlock(block, { rotY = 0, x = 0, y = 0, z = 0 }) {
-  const m = new THREE.Matrix4()
-    .makeRotationY(rotY)
-    .premultiply(new THREE.Matrix4().makeTranslation(x, y, z));
-  block.mesh.applyMatrix4(m);
-  const v = new THREE.Vector3();
-  block.people = block.people.map((p) => {
-    v.set(p.x, p.y, p.z).applyMatrix4(m);
-    return { ...p, x: v.x, y: v.y, z: v.z, turn: (p.turn ?? 0) + rotY };
+// ── the bowl ────────────────────────────────────────────────────────────────
+
+// One continuous rake wrapping the whole field — first row to last, no tier
+// break, no gap where the stage is. `rakedBlock` builds a single straight block
+// and a bowl used to be four of them stacked in tiers, which left the sides
+// stopping in mid-air and a hole behind the stage. This closes the ring.
+//
+// Every row is a rectangular annulus one tread deep, stepped `run` further out
+// and `rise` higher than the one inside it, so the whole bowl is one surface.
+// `rise` may grow with the row — real bowls steepen as they climb, and it reads
+// as a bowl rather than a ramp — but it never breaks.
+//
+// Returns { mesh, people, treads }. `treads` is every seat position in the ring,
+// occupied or not: the venue picks the near ones and puts actual seat geometry
+// on them, and lets the far ones stay texture.
+export function bowl({
+  halfWidth, zFront, zBack, rows,
+  rise = 0.78, riseFar = null, run = 0.92, yBase = 0.4,
+  seatSpacing = 0.58, headHeight = 1.25, seed = 1,
+  crowdFrom = -Infinity,          // no audience in front of this z — behind the stage
+  density = () => 0.8,            // 0..1, per seat, so near rows can be denser
+  maxPeople = 6000,
+  color = 0x6d6680, emissive = 0x000000,
+}) {
+  const parts = [];
+  const people = [];
+  const treads = [];
+  const rnd = prng(seed);
+  const riseEnd = riseFar ?? rise;
+
+  const tops = [];
+  let y = yBase;
+  for (let r = 0; r < rows; r++) {
+    const t = rows === 1 ? 0 : r / (rows - 1);
+    y += rise + (riseEnd - rise) * t;
+    tops.push(y);
+  }
+
+  for (let r = 0; r < rows; r++) {
+    const inIn = r * run, inOut = inIn + run;
+    const h = tops[r] - yBase;
+    const xi = halfWidth + inIn, xo = halfWidth + inOut;
+    const zi0 = zFront - inIn, zi1 = zBack + inIn;
+    const zo0 = zFront - inOut, zo1 = zBack + inOut;
+    const box = (x0, x1, z0, z1) => {
+      const g = new THREE.BoxGeometry(x1 - x0, h, z1 - z0);
+      boxUvInMetres(g, x1 - x0, h, z1 - z0);
+      g.translate((x0 + x1) / 2, yBase + h / 2, (z0 + z1) / 2);
+      parts.push(g);
+    };
+    box(-xo, -xi, zo0, zo1);   // the two side runs take the full depth …
+    box(xi, xo, zo0, zo1);
+    box(-xi, xi, zo0, zi0);    // … and the ends fill between them, so the ring
+    box(-xi, xi, zi1, zo1);    //     closes without overlapping at the corners
+
+    // seats sit along the middle of the tread
+    const mx = halfWidth + inIn + run * 0.5;
+    const mz0 = zFront - inIn - run * 0.5, mz1 = zBack + inIn + run * 0.5;
+    const rowY = tops[r];
+    const runs = [
+      { n: Math.floor((mz1 - mz0) / seatSpacing), at: (i, n) => [-mx, mz0 + (i + 0.5) * ((mz1 - mz0) / n)] },
+      { n: Math.floor((mz1 - mz0) / seatSpacing), at: (i, n) => [mx, mz0 + (i + 0.5) * ((mz1 - mz0) / n)] },
+      { n: Math.floor((2 * mx) / seatSpacing), at: (i, n) => [-mx + (i + 0.5) * ((2 * mx) / n), mz0] },
+      { n: Math.floor((2 * mx) / seatSpacing), at: (i, n) => [-mx + (i + 0.5) * ((2 * mx) / n), mz1] },
+    ];
+    for (const seg of runs) {
+      for (let i = 0; i < seg.n; i++) {
+        const [x, z] = seg.at(i, seg.n);
+        if (z < crowdFrom) continue;
+        const turn = Math.atan2(-x, zFront - z);
+        treads.push({ x, y: rowY, z, turn });
+        if (rnd() < density(x, rowY, z)) {
+          people.push({ x, y: rowY, z, height: headHeight * (0.93 + rnd() * 0.14), turn });
+        }
+      }
+    }
+  }
+
+  const mat = lambert(color, { map: bowlSeatTexture(), emissive });
+  return {
+    mesh: new THREE.Mesh(mergeGeometries(parts), mat),
+    people: thin(people, maxPeople),
+    treads,
+  };
+}
+
+// Deterministically thin a list to a cap. A stadium bowl has ninety thousand
+// seats and no frame needs ninety thousand instances of one.
+export function thin(list, cap) {
+  if (list.length <= cap) return list;
+  const out = [];
+  const stride = list.length / cap;
+  for (let i = 0; i < cap; i++) out.push(list[Math.floor(i * stride)]);
+  return out;
+}
+
+// The lit fascia, run as a closed rectangle around a bowl. In a room this size
+// it is what tells you there is a stand out there at all — the seating itself is
+// dark people on dark concrete, forty metres off the axis.
+export function ribbonRing({ halfWidth, zFront, zBack, y, height = 0.8, thickness = 0.3, color = ACCENT }) {
+  const parts = [];
+  const add = (w, d, x, z) => {
+    const g = new THREE.BoxGeometry(w, height, d);
+    g.translate(x, y, z);
+    parts.push(g);
+  };
+  const zLen = zBack - zFront, zMid = (zFront + zBack) / 2;
+  add(thickness, zLen, -halfWidth, zMid);
+  add(thickness, zLen, halfWidth, zMid);
+  add(halfWidth * 2, thickness, 0, zFront);
+  add(halfWidth * 2, thickness, 0, zBack);
+  return new THREE.Mesh(mergeGeometries(parts), basic(color));
+}
+
+// Actual seats, for the rows close enough that a bare step reads as wrong. One
+// instanced draw; the rows beyond are left to the seating texture, which at
+// forty metres is the same picture for none of the cost.
+export function seatBank(spots, { color = 0x201a2c } = {}) {
+  const back = new THREE.BoxGeometry(0.44, 0.44, 0.07);
+  back.translate(0, 0.62, -0.17);
+  const pan = new THREE.BoxGeometry(0.44, 0.07, 0.36);
+  pan.translate(0, 0.4, 0.02);
+  const geo = mergeGeometries([back, pan]);
+  const mesh = new THREE.InstancedMesh(geo, lambert(color), spots.length);
+  const m = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const axis = new THREE.Vector3(0, 1, 0);
+  const one = new THREE.Vector3(1, 1, 1);
+  spots.forEach((s, i) => {
+    q.setFromAxisAngle(axis, s.turn ?? 0);
+    m.compose(new THREE.Vector3(s.x, s.y, s.z), q, one);
+    mesh.setMatrixAt(i, m);
   });
-  return block;
+  mesh.instanceMatrix.needsUpdate = true;
+  return mesh;
 }
 
-// The lit fascia along the front of a bowl's lower tier. In a room this size it
-// is what tells you there is a stand out there at all — the seating itself is
-// dark grey people on dark grey concrete, 40 m off the axis, and without a
-// ribbon the sides of the frame read as a black band rather than as seats.
-export function ribbon({ length, height = 0.5, color = ACCENT, along = 'z' }) {
-  const geo = along === 'z'
-    ? new THREE.BoxGeometry(0.26, height, length)
-    : new THREE.BoxGeometry(length, height, 0.26);
-  return new THREE.Mesh(geo, basic(color));
+// ── stage floor kit ─────────────────────────────────────────────────────────
+
+// A monitor wedge, angled back at the performer.
+export function monitorWedge({ w = 0.72, h = 0.36, d = 0.52 } = {}) {
+  const shape = new THREE.Shape();
+  shape.moveTo(-d / 2, 0);
+  shape.lineTo(d / 2, 0);
+  shape.lineTo(d / 2, h * 0.35);
+  shape.lineTo(-d / 2, h);
+  shape.lineTo(-d / 2, 0);
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: w, bevelEnabled: false });
+  geo.rotateY(Math.PI / 2);
+  geo.translate(-w / 2, 0, 0);
+  return new THREE.Mesh(geo, lambert(0x161018));
+}
+
+// A backline stack: cabinets under a head.
+export function ampStack({ w = 0.78, h = 0.5, d = 0.4, count = 2 } = {}) {
+  const parts = [];
+  for (let i = 0; i < count; i++) {
+    const cab = new THREE.BoxGeometry(w, h, d);
+    cab.translate(0, h / 2 + i * h, 0);
+    parts.push(cab);
+  }
+  const head = new THREE.BoxGeometry(w * 0.86, 0.2, d * 0.9);
+  head.translate(0, count * h + 0.1, 0);
+  parts.push(head);
+  return new THREE.Mesh(mergeGeometries(parts), lambert(0x14100f));
 }
 
 // A standing floor crowd: no steps, just people on flat ground getting denser
