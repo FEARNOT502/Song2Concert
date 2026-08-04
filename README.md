@@ -1,10 +1,12 @@
 # Song2Concert
 
 내 음원을 **실제 공연장에서 듣는 것처럼** 들려주는 웹 앱입니다.
-FLAC/WAV 파일을 올리면, 다섯 곳의 공연장 중 한 곳을 골라 그 공간의
-잔향(reverb)으로 재렌더링해 들려줍니다. 화면은 1인칭 관객 시점의 공연장
-장면(SVG)으로 가득 채워지고, 그 위에 오디오파일 콘솔 스타일의 정보 패널이
-얹힙니다. 핵심은 **실제 Web Audio API 컨볼루션 리버브 엔진**으로 동작한다는
+FLAC/WAV 파일을 올리면, 여섯 곳의 공연장 중 한 곳을 골라 그 공간의
+잔향(reverb)으로 재렌더링해 들려줍니다. 화면은 1인칭 관객 시점의 **실시간 3D
+공연장 장면**(WebGL)으로 가득 채워지고, 그 위에 오디오파일 콘솔 스타일의 정보
+패널이 얹힙니다. 보이는 공간은 들리는 공간과 같은 형상입니다 — 방의 치수, 무대
+위치와 폭, 앉아 있는 좌석까지 전부 잔향을 계산하는 룸 모델에서 그대로
+가져옵니다. 핵심은 **실제 Web Audio API 컨볼루션 리버브 엔진**으로 동작한다는
 점입니다 — 가짜 효과음이 아니라 공연장별 임펄스 응답(IR)을 합성해 음원에
 컨볼루션을 겁니다.
 
@@ -85,6 +87,10 @@ Safari 동작 확인)
 - **크로스피드** — 700Hz 아래 하드팬 성분(실제 머리가 만들 수 없는 단서)을
   정리해 이어폰에서 소리가 머리 안에 갇히는 현상을 완화합니다. 미드/사이드의
   사이드에만 걸어 중앙은 수학적으로 그대로입니다.
+- **룸 모델에서 만들어지는 3D 장면** — 공연장 그림은 삽화가 아니라 엔진이
+  컨볼루션하고 있는 그 방입니다. 치수 · 무대 위치 · 무대 폭 · 좌석이 모두
+  `audio/venuerooms.js`에서 나오므로, 방을 고치면 잔향과 그림이 함께 움직입니다.
+  조명 · 관객 · 응원봉은 오디오 RMS(`pulse`)로 반응합니다.
 - **재생 큐 · 볼륨 · 탐색 · 앨범 아트 펄스 · 메타데이터 자동 추출**
 - **FLAC 내보내기** — 재생과 **완전히 동일한 그래프**로 오프라인 렌더링합니다
   (같은 코드, 두 번 호출). 원본의 비트 심도(16/24bit)와 샘플레이트를 보존하며,
@@ -177,12 +183,19 @@ src/
   data.js                    VENUES — 표시용 음향 수치는 룸 모델에서 계산
   index.css                  전역 스타일
   components/
-    Scene.jsx                공연장 SVG 장면 5종 + 디스패처
+    Scene.jsx                3D 장면 마운트 — 캔버스 + 앨범 아트 오버레이
+    StageArt.jsx             무대 스크린 위에 얹히는 앨범 아트 · 제목 (HTML)
     Cover.jsx                앨범 커버 (합성 아트 + 실제 이미지 src 지원)
     TopBar.jsx               파일 / 공연장 메뉴 + 엔진 상태 표시
     BottomTransport.jsx      재생·이전·다음, 스크러버, 웻/드라이, 볼륨, 내보내기
     Panels.jsx               좌/우 데이터 패널 + 청취 위치 칩
     Modals.jsx               모달 셸, 공연장 썸네일, 파일/공연장 선택
+  three/
+    stage.js                 WebGL 렌더러 · 공연장 교체 · 무대 스크린 투영
+    kit.js                   공용 재료: 광선 · 관객 · 응원봉 · 스크린 · 텍스처
+    props.js                 구조물 · 리깅 · 객석 · 무대 위 악기
+    venues/frame.js          룸 모델 좌표 → three.js 좌표 (좌석 = 카메라)
+    venues/*.js              공연장 6종 (club · theater · concerthall · arena · dome · stadium)
   audio/
     roomacoustics.js         흡음 → 옥타브별 RT60, 이미지 소스 초기 반사 (순수 함수)
     venuerooms.js            공연장 형상: 치수 · 표면 재질 · 무대/좌석 위치
@@ -239,7 +252,7 @@ npm run verify:audio      # 브라우저 실렌더: 워크릿 · 4채널 컨볼�
 
 ## 기술 스택
 
-React 18 · Vite 6 · Tailwind CSS 3 · Web Audio API · `@wasm-audio-decoders/flac` (디코딩) · `libflacjs` (FLAC 인코딩)
+React 18 · Vite 6 · Tailwind CSS 3 · three.js (WebGL 장면) · Web Audio API · `@wasm-audio-decoders/flac` (디코딩) · `libflacjs` (FLAC 인코딩)
 
 ## 참고
 
