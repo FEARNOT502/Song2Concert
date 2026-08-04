@@ -31,7 +31,10 @@
 
 import { buildImpulseResponse, venueSeed } from './impulse.js';
 import { SIDE_SHELF } from './binaural.js';
-import { listeningDistance, roomAbsorption, DIRECTIVITY, DIRECTIVITY_Q, SYSTEM_LF_HZ, REVERB_WIDTH } from './venuerooms.js';
+import {
+  listeningDistance, roomAbsorption, DIRECTIVITY, DIRECTIVITY_Q,
+  SYSTEM_LF_HZ, REVERB_WIDTH, VENUE_WET_DB, RIG_LOW_LIFT, RIG_POWER,
+} from './venuerooms.js';
 import { reverbTimes, reverberantRatio } from './roomacoustics.js';
 
 // Headroom taken off the front so the boosts downstream have somewhere to go.
@@ -118,9 +121,21 @@ export function reverbSendTilt(venueId) {
   // there is no array to steer. That left the concert hall — 2.6 s at 125 Hz and
   // warm by design — taking the full sub content of a pop master straight into
   // the one band it rings longest in, and it boomed.
+  // Scaled with how much the venue's reverberant field was RAISED, as well as
+  // with its low-frequency decay. The rooms whose reverberation went up the most
+  // are the two that boomed first, and a sub cut fixed against the old level
+  // hands the boom straight back: the dome's 125 Hz band rings for six seconds,
+  // so every decibel added to its reverberant return is a decibel of boom.
+  //
+  // Both sources of lift count, and getting that wrong is measurable. Tracking
+  // only the wet trim missed the larger of the two — the rig power behind the
+  // late field — and the low-frequency room came up four and a half decibels in
+  // every large venue while the control moved by one.
+  const lift = 10 * Math.log10(RIG_POWER[venueId] ?? 1)
+    + Math.max(0, (VENUE_WET_DB[venueId] ?? WET_OFFSET_DB) - WET_OFFSET_DB);
   const subControl = d > 0.5
-    ? Math.min(10, 3 + 1.3 * lf125)
-    : Math.min(5, 1.5 + 0.8 * lf125);
+    ? Math.min(16, 3 + 1.3 * lf125 + 0.9 * lift)
+    : Math.min(6, 1.5 + 0.8 * lf125 + 0.9 * lift);
 
   // Ducking the voice out of the reverberation is what an engineer does when the
   // wash threatens the words. How much depends on how much wash there is, and
@@ -133,13 +148,25 @@ export function reverbSendTilt(venueId) {
     Q: DIRECTIVITY_Q[venueId] ?? 2,
   });
 
+  // The low-mid dip that buys instrument separation costs body, and what it buys
+  // depends on how much reverberation there is to untangle. A hall's reverberant
+  // field is level with its direct sound and genuinely does fuse a mix into one
+  // wash; the big rooms' sits below it, so the same cut there was mostly just
+  // removing the body of the instruments from a room that was already thin. It
+  // scales with the reverberant ratio instead of being a flat 2.5 dB.
+  const mud = -(1.3 + 1.6 * Math.min(1, rev));
+
   return {
     lf: -subControl,
-    mud: -2.5,
+    mud,
     hf: -(4.5 + 3 * d),
     vocal: -(1 + 2.5 * Math.min(1, rev)),
   };
 }
+
+// The venue's low-frequency system, as a shelf on the DIRECT path — see
+// RIG_LOW_LIFT.
+export const rigLowLift = (venueId) => RIG_LOW_LIFT[venueId] ?? 0;
 
 // Where the venue's low end stops — see SYSTEM_LF_HZ.
 export const systemLowCut = (venueId) => SYSTEM_LF_HZ[venueId] ?? 30;
@@ -287,8 +314,20 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {} })
   n.mid.connect(n.msMerge, 0, 0); n.sideShelf.connect(n.msMerge, 0, 0);
   n.mid.connect(n.msMerge, 0, 1); n.sideNeg.connect(n.msMerge, 0, 1);
 
+  // How much low-frequency system this venue has, above where it stops — see
+  // RIG_LOW_LIFT. It sits on the DRY branch, after the send has already been
+  // tapped off the mix, so a stadium's sub array is heard as weight and none of
+  // it is fed to the room. Weight up, booming untouched: the same reasoning as
+  // the transient shapers, which raise a kick's attack without lengthening it.
+  n.rigLow = ctx.createBiquadFilter();
+  n.rigLow.type = 'lowshelf';
+  n.rigLow.frequency.value = 70;
+  n.rigLow.gain.value = rigLowLift(venue.id);
+  n.rigLow.Q.value = 0.7;
+
   n.dry = ctx.createGain();
-  n.msMerge.connect(n.dry);
+  n.msMerge.connect(n.rigLow);
+  n.rigLow.connect(n.dry);
 
   // ── vocal anchor ──────────────────────────────────────────────────────────
   // Reads the centre's presence band against the whole programme and returns
@@ -576,6 +615,7 @@ export function applyVenue(ctx, n, venue, { fadeIn = VENUE_FADE_IN, fadeOut = VE
   ramp(n.sendMud.gain, send.mud);
   ramp(n.sendVocalDip.gain, send.vocal);
   ramp(n.subCut.frequency, systemLowCut(venue.id));
+  if (n.rigLow) ramp(n.rigLow.gain, rigLowLift(venue.id));
   if (n.wWidth) ramp(n.wWidth.gain, REVERB_WIDTH[venue.id] ?? 1);
   ramp(n.sendHF.gain, send.hf);
 
@@ -663,9 +703,17 @@ export function disposeGraph(n) {
 // quarter of a second: total reverberant energy is fixed, so a response that
 // decays from its start puts more of it inside the first 80 ms and less into the
 // tail you hear as the room. This puts the audible level back where it was.
+//
+// It is the fallback now rather than the figure: each venue states its own — see
+// VENUE_WET_DB for why one number for six rooms could not work.
 export const WET_OFFSET_DB = 2.5;
 
-export function wetTrimDb(percent, venueDefault) {
-  const delta = (percent - venueDefault) / 100;
-  return Math.max(-40, WET_OFFSET_DB + delta * 24);
+// `venue` is the whole venue object, not just its default percentage, because
+// the offset the trim is applied AROUND is now per venue. Taking the default
+// alone was what made `position.wet` look like a per-venue control while doing
+// nothing at all: the trim is the DIFFERENCE between the slider and the centre,
+// so moving the centre moves the trim by exactly minus itself.
+export function wetTrimDb(percent, venue) {
+  const delta = (percent - venue.position.wet) / 100;
+  return Math.max(-40, (VENUE_WET_DB[venue.id] ?? WET_OFFSET_DB) + delta * 24);
 }

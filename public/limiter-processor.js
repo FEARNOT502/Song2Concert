@@ -29,6 +29,20 @@
 const LOOKAHEAD_MS = 2.0;
 const CROSSOVER_HZ = 160;
 
+// Every filter and envelope in this chain carries state forward, which means a
+// single non-finite sample is not a glitch — it is permanent. A NaN entering a
+// biquad's history makes every subsequent output NaN, for as long as the page
+// lives, and NaN reaching the output device is reproduced as full-scale noise.
+// One bad render quantum becomes a sound that does not stop until reload.
+//
+// Nothing in this graph should ever produce one. That is the point: the last
+// node before the destination is where you find out whether that is true, and it
+// costs one comparison per sample to make the difference between a click and a
+// broken session. NaN maps to silence, infinities and anything absurd clamp;
+// ordinary audio passes through untouched.
+const CEILING = 8;
+const clean = (v) => (v > -CEILING ? (v < CEILING ? v : CEILING) : (v < -CEILING ? -CEILING : 0));
+
 // One Linkwitz-Riley 4th-order section pair: two cascaded Butterworth biquads
 // per side. LR4 low and high sum back to flat magnitude, so splitting and
 // rejoining a signal that needs no limiting returns it unchanged.
@@ -51,6 +65,13 @@ class Biquad {
     this.y2 = this.y1; this.y1 = y;
     return y;
   }
+  // Wipe the history if it has gone non-finite, rather than filtering NaN
+  // forever. Called once per block, not per sample.
+  sane() {
+    if (this.y1 === this.y1 && this.y2 === this.y2
+      && this.y1 !== Infinity && this.y1 !== -Infinity) return;
+    this.x1 = 0; this.x2 = 0; this.y1 = 0; this.y2 = 0;
+  }
 }
 
 // One band's gain control: a decaying peak hold feeding a gain that falls over
@@ -62,6 +83,13 @@ class BandGain {
     this.holdDecay = Math.exp(-1 / (len * 0.7));
     this.attackCoef = Math.exp(-1 / (len * 0.5));
     this.sampleRate = sampleRate;
+  }
+
+  sane() {
+    if (this.hold === this.hold && this.gain === this.gain
+      && this.hold !== Infinity && this.gain !== Infinity) return;
+    this.hold = 0;
+    this.gain = 1;
   }
 
   step(peak, threshold, releaseCoef) {
@@ -129,6 +157,13 @@ class LimiterProcessor extends AudioWorkletProcessor {
     const thrP = parameters.threshold;
     const relP = parameters.release;
 
+    this.low.sane();
+    this.high.sane();
+    for (let c = 0; c < chans; c++) {
+      const s = this.split[c];
+      s.lp[0].sane(); s.lp[1].sane(); s.hp[0].sane(); s.hp[1].sane();
+    }
+
     for (let i = 0; i < frames; i++) {
       const thrDb = thrP.length > 1 ? thrP[i] : thrP[0];
       const relSec = relP.length > 1 ? relP[i] : relP[0];
@@ -139,7 +174,7 @@ class LimiterProcessor extends AudioWorkletProcessor {
       let lowPeak = 0, highPeak = 0;
       for (let c = 0; c < chans; c++) {
         const src = input[c] || input[0];
-        const x = src ? src[i] : 0;
+        const x = clean(src ? src[i] : 0);
         const s = this.split[c];
         const lo = s.lp[1].run(s.lp[0].run(x));
         const hi = s.hp[1].run(s.hp[0].run(x));
@@ -163,7 +198,7 @@ class LimiterProcessor extends AudioWorkletProcessor {
         // the last resort — it is inaudible at the fraction of a decibel it ever
         // has to work over, and it cannot be got round.
         const a = sum < 0 ? -sum : sum;
-        out[c][i] = a <= threshold ? sum : Math.sign(sum) * (threshold + (a - threshold) / (1 + ((a - threshold) / threshold) * 4));
+        out[c][i] = clean(a <= threshold ? sum : Math.sign(sum) * (threshold + (a - threshold) / (1 + ((a - threshold) / threshold) * 4)));
       }
       this.pos = read;
     }

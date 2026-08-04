@@ -33,7 +33,8 @@ import {
   reverbTimes, imageSources, itdg, mixingTime, reverberantRatio, BANDS,
 } from './roomacoustics.js';
 import {
-  VENUE_ROOMS, roomAbsorption, sourcePositions, listenerPosition, listeningDistance, DIRECTIVITY, DIRECTIVITY_Q,
+  VENUE_ROOMS, roomAbsorption, sourcePositions, listenerPosition, listeningDistance,
+  DIRECTIVITY, DIRECTIVITY_Q, fillArrivals, RIG_POWER,
 } from './venuerooms.js';
 import {
   interauralDelay, headShadowCoeffs, applyOnePole,
@@ -339,6 +340,10 @@ function synthesize({ venueId, sampleRate, seed }) {
   const channels = [];
   const rng = mulberry32(seed * 7919 + 13);
   let earlyEnergy = 0;
+  // Delay towers and side hangs, where the venue has them. They arrive from
+  // roughly ninety degrees off-axis a few milliseconds after the mains, which is
+  // early lateral energy the main hangs alone cannot deliver at these distances.
+  const fills = fillArrivals(venueId);
 
   for (let s = 0; s < 2; s++) {
     const refl = imageSources({
@@ -349,6 +354,10 @@ function synthesize({ venueId, sampleRate, seed }) {
       maxTime: tMix,
       directivity: DIRECTIVITY[venueId] ?? 0,
     });
+    for (const f of fills[s] || []) {
+      if (f.time <= tMix) refl.push(f);
+    }
+    refl.sort((a, b) => a.time - b.time);
     const erLen = Math.min(length, Math.floor((tMix + 0.02) * sampleRate));
     const { earL, earR } = renderEarly(refl, erLen, sampleRate, mulberry32(seed * 40503 + s * 7919 + 3));
 
@@ -416,7 +425,8 @@ function synthesize({ venueId, sampleRate, seed }) {
   //
   // The four responses are independent and a centred source drives two of them
   // into each ear, so an ear receives half the four-channel total.
-  const wantLate = targetRev * 2;
+  // Scaled by how much of the rig is actually driving the room — see RIG_POWER.
+  const wantLate = targetRev * 2 * (RIG_POWER[venueId] ?? 1);
   void earlyEnergy;
   const lateGain = lateEnergy > 0 ? Math.sqrt(wantLate / lateEnergy) : 0;
 

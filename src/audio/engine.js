@@ -58,6 +58,8 @@ export class ConcertEngine {
     this._volume = 0.85;        // 0..1
     this._worklets = {};
     this.ready = false;
+    this._parked = false;          // context suspended because the page is hidden
+    this._detachLifecycle = null;
     // Fired once when a track reaches its NATURAL end, from real audio events
     // rather than the UI's animation clock, so auto-advance keeps working while
     // the tab is backgrounded.
@@ -113,20 +115,145 @@ export class ConcertEngine {
   // put that on the main thread while audio was playing. They are cached, so
   // this is paid once, quietly, and only the first change to a venue would ever
   // have been slow anyway.
+  // Synthesising one is 30–170 ms of straight-line arithmetic on the main thread
+  // — several frames on a desktop and a good deal worse on a phone — so it only
+  // ever runs when nothing is playing and the page is on screen. It used to run
+  // regardless, on an idle callback, and idle callbacks do not fire in a
+  // backgrounded tab: they queue up and then all land at once on the way back,
+  // which is the worst possible moment. A blocked main thread does not stop the
+  // audio thread, but on a phone the two are not independent — they contend for
+  // the same little cores, and an audio callback that misses its deadline is
+  // heard, not measured.
   _prewarmResponses() {
     const ids = Object.keys(VENUE_ROOMS);
     const rate = this.ctx.sampleRate;
+    const busy = () => this._bufPlaying
+      || (this.audioEl && !this.audioEl.paused)
+      || (typeof document !== 'undefined' && document.visibilityState === 'hidden');
     const next = () => {
+      if (!this.ctx || this.ctx.state === 'closed') return;
+      if (busy()) { schedule(1500); return; }   // come back when it is free
       const id = ids.shift();
-      if (!id || !this.ctx || this.ctx.state === 'closed') return;
+      if (!id) return;
       try { synthesizeIR({ venueId: id, sampleRate: rate, seed: venueSeed(id) }); } catch (e) { /* not fatal */ }
       schedule();
     };
-    const schedule = () => {
+    const schedule = (delay = 200) => {
       if (typeof requestIdleCallback === 'function') requestIdleCallback(next, { timeout: 2000 });
-      else setTimeout(next, 200);
+      else setTimeout(next, delay);
     };
     schedule();
+  }
+
+  // ── page lifecycle ────────────────────────────────────────────────────────
+  //
+  // Two separate failures live here, and on Android they compound into the same
+  // symptom: playback that comes back from a backgrounded tab running at many
+  // times speed with loud noise over it.
+  //
+  //   THE CONTEXT WAS BEING DESTROYED. The teardown was wired to `pagehide`, on
+  //   the assumption that it means the page is going away. On mobile it does not:
+  //   it fires every time the tab is backgrounded, because the page is being put
+  //   into the back/forward cache to be restored. So switching tabs, or opening
+  //   the file picker, closed the AudioContext out from under a running graph.
+  //
+  //   NOTHING SUSPENDED THE RENDERING. A backgrounded tab that keeps an
+  //   AudioContext running keeps a convolver and six worklets running, on a CPU
+  //   the phone has just moved to its small cores, with no output device to pace
+  //   it. Suspending while hidden is the fix and it costs nothing: the context
+  //   clock stops with it, so an AudioBufferSourceNode resumes exactly where it
+  //   was without any position bookkeeping.
+  //
+  // The clock check afterwards is the backstop for what neither of those covers.
+  // If the output device is reinitialised underneath a context — a route change,
+  // a sample-rate change — the context can be left rendering against a sink that
+  // does not match it, and no amount of correct application code fixes that from
+  // the inside. It IS measurable, though: the context clock stops tracking the
+  // wall clock. When it does, the context is rebuilt.
+  attachPageLifecycle() {
+    if (typeof document === 'undefined') return () => {};
+    const onVisibility = () => {
+      if (!this.ctx || this.ctx.state === 'closed') return;
+      if (document.visibilityState === 'hidden') {
+        this._parked = this.ctx.state === 'running';
+        if (this._parked) this.ctx.suspend().catch(() => {});
+      } else if (this._parked) {
+        this._parked = false;
+        this.ctx.resume().then(() => this._verifyClock()).catch(() => {});
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    this._detachLifecycle = () => document.removeEventListener('visibilitychange', onVisibility);
+    return this._detachLifecycle;
+  }
+
+  // Does the context clock still advance at the rate of the wall clock? A
+  // context rendering into a mismatched sink does not, and that ratio is exactly
+  // how fast playback sounds.
+  async _verifyClock() {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running') return;
+    const c0 = ctx.currentTime;
+    const w0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    await new Promise((r) => setTimeout(r, 400));
+    if (this.ctx !== ctx || ctx.state !== 'running') return;
+    const wall = ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - w0) / 1000;
+    if (wall < 0.2) return;             // the timer itself was throttled; no verdict
+    const ratio = (ctx.currentTime - c0) / wall;
+    // Generous either way. Timer jitter on a loaded phone is worth a few per
+    // cent; the failure being caught here is not subtle.
+    if (ratio > 1.3 || ratio < 0.7) {
+      console.warn(`[engine] audio clock running at ${ratio.toFixed(2)}× wall clock; rebuilding`);
+      await this._rebuildContext();
+    }
+  }
+
+  // Last resort: throw the AudioContext away and build a new one, putting
+  // playback back where it was. Nothing else recovers a context whose output
+  // device has changed underneath it.
+  async _rebuildContext() {
+    const wasPlaying = this._mode === 'buffer' ? this._bufPlaying : !!(this.audioEl && !this.audioEl.paused);
+    const at = this.currentTime;
+    const file = this._fileRef;
+    const decoded = this._decoded;
+    const mode = this._mode;
+
+    if (this._detachLifecycle) this._detachLifecycle();
+    this._teardownBufferSource();
+    const old = this.ctx;
+    this.ctx = null;
+    this.graph = null;
+    this.source = null;
+    if (this.audioEl && this.audioEl.parentNode) this.audioEl.parentNode.removeChild(this.audioEl);
+    this.audioEl = null;
+    if (old && old.state !== 'closed') { try { await old.close(); } catch (e) { /* already gone */ } }
+
+    // Worklet modules are registered per context, so the new one has none until
+    // it loads them. Claiming otherwise would have _buildChain construct
+    // AudioWorkletNodes for processors this context has never heard of.
+    this._worklets = {};
+    this._ensureGraph();
+    this.attachPageLifecycle();
+    this._applyWet();
+    if (this.graph) this.graph.volume.gain.value = this._volume;
+
+    this._mode = mode;
+    if (mode === 'buffer') {
+      // An AudioBuffer decoded against the old context was resampled to ITS
+      // rate. If the new context runs at a different one, reusing it is the very
+      // fault being recovered from, so decode again where the file allows.
+      this._decoded = decoded;
+      if (file && decoded && decoded.sampleRate !== this.ctx.sampleRate) {
+        try { await this._loadDecoded(file); } catch (e) { /* keep what we have */ }
+      }
+      this._bufOffset = at;
+      if (wasPlaying) this._startBufferSource(at);
+    } else if (this.audioEl && this._objectUrl) {
+      this.audioEl.src = this._objectUrl;
+      this.audioEl.load();
+      try { this.audioEl.currentTime = at; } catch (e) { /* not seekable yet */ }
+      if (wasPlaying) this.audioEl.play().catch(() => {});
+    }
   }
 
   // (Re)build the processing chain and reconnect the source to it.
@@ -134,10 +261,9 @@ export class ConcertEngine {
     const venue = this._venue;
     if (!venue) return;
     const old = this.graph;
-    const wetDb = wetTrimDb(
-      this._bypass ? -1000 : (this._wetPercent ?? venue.position.wet),
-      venue.position.wet,
-    );
+    const wetDb = this._bypass
+      ? -1000
+      : wetTrimDb(this._wetPercent ?? venue.position.wet, venue);
     const graph = buildGraph(this.ctx, {
       venue,
       volume: this._volume,
@@ -326,7 +452,7 @@ export class ConcertEngine {
   _applyWet() {
     if (!this.graph || !this._venue) return;
     const def = this._venue.position.wet;
-    const db = this._bypass ? -1000 : wetTrimDb(this._wetPercent ?? def, def);
+    const db = this._bypass ? -1000 : wetTrimDb(this._wetPercent ?? def, this._venue);
     const g = db <= -100 ? 0 : Math.pow(10, db / 20);
     this.graph.wet.gain.setTargetAtTime(g, this.ctx.currentTime, 0.02);
   }
@@ -521,7 +647,7 @@ export class ConcertEngine {
       // Render at unity. The playback volume knob is a monitoring control, and
       // baking it into the file meant listening quietly produced a quiet export.
       volume: 1,
-      wetDb: this._bypass ? -1000 : wetTrimDb(this._wetPercent ?? def, def),
+      wetDb: this._bypass ? -1000 : wetTrimDb(this._wetPercent ?? def, venue),
       worklets,
     });
     graph.limiter.connect(offline.destination);

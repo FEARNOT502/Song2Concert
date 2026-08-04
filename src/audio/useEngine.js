@@ -22,11 +22,23 @@ export function useEngine() {
   // unmount would close the AudioContext that the re-mounted component still
   // references (→ "Cannot close a closed AudioContext" + dead audio graph).
   // Tear down only when the page itself goes away.
+  //
+  // `pagehide` alone is NOT the page going away, and treating it as such was a
+  // real bug on mobile. It fires whenever the page is put into the back/forward
+  // cache — every tab switch, every trip out to the file picker — and the page
+  // then comes back with all of its JavaScript state intact and an AudioContext
+  // that has been closed underneath it. `event.persisted` is how the two cases
+  // are told apart: true means the page is being cached and will be restored, so
+  // there is nothing to tear down.
   useEffect(() => {
     const engine = engineRef.current;
-    const onUnload = () => engine.destroy();
-    window.addEventListener('pagehide', onUnload);
-    return () => window.removeEventListener('pagehide', onUnload);
+    const detachLifecycle = engine.attachPageLifecycle();
+    const onPageHide = (e) => { if (!e.persisted) engine.destroy(); };
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      detachLifecycle();
+      window.removeEventListener('pagehide', onPageHide);
+    };
   }, []);
 
   const loadFile = useCallback(async (file) => {

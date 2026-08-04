@@ -55,6 +55,13 @@ class TransientProcessor extends AudioWorkletProcessor {
       return true;
     }
 
+    // The two envelopes and the smoothed gain each carry forward, so one
+    // non-finite sample would make this send emit NaN indefinitely — and it sums
+    // straight into the direct path. See limiter-processor.js.
+    if (!(this.envFast === this.envFast && this.envSlow === this.envSlow && this.g === this.g)) {
+      this.envFast = 0; this.envSlow = 0; this.g = 0;
+    }
+
     const frames = out[0].length;
     const amountP = parameters.amount;
     const maxP = parameters.maxBoost;

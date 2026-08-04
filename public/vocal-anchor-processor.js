@@ -85,6 +85,15 @@ class VocalAnchorProcessor extends AudioWorkletProcessor {
     const progChans = prog ? prog.length : 0;
     if (!voc) { o.fill(0); return true; }
 
+    // Everything here is a running average of its own previous value, so one
+    // non-finite sample would freeze the correction at NaN for the rest of the
+    // session and silence the vocal return. See limiter-processor.js.
+    if (!(this.envV === this.envV && this.envP === this.envP
+      && this.rLong === this.rLong && this.peakV === this.peakV && this.g === this.g)) {
+      this.envV = 0; this.envP = 0; this.rLong = 0; this.peakV = 1e-6;
+      this.g = 0; this.primed = 0;
+    }
+
     const frames = o.length;
     const maxP = parameters.maxBoost;
     const gateP = parameters.gate;

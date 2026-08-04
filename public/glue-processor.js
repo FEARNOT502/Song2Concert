@@ -80,6 +80,20 @@ class GlueProcessor extends AudioWorkletProcessor {
       return true;
     }
 
+    // A non-finite value in the envelope or in the detector's filter history is
+    // permanent, not transient: every later sample is computed from it. See the
+    // note in limiter-processor.js.
+    if (!(this.envDb === this.envDb && this.grDb === this.grDb)) {
+      this.envDb = -100;
+      this.grDb = 0;
+    }
+    for (let c = 0; c < this.hpState.length; c++) {
+      const st = this.hpState[c];
+      if (st && !(st.y1 === st.y1 && st.y2 === st.y2 && st.y1 !== Infinity && st.y1 !== -Infinity)) {
+        st.x1 = 0; st.x2 = 0; st.y1 = 0; st.y2 = 0;
+      }
+    }
+
     const amountP = parameters.amount;
     const constant = amountP.length === 1;
 

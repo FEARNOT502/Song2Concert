@@ -12,7 +12,7 @@
 //   npm run verify:acoustics
 
 import { reverbTimes, imageSources, itdg, lateralFraction, midRT, bassRatio, mixingTime, BANDS } from '../src/audio/roomacoustics.js';
-import { VENUE_ROOMS, roomAbsorption, sourcePositions, listenerPosition, listeningDistance, DIRECTIVITY } from '../src/audio/venuerooms.js';
+import { VENUE_ROOMS, roomAbsorption, sourcePositions, listenerPosition, listeningDistance, DIRECTIVITY, fillArrivals } from '../src/audio/venuerooms.js';
 
 // Targets. The hall's are Beranek's figures for the top-rated shoebox halls;
 // the rest are what each venue type sounds like when it is done well.
@@ -52,9 +52,9 @@ const TARGETS = {
   theater:     { midRT: [1.1, 1.6],  bass: [0.85, 1.15], itdg: [0.010, 0.035], lf: [0.10, 0.42] },
   // Beranek's figures for the best-regarded halls.
   concerthall: { midRT: [1.9, 2.3],  bass: [1.10, 1.35], itdg: [0.010, 0.025], lf: [0.18, 0.40] },
-  arena:   { midRT: [2.2, 3.0],  bass: [0.85, 1.25], itdg: [0.012, 0.060], lf: [0.00, 0.12] },
-  dome:    { midRT: [3.2, 4.5],  bass: [0.95, 1.60], itdg: [0.015, 0.100], lf: [0.00, 0.12] },
-  stadium: { midRT: [1.9, 3.0],  bass: [0.80, 1.35], itdg: [0.015, 0.130], lf: [0.00, 0.12] },
+  arena:   { midRT: [2.2, 3.0],  bass: [0.85, 1.25], itdg: [0.012, 0.060], lf: [0.20, 0.80] },
+  dome:    { midRT: [3.2, 4.5],  bass: [0.95, 1.60], itdg: [0.015, 0.100], lf: [0.20, 0.80] },
+  stadium: { midRT: [1.9, 3.0],  bass: [0.80, 1.35], itdg: [0.015, 0.130], lf: [0.20, 0.80] },
 };
 
 const inRange = (v, [lo, hi]) => v >= lo && v <= hi;
@@ -78,6 +78,11 @@ for (const id of Object.keys(VENUE_ROOMS)) {
   // Early reflections from both sources, merged — that is what one ear hears.
   const refl = sources
     .flatMap((s) => imageSources({ room: { dims: room.dims, surfaces: room.surfaces }, source: s, listener, maxOrder: 4, maxTime: 0.12, directivity: DIRECTIVITY[id] ?? 0 }))
+    // …plus the venue's own delay rings, where it has them. They are not
+    // reflections and the ITDG check below skips them, but they are the largest
+    // source of EARLY LATERAL energy in any of the big rooms, so a lateral
+    // fraction computed without them describes a rig nobody deploys.
+    .concat(fillArrivals(id).flat())
     .sort((a, b) => a.time - b.time);
 
   const t = TARGETS[id];

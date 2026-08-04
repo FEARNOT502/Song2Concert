@@ -324,9 +324,14 @@ export function imageSources({ room, source, listener, maxOrder = 3, maxTime = 0
 // report a different reflection — or none — as soon as anything changes how loud
 // reflections are. Modelling source directivity dropped every big venue's first
 // return below a −20 dB gate at once, and the gap did not move a millisecond.
+// Arrivals from the venue's own delay towers and side hangs are skipped too, for
+// the same reason: this measures when the ROOM first answers, and a loudspeaker
+// standing in the audience is not the room answering. It would otherwise report
+// the arena's gap as 11 ms — the alignment delay a system engineer chose — where
+// the geometry says 44.
 export function itdg(reflections, floor = 0.01) {
   for (const r of reflections) {
-    if (r.floorOnly) continue;
+    if (r.floorOnly || r.direct) continue;
     if (r.gain < floor) continue;
     return r.time;
   }
@@ -337,6 +342,18 @@ export function itdg(reflections, floor = 0.01) {
 // weighted by cos²(azimuth-from-the-median-plane) the way an LF measurement's
 // figure-of-eight microphone does. 0.20–0.25 is the target for a great hall; it
 // is the strongest single predictor of apparent source width.
+//
+// ONE DIFFERENCE FROM THE PUBLISHED MEASURE, and it matters when reading these
+// numbers against a hall's quoted LF80: the direct sound is not in the
+// denominator here, because imageSources() does not return it. So this is the
+// share of the ROOM'S OWN early return that arrives laterally, not the share of
+// all early energy. It runs high against published figures and it is consistent
+// across all six venues, which is what it is used for.
+//
+// Putting the direct sound back was tried, and it is a bigger change than it
+// looks: every venue drops to 0.05–0.09, well under what a good hall measures,
+// which says the early reflection budget as a whole is light rather than that
+// the ratio was wrong. Re-deriving that budget is its own piece of work.
 export function lateralFraction(reflections, window = 0.08) {
   let lateral = 0, total = 0;
   for (const r of reflections) {

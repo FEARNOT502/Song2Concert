@@ -63,7 +63,7 @@ async function run() {
     } catch (e) {
       log({ venue: venue.id, workletError: String(e.message) });
     }
-    const g = buildGraph(ctx, { venue, volume: 1, wetDb: wetTrimDb(venue.position.wet, venue.position.wet), worklets });
+    const g = buildGraph(ctx, { venue, volume: 1, wetDb: wetTrimDb(venue.position.wet, venue), worklets });
     g.limiter.connect(ctx.destination);
     const src = ctx.createBufferSource();
     src.buffer = testSignal(ctx, seconds);
@@ -167,7 +167,7 @@ async function run() {
       await ctx.audioWorklet.addModule('/Song2Concert/glue-processor.js');
       worklets = { transient: true, vocalAnchor: true, limiter: true, glue: true };
     } catch (e) { /* measured without them */ }
-    const g = buildGraph(ctx, { venue, volume: 1, wetDb: wetTrimDb(venue.position.wet, venue.position.wet), worklets });
+    const g = buildGraph(ctx, { venue, volume: 1, wetDb: wetTrimDb(venue.position.wet, venue), worklets });
     g.limiter.connect(ctx.destination);
     const buf = ctx.createBuffer(2, 128, sr);
     buf.getChannelData(0)[0] = 0.05;
@@ -190,7 +190,7 @@ async function run() {
       const tap = async (which) => {
         const c = new OfflineAudioContext(2, sr * 6, sr);
         try { await c.audioWorklet.addModule('/Song2Concert/limiter-processor.js'); } catch (e) { /* noop */ }
-        const gg = buildGraph(c, { venue, volume: 1, wetDb: wetTrimDb(venue.position.wet, venue.position.wet), worklets: { limiter: true } });
+        const gg = buildGraph(c, { venue, volume: 1, wetDb: wetTrimDb(venue.position.wet, venue), worklets: { limiter: true } });
         gg[which].connect(c.destination);
         const b = c.createBuffer(2, 128, sr);
         b.getChannelData(0)[0] = 0.05; b.getChannelData(1)[0] = 0.05;
@@ -322,7 +322,7 @@ async function run() {
         await ctx.audioWorklet.addModule('/Song2Concert/transient-processor.js');
         await ctx.audioWorklet.addModule('/Song2Concert/limiter-processor.js');
       } catch (e) { /* noop */ }
-      const g = buildGraph(ctx, { venue, volume: 1, wetDb: wetTrimDb(venue.position.wet, venue.position.wet), worklets: { transient, limiter: true } });
+      const g = buildGraph(ctx, { venue, volume: 1, wetDb: wetTrimDb(venue.position.wet, venue), worklets: { transient, limiter: true } });
       g[which].connect(ctx.destination);
       const src = ctx.createBufferSource(); src.buffer = kick(ctx); src.connect(g.trim); src.start(0);
       const out = await ctx.startRendering();
@@ -341,7 +341,7 @@ async function run() {
     const peakTime = await (async () => {
       const ctx = new OfflineAudioContext(2, sr * 4, sr);
       try { await ctx.audioWorklet.addModule('/Song2Concert/limiter-processor.js'); } catch (e) { /* noop */ }
-      const g = buildGraph(ctx, { venue, volume: 1, wetDb: wetTrimDb(venue.position.wet, venue.position.wet), worklets: { limiter: true } });
+      const g = buildGraph(ctx, { venue, volume: 1, wetDb: wetTrimDb(venue.position.wet, venue), worklets: { limiter: true } });
       g.wet.connect(ctx.destination);
       const src = ctx.createBufferSource(); src.buffer = kick(ctx); src.connect(g.trim); src.start(0);
       const out = await ctx.startRendering();
@@ -379,7 +379,7 @@ async function run() {
     const sr = 48000;
     const ctx = new OfflineAudioContext(2, sr * 2, sr);
     try { await ctx.audioWorklet.addModule('/Song2Concert/limiter-processor.js'); } catch (e) { /* noop */ }
-    const g = buildGraph(ctx, { venue, volume: 1, wetDb: wetTrimDb(venue.position.wet, venue.position.wet), worklets: { limiter: true } });
+    const g = buildGraph(ctx, { venue, volume: 1, wetDb: wetTrimDb(venue.position.wet, venue), worklets: { limiter: true } });
     g.wet.connect(ctx.destination);
     const buf = ctx.createBuffer(2, 128, sr);
     buf.getChannelData(0)[0] = 0.05; buf.getChannelData(1)[0] = 0.05;
@@ -405,7 +405,7 @@ async function run() {
     const sr = 48000;
     const ctx = new OfflineAudioContext(2, sr * 4, sr);
     try { await ctx.audioWorklet.addModule('/Song2Concert/limiter-processor.js'); } catch (e) { /* noop */ }
-    const g = buildGraph(ctx, { venue, volume: 1, wetDb: wetTrimDb(venue.position.wet, venue.position.wet), worklets: { limiter: true } });
+    const g = buildGraph(ctx, { venue, volume: 1, wetDb: wetTrimDb(venue.position.wet, venue), worklets: { limiter: true } });
     g.limiter.connect(ctx.destination);
     const buf = ctx.createBuffer(2, 128, sr);
     buf.getChannelData(0)[0] = 0.05; buf.getChannelData(1)[0] = 0.05; // centred
@@ -699,6 +699,66 @@ async function run() {
     const t1 = performance.now();
     synthesizeIR({ venueId: venue.id, sampleRate: 44100, seed: venueSeed(venue.id) });
     log({ test: 'ir build time', venue: venue.id, coldMs: Math.round(cold), cachedMs: +(performance.now() - t1).toFixed(2) });
+  }
+
+  // NOTHING NON-FINITE REACHES THE OUTPUT DEVICE.
+  //
+  // Every filter and envelope in this chain carries state forward, so a single
+  // non-finite value does not pass through — it LATCHES. Every later output is
+  // computed from it, and NaN handed to an output device is reproduced as
+  // full-scale noise, so one bad render quantum becomes a sound that does not
+  // stop until the page is reloaded.
+  //
+  // What this test checks is the bound, and only the bound: the last node before
+  // the destination clamps, so the failure is silence rather than a scream. It
+  // is NOT a recovery test, and the chain does not recover — `rmsAfterRecovery`
+  // reads zero on purpose. Most of the path ahead of the limiter is native
+  // BiquadFilters and a ConvolverNode, whose state a worklet cannot reach into
+  // and reset. Making the graph genuinely self-healing would mean a sanitising
+  // worklet at the head of the chain, and that is a sixth always-on processor on
+  // the audio thread to defend against something nothing here is known to
+  // produce — the wrong trade on a phone that is already short of headroom.
+  // Reported so the figure is on the record rather than assumed.
+  {
+    const sr = 48000;
+    const ctx = new OfflineAudioContext(2, sr * 2, sr);
+    const worklets = {};
+    for (const [key, file] of Object.entries({
+      transient: 'transient-processor.js', vocalAnchor: 'vocal-anchor-processor.js',
+      limiter: 'limiter-processor.js', glue: 'glue-processor.js',
+    })) {
+      try { await ctx.audioWorklet.addModule('/Song2Concert/' + file); worklets[key] = true; } catch (e) { /* noop */ }
+    }
+    const venue = venueById('arena');
+    const g = buildGraph(ctx, { venue, volume: 1, wetDb: wetTrimDb(venue.position.wet, venue), worklets });
+    g.limiter.connect(ctx.destination);
+    const buf = ctx.createBuffer(2, sr * 2, sr);
+    for (let c = 0; c < 2; c++) {
+      const d = buf.getChannelData(c);
+      for (let i = 0; i < d.length; i++) d[i] = Math.sin((2 * Math.PI * 220 * i) / sr) * 0.4;
+      // A poisoned block a quarter of the way in.
+      for (let i = sr / 2; i < sr / 2 + 64; i++) d[i] = i % 2 ? NaN : Infinity;
+    }
+    const src = ctx.createBufferSource(); src.buffer = buf; src.connect(g.trim); src.start(0);
+    const out = await ctx.startRendering();
+    let bad = 0, afterRms = 0, afterN = 0, peak = 0;
+    for (let c = 0; c < 2; c++) {
+      const d = out.getChannelData(c);
+      for (let i = 0; i < d.length; i++) {
+        const v = d[i];
+        if (!(v >= -4 && v <= 4)) bad++;
+        const a = v < 0 ? -v : v;
+        if (a > peak && a < 1e6) peak = a;
+        // Well clear of the injection and of the room's response to it.
+        if (i > sr * 1.5) { afterRms += v * v; afterN++; }
+      }
+    }
+    log({
+      test: 'a non-finite sample does not latch',
+      nonFiniteOrRunawaySamples: bad,
+      peak: +peak.toFixed(3),
+      rmsAfterRecovery: +Math.sqrt(afterRms / Math.max(1, afterN)).toFixed(4),
+    });
   }
 
   // The export path is separate code and has to be exercised separately. A WAV

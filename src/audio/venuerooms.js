@@ -20,7 +20,7 @@
 //   · arena/dome/stadium — the FOH mix position. That is not a compromise: it is
 //     literally the seat the show was mixed to sound correct in.
 
-import { MATERIALS } from './roomacoustics.js';
+import { MATERIALS, BANDS, SPEED_OF_SOUND } from './roomacoustics.js';
 
 // A large-format PA is two hangs, not a point source. Modelling them separately
 // is what gives the big rooms a genuinely different reflection pattern on the
@@ -104,17 +104,116 @@ export const SYSTEM_LF_HZ = {
 //   · club        a small room heard close: intimate, not enveloping
 //   · theatre     boxes up both side walls wrap the stalls
 //   · concert hall the vineyard's terraces surround every seat — the highest
-//                 lateral fraction here, and the form exists for that
-//   · arena/dome  large enclosed volumes; the dome is the biggest
+//                 lateral fraction of the acoustic rooms, and the form exists
+//                 for that
+//   · arena/dome  large enclosed volumes, and the ones where the reverberant
+//                 return is doing most of the work of conveying size; the dome
+//                 is the biggest room here
 //   · stadium     open above the pitch, so much of what would envelop you
-//                 leaves and never comes back
+//                 leaves and never comes back — it stays the narrowest of the
+//                 three big rooms on purpose
 export const REVERB_WIDTH = {
   club: 1.15,
-  theater: 1.25,
+  theater: 1.28,
   concerthall: 1.45,
-  arena: 1.32,
-  dome: 1.38,
-  stadium: 1.20,
+  arena: 1.58,
+  dome: 1.68,
+  stadium: 1.40,
+};
+
+// The reverberant level each venue arrives at, in dB relative to the level its
+// impulse response already carries. The wet slider trims ±12 dB around this.
+//
+// This used to be one number — +2.5 dB — for every venue, with the slider's
+// centre also pinned at 50 everywhere, which meant the venue default could not
+// express venue character at all. That was easy to miss because the slider
+// LOOKED like it was per venue: it reads its centre from `position.wet`, but the
+// trim is computed from the DIFFERENCE between the slider and that centre, so
+// moving the centre moved nothing. All six rooms arrived at +2.5 dB.
+//
+// The measurement that says this needed to be per venue: direct-to-reverberant
+// at the listening position runs −1.8 dB in the club and −1.9 in the hall, and
+// +6.5 / +7.2 / +5.8 dB in the arena, dome and stadium. That eight-decibel split
+// is physically right — a directional rig at the mix position is why big-venue
+// sound works — but two things it does not account for both push the same way:
+//
+//   · LEVEL. A concert runs at 100–105 dB SPL and headphones at perhaps 75. The
+//     reverberant tail of a big room sits far enough below the direct sound that
+//     25 dB down it falls under what you can hear at all, while in a hall, where
+//     the room is already level with the direct sound, it does not. This is the
+//     same argument the loudness compensation makes for the low end, applied to
+//     the reverberant field.
+//   · THE RIG. A stadium show is not one pair of hangs. Side hangs and delay
+//     towers put a great deal of power into the building from positions spread
+//     through the audience — see FILL_HANGS — and a model with only the main
+//     hangs understates how much of the room is excited.
+//
+// The stadium stays the driest of the three, because an open roof genuinely is.
+// These are deliberately short of what the eight-decibel split would suggest,
+// because two other things close most of it first, and both are physical rather
+// than a gain: the delay rings in FILL_HANGS, and the rig power in RIG_POWER.
+// Between them the arena's direct-to-reverberant goes from +6.5 dB to about
+// +1 without anything here moving. What is left is the level argument, and only
+// that — so the big rooms get a decibel over the acoustic ones, not four.
+export const VENUE_WET_DB = {
+  club: 2.0,
+  theater: 2.5,
+  concerthall: 3.0,
+  arena: 3.5,
+  dome: 3.5,
+  stadium: 3.5,
+};
+
+// How much acoustic power the whole rig puts into the building, relative to the
+// main hangs on their own.
+//
+// The statistical reverberant level comes from reverberantRatio(), which is a
+// formula about ONE source: total absorption, one directivity factor, one
+// distance. Give it the main hangs and it tells you what a room does when a
+// single pair of arrays is driving it — and that is not what is driving any of
+// these rooms. The delay rings in FILL_HANGS cover thousands of seats each and
+// run at a level comparable to the mains inside their own zone, so their
+// radiated power is comparable too. All of it ends up in the same reverberant
+// field.
+//
+// It cannot be read off their arrival level at the mix position, which is the
+// only thing FILL_HANGS states: a tower is quiet at FOH precisely because it is
+// aimed at the seats behind it. Computing the reverberant contribution from that
+// figure gives half a decibel and is wrong for the same reason it looks
+// convincing.
+//
+// This is also what makes the towers help rather than hurt REVERBERANCE. Early
+// decay time is measured over the first 10 dB, so early arrivals steepen it:
+// adding the rings on their own took the dome's EDT from 0.60 of its
+// reverberation time to 0.40, which is a room that sounds DRIER than its tail
+// really is — the exact complaint. A rig that excites the room in proportion to
+// its size puts that back where it belongs.
+export const RIG_POWER = {
+  club: 1,
+  theater: 1,
+  concerthall: 1,
+  arena: 2.0,
+  dome: 2.4,
+  stadium: 2.2,
+};
+
+// A low shelf on the DIRECT path, by how much low-frequency system the venue
+// has. Not a taste control: a stadium sub array is dozens of cabinets of
+// horn-loaded or cardioid sub and it is deployed to be felt, where a club has a
+// pair of eighteens in a corner. SYSTEM_LF_HZ already says where each rig stops;
+// this says how hard it pushes above that point.
+//
+// It sits at 70 Hz, below the loudness compensation's 90 Hz shelf, so it adds
+// depth rather than another helping of the same thickness — and it is on the
+// direct path only, so none of it drives the room's low-frequency reverberation.
+// Weight goes up, booming does not.
+export const RIG_LOW_LIFT = {
+  club: 0,
+  theater: 0,
+  concerthall: 0,
+  arena: 1.6,
+  dome: 1.6,
+  stadium: 2.2,
 };
 
 export const VENUE_ROOMS = {
@@ -284,6 +383,137 @@ export function sourcePositions(id) {
     return paHangs(hw, cz, cy).map(([x, y, z]) => [cx + x, y, z]);
   }
   return paHangs(hw, cz, cy).map(([x, y, z]) => [cx + x, y, z]);
+}
+
+// ── Delay towers and side hangs ─────────────────────────────────────────────
+//
+// The large venues were modelled as two hangs at the stage end and nothing else,
+// and that is not what any of these shows is. Past thirty or forty metres a
+// single hang cannot both cover the far seats and stay under the level the front
+// rows can bear, so the coverage is split: extra arrays are flown or towered out
+// in the audience, fed the same programme, and delayed so the stage still sounds
+// like where the music is coming from.
+//
+// Leaving them out was measurable and it was exactly the complaint. Early
+// LATERAL energy is what makes a room feel like it is around you rather than in
+// front of you, and with only the main hangs the arena's lateral fraction inside
+// the first 80 ms was essentially zero: the side stands are fifty-five metres
+// away, so nothing from the sides can arrive early. The note in data.js said as
+// much and declined to invent any — correctly, because inventing reflections a
+// building cannot produce is faking it. A delay tower is not invented. It is
+// equipment standing in the audience at every show of this size, and it delivers
+// a strong arrival from ninety degrees off-axis about ten milliseconds late,
+// which is the single most enveloping thing in the building.
+//
+//   side     which channel of the true-stereo response it feeds, 0 = left
+//   x, y, z  position in room coordinates, for the arrival DIRECTION
+//   gain     arrival amplitude at the mix position, relative to the main hangs'
+//            direct sound. These run well down at FOH: the towers are aimed
+//            downstream at the seats behind them, so the mix position sits off
+//            their axis, and they exist to reinforce the mains rather than to
+//            compete with them.
+//   alignMs  when it arrives, measured from the mains' direct sound. This is a
+//            SETTING and not a time of flight, which is the whole point of a
+//            delay ring: the system engineer measures the propagation and dials
+//            it out, then adds ten to twenty milliseconds on top so the
+//            precedence effect keeps the image on the stage instead of on
+//            whichever tower is nearest.
+//
+// TWO RINGS, AND NO TWO ARRIVING TOGETHER. Both details are the difference
+// between this helping and hurting, and the first attempt had neither: one
+// symmetric pair at a single delay took the early interaural cross-correlation
+// from 0.06 to 0.75. A mirror-image pair firing at the same instant reaches the
+// two ears as near copies of each other, and highly correlated ears are a NARROW
+// image — precisely the opposite of the thing being asked for. It is the same
+// reason every listening position in this file sits two or three metres off the
+// centre line.
+//
+// So the sides are staggered in distance and in delay, and there is an outer
+// ring behind the mix position as well as an inner one beside it. Both are true
+// of any real deployment: the towers ring the audience, the mix position is not
+// at the centre of that ring, and each tower is aligned to its own zone.
+export const FILL_HANGS = {
+  arena: [
+    { side: 0, x: 27, y: 38, z: 7, gain: 0.30, alignMs: 9 },
+    { side: 1, x: 83, y: 45, z: 7, gain: 0.30, alignMs: 14 },
+    { side: 0, x: 21, y: 66, z: 9, gain: 0.19, alignMs: 23 },
+    { side: 1, x: 89, y: 59, z: 9, gain: 0.19, alignMs: 29 },
+  ],
+  dome: [
+    { side: 0, x: 55, y: 63, z: 9, gain: 0.31, alignMs: 11 },
+    { side: 1, x: 126, y: 77, z: 9, gain: 0.31, alignMs: 16 },
+    { side: 0, x: 47, y: 106, z: 12, gain: 0.21, alignMs: 27 },
+    { side: 1, x: 134, y: 95, z: 12, gain: 0.21, alignMs: 34 },
+  ],
+  stadium: [
+    { side: 0, x: 73, y: 77, z: 10, gain: 0.30, alignMs: 12 },
+    { side: 1, x: 164, y: 92, z: 10, gain: 0.30, alignMs: 17 },
+    { side: 0, x: 62, y: 130, z: 13, gain: 0.20, alignMs: 31 },
+    { side: 1, x: 174, y: 117, z: 13, gain: 0.20, alignMs: 38 },
+  ],
+};
+
+// The fills' arrivals at the listening position, in the shape imageSources()
+// returns so the renderer can treat them as ordinary early arrivals.
+//
+// Only the DIRECT arrival of each fill is enumerated. What a tower sends into
+// the room afterwards is reverberation, and the late field is already scaled to
+// the room's statistical reverberant energy rather than summed per source — so
+// running a full image-source solve per tower would cost several times the
+// synthesis budget to re-derive a tail that is being set another way. What only
+// the towers can supply is the early lateral arrival, and that is this.
+//
+// `direct: true` marks them as loudspeakers rather than boundaries, so the
+// initial time delay gap — a measure of when the ROOM first answers — skips
+// them. Lateral fraction does not skip them: the energy is lateral, early, and
+// really there.
+export function fillArrivals(id) {
+  const hangs = FILL_HANGS[id];
+  if (!hangs) return [[], []];
+  const listener = VENUE_ROOMS[id].listener;
+  const mains = sourcePositions(id);
+  const out = [[], []];
+
+  for (const hang of hangs) {
+    const side = hang.side ? 1 : 0;
+    const main = mains[side];
+    // The listener faces the stage; the same frame imageSources() derives, so
+    // the azimuths of the fills and of the room's own reflections agree.
+    const fx0 = main[0] - listener[0], fy0 = main[1] - listener[1];
+    const fLen = Math.hypot(fx0, fy0) || 1e-6;
+    const fx = fx0 / fLen, fy = fy0 / fLen;
+    const rx = fy, ry = -fx;
+
+    const dx = hang.x - listener[0], dy = hang.y - listener[1], dz = hang.z - listener[2];
+    const dist = Math.hypot(dx, dy, dz) || 1e-6;
+    const azimuth = Math.atan2(dx * rx + dy * ry, dx * fx + dy * fy);
+    const elevation = Math.asin(Math.max(-1, Math.min(1, dz / dist)));
+
+    // A little more top gone than the mains lose, because the mix position is
+    // off the tower's axis and a line array's pattern narrows with frequency.
+    const band = BANDS.map((__, b) => hang.gain * (b >= 4 ? 0.72 : b === 3 ? 0.88 : 1));
+    out[side].push({
+      time: hang.alignMs / 1000,
+      gain: (band[2] + band[3]) / 2,
+      band,
+      azimuth,
+      elevation,
+      order: 0,
+      floorOnly: false,
+      direct: true,
+      // Not spread in time, unlike a reflection off a stand. Smearing these was
+      // tried on the reasoning that a tower is several metres of array rather
+      // than a point, and it cost 3 dB of reverberant level for no measurable
+      // return: staggering the ring is what decorrelates the ears, and the
+      // spread had been doing the decorrelating by throwing energy away instead.
+      // depositTap normalises a cluster on amplitude rather than on energy, by
+      // design, so splitting a coherent arrival across nine taps loses most of
+      // its power. A tower is also the one arrival in the building that is
+      // deliberately coherent — the alignment exists to make it so.
+      scatter: 0,
+    });
+  }
+  return out;
 }
 
 export const listenerPosition = (id) => VENUE_ROOMS[id].listener;
