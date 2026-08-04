@@ -13,6 +13,7 @@ dist
 # Local Claude Code settings
 .claude/settings.local.json
 
-# Design reference material (not app code)
-venues/
+# Design reference material (not app code). Anchored to the repo root: the
+# unanchored form also matched src/three/venues/, which is app code.
+/venues/
 BACKGROUND_SWAP_PROMPT.md

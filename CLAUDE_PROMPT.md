@@ -80,11 +80,11 @@ Hero numbers (e.g. seat label): **22–28px**, **font-weight 300**, Inter Tight,
 
 ### Layout grid
 
-Single 1440 × 760 logical canvas. All scenes are SVGs with `viewBox="0 0 1440 760"` and `preserveAspectRatio="xMidYMid slice"`. Everything else is absolutely positioned over the scene with z-layers:
+A full-bleed WebGL canvas. Each venue is a real 3D scene (`src/three/`), built from the room model the reverb is computed from, and viewed from the modelled seat. Everything else is absolutely positioned over it with z-layers:
 
 ```
-z-0   Scene SVG (architecture, audience, walls)
-z-10  Album art (HTML, can pulse, can use real <img>)
+z-0   Scene canvas (architecture, rigging, audience, light)
+z-10  Album art (HTML overlay, projected onto the 3D stage screen; can pulse, can use real <img>)
 z-20  Data overlays (left rail, right rail, seat chip)
 z-40  TopBar + BottomTransport (always visible)
 z-50  Modals (file / venue / seat picker)
@@ -185,7 +185,11 @@ The six canonical venues with their acoustic signatures (use these or extend):
 
 ## 5 · Scene recipes (the hardest part)
 
-Every scene is a `<div className="absolute inset-0">` containing **one SVG** (`viewBox="0 0 1440 760"`) with the architecture + audience, and **one absolutely-positioned `<Cover>`** for the album art on stage. Acoustic feel ≈ visual feel — the bigger and more reverberant the venue, the smaller the stage in frame, the larger the audience.
+> **Superseded.** The scenes below describe the original SVG recipes. They are now
+> real 3D scenes — see `src/three/venues/` and the notes at the top of each file.
+> The intent still holds and the recipes are kept as the record of it.
+
+Every scene is a THREE.Group built by `src/three/venues/<id>.js` and rendered by `src/three/stage.js`, with the album art an **HTML overlay** parked on the screen inside the room — `stage.js` projects that screen's corners each frame so the art tracks it. Acoustic feel ≈ visual feel, and it is not left to eye: the room's dimensions, stage position, stage width and listening seat all come from `audio/venuerooms.js`, so the bigger and more reverberant the venue, the smaller the stage in frame and the larger the audience — automatically.
 
 Common ingredients:
 - **Foreground audience heads:** `<ellipse>` (body) + `<circle>` (head) in `#000` — large and out-of-focus near bottom of frame, smaller and tighter rows further back.
@@ -315,10 +319,10 @@ The build is "done" when:
 
 ## 9 · How to extend
 
-- **Add a venue:** push to `VENUES`, add a `Scene<Name>` component in `scenes.jsx`, register it in the `Scene` dispatcher's `map`, add a `VenueThumb` case in `ui.jsx`.
+- **Add a venue:** add the room to `audio/venuerooms.js`, push to `VENUES` in `data.js`, add `src/three/venues/<id>.js` and register it in `src/three/venues/index.js`, add a `VenueThumb` case in `Modals.jsx`.
 - **Add a file/cover:** push to `FILES` and add a new `Cover<Name>` component, register in `Cover` map.
 - **Real audio:** rewrite `<BottomTransport>` and `<App>` to own an `AudioContext` + load IRs from `/irs/<venue>-<seat>.wav`.
-- **Mobile:** the SVG `viewBox` is fixed at 1440×760 with `preserveAspectRatio="xMidYMid slice"` so it crops; data panels need to collapse to a single bottom sheet under 900px width.
+- **Mobile:** the scene renders at whatever size its container is, so it fits the phone hero without cropping; under 900px width the renderer drops bloom and caps pixel ratio, and the data panels collapse into `MobileLayout`.
 
 ---
 
