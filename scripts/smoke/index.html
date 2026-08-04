@@ -7,7 +7,7 @@ import { buildGraph, applyVenue, wetTrimDb, INPUT_TRIM_DB } from '/src/audio/gra
 import { VENUES } from '/src/data.js';
 import { ConcertEngine } from '/src/audio/engine.js';
 import { synthesizeIR, venueSeed } from '/src/audio/impulse.js';
-import { clarity, octaveBand } from '/src/audio/iranalysis.js';
+import { clarity, octaveBand, reverbTime } from '/src/audio/iranalysis.js';
 
 const results = [];
 const log = (o) => results.push(o);
@@ -177,11 +177,44 @@ async function run() {
     const mono = new Float32Array(out.length);
     const L = out.getChannelData(0), R = out.getChannelData(1);
     for (let i = 0; i < out.length; i++) mono[i] = (L[i] + R[i]) / 2;
+    // How much low-frequency ROOM there is relative to the low-frequency direct
+    // sound. Clarity figures cannot be compared across these venues in the low
+    // band: C50 counts everything past 50 ms as late, and the stadium's first
+    // reflection does not arrive until 112 ms, so a long initial gap reads as
+    // poor definition when it is nothing of the kind. A wet-against-dry ratio
+    // does not care when the energy arrives, only how much of it there is.
+    const lowWetDry = await (async () => {
+      const tap = async (which) => {
+        const c = new OfflineAudioContext(2, sr * 6, sr);
+        try { await c.audioWorklet.addModule('/Song2Concert/limiter-processor.js'); } catch (e) { /* noop */ }
+        const gg = buildGraph(c, { venue, volume: 1, wetDb: wetTrimDb(venue.position.wet, venue.position.wet), worklets: { limiter: true } });
+        gg[which].connect(c.destination);
+        const b = c.createBuffer(2, 128, sr);
+        b.getChannelData(0)[0] = 0.05; b.getChannelData(1)[0] = 0.05;
+        const s2 = c.createBufferSource(); s2.buffer = b; s2.connect(gg.trim); s2.start(0);
+        const o = await c.startRendering();
+        const m2 = new Float32Array(o.length);
+        const A = o.getChannelData(0), B = o.getChannelData(1);
+        for (let i = 0; i < o.length; i++) m2[i] = (A[i] + B[i]) / 2;
+        const bandLow = octaveBand(m2, sr, 125);
+        let e = 0; for (let i = 0; i < bandLow.length; i++) e += bandLow[i] * bandLow[i];
+        return e;
+      };
+      return 10 * Math.log10((await tap('wet')) / (await tap('dry')));
+    })();
+
+    // Booming is how long the low end goes on ringing through the WHOLE chain,
+    // and low-end definition is how much of its energy lands in the first
+    // 50 ms rather than after. Both are measured in the 125 Hz octave, where a
+    // kick and a bass live and where a large room rings longest.
+    const low = octaveBand(mono, sr, 125);
     log({
       test: 'system clarity',
       venue: venue.id,
       c80: +clarity(mono, sr, 80).toFixed(1),
       c50vocal: +clarity(octaveBand(mono, sr, 2000), sr, 50).toFixed(1),
+      lowRoomVsDirect_dB: +lowWetDry.toFixed(1),
+      lowRingT20_s: +reverbTime(low, sr).toFixed(2),
     });
   }
   // A limiter must be a wire below its threshold. This check exists because the

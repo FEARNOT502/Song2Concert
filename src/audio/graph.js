@@ -31,7 +31,8 @@
 
 import { buildImpulseResponse, venueSeed } from './impulse.js';
 import { SIDE_SHELF } from './binaural.js';
-import { listeningDistance, DIRECTIVITY } from './venuerooms.js';
+import { listeningDistance, roomAbsorption, DIRECTIVITY } from './venuerooms.js';
+import { reverbTimes } from './roomacoustics.js';
 
 // Headroom taken off the front so the boosts downstream have somewhere to go.
 // Without it the chain ran a limiter at −3 dBFS with 20:1 into a signal already
@@ -71,25 +72,48 @@ const AIR_RESIDUAL = 0.4;
 
 // ── How much of each band actually reaches the room ─────────────────────────
 //
-// Every real source is more directional as frequency rises, so the reverberant
-// field receives proportionally less high frequency than the direct sound does.
+// HIGH FREQUENCY. Every real source is more directional as frequency rises, so
+// the reverberant field receives proportionally less top than the direct sound.
 // A human voice runs about 6 dB more directional at 4 kHz than at 250 Hz, and a
-// line array far more than that — so the baseline here is set near that 6 dB
-// rather than conservatively below it, because the presence band is exactly
-// where a buried vocal is buried. Modelling the source as equally loud in all
-// directions at all frequencies put the full presence band into the reverb,
-// where it sat on top of the consonants that carry intelligibility — which is
-// what buries a vocal in a reverberant room.
+// line array far more. Modelling a source as equally loud in all directions at
+// all frequencies put the whole presence band into the reverb, on top of the
+// consonants that carry a lyric.
 //
-// The low shelf is the other half, and applies only to the large rigs: their
-// subwoofers are cardioid or end-fire arrays, deployed precisely so the building
-// is not excited at the frequencies it rings longest at. Tokyo Dome, whose
-// 125 Hz reverberation runs to six seconds, is exactly the room that exists for.
+// LOW FREQUENCY. Large rigs use cardioid or end-fire subwoofer arrays, and how
+// much control gets deployed depends on how badly the building rings — that is
+// the entire reason the technique exists. Scaling this by directivity alone was
+// wrong: directivity barely differs between the three large venues, so Tokyo
+// Dome, whose 125 Hz reverberation runs past six seconds, was getting the same
+// 4.6 dB of sub control as an open stadium at 2.7 s. It boomed accordingly.
+// Control now follows the room's own low-frequency decay, which is what a system
+// engineer would deploy against, with a floor under it because any deployed sub
+// array is steered to some degree.
+//
+// The shelf sits at 160 Hz, which is above where a sub array usually hands over
+// to the mains. It was at 100 Hz, and that was most of why the first attempt at
+// this barely worked: the 125 Hz octave runs from 88 to 177 Hz, so the boom lay
+// mostly ABOVE the corner and went almost untouched — raising the cut by 1.3 dB
+// moved the measured low-end room by 0.2 dB. Placing it where these rooms
+// actually ring is worth 2 to 3 dB in every large venue.
+//
+// LOW MID. A gentle dip where every instrument's body overlaps — bass, guitar,
+// piano, the chest of a voice. Reverberation through that region is what fuses a
+// mix into one wash, so removing a little of it from the SEND is the cheapest
+// separation available, and it costs the direct sound nothing: the weight and
+// the impact are carried by the dry path, which is untouched.
+//
+// This last one is a mix decision rather than a property of a building, and is
+// the one place here that departs from letting the room simply do what rooms do.
+// It is also what every live engineer reaches for first.
 export function reverbSendTilt(venueId) {
   const d = DIRECTIVITY[venueId] ?? 0;
+  const lf125 = reverbTimes(roomAbsorption(venueId))[0];
+  // Only a venue with a deployed sub array has anything to steer.
+  const subControl = d > 0.5 ? Math.min(10, 3 + 1.3 * lf125) : 0;
   return {
+    lf: -subControl,
+    mud: -2.5,
     hf: -(4.5 + 3 * d),
-    lf: -6 * Math.max(0, (d - 0.5) / 0.5),
   };
 }
 
@@ -123,16 +147,21 @@ const dbToGain = (db) => Math.pow(10, db / 20);
 // worklet returns only the attack increment, and that is summed back. The main
 // path is never filtered, so with no transient present the result is identical
 // to the send not existing.
+//
+// Leaning on these is the safe way to add definition to a kit. They raise the
+// ATTACK and not the sustain, so a kick gets more front without getting longer —
+// which is the opposite of what a low-end EQ boost does, and the reason weight
+// and impact can both go up while booming goes down.
 const TRANSIENT_BANDS = [
   // The kick's chest thump. Low enough to sit under the bass guitar's body
   // rather than on top of it.
-  { name: 'kickThump', type: 'bandpass', frequency: 70, Q: 1.2, amount: 1.3, gain: 1.0 },
+  { name: 'kickThump', type: 'bandpass', frequency: 70, Q: 1.2, amount: 1.5, gain: 1.0 },
   // The snare's body — the wooden thwack, distinct from its crack.
-  { name: 'snareBody', type: 'bandpass', frequency: 220, Q: 1.2, amount: 1.1, gain: 0.9 },
+  { name: 'snareBody', type: 'bandpass', frequency: 220, Q: 1.2, amount: 1.3, gain: 0.9 },
   // Kick beater click and snare crack together. On in-ears this band does most
   // of the work: there is no chest to feel a kick with, so the attack has to be
   // heard rather than felt.
-  { name: 'attack', type: 'bandpass', frequency: 4200, Q: 0.9, amount: 1.2, gain: 0.8 },
+  { name: 'attack', type: 'bandpass', frequency: 4200, Q: 0.9, amount: 1.35, gain: 0.8 },
 ];
 
 // Build the whole chain on any context. `worklets` says which AudioWorklet
@@ -280,7 +309,11 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {} })
   // the engineer sends it.
   n.sendLF = ctx.createBiquadFilter();
   n.sendLF.type = 'lowshelf';
-  n.sendLF.frequency.value = 100;
+  n.sendLF.frequency.value = 160;
+  n.sendMud = ctx.createBiquadFilter();
+  n.sendMud.type = 'peaking';
+  n.sendMud.frequency.value = 320;
+  n.sendMud.Q.value = 0.8;      // roughly 180–560 Hz
   n.sendHF = ctx.createBiquadFilter();
   n.sendHF.type = 'highshelf';
   n.sendHF.frequency.value = 2000;
@@ -342,7 +375,8 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {} })
   n.wet = ctx.createGain();
   n.wet.gain.value = dbToGain(wetDb);
   n.sendMerge.connect(n.sendLF);
-  n.sendLF.connect(n.sendHF);
+  n.sendLF.connect(n.sendMud);
+  n.sendMud.connect(n.sendHF);
   n.convA.connect(n.convGainA);
   n.convB.connect(n.convGainB);
   n.convGainA.connect(n.wet);
@@ -472,6 +506,7 @@ export function applyVenue(ctx, n, venue, { fadeIn = VENUE_FADE_IN, fadeOut = VE
 
   const send = reverbSendTilt(venue.id);
   ramp(n.sendLF.gain, send.lf);
+  ramp(n.sendMud.gain, send.mud);
   ramp(n.sendHF.gain, send.hf);
 
   const pa = venue.pa || {};
