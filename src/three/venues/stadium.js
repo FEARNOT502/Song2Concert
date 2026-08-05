@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { ACCENT, COOL, MAGENTA, WARM, basic, crowdField, lambert, makeScreen, prng, sparkField } from '../kit.js';
 import {
   ampStack, bowl, fixture, footlights, lineArray, monitorWedge, performer,
-  ribbonRing, seatBank, thin, speakerStack, stageDeck, standingCrowd, truss,
+  ribbonRing, roofSupport, seatBank, thin, speakerStack, stageDeck, standingCrowd, truss,
 } from '../props.js';
 import { frame } from './frame.js';
 
@@ -86,6 +86,28 @@ export default function buildStadium(u) {
     strip.position.set(side * BOWL_X, ROOF_Y - 0.4, (BOWL_Z0 + BOWL_Z1) / 2);
     root.add(strip);
   }
+
+  // ── and what holds it up ──
+  //
+  // The plate above used to float: the top row of the third tier lands at about
+  // 36 m and the roof sits at 48, so there were twelve metres of open night
+  // between the back of the house and a roof attached to nothing. From FOH you
+  // look straight at that gap over the stage, and it made the biggest room here
+  // read as a canopy someone had propped in mid-air.
+  //
+  // The columns stand at 122 m — six metres clear of the back of the top tier,
+  // which ends at 118.6 — and just inside the roof edge at 129, so the plate
+  // overhangs them slightly the way a real one does. From there the trusses
+  // cantilever 56 m inward to the lip of the opening. Nothing about the room
+  // model moves: this is structure that the acoustic model already accounts for
+  // (15,000 m² of it, as `concrete`, in venuerooms.js) and was simply never
+  // drawn.
+  const COL_X = 122, COL_ZF = -76, COL_ZB = 152;
+  root.add(roofSupport({
+    halfWidth: COL_X, zFront: COL_ZF, zBack: COL_ZB,
+    innerHalfWidth: BOWL_X, innerZFront: BOWL_Z0, innerZBack: BOWL_Z1,
+    y: ROOF_Y,
+  }));
 
   // ── stage ──
   const mask = new THREE.Mesh(new THREE.BoxGeometry(78, 24, 1.2), lambert(0x0b0b12));

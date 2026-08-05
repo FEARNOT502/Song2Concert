@@ -14,7 +14,7 @@ import { useEffect, useRef, useState } from 'react';
 import StageArt from './StageArt.jsx';
 import { createStage } from '../three/stage.js';
 
-export default function Scene({ venueId, coverId, coverSrc, pulse, pulseRef, title, artist }) {
+export default function Scene({ venueId, coverId, coverSrc, pulse, pulseRef, title, artist, strain = 0 }) {
   const hostRef = useRef(null);
   const canvasRef = useRef(null);
   const stageRef = useRef(null);
@@ -54,6 +54,9 @@ export default function Scene({ venueId, coverId, coverSrc, pulse, pulseRef, tit
   }, []);
 
   useEffect(() => { stageRef.current?.setVenue(venueId); }, [venueId]);
+  // How hard the audio thread is finding it — see stage.js setStrain. The scene
+  // gives frames back when the sound needs them.
+  useEffect(() => { stageRef.current?.setStrain(strain); }, [strain]);
   // the scene samples the pulse itself, once per rendered frame, so a loud track
   // does not turn into sixty React renders a second
   useEffect(() => { stageRef.current?.setPulseRef(pulseRef); }, [pulseRef]);

@@ -12,9 +12,17 @@ import { FilePicker, VenuePicker } from './components/Modals.jsx';
 import QueuePanel from './components/QueuePanel.jsx';
 import MobileLayout from './components/MobileLayout.jsx';
 import { useIsMobile } from './useIsMobile.js';
+import { useMediaSession } from './useMediaSession.js';
 import { useEngine } from './audio/useEngine.js';
+import { useAudioStrain } from './audio/useAudioStrain.js';
 import { audioBufferToFlac } from './audio/flac.js';
 import { extractMetadata } from './audio/metadata.js';
+
+// How the export's two halves divide the progress bar. Rendering the venue
+// offline is a convolution plus six worklets over the whole track and its tail;
+// encoding is libFLAC over the result. The render is the longer of the two by
+// some margin, so it owns most of the bar.
+const RENDER_SHARE = 0.72;
 
 const stripExt = (name) => name.replace(/\.[^.]+$/, '');
 
@@ -41,6 +49,7 @@ export default function App() {
   // the scene reads this every frame; `pulse` state exists only for the DOM
   const pulseRef = useRef(0);
   const [exporting, setExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState(0); // 0..1 while exporting
 
   // playback queue. The track at index 0 is ALWAYS the one currently loaded;
   // finished / skipped tracks are removed from the front. `queue` state mirrors
@@ -52,6 +61,8 @@ export default function App() {
 
   const { engine, status, duration, hasAudio, setStatus, loadFile, play, pause } = useEngine();
   const isMobile = useIsMobile();
+  // The scene draws less when the audio thread starts missing its deadline.
+  const strain = useAudioStrain(engine, playing);
 
   // derived
   const venue = findVenue(venueId);
@@ -145,6 +156,21 @@ export default function App() {
     else { await play(); setPlaying(true); }
   }, [hasAudio, playing, play, pause]);
 
+  // Explicit play and pause, rather than the toggle. A lock screen sends the
+  // action it wants — and sends it again if it thinks the first one was missed —
+  // so a toggle wired to both would answer a second `play` by pausing.
+  const resumePlayback = useCallback(async () => {
+    if (!hasAudio || playing) return;
+    await play();
+    setPlaying(true);
+  }, [hasAudio, playing, play]);
+
+  const pausePlayback = useCallback(() => {
+    if (!playing) return;
+    pause();
+    setPlaying(false);
+  }, [playing, pause]);
+
   const handleSeek = useCallback((sec) => {
     if (!hasAudio) return;
     setTime(sec);
@@ -194,7 +220,25 @@ export default function App() {
     engine.setWetDry(wetDry);
     engine.setVolume(volume);
     if (autoplay) { await play(); setPlaying(true); }
+    // Now that this track is running, decode the next one. Deferred by a moment
+    // so it does not land on the same tick as the graph starting up — the decode
+    // itself is off the main thread, but reading a hi-res file into memory is
+    // not, and the start of a track is the worst time to do it.
+    readAheadRef.current(1500);
   }, [engine, loadFile, play, setStatus, wetDry, volume]);
+
+  // Decode the track AFTER the current one, so switching to it costs nothing.
+  // Called whenever the queue changes shape or a new track starts.
+  const readAheadTimer = useRef(0);
+  const readAhead = useCallback((delay = 0) => {
+    clearTimeout(readAheadTimer.current);
+    const next = queueRef.current[1];
+    if (!next) return;
+    readAheadTimer.current = setTimeout(() => engine.prepareNext(next), delay);
+  }, [engine]);
+  const readAheadRef = useRef(readAhead);
+  readAheadRef.current = readAhead;
+  useEffect(() => () => clearTimeout(readAheadTimer.current), []);
 
   // Drop the front (finished/skipped) track, then load the new front.
   const advance = useCallback(async () => {
@@ -221,6 +265,9 @@ export default function App() {
     if (idx <= 0) return; // never remove the currently-playing front track here
     queueRef.current = queueRef.current.filter((_, i) => i !== idx);
     setQueue((rows) => rows.filter((r) => r.id !== id));
+    // Removing the track that was queued next makes the decoded buffer waste,
+    // and whatever moved up into its place is now worth having ready instead.
+    if (idx === 1) readAheadRef.current(0);
   }, [queue]);
 
   // append dropped/selected files to the queue; start playing if idle
@@ -230,7 +277,11 @@ export default function App() {
     const wasEmpty = queueRef.current.length === 0;
     queueRef.current = queueRef.current.concat(list);
     setQueue((rows) => rows.concat(list.map((f) => ({ id: ++idRef.current, name: stripExt(f.name) }))));
-    if (wasEmpty) await loadFront(true);
+    if (wasEmpty) { await loadFront(true); return; }
+    // Something is already playing and these went behind it. If one of them is
+    // now the next track, start decoding it — the point of the read-ahead is
+    // that it is done long before it is needed.
+    readAhead(1500);
   };
 
   // next = drop the front and play the next queued track
@@ -250,9 +301,15 @@ export default function App() {
   const handleExport = async () => {
     if (!hasAudio) { setFilePickerOpen(true); return; }
     setExporting(true);
+    setExportProgress(0);
     try {
-      const { buffer, bitDepth } = await engine.renderOffline(venue);
-      const blob = await audioBufferToFlac(buffer, { bitDepth });
+      const { buffer, bitDepth } = await engine.renderOffline(venue, {
+        onProgress: (p) => setExportProgress(p * RENDER_SHARE),
+      });
+      const blob = await audioBufferToFlac(buffer, {
+        bitDepth,
+        onProgress: (p) => setExportProgress(RENDER_SHARE + p * (1 - RENDER_SHARE)),
+      });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -264,8 +321,30 @@ export default function App() {
       alert('Export failed: ' + e.message);
     } finally {
       setExporting(false);
+      setExportProgress(0);
     }
   };
+
+  // ── lock screen / headphone buttons / car stereo ────────────────────────────
+  useMediaSession({
+    hasAudio,
+    playing,
+    title: displayFile.name,
+    artist: upload?.artist || '',
+    // The room is what you are listening to, and it is the field the lock screen
+    // has spare. See useMediaSession.js.
+    album: `${venue.name} · Song2Concert`,
+    artworkSrc: coverSrc,
+    duration: effDurSec,
+    position: time,
+    onPlay: resumePlayback,
+    onPause: pausePlayback,
+    onPrev: prevTrack,
+    onNext: nextTrack,
+    onSeek: handleSeek,
+    hasNext: queue.length > 1,
+    hasPrev: hasAudio,
+  });
 
   // ── keyboard (Space / ←→ / F V / Esc) ───────────────────────────────────
   useEffect(() => {
@@ -326,10 +405,12 @@ export default function App() {
           onSeek={handleSeek}
           onExport={handleExport}
           exporting={exporting}
+          exportProgress={exportProgress}
           volume={volume}
           onVolumeChange={setVolume}
           onFileClick={() => setFilePickerOpen(true)}
           onVenueClick={() => setVenuePickerOpen(true)}
+          strain={strain}
         />
         {pickers}
       </>
@@ -346,6 +427,7 @@ export default function App() {
         pulseRef={pulseRef}
         title={upload ? upload.name : null}
         artist={upload ? upload.artist : null}
+        strain={strain}
       />
 
       <TopBar
@@ -392,6 +474,7 @@ export default function App() {
         onSeek={handleSeek}
         onExport={handleExport}
         exporting={exporting}
+        exportProgress={exportProgress}
         volume={volume}
         onVolumeChange={setVolume}
       />

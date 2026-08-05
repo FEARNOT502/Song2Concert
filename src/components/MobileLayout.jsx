@@ -79,12 +79,14 @@ export default function MobileLayout({
   venue, displayFile, coverSrc, pulse, pulseRef, upload, audioStatus, hasAudio,
   // transport
   playing, onToggle, onPrev, onNext, hasNext, hasPrev,
-  time, durSec, wetDry, onWetChange, onSeek, onExport, exporting,
+  time, durSec, wetDry, onWetChange, onSeek, onExport, exporting, exportProgress = 0,
   volume, onVolumeChange,
   // pickers
   onFileClick, onVenueClick,
+  strain = 0,
 }) {
   const [showMixer, setShowMixer] = useState(false);
+  const exportPct = Math.round(exportProgress * 100);
   const pos = venue.position;
   const direct = 100 - pos.wet;
   const liveish = audioStatus === 'live' || audioStatus === 'ready';
@@ -114,6 +116,7 @@ export default function MobileLayout({
             pulseRef={pulseRef}
             title={upload ? upload.name : null}
             artist={upload ? upload.artist : null}
+            strain={strain}
           />
         </div>
 
@@ -195,9 +198,17 @@ export default function MobileLayout({
             <button
               onClick={onExport}
               disabled={exporting}
-              className="w-full mt-1 py-2.5 border border-[oklch(0.78_0.16_55)] text-[oklch(0.78_0.16_55)] active:bg-[oklch(0.78_0.16_55)] active:text-black rounded-lg text-[12px] tracking-[0.15em] uppercase disabled:opacity-50"
+              className="relative overflow-hidden w-full mt-1 py-2.5 border border-[oklch(0.78_0.16_55)] text-[oklch(0.78_0.16_55)] active:bg-[oklch(0.78_0.16_55)] active:text-black rounded-lg text-[12px] tracking-[0.15em] uppercase disabled:opacity-100"
             >
-              {exporting ? 'RENDERING…' : 'EXPORT FLAC ↗'}
+              {exporting && (
+                <span
+                  className="absolute inset-y-0 left-0 bg-[oklch(0.78_0.16_55)]/25 transition-[width] duration-200 ease-linear pointer-events-none"
+                  style={{ width: `${exportPct}%` }}
+                />
+              )}
+              <span className="relative tabular-nums">
+                {exporting ? `RENDERING… ${exportPct}%` : 'EXPORT FLAC ↗'}
+              </span>
             </button>
           </div>
         )}

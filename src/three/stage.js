@@ -162,12 +162,44 @@ export function createStage(canvas, { quality = 'high' } = {}) {
   let lastDrawn = -1e9;
   let drawn = 0;
 
+  // ── the drawing yields to the sound, never the other way round ─────────────
+  //
+  // `heavy` above measures what a frame costs US. That is the wrong question on
+  // a machine where the frame is affordable and the audio callback is not — a
+  // laptop on battery, most obviously, where the governor drops the clock and
+  // the scene carries on hitting sixty while the convolver starts missing its
+  // deadline. The frame-cost governor never fires, because nothing about the
+  // frame got slower; what got slower is everything.
+  //
+  // So strain is reported from outside, from the audio thread's own underrun
+  // count, and it takes precedence. Level 1 halves the frame rate. Level 2 also
+  // drops the pixel ratio and switches the bloom pass off, which together are
+  // most of what a frame costs.
+  //
+  // The scene looks worse. That is the correct trade: a dropped frame is a
+  // frame, and a dropped audio quantum is a click.
+  let strain = 0;
+  function setStrain(level) {
+    const next = Math.max(0, Math.min(2, level | 0));
+    if (next === strain) return;
+    const wasSevere = strain >= 2;
+    strain = next;
+    const severe = strain >= 2;
+    if (severe === wasSevere) return;
+    if (bloom) bloom.enabled = !severe;
+    renderer.setPixelRatio(severe ? 1 : Math.min(window.devicePixelRatio || 1, maxRatio));
+    renderer.setSize(size.w, size.h, false);
+    composer.setSize(size.w, size.h);
+    applyPointScale();
+    publishLayout();
+  }
+
   function frame(now) {
     raf = requestAnimationFrame(frame);
     if (!venue || document.hidden) return;
     // A millisecond of slack, so a frame arriving a hair early is not held back
     // to the one after it — which would halve the rate rather than cap it.
-    if (now - lastDrawn < (heavy ? targetMs * 2 : targetMs) - 1) return;
+    if (now - lastDrawn < ((heavy || strain > 0) ? targetMs * 2 : targetMs) - 1) return;
     lastDrawn = now;
     drawn++;
 
@@ -190,7 +222,9 @@ export function createStage(canvas, { quality = 'high' } = {}) {
 
   function resize(w, h) {
     size = { w: Math.max(1, w), h: Math.max(1, h) };
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, maxRatio));
+    // Keep whatever strain has decided; a resize is not a reason to hand the
+    // pixels back to a machine that could not afford them a moment ago.
+    renderer.setPixelRatio(strain >= 2 ? 1 : Math.min(window.devicePixelRatio || 1, maxRatio));
     renderer.setSize(size.w, size.h, false);
     composer.setSize(size.w, size.h);
     bloom?.setSize(size.w, size.h);
@@ -204,12 +238,13 @@ export function createStage(canvas, { quality = 'high' } = {}) {
     setVenue,
     setPulse: (p) => { pulse = p; },
     setPulseRef: (ref) => { pulseRef = ref || null; },
+    setStrain,
     resize,
     onLayout(fn) { onLayout = fn; if (layoutRect) fn({ ...layoutRect }); },
     start() { if (!running) { running = true; clock.start(); raf = requestAnimationFrame(frame); } },
     // Frames actually drawn, for the frame-rate check in scripts/audio-smoke.mjs.
     // Nothing in the app reads it.
-    stats: () => ({ drawn, heavy, frameMs: +frameBudget.toFixed(2) }),
+    stats: () => ({ drawn, heavy, strain, frameMs: +frameBudget.toFixed(2) }),
     dispose() {
       running = false;
       cancelAnimationFrame(raf);

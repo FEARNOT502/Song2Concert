@@ -43,6 +43,14 @@ async function loadWorklets(ctx) {
   return available;
 }
 
+// How much of an export's progress bar the decode step owns. It is one opaque
+// call that cannot report anything, so it gets a share rather than a ramp.
+const DECODE_SHARE = 0.12;
+// How many points the offline render is suspended at to report progress. Each
+// suspension costs a round trip through the event loop, so this is enough to
+// look continuous and few enough to be free.
+const PROGRESS_STEPS = 40;
+
 export class ConcertEngine {
   constructor() {
     this.ctx = null;
@@ -74,13 +82,46 @@ export class ConcertEngine {
     this._bufGen = 0;           // generation counter, to ignore stale onended
     this._ended = false;
     this._fileRef = null;       // original File, for offline export
+
+    // The NEXT track, decoded while this one plays — see prepareNext(). One
+    // track deep, deliberately: a decoded AudioBuffer is float32 per channel, so
+    // five minutes of 24/96 stereo is about 230 MB, and holding a whole queue of
+    // them would cost more than the gap it saves is worth.
+    this._prepared = null;      // { file, buffer }
+    this._preparing = null;     // File currently being decoded ahead
+
+    // Audio-thread load, filled by _watchLoad() where the browser reports it.
+    this._load = { average: 0, peak: 0, underrun: 0, supported: false };
   }
 
   // Build the AudioContext and the graph. Idempotent; called on first gesture.
   _ensureGraph() {
     if (this.ctx) return;
     const AC = window.AudioContext || window.webkitAudioContext;
-    this.ctx = new AC();
+    // `playback`, not the default `interactive`.
+    //
+    // The default asks the browser for the smallest output buffer it can manage,
+    // because the default assumes something is waiting on the sound — an
+    // instrument, a game, a call. Nothing here is: this is a file being played
+    // back, and the only thing a small buffer buys is a shorter delay between
+    // pressing play and hearing it, which nobody can perceive and nobody is
+    // measuring.
+    //
+    // What it COSTS is the entire margin. A render quantum is 128 samples either
+    // way, but the buffer downstream is what decides how many quanta may run late
+    // before the gap is audible, and `interactive` leaves room for almost none.
+    // This graph is a four-channel convolver with responses up to five seconds,
+    // six worklets and some seventy nodes; it is not a light load, and it does
+    // not need to be low-latency to be correct.
+    //
+    // The symptom this fixes is specific and was diagnosed from it: crackle on
+    // battery that disappears when the laptop is plugged in. Nothing about the
+    // audio changes when the power does — what changes is the clock the cores
+    // run at, and a graph with no margin left is one governor step away from
+    // missing its deadline. Not a sample of the signal path differs; there is
+    // simply somewhere for a late quantum to go.
+    this.ctx = new AC({ latencyHint: 'playback' });
+    this._watchLoad();
 
     this.audioEl = new Audio();
     this.audioEl.preload = 'auto';
@@ -106,6 +147,34 @@ export class ConcertEngine {
       this._worklets = available;
       this._buildChain();
     });
+  }
+
+  // ── how close to the deadline is the audio thread running? ─────────────────
+  //
+  // `underrunRatio` is the share of render quanta that missed their deadline —
+  // which is not a proxy for the crackle, it IS the crackle. Everything else
+  // about a dropout is guesswork; this is the browser reporting the event.
+  //
+  // Nothing in the audio path reacts to it. It is read by the scene, which gives
+  // frames back when the audio thread is struggling — the drawing is what yields,
+  // never the sound. Chrome and Edge implement it; where it is absent the load
+  // reads zero and the scene simply keeps its own frame-cost governor.
+  _watchLoad() {
+    this._load = { average: 0, peak: 0, underrun: 0, supported: false };
+    const cap = this.ctx.renderCapacity;
+    if (!cap) return;
+    this._load.supported = true;
+    cap.onupdate = (e) => {
+      this._load.average = e.averageLoad;
+      this._load.peak = e.peakLoad;
+      this._load.underrun = e.underrunRatio;
+    };
+    try { cap.start({ updateInterval: 1 }); } catch (e) { this._load.supported = false; }
+  }
+
+  // { average, peak, underrun, supported } — see _watchLoad.
+  getLoad() {
+    return this._load || { average: 0, peak: 0, underrun: 0, supported: false };
   }
 
   // Synthesise every venue's response ahead of time, one per idle slot.
@@ -233,6 +302,11 @@ export class ConcertEngine {
     // it loads them. Claiming otherwise would have _buildChain construct
     // AudioWorkletNodes for processors this context has never heard of.
     this._worklets = {};
+    // Same reasoning for the read-ahead buffer: it was resampled to the old
+    // context's rate, and a rate change is one of the things being recovered
+    // from here. Decode it again on the new context if it is still wanted.
+    this._prepared = null;
+    this._preparing = null;
     this._ensureGraph();
     this.attachPageLifecycle();
     this._applyWet();
@@ -342,21 +416,91 @@ export class ConcertEngine {
     }
   }
 
-  async _loadDecoded(file) {
+  // Decode a File to an AudioBuffer without touching playback state, so the same
+  // path serves both the track being loaded and the one being read ahead.
+  async _decodeToBuffer(file) {
     const arr = await file.arrayBuffer();
     try {
-      this._decoded = await this.ctx.decodeAudioData(arr.slice(0));
+      return await this.ctx.decodeAudioData(arr.slice(0));
     } catch (e) {
       // decodeAudioData can't handle some FLAC (e.g. 24-bit / hi-res on Chrome).
       // Last resort: decode with the WASM FLAC decoder, then wrap as AudioBuffer.
       console.warn('[engine] decodeAudioData failed, trying WASM FLAC decoder:', e.message);
-      this._decoded = await this._decodeFlacWasm(arr);
+      return this._decodeFlacWasm(arr);
     }
+  }
+
+  async _loadDecoded(file) {
+    // Already read ahead? Then the gap between tracks is the cost of assigning a
+    // variable, which is the whole point of prepareNext().
+    const ahead = this._takePrepared(file);
+    this._decoded = ahead || await this._decodeToBuffer(file);
     this._mode = 'buffer';
     this._bufOffset = 0;
     this._bufPlaying = false;
     this.ready = true;
     return this._decoded.duration;
+  }
+
+  // ── reading ahead ──────────────────────────────────────────────────────────
+  //
+  // Decoding is the whole of the gap between tracks. A lossless file is decoded
+  // in full before it can start — that is not a shortcut, it is the only way
+  // Chrome plays hi-res FLAC at all (see loadFile) — and for a long 24-bit track
+  // that is a second or more of silence at exactly the moment the next song
+  // should have begun.
+  //
+  // So it happens during the previous track instead. decodeAudioData does its
+  // work off the main thread, so the decode does not compete with the audio
+  // callback the way synthesising an impulse response would; what it does spend
+  // is memory, which is why only one track is ever held.
+  //
+  // The reverberation tail is not interrupted by any of this. The convolver is
+  // never rebuilt between tracks — only the source feeding it is replaced — so
+  // the last chord of one song is still ringing in the room when the next
+  // starts, which is what a room does and what a concert sounds like.
+  async prepareNext(file) {
+    if (!file) return;
+    if (this._prepared && this._prepared.file === file) return;
+    if (this._preparing === file) return;
+    // Only the decoded path benefits. A file that streams through <audio> has no
+    // decode step to move.
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    if (!(ext === 'flac' || ext === 'aiff' || ext === 'aif' || ext === 'wav')) return;
+    this._ensureGraph();
+
+    this._preparing = file;
+    const rate = this.ctx.sampleRate;
+    try {
+      const buffer = await this._decodeToBuffer(file);
+      // The context may have been rebuilt underneath us (a device change), in
+      // which case this buffer was resampled to a rate that is no longer the
+      // output's and reusing it is the very fault _rebuildContext recovers from.
+      if (!this.ctx || this.ctx.state === 'closed' || this.ctx.sampleRate !== rate) return;
+      if (this._preparing !== file) return;   // superseded while decoding
+      this._prepared = { file, buffer };
+    } catch (e) {
+      // Not fatal, and not worth reporting: the track will be decoded the normal
+      // way when it is reached, and fail there if it is going to.
+      console.warn('[engine] read-ahead decode failed:', e.message);
+    } finally {
+      if (this._preparing === file) this._preparing = null;
+    }
+  }
+
+  // Hand over the read-ahead buffer if it is the file being asked for, and clear
+  // it either way — a track that is not the one we guessed makes the guess dead
+  // weight, and it is the largest allocation in the app.
+  _takePrepared(file) {
+    const hit = this._prepared && this._prepared.file === file ? this._prepared.buffer : null;
+    this._prepared = null;
+    return hit;
+  }
+
+  // Is `file` already decoded and waiting? Used by the UI to show that the next
+  // track will start without a gap.
+  isPrepared(file) {
+    return !!(file && this._prepared && this._prepared.file === file);
   }
 
   // WASM FLAC fallback → AudioBuffer (handles 16/24-bit, any sample rate).
@@ -608,8 +752,15 @@ export class ConcertEngine {
   // heard by construction rather than by two hand-maintained copies agreeing.
   // Returns the rendered buffer plus the source's original bit depth and sample
   // rate, read from the file header, so the export can preserve both.
-  async renderOffline(venue) {
+  //
+  // `onProgress(fraction)` is called as the render advances, 0 → 1. An
+  // OfflineAudioContext reports nothing on its own, so the progress is real
+  // rather than estimated: the render is suspended at a series of known points
+  // and resumed, and each suspension is the render telling us where it has got
+  // to. Where suspend() is unavailable the render still runs, silently.
+  async renderOffline(venue, { onProgress } = {}) {
     if (!this._fileRef && !this._decoded) throw new Error('no file loaded');
+    const report = typeof onProgress === 'function' ? onProgress : () => {};
 
     // Web Audio discards the source bit depth and resamples to the decoding
     // context's rate, so both are read from the header. No file reference (a
@@ -633,6 +784,9 @@ export class ConcertEngine {
       const tmp = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(2, wantRate, wantRate);
       decoded = await tmp.decodeAudioData(arr.slice(0));
     }
+    // Decoding is a single opaque call with no progress of its own, so it gets a
+    // fixed slice of the bar rather than a fake ramp across it.
+    report(DECODE_SHARE);
 
     const sr = decoded.sampleRate;
     // Leave room for the response to ring out past the end of the music.
@@ -658,7 +812,26 @@ export class ConcertEngine {
     src.connect(graph.trim);
     src.start(0);
 
+    // Suspend the render at a series of points and resume it. Each suspension
+    // resolves when the render reaches that frame, so the bar moves with the
+    // work rather than with a timer. Suspension times must land on a render
+    // quantum, so they are rounded down to one.
+    const total = offline.length;
+    for (let i = 1; i < PROGRESS_STEPS; i++) {
+      const at = Math.floor((total * i) / PROGRESS_STEPS / 128) * 128;
+      if (at <= 0 || at >= total) continue;
+      try {
+        offline.suspend(at / sr).then(() => {
+          report(DECODE_SHARE + (1 - DECODE_SHARE) * (i / PROGRESS_STEPS));
+          offline.resume();
+        }).catch(() => {});
+      } catch (e) {
+        break; // no suspend() on this browser — render straight through
+      }
+    }
+
     const buffer = await offline.startRendering();
+    report(1);
     return { buffer, bitDepth, sampleRate: buffer.sampleRate };
   }
 
@@ -669,6 +842,11 @@ export class ConcertEngine {
   }
 
   destroy() {
+    this._prepared = null;
+    this._preparing = null;
+    if (this.ctx && this.ctx.renderCapacity) {
+      try { this.ctx.renderCapacity.stop(); } catch (e) { /* never started */ }
+    }
     if (this._objectUrl) { URL.revokeObjectURL(this._objectUrl); this._objectUrl = null; }
     if (this.audioEl) {
       this.audioEl.pause();

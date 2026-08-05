@@ -50,6 +50,136 @@ export function truss(length, { size = 0.5, color = 0x2a2118, bays = null } = {}
   return new THREE.Mesh(mergeGeometries(parts), lambert(color));
 }
 
+// ── what holds a roof up ────────────────────────────────────────────────────
+//
+// A stadium roof is a cantilever. It is carried on a ring of columns standing
+// OUTSIDE the back of the top tier — not on anything over the seats, because
+// there is nothing over the seats to stand on — and it reaches inward from
+// there to the edge of the opening, unsupported for the whole of that span.
+// That is the shape being drawn here: a column line, a ring beam tying the
+// column heads together, and one cantilever truss per column running in to the
+// roof's inner edge.
+//
+// It matters more than a piece of scenery usually would. Without it the roof
+// plate is a slab hanging in the night at 48 m with a twelve-metre gap of empty
+// air under it, and a building whose roof is not attached to anything does not
+// read as a building — it reads as a mistake, and every other correct thing in
+// the scene gets doubted along with it.
+//
+// Everything merges into ONE geometry. Forty columns as forty meshes would be
+// forty draw calls a frame, on the same main thread the audio callback is
+// sharing a core with.
+function latticeInto(out, from, to, size, r) {
+  const dir = to.clone().sub(from);
+  const len = dir.length();
+  if (len < 0.01) return;
+  // Built along +Y at the origin, then rotated onto the run and moved to its
+  // midpoint — so one routine draws the columns, the ring beam and the
+  // cantilevers rather than three that have to agree with each other.
+  const q = new THREE.Quaternion().setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0), dir.clone().normalize(),
+  );
+  const place = new THREE.Matrix4().compose(
+    from.clone().addScaledVector(dir, 0.5), q, new THREE.Vector3(1, 1, 1),
+  );
+  const h = size / 2;
+  for (const [dx, dz] of [[h, h], [h, -h], [-h, h], [-h, -h]]) {
+    const chord = new THREE.CylinderGeometry(r, r, len, 5, 1);
+    chord.translate(dx, 0, dz);
+    chord.applyMatrix4(place);
+    out.push(chord);
+  }
+  const bays = Math.max(1, Math.round(len / (size * 3)));
+  const step = len / bays;
+  for (let i = 0; i <= bays; i++) {
+    const y = -len / 2 + i * step;
+    // a square collar at each bay
+    for (const [w, d, dx, dz] of [[size, r * 2, 0, h], [size, r * 2, 0, -h], [r * 2, size, h, 0], [r * 2, size, -h, 0]]) {
+      const tie = new THREE.BoxGeometry(w, r * 2, d);
+      tie.translate(dx, y, dz);
+      tie.applyMatrix4(place);
+      out.push(tie);
+    }
+    // and a brace across two opposite faces, alternating direction so the web
+    // zig-zags the way a real one does
+    if (i < bays) {
+      const diag = Math.hypot(size, step);
+      const tilt = Math.atan2(size, step) * (i % 2 ? 1 : -1);
+      for (const dz of [h, -h]) {
+        const web = new THREE.BoxGeometry(r * 1.6, diag, r * 1.6);
+        web.rotateZ(tilt);
+        web.translate(0, y + step / 2, dz);
+        web.applyMatrix4(place);
+        out.push(web);
+      }
+    }
+  }
+}
+
+export function roofSupport({
+  halfWidth, zFront, zBack,          // the column line, in plan
+  innerHalfWidth, innerZFront, innerZBack, // the roof opening the cantilevers reach
+  y,                                 // underside of the roof
+  spacing = 21,                      // metres between columns
+  size = 2.6,                        // lattice cross-section
+  // Unlit steel at night is a silhouette, but a silhouette against a sky this
+  // dark is nothing at all. The emissive is what a floodlit bowl throws back
+  // onto its own structure, and without it the columns are only findable by the
+  // stars they occlude.
+  color = 0x1b1c26, emissive = 0x14161f,
+}) {
+  const parts = [];
+  const r = size * 0.055;
+  const V = (x, yy, z) => new THREE.Vector3(x, yy, z);
+
+  // One column, plus the truss it carries in toward the opening. `inward` is the
+  // unit direction from the column line to the roof edge.
+  const bay = (x, z, inward, reach) => {
+    latticeInto(parts, V(x, 0, z), V(x, y, z), size, r);
+    if (reach > 2) {
+      const tip = V(x, y, z).addScaledVector(inward, reach);
+      // The tip sits a little higher than the root: a cantilever is deepest
+      // where it is held and shallowest where it lets go.
+      tip.y = y + size * 0.6;
+      latticeInto(parts, V(x, y - size * 0.5, z), tip, size * 0.85, r);
+    }
+  };
+
+  const along = (a, b) => Math.max(1, Math.round((b - a) / spacing));
+
+  // the two sides, reaching in across the seating
+  for (const side of [-1, 1]) {
+    const n = along(zFront, zBack);
+    for (let i = 0; i <= n; i++) {
+      const z = zFront + ((zBack - zFront) * i) / n;
+      bay(side * halfWidth, z, V(-side, 0, 0), halfWidth - innerHalfWidth);
+    }
+  }
+  // the two ends
+  for (const [z, dir, reach] of [
+    [zFront, 1, innerZFront - zFront],
+    [zBack, -1, zBack - innerZBack],
+  ]) {
+    const n = along(-halfWidth, halfWidth);
+    for (let i = 0; i <= n; i++) {
+      const x = -halfWidth + (halfWidth * 2 * i) / n;
+      // skip the corners, already stood up by the side runs
+      if (Math.abs(Math.abs(x) - halfWidth) < 0.01) continue;
+      bay(x, z, V(0, 0, dir), reach);
+    }
+  }
+
+  // the ring beam across the column heads — what stops them being forty separate
+  // posts that happen to be the same height
+  const ringY = y - size * 0.5;
+  for (const side of [-1, 1]) {
+    latticeInto(parts, V(side * halfWidth, ringY, zFront), V(side * halfWidth, ringY, zBack), size * 0.7, r);
+    latticeInto(parts, V(-halfWidth, ringY, side > 0 ? zBack : zFront), V(halfWidth, ringY, side > 0 ? zBack : zFront), size * 0.7, r);
+  }
+
+  return new THREE.Mesh(mergeGeometries(parts), lambert(color, { emissive }));
+}
+
 // A lighting fixture: yoke, lens, flare and the shaft it throws. Returns the
 // group plus its beam so a venue can aim and re-colour it per frame.
 export function fixture({ color = ACCENT, beamLength = 14, spread = 2.4, opacity = 0.13, lit = true, react = 1 }, u) {

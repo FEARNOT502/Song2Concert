@@ -56,8 +56,9 @@ function Slider({ value, max = 100, onChange, fillClass, knobClass, disabled }) 
 export default function BottomTransport({
   playing, onToggle, onPrev, onNext, hasNext, hasPrev,
   time, durSec, wetDry, onWetChange, onSeek,
-  onExport, exporting, volume, onVolumeChange,
+  onExport, exporting, exportProgress = 0, volume, onVolumeChange,
 }) {
+  const pct = Math.round(exportProgress * 100);
   return (
     <div className="absolute bottom-0 inset-x-0 z-40 border-t border-white/10 px-10 py-6 flex items-center gap-8 text-[13px] tracking-[0.2em] text-neutral-400 uppercase bg-black/70 backdrop-blur-md font-mono">
       <div className="flex items-center gap-3">
@@ -116,12 +117,23 @@ export default function BottomTransport({
         <span className="text-neutral-500 tabular-nums w-8 text-right">{volume}</span>
       </div>
 
+      {/* The bar fills the button itself rather than sitting next to it: the
+          render is the button's own work, and a long job with no visible
+          progress reads as a hang. */}
       <button
         onClick={onExport}
         disabled={exporting}
-        className="px-3 py-1.5 border border-[oklch(0.78_0.16_55)] text-[oklch(0.78_0.16_55)] hover:bg-[oklch(0.78_0.16_55)] hover:text-black rounded transition-colors disabled:opacity-50 disabled:cursor-wait text-[12px]"
+        className="relative overflow-hidden px-3 py-1.5 border border-[oklch(0.78_0.16_55)] text-[oklch(0.78_0.16_55)] hover:bg-[oklch(0.78_0.16_55)] hover:text-black rounded transition-colors disabled:opacity-100 disabled:cursor-wait disabled:hover:bg-transparent disabled:hover:text-[oklch(0.78_0.16_55)] text-[12px] min-w-[148px]"
       >
-        {exporting ? 'RENDERING…' : 'EXPORT FLAC ↗'}
+        {exporting && (
+          <span
+            className="absolute inset-y-0 left-0 bg-[oklch(0.78_0.16_55)]/25 transition-[width] duration-200 ease-linear pointer-events-none"
+            style={{ width: `${pct}%` }}
+          />
+        )}
+        <span className="relative tabular-nums">
+          {exporting ? `RENDERING… ${pct}%` : 'EXPORT FLAC ↗'}
+        </span>
       </button>
     </div>
   );
