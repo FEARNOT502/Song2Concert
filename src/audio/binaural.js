@@ -29,7 +29,11 @@
 //   · CROSSFEED on the direct path, expressed as a side-signal shelf — see
 //     SIDE_SHELF below for why that formulation is the safe one.
 //
-// No pinna model. No elevation cues. Those are the parts that sound wrong.
+// No pinna model, and therefore no SPECTRAL elevation cue. An arrival from above
+// is rendered with the interaural time and level differences its elevation
+// implies — both of which are geometry, and both of which collapse toward the
+// vertical — but not with the 7–9 kHz notches that would say "above" outright.
+// Those notches are the individual part, and the part that sounds wrong.
 
 export const HEAD_RADIUS = 0.0875; // m
 export const SPEED_OF_SOUND = 343;
@@ -53,12 +57,30 @@ export function interauralDelay(azimuth, elevation = 0) {
 const ALPHA_MIN = 0.1;
 const THETA_MIN = 150; // degrees — where the shadow is deepest
 
-// `ear` is −1 for the left, +1 for the right.
-export function headShadowCoeffs(azimuth, ear, sampleRate) {
-  // Angle between this ear's axis and the source. The ear axes point at ±90°.
-  const incidence = azimuth - ear * (Math.PI / 2);
-  const deg = Math.abs((incidence * 180) / Math.PI) % 360;
-  const theta = deg > 180 ? 360 - deg : deg;
+// `ear` is −1 for the left, +1 for the right. `elevation` is how far above the
+// horizontal plane the arrival came from.
+//
+// ELEVATION COLLAPSES THE SHADOW, and that is geometry rather than a model. What
+// decides how deeply an arrival is shadowed is the angle it makes with the ear's
+// own axis IN THREE DIMENSIONS, and the ear axes point at ±90° in the horizontal
+// plane. A reflection off a ceiling directly overhead is equidistant from the
+// two ears and casts no shadow at all, whatever its azimuth happens to say.
+//
+// Taking the azimuth alone gave an arrival 70° up and 90° to the right the same
+// interaural level difference as one on the horizon beside you. In the club that
+// is most of the early field — the ceiling is 2.3 m above the ears, so its first
+// bounce comes down steeply, and 51 % of the early energy there arrives from
+// beyond ±30°. All of it was being rendered hard-panned.
+//
+// Nothing that used to be right has moved: at elevation 0 this reduces to the
+// expression it replaces, angle for angle.
+export function headShadowCoeffs(azimuth, ear, sampleRate, elevation = 0) {
+  // Cosine of the angle between the source direction and this ear's axis. The
+  // direction is (cos el·cos az, cos el·sin az, sin el) and the right ear's axis
+  // is (0, 1, 0), so the dot product is the single term below. Front and back
+  // fold together on their own, as they should for a sphere.
+  const cosIncidence = Math.cos(elevation) * Math.sin(azimuth) * ear;
+  const theta = (Math.acos(Math.max(-1, Math.min(1, cosIncidence))) * 180) / Math.PI;
 
   const alpha = (1 + ALPHA_MIN / 2) + (1 - ALPHA_MIN / 2) * Math.cos((theta * 180) / THETA_MIN * (Math.PI / 180));
 

@@ -122,6 +122,21 @@ const SPREAD_FACTOR = 0.4;
 // much high frequency their surfaces took out. One filter pass per group rather
 // than per reflection keeps this cheap enough to stay exact.
 const AZIMUTH_BINS = 16;
+// Elevation bins, deliberately coarser than azimuth. Without a pinna model —
+// and there is none by design, see binaural.js — the only elevation cue produced
+// here is the collapse of the interaural differences toward the vertical, and
+// that varies slowly. Five bins put centres on −90°, −45°, 0°, +45° and +90°,
+// which keeps the horizon on a centre so a horizontal arrival is binned exactly
+// where it used to be.
+//
+// Binning it at all is the point. Elevation was carried only as a gain-weighted
+// MEAN inside an azimuth group, so a floor bounce and a ceiling bounce sharing
+// an azimuth averaged to something near the horizon and both were rendered as
+// if they had arrived from beside the listener. How much that costs is a
+// property of the room's shape: in the club, where the ceiling sits 2.3 m above
+// the ears, 51 % of the early energy arrives from beyond ±30°; in the dome,
+// which is wide and flat, 15 % does.
+const ELEVATION_BINS = 5;
 const BRIGHTNESS = [
   { max: Infinity, cutoff: 14000 }, // barely absorbed — concrete, masonry
   { max: 0.70, cutoff: 5500 },      // moderately absorbed
@@ -141,12 +156,15 @@ function renderEarly(reflections, length, sampleRate, spreadRng) {
   const earL = new Float32Array(length);
   const earR = new Float32Array(length);
 
-  // group[azBin][brightBin] = { taps, elevationSum, weight }
+  // group[azBin][elBin][brightBin] = { taps, elevationSum, weight }
   const groups = new Map();
   for (const r of reflections) {
     const az = Math.round(((r.azimuth + Math.PI) / (2 * Math.PI)) * AZIMUTH_BINS) % AZIMUTH_BINS;
+    const el = Math.max(0, Math.min(ELEVATION_BINS - 1, Math.round(
+      ((r.elevation + Math.PI / 2) / Math.PI) * (ELEVATION_BINS - 1),
+    )));
     const br = brightnessBin(r.band);
-    const key = az * BRIGHTNESS.length + br;
+    const key = (az * ELEVATION_BINS + el) * BRIGHTNESS.length + br;
     let g = groups.get(key);
     if (!g) { g = { az, br, taps: [], elevation: 0, weight: 0 }; groups.set(key, g); }
     g.taps.push(r);
@@ -170,14 +188,17 @@ function renderEarly(reflections, length, sampleRate, spreadRng) {
     let lp = 0;
     for (let i = 0; i < length; i++) { lp += a * (scratch[i] - lp); scratch[i] = lp; }
 
-    // This group's direction, at the centre of its bin.
+    // This group's direction. The azimuth is the centre of its bin; the
+    // elevation is the gain-weighted mean WITHIN the bin, which is finer than
+    // the bin and costs nothing — the bin exists to stop arrivals from opposite
+    // sides of the horizon being averaged together, not to quantise them.
     const azimuth = ((g.az + 0.5) / AZIMUTH_BINS) * 2 * Math.PI - Math.PI;
     const elevation = g.weight > 0 ? g.elevation / g.weight : 0;
 
     tmpL.set(scratch);
     tmpR.set(scratch);
-    applyOnePole(tmpL, headShadowCoeffs(azimuth, -1, sampleRate));
-    applyOnePole(tmpR, headShadowCoeffs(azimuth, +1, sampleRate));
+    applyOnePole(tmpL, headShadowCoeffs(azimuth, -1, sampleRate, elevation));
+    applyOnePole(tmpR, headShadowCoeffs(azimuth, +1, sampleRate, elevation));
 
     // Whichever ear is on the far side hears it later.
     const itd = interauralDelay(azimuth, elevation) * sampleRate;
