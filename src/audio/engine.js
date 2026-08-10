@@ -576,6 +576,24 @@ export class ConcertEngine {
       this._buildChain();
       return;
     }
+    // A venue that has not changed has nothing to cross-fade TO.
+    //
+    // applyVenue always swaps convolver slots, so calling it for the venue
+    // already playing rebuilds the room it is already in: two identical
+    // responses overlap for the length of the fade, and the incoming one starts
+    // from a cleared state and takes the whole response to fill. In the dome
+    // that is five seconds. What it sounds like is the reverberation changing
+    // about a second after nothing happened — the outgoing slot is released on
+    // a 1.25 s timer, which is where the second event comes from.
+    //
+    // React StrictMode mounts effects twice in development, and the venue
+    // effect has no cleanup, so this was called twice on every load and the
+    // second call did exactly that. `changed` was already being computed here
+    // and simply was not being used for it.
+    if (!changed) {
+      this._applyWet();
+      return;
+    }
     // Parameters only — the graph is never rebuilt for a venue change.
     applyVenue(this.ctx, this.graph, venue);
     this._applyWet();
