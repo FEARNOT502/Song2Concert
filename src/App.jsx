@@ -220,11 +220,28 @@ export default function App() {
     engine.setWetDry(wetDry);
     engine.setVolume(volume);
     if (autoplay) { await play(); setPlaying(true); }
-    // Now that this track is running, decode the next one. Deferred by a moment
-    // so it does not land on the same tick as the graph starting up — the decode
-    // itself is off the main thread, but reading a hi-res file into memory is
-    // not, and the start of a track is the worst time to do it.
-    readAheadRef.current(1500);
+    // Now that this track is running, decode the next one — but not yet.
+    //
+    // Read-ahead is the largest single piece of work the app does: a hi-res file
+    // is read whole into memory and decoded whole. decodeAudioData itself runs
+    // off the main thread, but the read that feeds it does not, and neither does
+    // the allocation.
+    //
+    // It used to fire 1.5 s in, on the reasoning that the graph had finished
+    // starting up by then. That is still the beginning of the track, and it is
+    // the worst place to put tens of megabytes of reading: a render quantum that
+    // misses its deadline there is not heard as a click, because a five-second
+    // convolver smears the discontinuity across the whole response. In the dome
+    // it arrives as a wash roughly a second into every automatic track change,
+    // and it reads as the room misfiring rather than as a dropout.
+    //
+    // The only real deadline is "ready before this track ends", so it goes near
+    // the middle instead, far from both ends. A short track still gets its
+    // read-ahead in time because the delay scales with its duration.
+    const dur = engine.duration;
+    readAheadRef.current(Number.isFinite(dur) && dur > 0
+      ? Math.max(4000, Math.min(20000, dur * 300))
+      : 12000);
   }, [engine, loadFile, play, setStatus, wetDry, volume]);
 
   // Decode the track AFTER the current one, so switching to it costs nothing.

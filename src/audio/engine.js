@@ -421,12 +421,20 @@ export class ConcertEngine {
   async _decodeToBuffer(file) {
     const arr = await file.arrayBuffer();
     try {
-      return await this.ctx.decodeAudioData(arr.slice(0));
+      // Hand decodeAudioData the buffer itself rather than a copy of it.
+      //
+      // It detaches its input, so `arr` is unusable afterwards either way, and
+      // the copy existed only so the WASM fallback below would still have
+      // something to read. That doubled the peak allocation of the largest
+      // thing this app ever holds — tens of megabytes for a hi-res file, while
+      // audio is playing — to insure against the rare path. The fallback reads
+      // the file again instead, which costs nothing until it is needed.
+      return await this.ctx.decodeAudioData(arr);
     } catch (e) {
       // decodeAudioData can't handle some FLAC (e.g. 24-bit / hi-res on Chrome).
       // Last resort: decode with the WASM FLAC decoder, then wrap as AudioBuffer.
       console.warn('[engine] decodeAudioData failed, trying WASM FLAC decoder:', e.message);
-      return this._decodeFlacWasm(arr);
+      return this._decodeFlacWasm(await file.arrayBuffer());
     }
   }
 
