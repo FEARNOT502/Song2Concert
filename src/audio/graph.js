@@ -35,7 +35,7 @@ import {
   listeningDistance, roomAbsorption, DIRECTIVITY, DIRECTIVITY_Q,
   SYSTEM_LF_HZ, REVERB_WIDTH, VENUE_WET_DB, RIG_LOW_LIFT, RIG_POWER,
 } from './venuerooms.js';
-import { reverbTimes, reverberantRatio } from './roomacoustics.js';
+import { reverbTimes, reverberantRatio, midRT } from './roomacoustics.js';
 
 // Headroom taken off the front so the boosts downstream have somewhere to go.
 // Without it the chain ran a limiter at −3 dBFS with 20:1 into a signal already
@@ -72,6 +72,21 @@ const AIR_10K = 12.0;
 // so far: holding 10 kHz flat across a stadium would need headroom no rig has
 // and would cook the drivers. This is the share that survives compensation.
 const AIR_RESIDUAL = 0.4;
+
+// One sung syllable. Three to four a second is the ordinary rate for a sung
+// line, so this is how long the room has to get out of the way before the next
+// word arrives — see the vocal term in reverbSendTilt.
+const SYLLABLE_SEC = 0.3;
+
+// Above this directivity the building has a large-format line array in it, and
+// below it the source is a cluster, a small rig or a stage full of people.
+//
+// The three large venues run 0.88–0.90 and everything else 0.18–0.55, so the
+// split is not a threshold chosen to cut a continuum — it is the gap between two
+// kinds of equipment. It matters because pattern control down into the low mids
+// takes an array several metres tall; a proscenium cluster under a metre
+// controls nothing below about 2 kHz, and an orchestra controls nothing at all.
+const ARRAY_DIRECTIVITY = 0.55;
 
 // ── How much of each band actually reaches the room ─────────────────────────
 //
@@ -110,7 +125,8 @@ const AIR_RESIDUAL = 0.4;
 // It is also what every live engineer reaches for first.
 export function reverbSendTilt(venueId) {
   const d = DIRECTIVITY[venueId] ?? 0;
-  const lf125 = reverbTimes(roomAbsorption(venueId))[0];
+  const rts = reverbTimes(roomAbsorption(venueId));
+  const lf125 = rts[0];
 
   // How little low end reaches the room, and why, differs by venue — but it is
   // never nothing. A venue with a rig steers its sub array; a venue without one
@@ -156,11 +172,59 @@ export function reverbSendTilt(venueId) {
   // scales with the reverberant ratio instead of being a flat 2.5 dB.
   const mud = -(1.3 + 1.6 * Math.min(1, rev));
 
+  // ── How much of the last syllable is still in the room ─────────────────────
+  //
+  // Reverberation costs you a lyric in two ways and the vocal dip tracked only
+  // one of them. LEVEL is what `rev` measures: how loud the room is against the
+  // direct sound. TIME is the other, and it is the one that actually fills the
+  // gaps between words — a reverberant field sitting 7 dB down still smears
+  // every syllable into the next if it rings for three and a half seconds.
+  //
+  // Tracking level alone put the dip BACKWARDS across the three large rooms.
+  // The dome has the longest mid-band reverberation of any venue here at 3.63 s
+  // and, because a directional rig at the mix position keeps the direct sound
+  // well ahead, the lowest reverberant ratio of the three. So it received the
+  // smallest vocal dip of any large venue — −1.46 dB against the stadium's
+  // −1.48 at 2.15 s. The room that smears a lyric worst was the one being left
+  // alone, and it is the one that sounded it.
+  //
+  // Sung syllables land three or four to the second, so what matters is how much
+  // of the tail survives that long. At 60 dB per reverberation time a tail is
+  // down 60·τ/RT60 after τ seconds: 24 dB in the club, 5 in the dome. That ratio
+  // is the term, and it is a property of the room rather than a per-venue knob.
+  const carry = Math.pow(10, -(60 * SYLLABLE_SEC) / Math.max(midRT(rts), 0.05) / 20);
+
   return {
     lf: -subControl,
     mud,
     hf: -(4.5 + 3 * d),
-    vocal: -(1 + 2.5 * Math.min(1, rev)),
+    // WHERE the high shelf starts is a property of the source, not a constant.
+    //
+    // The shelf exists because every real source is more directional as
+    // frequency rises, so the reverberant field receives less top than the
+    // direct sound does. How far down that begins depends on how big the source
+    // is: a large array controls its pattern from a few hundred hertz upward,
+    // while an orchestra is close to omnidirectional until much higher.
+    //
+    // Fixing it at 2 kHz split the difference and served neither. It left a
+    // control gap between roughly 400 Hz and 1.5 kHz — the low shelf has
+    // finished by 400, the mud bell is spent by 800, and the high shelf had not
+    // started — which is exactly where instrument body and vocal first formants
+    // sit, and where a big room reads as congested. Measured against how long
+    // each octave rings, the arena's worst-controlled bands were 500 Hz and
+    // 1 kHz, both at more than twice the club's figure.
+    //
+    // But it only moves where there is an array to justify it — see
+    // ARRAY_DIRECTIVITY. Scaling it linearly with directivity was the obvious
+    // thing and it was wrong: the theatre sits in the middle of the range at
+    // 0.55, so a fix aimed at the arena dragged the theatre's corner down to
+    // 1.7 kHz with it and took 0.8 dB out of what that hall returns at 2 kHz.
+    // That band carries a belted vocal's power and the brilliance of strings and
+    // brass, and losing it from the room is heard immediately as the hall
+    // sounding smaller. Club, theatre and concert hall stay at 2 kHz exactly;
+    // the arena, dome and stadium come down to about 1.4 kHz.
+    hfHz: 2000 - 1700 * Math.max(0, d - ARRAY_DIRECTIVITY),
+    vocal: -(1 + 2.5 * Math.min(1, rev) + 0.45 * carry),
   };
 }
 
@@ -401,6 +465,8 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {} })
   n.sendMud.Q.value = 0.8;      // roughly 180–560 Hz
   n.sendHF = ctx.createBiquadFilter();
   n.sendHF.type = 'highshelf';
+  // Corner and gain are both per venue — see reverbSendTilt. applyVenue sets
+  // them below, the same way it sets the other two send filters' gains.
   n.sendHF.frequency.value = 2000;
 
   // ── Less room on the voice, without a drier room ──────────────────────────
@@ -618,6 +684,7 @@ export function applyVenue(ctx, n, venue, { fadeIn = VENUE_FADE_IN, fadeOut = VE
   if (n.rigLow) ramp(n.rigLow.gain, rigLowLift(venue.id));
   if (n.wWidth) ramp(n.wWidth.gain, REVERB_WIDTH[venue.id] ?? 1);
   ramp(n.sendHF.gain, send.hf);
+  ramp(n.sendHF.frequency, send.hfHz);
 
   const pa = venue.pa || {};
   if (n.glue) ramp(n.glue.parameters.get('amount'), pa.glue ?? 0);
