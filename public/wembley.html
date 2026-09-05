@@ -234,6 +234,10 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 const TAU = Math.PI * 2;
 const DEG = Math.PI / 180;
@@ -257,10 +261,49 @@ const BOWL_IN  = { a: PITCH.hx + RUNOFF, b: PITCH.hz + RUNOFF };   // 60.5 × 42
 // Tiers, solved above. `blocks` are the real ones: 44 in the lower ring,
 // 52 in each of the two above it, numbered clockwise from the halfway line.
 const TIERS = [
-  { id: 'lower',  first: 101, blocks: 44, rows: 47, gap: 0,   yBase: 1.2,  rise: 0.30, riseFar: 0.44 },
-  { id: 'club',   first: 201, blocks: 52, rows: 15, gap: 8.0, yBase: 21.5, rise: 0.46, riseFar: 0.56 },
-  { id: 'upper',  first: 501, blocks: 52, rows: 28, gap: 9.0, yBase: 33.0, rise: 0.54, riseFar: 0.70 },
+  { id: 'lower',  first: 101, blocks: 44, rows: 47, gap: 0   },
+  { id: 'club',   first: 201, blocks: 52, rows: 15, gap: 8.0 },
+  { id: 'upper',  first: 501, blocks: 52, rows: 28, gap: 9.0 },
 ];
+
+// ── how steep the stands are, and why ──────────────────────────────────────
+//
+// Not a taste. A stand's rake is set by SIGHTLINE: every row's eye has to
+// clear the row in front by C on the line down to the near edge of the pitch,
+//
+//     E(r+1) = (E(r) + C) · D(r+1) / D(r)
+//
+// with D measured from that edge. C is the clearance — 60 mm is acceptable,
+// 90 mm lets you see over the head in front rather than between two, 120 mm
+// is exceptional and very steep. Solving the recurrence gives a rake that
+// starts shallow and steepens on its own, then converges: past about forty
+// metres out the required angle stops growing. That convergence is the thing
+// a hand-set rise gets wrong — an earlier version of this file ramped the
+// upper tier linearly to 41°, which is steeper than a spectator stand is
+// allowed to be and read exactly as wrong as it was.
+const SIGHT_C = 0.070;      // m of clearance, good practice
+const EYE     = 1.15;       // seated eye above its own tread
+
+function solveRake() {
+  let inset = 0, tread = 1.2, prev = null;
+  for (const tier of TIERS) {
+    inset += tier.gap;
+    tier.tops = [];
+    tier.startInset = inset;
+    for (let r = 0; r < tier.rows; r++) {
+      const D = RUNOFF + inset + TREAD / 2;
+      if (prev) tread = ((prev.E + SIGHT_C) * D) / prev.D - EYE;
+      tier.tops.push(tread);
+      prev = { D, E: tread + EYE };
+      inset += TREAD;
+    }
+    tier.yBase = tier.tops[0] - (tier.tops[1] - tier.tops[0]);
+    tier.topY = tier.tops[tier.rows - 1];
+    tier.endInset = inset;
+  }
+  return inset;
+}
+const BOWL_DEPTH = solveRake();
 const OFFICIAL_SEATS = [34303, 16532, 39165];
 
 // ── the superellipse ───────────────────────────────────────────────────────
@@ -304,8 +347,14 @@ function tAtArc(tab, len) {
 }
 const perimeter = (a, b) => arcTable(a, b, 1024).total;
 
-const lambert = (c, o = {}) => new THREE.MeshLambertMaterial({ color: c, ...o });
-const basic   = (c, o = {}) => new THREE.MeshBasicMaterial({ color: c, ...o });
+// Physically-based, so surfaces answer to the environment rather than to a
+// flat lambert term: painted steel picks up the sky, concrete does not, and
+// the difference between them is most of what makes a render read as a
+// photograph rather than as a diagram.
+const surf = (c, o = {}) => new THREE.MeshStandardMaterial({
+  color: c, roughness: 0.85, metalness: 0.0, ...o,
+});
+const basic = (c, o = {}) => new THREE.MeshBasicMaterial({ color: c, ...o });
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
 function prng(seed) {
@@ -318,25 +367,101 @@ function prng(seed) {
 // arrive as one.
 const TMP = new THREE.Color();
 class Quads {
-  constructor() { this.pos = []; this.col = []; }
-  tri(a, b, c, r, g, bl) {
+  constructor() { this.pos = []; this.col = []; this.uv = []; }
+  tri(a, b, c, k, ua, ub, uc) {
     this.pos.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
-    for (let i = 0; i < 3; i++) this.col.push(r, g, bl);
+    for (let i = 0; i < 3; i++) this.col.push(k.r, k.g, k.b);
+    this.uv.push(ua[0], ua[1], ub[0], ub[1], uc[0], uc[1]);
   }
-  quad(a, b, c, d, hex) {
+  // UVs are laid out in METRES over `tile`, taken from the quad's own edge
+  // lengths, so one texture tiles at the same physical size on a 0.8 m tread
+  // and on a 40 m roof bay without anybody choosing a scale per surface.
+  quad(a, b, c, d, hex, tile = 2.4, ao = 1) {
     const k = TMP.setHex(hex);
-    this.tri(a, b, c, k.r, k.g, k.b);
-    this.tri(a, c, d, k.r, k.g, k.b);
+    if (ao !== 1) { k.r *= ao; k.g *= ao; k.b *= ao; }
+    const u = a.distanceTo(b) / tile, v = a.distanceTo(d) / tile;
+    this.tri(a, b, c, k, [0, 0], [u, 0], [u, v]);
+    this.tri(a, c, d, k, [0, 0], [u, v], [0, v]);
   }
   get tris() { return this.pos.length / 9; }
   mesh(mat) {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.pos), 3));
     g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(this.col), 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(this.uv), 2));
     g.computeVertexNormals();
-    return new THREE.Mesh(g, mat || lambert(0xffffff, { vertexColors: true }));
+    return new THREE.Mesh(g, mat || surf(0xffffff, { vertexColors: true }));
   }
 }
+
+// ── procedural surfaces ────────────────────────────────────────────────────
+//
+// Flat colour is what makes a render read as a diagram. None of these are
+// photographs of anything — they are grain, drawn once into a canvas at load
+// and tiled in metres — but grain is most of the difference: concrete that
+// mottles, grass with a blade in it, cladding with a seam.
+function canvasTex(size, draw, repeat = 1) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  draw(c.getContext('2d', { willReadFrequently: true }), size);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(repeat, repeat);
+  t.anisotropy = 4;
+  return t;
+}
+
+function valueNoise(ctx, size, cell, lo, hi, seed) {
+  const rnd = prng(seed);
+  const n = Math.ceil(size / cell) + 1;
+  const g = Array.from({ length: n * n }, () => lo + rnd() * (hi - lo));
+  const at = (x, y) => g[(y % n) * n + (x % n)];
+  const img = ctx.getImageData(0, 0, size, size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const fx = x / cell, fy = y / cell;
+      const x0 = Math.floor(fx), y0 = Math.floor(fy);
+      const tx = fx - x0, ty = fy - y0;
+      const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+      const v = (at(x0, y0) * (1 - sx) + at(x0 + 1, y0) * sx) * (1 - sy)
+              + (at(x0, y0 + 1) * (1 - sx) + at(x0 + 1, y0 + 1) * sx) * sy;
+      const i = (y * size + x) * 4;
+      const p = img.data[i] / 255 * v * 255;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = Math.max(0, Math.min(255, p));
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+// concrete and seating: broad mottle plus a fine speckle
+const GRAIN = () => canvasTex(256, (ctx, S) => {
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, S, S);
+  valueNoise(ctx, S, 48, 0.84, 1.0, 12);
+  valueNoise(ctx, S, 5, 0.90, 1.06, 77);
+});
+
+// grass: fine vertical blade streaks over a soft mottle
+const GRASS = () => canvasTex(256, (ctx, S) => {
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, S, S);
+  valueNoise(ctx, S, 40, 0.88, 1.0, 5);
+  const rnd = prng(91);
+  for (let i = 0; i < 5200; i++) {
+    const x = rnd() * S, y = rnd() * S, h = 2 + rnd() * 5;
+    ctx.strokeStyle = `rgba(${rnd() < 0.5 ? 210 : 255},255,${rnd() < 0.5 ? 210 : 255},0.20)`;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + (rnd() - 0.5) * 1.4, y - h); ctx.stroke();
+  }
+});
+
+// cladding: vertical ribs with a horizontal panel seam
+const CLAD = () => canvasTex(256, (ctx, S) => {
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, S, S);
+  valueNoise(ctx, S, 60, 0.93, 1.0, 31);
+  for (let x = 0; x < S; x += 16) {
+    ctx.fillStyle = 'rgba(0,0,0,0.16)'; ctx.fillRect(x, 0, 2, S);
+    ctx.fillStyle = 'rgba(255,255,255,0.16)'; ctx.fillRect(x + 2, 0, 2, S);
+  }
+  ctx.fillStyle = 'rgba(0,0,0,0.14)'; ctx.fillRect(0, S - 3, S, 3);
+});
 
 // ═══ THE BOWL ══════════════════════════════════════════════════════════════
 //
@@ -370,11 +495,8 @@ function buildBowl({ segPerBlock, crowdCap }) {
   const rnd = prng(4407);
   const tally = [];
 
-  let inset = 0;                                   // from the bowl's inner edge
-
   TIERS.forEach((tier, ti) => {
-    inset += tier.gap;
-    const tierStart = inset;
+    const tierStart = tier.startInset;
     const midA = BOWL_IN.a + tierStart + (tier.rows * TREAD) / 2;
     const midB = BOWL_IN.b + tierStart + (tier.rows * TREAD) / 2;
 
@@ -406,15 +528,15 @@ function buildBowl({ segPerBlock, crowdCap }) {
     let y = tier.yBase;
     let seatsInTier = 0, rowLen = 0;
     for (let r = 0; r < tier.rows; r++) {
-      const f = tier.rows === 1 ? 0 : r / (tier.rows - 1);
       const below = y;
-      y += tier.rise + (tier.riseFar - tier.rise) * f;
+      y = tier.tops[r];
       const iIn = tierStart + r * TREAD, iOut = iIn + TREAD;
       const aIn = BOWL_IN.a + iIn, bIn = BOWL_IN.b + iIn;
       const aOut = BOWL_IN.a + iOut, bOut = BOWL_IN.b + iOut;
       const aSeat = BOWL_IN.a + iIn + TREAD * 0.62, bSeat = BOWL_IN.b + iIn + TREAD * 0.62;
       const palette = tier.id === 'club' ? CLUB : tier.id === 'upper' ? RED_UPPER : RED_LOWER;
       const seatTab = arcTable(aSeat, bSeat, 1536);
+      const ao = 1 - 0.44 * Math.min(1, iIn / BOWL_DEPTH);
       const ang = (t) => ((t % TAU) + TAU) % TAU;
 
       for (const blk of bounds) {
@@ -434,14 +556,18 @@ function buildBowl({ segPerBlock, crowdCap }) {
             const hex = run.hex ?? (masked ? UNSOLD
               : palette[(blk.n + r) % palette.length]);
 
+            // Baked occlusion. The deeper a row sits into the bowl the less
+            // sky reaches it, and the face of a step sees almost none at all —
+            // without that gradient a rake lights as one flat sheet and every
+            // row looks like every other one.
             Q.quad(P(aIn, bIn, t0, below), P(aIn, bIn, t1, below),
-                   P(aIn, bIn, t1, y), P(aIn, bIn, t0, y), RAKE_HEX);
+                   P(aIn, bIn, t1, y), P(aIn, bIn, t0, y), RAKE_HEX, 1.1, ao * 0.58);
             Q.quad(P(aIn, bIn, t0, y), P(aIn, bIn, t1, y),
-                   P(aOut, bOut, t1, y), P(aOut, bOut, t0, y), hex);
+                   P(aOut, bOut, t1, y), P(aOut, bOut, t0, y), hex, 1.1, ao);
             if (run.seats) {
               Q.quad(P(aSeat, bSeat, t0, y), P(aSeat, bSeat, t1, y),
                      P(aSeat, bSeat, t1, y + 0.44), P(aSeat, bSeat, t0, y + 0.44),
-                     masked ? UNSOLD : hex);
+                     masked ? UNSOLD : hex, 1.1, ao * 0.86);
             }
           }
         }
@@ -464,11 +590,8 @@ function buildBowl({ segPerBlock, crowdCap }) {
       }
     }
 
-    tier.topY = y;
-    tier.endInset = tierStart + tier.rows * TREAD;
     fascias.push({ inset: tierStart, yBase: tier.yBase, yTop: y, id: tier.id });
     tally.push({ id: tier.id, seats: seatsInTier, rowLen, rows: tier.rows });
-    inset = tier.endInset;
   });
 
   // the concourse deck between a tier's last row and the next tier's wall
@@ -486,7 +609,7 @@ function buildBowl({ segPerBlock, crowdCap }) {
   });
 
   return {
-    mesh: Q.mesh(),
+    mesh: Q.mesh(surf(0xffffff, { vertexColors: true, map: GRAIN(), roughness: 0.92 })),
     crowd: thin(crowd, crowdCap),
     fascias,
     tally,
@@ -565,8 +688,9 @@ function buildRoof({ segs, outer }) {
                   at(DEPTH, tMid + edge, THICK + 2.2), at(0, tMid + edge, THICK + 2.2), 0x2f3542);
     }
   }
-  const fixedMat = lambert(0xffffff, { vertexColors: true, emissive: 0x000000 });
-  const panelMat = lambert(0xffffff, { vertexColors: true, emissive: 0x000000 });
+  const fixedMat = surf(0xffffff, { vertexColors: true, emissive: 0x000000,
+    roughness: 0.52, metalness: 0.30, map: GRAIN() });
+  const panelMat = surf(0xffffff, { vertexColors: true, emissive: 0x000000, roughness: 0.38, metalness: 0.45 });
   const g = new THREE.Group();
   g.add(Q.mesh(fixedMat));
   g.add(panels.mesh(panelMat));
@@ -594,9 +718,10 @@ function buildFacade({ segs, outer }) {
     const q = new Quads();
     for (let s = 0; s < segs; s++) {
       const t0 = (s / segs) * TAU, t1 = ((s + 1) / segs) * TAU;
-      q.quad(P(A, B, t0, y0), P(A, B, t0, y1), P(A, B, t1, y1), P(A, B, t1, y0), s % 2 ? c0 : c1);
+      q.quad(P(A, B, t0, y0), P(A, B, t0, y1), P(A, B, t1, y1), P(A, B, t1, y0), s % 2 ? c0 : c1, 6.0);
     }
-    const m = q.mesh(lambert(0xffffff, { vertexColors: true, emissive: 0x000000 }));
+    const m = q.mesh(surf(0xffffff, { vertexColors: true, emissive: 0x000000,
+      roughness: 0.55, metalness: 0.12, map: CLAD() }));
     group.add(m);
     return m;
   });
@@ -614,15 +739,16 @@ function buildPitch({ segs }) {
 
   for (let s = 0; s < segs; s++) {
     const t0 = (s / segs) * TAU, t1 = ((s + 1) / segs) * TAU;
-    Q.tri(cen, P(BOWL_IN.a, BOWL_IN.b, t1), P(BOWL_IN.a, BOWL_IN.b, t0), 0.075, 0.077, 0.092);
+    Q.tri(cen, P(BOWL_IN.a, BOWL_IN.b, t1), P(BOWL_IN.a, BOWL_IN.b, t0),
+          TMP.setRGB(0.075, 0.077, 0.092), [0, 0], [9, 0], [9, 9]);
   }
 
-  const flat = (x0, z0, x1, z1, y, hex) =>
-    Q.quad(V(x0, y, z0), V(x0, y, z1), V(x1, y, z1), V(x1, y, z0), hex);
+  const flat = (x0, z0, x1, z1, y, hex, tile = 26) =>
+    Q.quad(V(x0, y, z0), V(x0, y, z1), V(x1, y, z1), V(x1, y, z0), hex, tile);
   const BANDS = 14, bw = (PITCH.hx * 2) / BANDS;     // mown across, end to end
   for (let i = 0; i < BANDS; i++) {
     const x0 = -PITCH.hx + i * bw;
-    flat(x0, -PITCH.hz, x0 + bw, PITCH.hz, 0.03, i % 2 ? 0x1f4727 : 0x1a3d21);
+    flat(x0, -PITCH.hz, x0 + bw, PITCH.hz, 0.03, i % 2 ? 0x1f4727 : 0x1a3d21, 3.0);
   }
 
   const line = (x0, z0, x1, z1, w = 0.16) => {
@@ -658,7 +784,7 @@ function buildPitch({ segs }) {
     // pit crowd stands on grass at a show that decks the whole floor
     Q.quad(V(x0, 0.11, -h0), V(x0, 0.11, h0), V(x1, 0.11, h1), V(x1, 0.11, -h1), 0x14151d);
   }
-  return Q.mesh();
+  return Q.mesh(surf(0xffffff, { vertexColors: true, map: GRASS(), roughness: 0.96 }));
 }
 
 // ═══ THE ARCH ══════════════════════════════════════════════════════════════
@@ -697,7 +823,7 @@ function buildArch() {
   const curve = new ArchCurve();
   const SEG = 176, RAD = 14, r = ARCH.dia / 2;
 
-  const skin = lambert(0xe0e4ed, { emissive: 0x000000 });
+  const skin = surf(0xe0e4ed, { emissive: 0x000000, roughness: 0.34, metalness: 0.72 });
   g.add(new THREE.Mesh(new THREE.TubeGeometry(curve, SEG, r, RAD, false), skin));
 
   const frames = curve.computeFrenetFrames(SEG, false);
@@ -717,7 +843,7 @@ function buildArch() {
     ring.applyMatrix4(m);
     collars.push(ring);
   }
-  const collarMesh = new THREE.Mesh(mergeGeometries(collars), lambert(0xafb5c3));
+  const collarMesh = new THREE.Mesh(mergeGeometries(collars), surf(0xafb5c3, { roughness: 0.4, metalness: 0.75 }));
   g.add(collarMesh);
 
   const web = [];
@@ -746,7 +872,7 @@ function buildArch() {
     g.add(lamp); lamps.push(lamp);
   }
   for (const s of [-1, 1]) {
-    const foot = new THREE.Mesh(new THREE.CylinderGeometry(7.5, 10.5, 13, 10), lambert(0x4b4e59));
+    const foot = new THREE.Mesh(new THREE.CylinderGeometry(7.5, 10.5, 13, 10), surf(0x4b4e59));
     foot.position.set(s * ARCH_L, 5.5, ARCH_ZFT);
     g.add(foot);
   }
@@ -784,16 +910,16 @@ function buildNorthStand() {
   const zIn = -BOWL_IN.b;
 
   // the tunnel mouth, at pitch level
-  const tunnel = new THREE.Mesh(new THREE.BoxGeometry(11, 6.5, 3), lambert(0x0b0c11));
+  const tunnel = new THREE.Mesh(new THREE.BoxGeometry(11, 6.5, 3), surf(0x0b0c11));
   tunnel.position.set(0, 3.25, zIn - 1.2);
   g.add(tunnel);
-  const arch = new THREE.Mesh(new THREE.BoxGeometry(12.4, 0.7, 3.4), lambert(0x3b3f4c));
+  const arch = new THREE.Mesh(new THREE.BoxGeometry(12.4, 0.7, 3.4), surf(0x3b3f4c));
   arch.position.set(0, 6.9, zIn - 1.2);
   g.add(arch);
 
   // dugouts, either side of it
   for (const s of [-1, 1]) {
-    const d = new THREE.Mesh(new THREE.BoxGeometry(11, 2.4, 3.2), lambert(0x171922));
+    const d = new THREE.Mesh(new THREE.BoxGeometry(11, 2.4, 3.2), surf(0x171922));
     d.position.set(s * 13, 1.2, zIn + 1.4);
     g.add(d);
   }
@@ -801,10 +927,10 @@ function buildNorthStand() {
   // the Royal Box, sitting at the front of the middle tier
   const y = TIERS[1].yBase;
   const zBox = -(BOWL_IN.b + TIERS[1].gap + TIERS[0].rows * TREAD);
-  const box = new THREE.Mesh(new THREE.BoxGeometry(30, 3.4, 4), lambert(0x2a2028));
+  const box = new THREE.Mesh(new THREE.BoxGeometry(30, 3.4, 4), surf(0x2a2028));
   box.position.set(0, y + 1.7, zBox);
   g.add(box);
-  const canopy = new THREE.Mesh(new THREE.BoxGeometry(33, 0.5, 5.5), lambert(0x4a3a2c));
+  const canopy = new THREE.Mesh(new THREE.BoxGeometry(33, 0.5, 5.5), surf(0x4a3a2c));
   canopy.position.set(0, y + 5.4, zBox + 0.4);
   g.add(canopy);
   const trim = new THREE.Mesh(new THREE.BoxGeometry(30, 0.5, 0.4), basic(0xc9a24a));
@@ -835,7 +961,7 @@ function latticeMast({ height, size = 2.4, r = 0.085, color = 0x1d1f28 }) {
       }
     }
   }
-  return new THREE.Mesh(mergeGeometries(parts), lambert(color));
+  return new THREE.Mesh(mergeGeometries(parts), surf(color, { roughness: 0.46, metalness: 0.78 }));
 }
 
 // A flown hang: cabinets fanning downward, tighter at the top, which is what
@@ -849,7 +975,7 @@ function lineArray({ boxes = 14, width = 1.05, depth = 0.62 }) {
     parts.push(b);
     angle += 0.03 + i * 0.011; y -= 0.35;
   }
-  return new THREE.Mesh(mergeGeometries(parts), lambert(0x0e0d12));
+  return new THREE.Mesh(mergeGeometries(parts), surf(0x0e0d12, { roughness: 0.62, metalness: 0.18 }));
 }
 
 // ═══ THE SHOW ══════════════════════════════════════════════════════════════
@@ -864,11 +990,11 @@ function buildStage() {
   const xBack = STAGE.x - STAGE.depth / 2, xFront = STAGE.x + STAGE.depth / 2;
   const screens = [];
 
-  const deck = new THREE.Mesh(new THREE.BoxGeometry(STAGE.depth, STAGE.deck, STAGE.width), lambert(0x14131a));
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(STAGE.depth, STAGE.deck, STAGE.width), surf(0x14131a));
   deck.position.set(STAGE.x, STAGE.deck / 2, 0);
   g.add(deck);
 
-  const wall = new THREE.Mesh(new THREE.BoxGeometry(1.4, STAGE.wallY, 58), lambert(0x0b0b11));
+  const wall = new THREE.Mesh(new THREE.BoxGeometry(1.4, STAGE.wallY, 58), surf(0x0b0b11));
   wall.position.set(xBack - 0.7, STAGE.wallY / 2, 0);
   g.add(wall);
 
@@ -887,7 +1013,7 @@ function buildStage() {
     g.add(wing); screens.push(wing);
   }
 
-  const canopy = new THREE.Mesh(new THREE.BoxGeometry(STAGE.depth + 5, 0.9, 56), lambert(0x101018));
+  const canopy = new THREE.Mesh(new THREE.BoxGeometry(STAGE.depth + 5, 0.9, 56), surf(0x101018));
   canopy.position.set(STAGE.x + 1, STAGE.wallY + 1.5, 0);
   g.add(canopy);
   for (const x of [xBack + 5, STAGE.x, xFront - 3]) {
@@ -904,13 +1030,13 @@ function buildStage() {
       g.add(arr);
     }
     for (let i = 0; i < 4; i++) {
-      const sub = new THREE.Mesh(new THREE.BoxGeometry(1.6, 3.3, 3.2), lambert(0x0e0d12));
+      const sub = new THREE.Mesh(new THREE.BoxGeometry(1.6, 3.3, 3.2), surf(0x0e0d12));
       sub.position.set(xFront + 1.4, 1.65, s * (7 + i * 3.6));
       g.add(sub);
     }
   }
 
-  const thrust = new THREE.Mesh(new THREE.BoxGeometry(22, STAGE.deck, 5), lambert(0x14131a));
+  const thrust = new THREE.Mesh(new THREE.BoxGeometry(22, STAGE.deck, 5), surf(0x14131a));
   thrust.position.set(xFront + 11, STAGE.deck / 2, 0);
   g.add(thrust);
   return { group: g, screens };
@@ -935,10 +1061,10 @@ function buildTowers() {
     const tower = new THREE.Group();
     tower.position.set(t.x, 0, t.z);
     tower.add(latticeMast({ height: t.h, size: 2.6, r: 0.1 }));
-    const base = new THREE.Mesh(new THREE.BoxGeometry(6.5, 0.8, 6.5), lambert(0x17181f));
+    const base = new THREE.Mesh(new THREE.BoxGeometry(6.5, 0.8, 6.5), surf(0x17181f));
     base.position.y = 0.4; tower.add(base);
 
-    const boom = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.5, 0.5), lambert(0x24252f));
+    const boom = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.5, 0.5), surf(0x24252f));
     boom.position.set(2.0, t.h - 0.3, 0); tower.add(boom);
     const arr = lineArray({ boxes: 14, width: 1.0 });
     arr.position.set(3.4, t.h - 0.9, 0); tower.add(arr);
@@ -947,13 +1073,13 @@ function buildTowers() {
     scr.rotation.y = Math.PI / 2;
     scr.position.set(1.6, t.h * 0.62, 0);
     tower.add(scr); screens.push(scr);
-    const bez = new THREE.Mesh(new THREE.BoxGeometry(0.3, 4.5, 7.5), lambert(0x0d0d13));
+    const bez = new THREE.Mesh(new THREE.BoxGeometry(0.3, 4.5, 7.5), surf(0x0d0d13));
     bez.position.set(1.4, t.h * 0.62, 0); tower.add(bez);
     g.add(tower);
   }
   const foh = new THREE.Group();
   foh.position.set(40, 0, 0);
-  const plat = new THREE.Mesh(new THREE.BoxGeometry(9, 1.6, 16), lambert(0x1a1b23));
+  const plat = new THREE.Mesh(new THREE.BoxGeometry(9, 1.6, 16), surf(0x1a1b23));
   plat.position.y = 0.8; foh.add(plat);
   g.add(foh);
   return { group: g, screens };
@@ -1006,8 +1132,6 @@ function crowdPoints(positions, { size, color, twinkle = 0, additive = false }, 
         float a = smoothstep(0.25, 0.05, r) * vFade;
         float f = smoothstep(fogNear, fogFar, vDepth);
         gl_FragColor = vec4(mix(uColor, fogColor, f), a * (1.0 - f * 0.85));
-        #include <tonemapping_fragment>
-        #include <colorspace_fragment>
       }`,
   });
   return new THREE.Points(geo, mat);
@@ -1064,7 +1188,7 @@ function buildFloodlights({ segs }) {
 
 function buildSky() {
   const mat = new THREE.ShaderMaterial({
-    side: THREE.BackSide, fog: false, depthWrite: false, toneMapped: false,
+    side: THREE.BackSide, fog: false, depthWrite: false,
     uniforms: {
       uHorizon: { value: new THREE.Color(0x141026) },
       uZenith: { value: new THREE.Color(0x03040c) },
@@ -1074,7 +1198,6 @@ function buildSky() {
       uniform vec3 uHorizon, uZenith; varying float vY;
       void main(){
         gl_FragColor = vec4(mix(uHorizon, uZenith, smoothstep(-0.1, 0.72, vY)), 1.0);
-        #include <colorspace_fragment>
       }`,
   });
   const sky = new THREE.Mesh(new THREE.SphereGeometry(2600, 32, 20), mat);
@@ -1106,8 +1229,8 @@ const canvas = document.getElementById('gl');
 const boot = document.getElementById('boot');
 const COARSE = matchMedia('(hover: none), (max-width: 900px)').matches;
 const Q = COARSE
-  ? { segPerBlock: 2, roofSegs: 128, facadeSegs: 128, floodSegs: 140, bowlCrowd: 16000, pitchCrowd: 6500, phones: 2600, stars: 480, dpr: 1.6 }
-  : { segPerBlock: 3, roofSegs: 192, facadeSegs: 192, floodSegs: 200, bowlCrowd: 34000, pitchCrowd: 15000, phones: 6500, stars: 900, dpr: 1.9 };
+  ? { segPerBlock: 2, roofSegs: 128, facadeSegs: 128, floodSegs: 140, bowlCrowd: 16000, pitchCrowd: 6500, phones: 2600, stars: 480, dpr: 1.5, shadow: 1024, bloomScale: 0.45 }
+  : { segPerBlock: 3, roofSegs: 192, facadeSegs: 192, floodSegs: 200, bowlCrowd: 34000, pitchCrowd: 15000, phones: 6500, stars: 900, dpr: 1.8, shadow: 2048, bloomScale: 0.7 };
 
 let renderer;
 try {
@@ -1119,21 +1242,64 @@ try {
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, Q.dpr));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.1;
+// Real shadows. One directional light carries them — the sun by day, the moon
+// and skyglow by night — and only the things that sit over something else
+// cast: the roof onto the bowl, the arch across the roof, the towers and the
+// stage onto the pitch. Everything else only receives, which is what keeps a
+// single 2K map sharp across a 300 m building.
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFShadowMap;
+renderer.info.autoReset = false;
 
 const scene = new THREE.Scene();
 const FOG = { color: 0x141026, near: 260, far: 1400 };
 scene.fog = new THREE.Fog(FOG.color, FOG.near, FOG.far);
 const camera = new THREE.PerspectiveCamera(46, 1, 1, 6000);
 
+// ── image-based lighting ───────────────────────────────────────────────────
+// A PBR surface with nothing around it is grey plastic. This builds a small
+// environment out of the same sky gradient the scene draws, so the arch's
+// steel picks up the sky above it and the ground bounce below, and every
+// material in the building sits in the same light.
+const pmrem = new THREE.PMREMGenerator(renderer);
+pmrem.compileEquirectangularShader();
+let envRT = null;
+function buildEnvironment(horizon, zenith, ground) {
+  const s = new THREE.Scene();
+  const m = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    uniforms: {
+      uH: { value: new THREE.Color(horizon) },
+      uZ: { value: new THREE.Color(zenith) },
+      uG: { value: new THREE.Color(ground) },
+    },
+    vertexShader: 'varying float vY; void main(){ vY = normalize(position).y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+    fragmentShader: `
+      uniform vec3 uH, uZ, uG; varying float vY;
+      void main(){
+        vec3 c = vY < 0.0 ? mix(uH, uG, smoothstep(0.0, -0.35, vY))
+                          : mix(uH, uZ, smoothstep(0.0, 0.75, vY));
+        gl_FragColor = vec4(c, 1.0);
+      }`,
+  });
+  s.add(new THREE.Mesh(new THREE.SphereGeometry(80, 32, 16), m));
+  const rt = pmrem.fromScene(s, 0.03);
+  m.dispose();
+  if (envRT) envRT.dispose();
+  envRT = rt;
+  scene.environment = rt.texture;
+}
+
 const sky = buildSky(); scene.add(sky);
 const stars = buildStars(Q.stars); scene.add(stars);
-const ground = new THREE.Mesh(new THREE.CircleGeometry(1800, 48), lambert(0x0c0d13));
+const ground = new THREE.Mesh(new THREE.CircleGeometry(1800, 48), surf(0x0c0d13));
 ground.rotation.x = -Math.PI / 2; ground.position.y = -0.6;
 scene.add(ground);
 
 const bowl = buildBowl({ segPerBlock: Q.segPerBlock, crowdCap: Q.bowlCrowd });
 scene.add(bowl.mesh);
-scene.add(buildPitch({ segs: 200 }));
+const pitchMesh = buildPitch({ segs: 200 });
+scene.add(pitchMesh);
 const facade = buildFacade({ segs: Q.facadeSegs, outer: bowl.outer });
 scene.add(facade.group);
 const roof = buildRoof({ segs: Q.roofSegs, outer: bowl.outer });
@@ -1141,8 +1307,8 @@ scene.add(roof.group);
 const arch = buildArch(); scene.add(arch.group);
 const cables = buildCables(arch.curve, bowl.outer); scene.add(cables);
 const floods = buildFloodlights({ segs: Q.floodSegs }); scene.add(floods);
-scene.add(buildNorthStand());
 const stage = buildStage(); scene.add(stage.group);
+const northStand = buildNorthStand(); scene.add(northStand);
 const towers = buildTowers(); scene.add(towers.group);
 
 // the lit fascia at the front of the two upper tiers
@@ -1168,9 +1334,29 @@ const sparkle = crowdPoints(phoneLights([bowl.crowd, pitchers], Q.phones),
 scene.add(crowdBowl, crowdPitch, sparkle);
 const pointSets = [crowdBowl, crowdPitch, sparkle];
 
+// Only the things that stand over something else cast; everything takes
+// shadow. Casting from the bowl itself would spend the whole map on 90,000
+// seat backs that shade nothing.
+const CASTERS = [roof.group, arch.group, towers.group, stage.group, northStand];
+for (const g of CASTERS) g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+for (const o of [bowl.mesh, pitchMesh, ground]) o.receiveShadow = true;
+facade.group.traverse((o) => { if (o.isMesh) o.receiveShadow = true; });
+
 const hemi = new THREE.HemisphereLight(0x1c2138, 0x07080d, 1.1); scene.add(hemi);
 const sun = new THREE.DirectionalLight(0x4b587f, 1.5);
-sun.position.set(420, 700, 260); scene.add(sun);
+sun.position.set(420, 700, 260);
+sun.castShadow = true;
+sun.shadow.mapSize.set(Q.shadow, Q.shadow);
+// The frustum has to hold a 300 m building plus a 133 m arch and the shadow
+// it throws; at this scale the depth bias that stops acne has to be given in
+// world units, which is what normalBias is for.
+const sc = sun.shadow.camera;
+sc.left = -240; sc.right = 240; sc.top = 240; sc.bottom = -240;
+sc.near = 120; sc.far = 1700;
+sc.updateProjectionMatrix();
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 0.8;
+scene.add(sun);
 const stageKey = new THREE.PointLight(ACCENT, 2400, 300, 2);
 stageKey.position.set(STAGE.x + 20, 24, 0); scene.add(stageKey);
 const bowlFill = new THREE.PointLight(0xbcd0ea, 30000, 900, 2);
@@ -1183,24 +1369,24 @@ const MODES = {
   night: {
     fog: { color: 0x141026, near: 260, far: 1400 },
     horizon: 0x141026, zenith: 0x03040c, ground: 0x0c0d13,
-    hemi: [0x1c2138, 0x07080d, 1.1], sun: [0x4b587f, 1.5],
-    archSkin: 0xe0e4ed, archEmissive: 0x7b8399, collar: 0x9aa2b4,
+    hemi: [0x1c2138, 0x07080d, 1.1], sun: [0x4b587f, 1.5], sunPos: [420, 700, 260], env: 1.0,
+    archSkin: 0xe0e4ed, archEmissive: 0x3d4453, collar: 0x9aa2b4,
     floods: 0xf3f6ff, lamps: true, stars: 0.85,
     stageKey: 2400, bowlFill: 30000, ribbon: 1, sparkle: 1,
-    facade: [0x1c202b, 0x5c6a90, 0x4e5466, 0x343947],
-    roof: 0x191c25, panel: 0x2b3040,
+    facade: [0x14171f, 0x465070, 0x2c313d, 0x21242e],
+    roof: 0x14161e, panel: 0x232834, bloom: [0.48, 0.72, 0.86],
     screens: [0x3a4a75, 0x2f2a4a], exposure: 1.1,
   },
   day: {
     fog: { color: 0xa8bcd6, near: 700, far: 3200 },
     horizon: 0xa8bcd6, zenith: 0x4a76b4, ground: 0x5a6053,
-    hemi: [0xcfe0ff, 0x4a5044, 1.7], sun: [0xfff3df, 2.2],
+    hemi: [0xbdd4f5, 0x585a4a, 0.85], sun: [0xfff1d6, 3.4], sunPos: [200, 340, -520], env: 0.55,
     archSkin: 0xf2f4f8, archEmissive: 0x000000, collar: 0xd6dae2,
     floods: 0x30333c, lamps: false, stars: 0,
     stageKey: 0, bowlFill: 0, ribbon: 0.25, sparkle: 0,
     facade: [0x000000, 0x0a0e18, 0x000000, 0x000000],
-    roof: 0x000000, panel: 0x000000,
-    screens: [0x18202e, 0x141826], exposure: 1.0,
+    roof: 0x000000, panel: 0x000000, bloom: [0.16, 0.6, 0.95],
+    screens: [0x18202e, 0x141826], exposure: 1.06,
   },
 };
 
@@ -1215,6 +1401,8 @@ function applyMode(next) {
   ground.material.color.setHex(m.ground);
   hemi.color.setHex(m.hemi[0]); hemi.groundColor.setHex(m.hemi[1]); hemi.intensity = m.hemi[2];
   sun.color.setHex(m.sun[0]); sun.intensity = m.sun[1];
+  sun.position.set(...m.sunPos);
+  scene.environmentIntensity = m.env;
   arch.skin.color.setHex(m.archSkin); arch.skin.emissive.setHex(m.archEmissive);
   arch.collarMesh.material.color.setHex(m.collar);
   arch.webLines.material.opacity = next === 'day' ? 0.35 : 0.75;
@@ -1239,6 +1427,8 @@ function applyMode(next) {
     p.material.uniforms.fogFar.value = m.fog.far;
   }
   renderer.toneMappingExposure = m.exposure;
+  buildEnvironment(m.horizon, m.zenith, m.ground);
+  bloom.strength = m.bloom[0]; bloom.radius = m.bloom[1]; bloom.threshold = m.bloom[2];
   const btn = document.getElementById('mode');
   btn.textContent = next === 'night' ? '야간' : '주간';
   btn.setAttribute('aria-pressed', String(next === 'night'));
@@ -1260,7 +1450,11 @@ const VIEWS = {
   // one ground-level frame cannot hold both. This one takes the arch; the
   // stage has its own view.
   pitch:    { pos: V(48, 2.6, 14),  target: V(-5, 55, -55), fov: 74, fit: 'none' },
-  seat:     { pos: V(26, 45, 138),   target: V(-30, 14, -4), fov: 52, fit: 'lens' },
+  // An actual seat, not a point in the air: row 11 of the upper tier on the
+  // south side, which on this bowl is 75.5 m of inset. The old figure sat
+  // outside the facade — masked until the camera tween was fixed and the
+  // camera finally arrived there to render a wall.
+  seat:     { pos: V(30, 39.5, 117), target: V(-34, 12, -4), fov: 52, fit: 'lens' },
   top:      { pos: V(0, 560, 210),   target: V(0, 0, -14),   fov: 40, fit: 'wide' },
 };
 
@@ -1283,6 +1477,16 @@ controls.autoRotateSpeed = 0.32;
 // the browser takes the pinch for its own page zoom and never forwards it.
 controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
 controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+
+// Bloom, then one place where tone mapping and the sRGB encode happen. The
+// scene renders linear into a half-float target, the bloom is taken off the
+// real highlights in that linear image — floodlights, screens, phone lights —
+// and OutputPass closes the pipeline.
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.55, 0.72, 0.78);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
 
 const REF_ASPECT = 1.55;
 function framed(v) {
@@ -1383,6 +1587,8 @@ function resize() {
   W = canvas.clientWidth || window.innerWidth;
   H = canvas.clientHeight || window.innerHeight;
   renderer.setSize(W, H, false);
+  composer.setPixelRatio(renderer.getPixelRatio() * Q.bloomScale);
+  composer.setSize(W, H);
   camera.aspect = W / H;
   camera.updateProjectionMatrix();
   const px = renderer.getPixelRatio();
@@ -1439,7 +1645,8 @@ function frame() {
     ribbons.forEach((r) => { r.material.color.setHex(ACCENT).multiplyScalar(0.55 + pulse * 0.45); });
   }
 
-  renderer.render(scene, camera);
+  renderer.info.reset();
+  composer.render();
   layoutLabels(W, H);
 
   acc += dtReal; frames++;
