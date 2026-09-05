@@ -1,0 +1,1489 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<meta name="theme-color" content="#05060c" />
+<title>Wembley Stadium</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+
+<style>
+  /* ── The demo shell ──────────────────────────────────────────────────────
+     Deliberately thin. Everything that matters is in the WebGL canvas; this
+     is a title, a row of chips and a readout, laid out so that on a phone
+     nothing sits under the notch or the home indicator and every control is
+     a comfortable thumb target. */
+  :root {
+    --ink:      #e9ecf4;
+    --ink-dim:  #8b93a7;
+    --line:     rgba(255,255,255,0.13);
+    --panel:    rgba(10,12,20,0.62);
+    --accent:   #ff9745;   /* the app's ACCENT — src/three/kit.js */
+    --cool:     #7fb8ff;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden; background: #05060c;
+    color: var(--ink); font-family: 'Inter Tight', system-ui, sans-serif;
+    overscroll-behavior: none;
+  }
+  #app { position: fixed; inset: 0; }
+  /* A scrim under the top readouts. The dock at the bottom already has one;
+     without a matching one up here the title and the fps counter vanish into
+     a bright day sky, which is exactly when you most want to read them. */
+  #app::before {
+    content: ''; position: absolute; left: 0; right: 0; top: 0; height: 150px;
+    background: linear-gradient(to bottom, rgba(5,6,12,0.72), transparent);
+    pointer-events: none; z-index: 1;
+  }
+
+  /* touch-action:none is what lets a two-finger pinch reach OrbitControls
+     instead of being eaten by the browser's own page zoom. */
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+  .hud { position: absolute; pointer-events: none; z-index: 2; }
+  .hud > * { pointer-events: auto; }
+
+  /* ── title, top left ── */
+  #brand {
+    top: calc(env(safe-area-inset-top, 0px) + 14px);
+    left: calc(env(safe-area-inset-left, 0px) + 16px);
+    right: calc(env(safe-area-inset-right, 0px) + 16px);
+  }
+  #brand h1 {
+    margin: 0; font-size: 19px; font-weight: 600; letter-spacing: -0.02em;
+    text-shadow: 0 2px 14px rgba(0,0,0,0.75);
+  }
+  #brand p {
+    margin: 3px 0 0; font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 10.5px; font-weight: 300; letter-spacing: 0.04em;
+    color: var(--ink-dim); text-shadow: 0 2px 10px rgba(0,0,0,0.8);
+  }
+
+  /* ── readout, top right ── */
+  #stat {
+    top: calc(env(safe-area-inset-top, 0px) + 14px);
+    right: calc(env(safe-area-inset-right, 0px) + 16px);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 10px; font-weight: 400; line-height: 1.55;
+    text-align: right; color: var(--ink-dim);
+    text-shadow: 0 2px 10px rgba(0,0,0,0.8); font-variant-numeric: tabular-nums;
+  }
+  #stat b { color: var(--ink); font-weight: 500; }
+
+  /* ── controls, bottom ── */
+  #dock {
+    left: 0; right: 0; bottom: 0;
+    padding: 0 12px calc(env(safe-area-inset-bottom, 0px) + 12px);
+    display: flex; flex-direction: column; gap: 8px; align-items: center;
+    background: linear-gradient(to top, rgba(5,6,12,0.85), transparent);
+    padding-top: 44px;
+  }
+  .row {
+    display: flex; gap: 6px; overflow-x: auto; max-width: 100%;
+    scrollbar-width: none; padding: 2px;
+  }
+  .row::-webkit-scrollbar { display: none; }
+  button {
+    flex: 0 0 auto; min-height: 40px; padding: 0 14px;
+    border: 1px solid var(--line); border-radius: 999px;
+    background: var(--panel); color: var(--ink);
+    font-family: 'Inter Tight', system-ui, sans-serif;
+    font-size: 12.5px; font-weight: 500; letter-spacing: -0.01em;
+    cursor: pointer; white-space: nowrap;
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+    transition: border-color .18s, color .18s, background .18s;
+  }
+  button:active { transform: scale(0.97); }
+  button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+  #hint {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 9.5px; font-weight: 300; letter-spacing: 0.05em;
+    color: var(--ink-dim); text-align: center; padding-bottom: 2px;
+  }
+
+  /* ── boot / failure ── */
+  #boot {
+    position: absolute; inset: 0; z-index: 5; display: grid; place-items: center;
+    background: #05060c; text-align: center; padding: 24px;
+    transition: opacity .45s ease; font-size: 13px; color: var(--ink-dim);
+  }
+  #boot.gone { opacity: 0; pointer-events: none; }
+  #boot .bar {
+    width: 132px; height: 2px; margin: 14px auto 0;
+    background: rgba(255,255,255,0.12); overflow: hidden; border-radius: 2px;
+  }
+  #boot .bar i {
+    display: block; height: 100%; width: 34%; background: var(--accent);
+    animation: sweep 1.05s ease-in-out infinite;
+  }
+  @keyframes sweep { 0% { transform: translateX(-110%); } 100% { transform: translateX(320%); } }
+
+  @media (min-width: 820px) {
+    #brand h1 { font-size: 24px; }
+    #brand p, #stat { font-size: 11px; }
+    #dock { padding-bottom: 18px; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="gl"></canvas>
+
+  <div class="hud" id="brand">
+    <h1>Wembley Stadium</h1>
+    <p>90,000 SEATS · 148 BLOCKS · 315 M ARCH</p>
+  </div>
+
+  <div class="hud" id="stat">
+    <div><b id="fps">—</b> fps</div>
+    <div><span id="tris">—</span> tris · <span id="calls">—</span> calls</div>
+    <div id="qual">—</div>
+  </div>
+
+  <div class="hud" id="dock">
+    <div class="row" id="views">
+      <button data-view="exterior">외관</button>
+      <button data-view="arch">아치</button>
+      <button data-view="stage">무대</button>
+      <button data-view="pitch">피치</button>
+      <button data-view="seat">관중석</button>
+      <button data-view="top">부감</button>
+    </div>
+    <div class="row">
+      <button id="mode"   aria-pressed="true">야간</button>
+      <button id="spin"   aria-pressed="false">자동 회전</button>
+      <button id="labels" aria-pressed="false">치수</button>
+    </div>
+    <div id="hint">DRAG TO ORBIT · PINCH TO ZOOM</div>
+  </div>
+
+  <div id="boot">
+    <div>
+      Wembley 를 짓는 중…
+      <div class="bar"><i></i></div>
+    </div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/"
+  }
+}
+</script>
+
+
+<script type="module">
+// ═══════════════════════════════════════════════════════════════════════════
+// Wembley Stadium — built to the published figures, not to an impression.
+//
+// Independent of the React app: imports nothing from src/, and nothing in
+// src/ imports it. The venue scene played from a seat during playback
+// (src/three/venues/stadium.js) is untouched.
+//
+// EVERY DIMENSION BELOW IS EITHER PUBLISHED OR SOLVED FROM PUBLISHED ONES.
+// The stadium's own stats page and Wikipedia give enough hard numbers that
+// the geometry is over-determined, which means it can be checked rather than
+// eyeballed. The figures used:
+//
+//   90,000 seats — 34,303 lower · 16,532 Club Wembley · 39,165 upper
+//   148 blocks   — 101-144 (44) · 201-252 (52) · 501-552 (52)
+//   54 km of seating rows laid end to end
+//   1 km circumference
+//   pitch 105 × 69 m · roof 52 m above it · bowl volume 1,139,100 m³
+//   arch 315 m span · 133 m · 7.4 m diameter · 22° off vertical
+//
+// WHAT THOSE NUMBERS FORCE
+//
+// 1. THE PLAN IS NOT AN ELLIPSE. An ellipse through a 303 × 267 m footprint
+//    has a circumference of 902 m; the published figure is 1,000 m. A plain
+//    rectangle gives 1,146. Only a rounded rectangle lands on 1,000 — a
+//    superellipse |x/a|⁴ + |z/b|⁴ = 1 does it almost exactly. That 10 %
+//    shortfall is the whole difference between a building with sides and
+//    corners and a smooth oval drum, and it is why this file solves the plan
+//    instead of drawing one.
+//
+// 2. SEATS ARE 0.60 m APART. 54 km ÷ 90,000 seats, exactly.
+//
+// 3. THE ROW COUNTS FALL OUT. Each tier needs (its seats × 0.60) metres of
+//    SEATING. Seating is not the whole ring: a 1.2 m stairway runs between
+//    every pair of blocks, 148 of them, and that is not somewhere anybody
+//    sits. Walking rows outward at a standard 0.80 m tread until each tier's
+//    seating target is met — ring length minus its stairways — gives
+//    47 · 15 · 28, and the outer edge then lands on a 1,000 m circumference
+//    to the metre. Leaving the stairways out of that sum is what put a first
+//    attempt 8,545 seats light; nothing in the chain was chosen for looks.
+//
+// ORIENTATION — and this is the part an impression gets backwards. Wembley's
+// north and south stands run the LENGTH of the pitch; east and west sit
+// behind the goals. The Royal Box, the tunnel and the dugouts are in the
+// north stand at the halfway line, and the arch stands over that same north
+// side, spanning east to west. So the pitch's long axis runs east-west, and
+// the arch runs parallel to it — not across an end.
+//
+//   FRAME: metres, Y up, origin on the centre spot.
+//          +X east, −X west (the goals) · +Z south, −Z north (the arch)
+// ═══════════════════════════════════════════════════════════════════════════
+
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+
+const TAU = Math.PI * 2;
+const DEG = Math.PI / 180;
+const ACCENT = 0xff9745, COOL = 0x7fb8ff;
+
+// ── published ──────────────────────────────────────────────────────────────
+const PITCH      = { hx: 52.5, hz: 34.5 };      // 105 × 69 m, long axis east-west
+const SEAT_PITCH = 0.60;                        // 54 km ÷ 90,000
+const TREAD      = 0.80;                        // row-to-row, in plan
+const RUNOFF     = 8.0;                         // pitch edge to row 1
+const ROOF_Y     = 52.0;                        // above the pitch
+const ARCH       = { span: 315, apexY: 133, tilt: 22 * DEG, dia: 7.4 };
+
+// The plan. n = 4 is what the 1 km circumference asks for; the semi-axes
+// differ by 18 m all the way out because the bowl is a constant depth around
+// a pitch that is itself 36 m longer than it is wide.
+const N        = 4;
+const SUPER_E  = 2 / N;
+const BOWL_IN  = { a: PITCH.hx + RUNOFF, b: PITCH.hz + RUNOFF };   // 60.5 × 42.5
+
+// Tiers, solved above. `blocks` are the real ones: 44 in the lower ring,
+// 52 in each of the two above it, numbered clockwise from the halfway line.
+const TIERS = [
+  { id: 'lower',  first: 101, blocks: 44, rows: 47, gap: 0,   yBase: 1.2,  rise: 0.30, riseFar: 0.44 },
+  { id: 'club',   first: 201, blocks: 52, rows: 15, gap: 8.0, yBase: 21.5, rise: 0.46, riseFar: 0.56 },
+  { id: 'upper',  first: 501, blocks: 52, rows: 28, gap: 9.0, yBase: 33.0, rise: 0.54, riseFar: 0.70 },
+];
+const OFFICIAL_SEATS = [34303, 16532, 39165];
+
+// ── the superellipse ───────────────────────────────────────────────────────
+// One point on |x/a|ⁿ + |z/b|ⁿ = 1. The signed power is what keeps the curve
+// square-ish through the corners instead of collapsing to an ellipse.
+const sgnPow = (v, e) => (v < 0 ? -((-v) ** e) : v ** e);
+const px_ = (a, t) => a * sgnPow(Math.cos(t), SUPER_E);
+const pz_ = (b, t) => b * sgnPow(Math.sin(t), SUPER_E);
+const P = (a, b, t, y = 0) => new THREE.Vector3(px_(a, t), y, pz_(b, t));
+
+// Arc length round one of these, and the inverse. Blocks and aisles are
+// spaced by ARC LENGTH, not by angle: the parameter bunches hard at the
+// corners, and blocks laid out by angle would come out three times wider on
+// the straights than in the corners, which is exactly the giveaway that a
+// stadium was drawn rather than measured.
+function arcTable(a, b, steps = 3072) {
+  const t = new Float64Array(steps + 1), s = new Float64Array(steps + 1);
+  let prev = P(a, b, 0), total = 0;
+  for (let i = 1; i <= steps; i++) {
+    const ti = (i / steps) * TAU, p = P(a, b, ti);
+    total += p.distanceTo(prev);
+    t[i] = ti; s[i] = total; prev = p;
+  }
+  return { t, s, total, steps };
+}
+// parameter → arc length
+function arcAt(tab, t) {
+  const u = (((t % TAU) + TAU) % TAU) / TAU;
+  const i = Math.min(tab.steps, Math.round(u * tab.steps));
+  return tab.s[i];
+}
+// arc length → parameter
+function tAtArc(tab, len) {
+  let lo = 0, hi = tab.steps;
+  const target = ((len % tab.total) + tab.total) % tab.total;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (tab.s[mid] < target) lo = mid + 1; else hi = mid;
+  }
+  return tab.t[lo];
+}
+const perimeter = (a, b) => arcTable(a, b, 1024).total;
+
+const lambert = (c, o = {}) => new THREE.MeshLambertMaterial({ color: c, ...o });
+const basic   = (c, o = {}) => new THREE.MeshBasicMaterial({ color: c, ...o });
+const V = (x, y, z) => new THREE.Vector3(x, y, z);
+
+function prng(seed) {
+  let s = seed >>> 0;
+  return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+}
+
+// Flat-shaded quads that all merge into one buffer. A stadium is an enormous
+// number of very simple surfaces; the only way a phone draws it is if they
+// arrive as one.
+const TMP = new THREE.Color();
+class Quads {
+  constructor() { this.pos = []; this.col = []; }
+  tri(a, b, c, r, g, bl) {
+    this.pos.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+    for (let i = 0; i < 3; i++) this.col.push(r, g, bl);
+  }
+  quad(a, b, c, d, hex) {
+    const k = TMP.setHex(hex);
+    this.tri(a, b, c, k.r, k.g, k.b);
+    this.tri(a, c, d, k.r, k.g, k.b);
+  }
+  get tris() { return this.pos.length / 9; }
+  mesh(mat) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.pos), 3));
+    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(this.col), 3));
+    g.computeVertexNormals();
+    return new THREE.Mesh(g, mat || lambert(0xffffff, { vertexColors: true }));
+  }
+}
+
+// ═══ THE BOWL ══════════════════════════════════════════════════════════════
+//
+// 148 blocks, drawn as the 148 blocks they are. Each tier's ring is divided
+// into equal ARC LENGTHS — 44 in the lower, 52 in each tier above — with a
+// stairway between every pair, and those divisions run radially, so the same
+// angular boundaries hold from a tier's first row to its last. That is what a
+// vomitory line looks like from the pitch, and it is the detail that reads as
+// a real stand rather than a striped ramp.
+//
+// Wembley's seats are red. The lower and upper tiers are the deep house red;
+// Club Wembley in the middle is the paler, greyer upholstery of a hospitality
+// tier, which is visible from anywhere in the ground as a lighter band.
+const RED_LOWER = [0x8d1f2b, 0x9c2733, 0x7d1a25, 0x952330];
+const RED_UPPER = [0x8a1e2a, 0x97242f, 0x7a1922, 0x912230];
+const CLUB      = [0x6a5560, 0x77606a, 0x5f4c56, 0x715a64];
+const AISLE_HEX = 0x9b98a2;      // bare concrete stairs
+const UNSOLD    = 0x2f2c37;      // masked off behind the stage
+const RAKE_HEX  = 0x6b6774;
+const AISLE_W   = 1.2;           // m of stair between blocks
+
+// The stage stands at the WEST end, behind that goal — where a stadium show
+// is actually built, and the reason the arch reads across the picture rather
+// than over the stage. These blocks have no view and are not sold.
+const maskedAt = (nx) => nx < -0.78;
+
+function buildBowl({ segPerBlock, crowdCap }) {
+  const Q = new Quads();
+  const crowd = [];
+  const fascias = [];
+  const rnd = prng(4407);
+  const tally = [];
+
+  let inset = 0;                                   // from the bowl's inner edge
+
+  TIERS.forEach((tier, ti) => {
+    inset += tier.gap;
+    const tierStart = inset;
+    const midA = BOWL_IN.a + tierStart + (tier.rows * TREAD) / 2;
+    const midB = BOWL_IN.b + tierStart + (tier.rows * TREAD) / 2;
+
+    // where the stairways fall, once, for the whole tier
+    const tab = arcTable(midA, midB);
+    const bounds = [];
+    for (let i = 0; i < tier.blocks; i++) {
+      const s0 = (i / tier.blocks) * tab.total;
+      const s1 = ((i + 1) / tier.blocks) * tab.total;
+      bounds.push({
+        n: tier.first + i,
+        tStair: tAtArc(tab, s0),
+        t0: tAtArc(tab, s0 + AISLE_W),
+        t1: tAtArc(tab, s1),
+      });
+    }
+
+    // the concourse wall this tier stands on
+    const A0 = BOWL_IN.a + tierStart, B0 = BOWL_IN.b + tierStart;
+    const wallFrom = ti === 0 ? 0 : TIERS[ti - 1].topY;
+    const WSEG = 220;
+    for (let s = 0; s < WSEG; s++) {
+      const t0 = (s / WSEG) * TAU, t1 = ((s + 1) / WSEG) * TAU;
+      Q.quad(P(A0, B0, t0, wallFrom), P(A0, B0, t1, wallFrom),
+             P(A0, B0, t1, tier.yBase), P(A0, B0, t0, tier.yBase),
+             ti === 0 ? 0x2a2731 : 0x232028);
+    }
+
+    let y = tier.yBase;
+    let seatsInTier = 0, rowLen = 0;
+    for (let r = 0; r < tier.rows; r++) {
+      const f = tier.rows === 1 ? 0 : r / (tier.rows - 1);
+      const below = y;
+      y += tier.rise + (tier.riseFar - tier.rise) * f;
+      const iIn = tierStart + r * TREAD, iOut = iIn + TREAD;
+      const aIn = BOWL_IN.a + iIn, bIn = BOWL_IN.b + iIn;
+      const aOut = BOWL_IN.a + iOut, bOut = BOWL_IN.b + iOut;
+      const aSeat = BOWL_IN.a + iIn + TREAD * 0.62, bSeat = BOWL_IN.b + iIn + TREAD * 0.62;
+      const palette = tier.id === 'club' ? CLUB : tier.id === 'upper' ? RED_UPPER : RED_LOWER;
+      const seatTab = arcTable(aSeat, bSeat, 1536);
+      const ang = (t) => ((t % TAU) + TAU) % TAU;
+
+      for (const blk of bounds) {
+        // the stairway, then the seated part of the block
+        const runs = [
+          { from: blk.tStair, to: blk.t0, hex: AISLE_HEX, seats: false },
+          { from: blk.t0,     to: blk.t1, hex: null,      seats: true  },
+        ];
+        for (const run of runs) {
+          let span = run.to - run.from;
+          if (span <= 0) span += TAU;
+          const n = run.seats ? segPerBlock : 1;
+          for (let k = 0; k < n; k++) {
+            const t0 = run.from + (span * k) / n, t1 = run.from + (span * (k + 1)) / n;
+            const tm = (t0 + t1) / 2;
+            const masked = maskedAt(px_(1, tm));      // normalised x on the unit form
+            const hex = run.hex ?? (masked ? UNSOLD
+              : palette[(blk.n + r) % palette.length]);
+
+            Q.quad(P(aIn, bIn, t0, below), P(aIn, bIn, t1, below),
+                   P(aIn, bIn, t1, y), P(aIn, bIn, t0, y), RAKE_HEX);
+            Q.quad(P(aIn, bIn, t0, y), P(aIn, bIn, t1, y),
+                   P(aOut, bOut, t1, y), P(aOut, bOut, t0, y), hex);
+            if (run.seats) {
+              Q.quad(P(aSeat, bSeat, t0, y), P(aSeat, bSeat, t1, y),
+                     P(aSeat, bSeat, t1, y + 0.44), P(aSeat, bSeat, t0, y + 0.44),
+                     masked ? UNSOLD : hex);
+            }
+          }
+        }
+
+        // Occupants, seated at the real 0.60 m pitch. Counting them here is
+        // also how the tier's seat total gets checked against the published
+        // one — the number is measured off the geometry, never asserted.
+        const s0 = arcAt(seatTab, blk.t0);
+        let s1 = arcAt(seatTab, blk.t1);
+        if (s1 < s0) s1 += seatTab.total;
+        const nSeats = Math.round((s1 - s0) / SEAT_PITCH);
+        seatsInTier += nSeats; rowLen += s1 - s0;
+        for (let i = 0; i < nSeats; i++) {
+          const t = tAtArc(seatTab, s0 + (i + 0.5) * SEAT_PITCH);
+          if (maskedAt(px_(1, t))) continue;
+          if (rnd() > 0.94) continue;
+          const p = P(aSeat, bSeat, t, y + 0.95 + rnd() * 0.2);
+          crowd.push(p.x + (rnd() - 0.5) * 0.35, p.y, p.z + (rnd() - 0.5) * 0.35);
+        }
+      }
+    }
+
+    tier.topY = y;
+    tier.endInset = tierStart + tier.rows * TREAD;
+    fascias.push({ inset: tierStart, yBase: tier.yBase, yTop: y, id: tier.id });
+    tally.push({ id: tier.id, seats: seatsInTier, rowLen, rows: tier.rows });
+    inset = tier.endInset;
+  });
+
+  // the concourse deck between a tier's last row and the next tier's wall
+  TIERS.forEach((tier, ti) => {
+    const next = TIERS[ti + 1];
+    if (!next) return;
+    const a0 = BOWL_IN.a + tier.endInset, b0 = BOWL_IN.b + tier.endInset;
+    const a1 = a0 + next.gap, b1 = b0 + next.gap;
+    const S = 220;
+    for (let s = 0; s < S; s++) {
+      const t0 = (s / S) * TAU, t1 = ((s + 1) / S) * TAU;
+      Q.quad(P(a0, b0, t0, tier.topY), P(a0, b0, t1, tier.topY),
+             P(a1, b1, t1, tier.topY), P(a1, b1, t0, tier.topY), 0x3d3a46);
+    }
+  });
+
+  return {
+    mesh: Q.mesh(),
+    crowd: thin(crowd, crowdCap),
+    fascias,
+    tally,
+    outer: { a: BOWL_IN.a + TIERS[2].endInset, b: BOWL_IN.b + TIERS[2].endInset },
+  };
+}
+
+function thin(flat, cap) {
+  const n = flat.length / 3;
+  if (n <= cap) return new Float32Array(flat);
+  const out = new Float32Array(cap * 3);
+  const stride = n / cap;
+  for (let i = 0; i < cap; i++) {
+    const j = Math.floor(i * stride) * 3;
+    out[i * 3] = flat[j]; out[i * 3 + 1] = flat[j + 1]; out[i * 3 + 2] = flat[j + 2];
+  }
+  return out;
+}
+
+// ═══ THE ROOF ══════════════════════════════════════════════════════════════
+//
+// 52 m above the pitch at its leading edge, rising to 60 at the perimeter. It
+// covers every seat and none of the pitch: that opening is the single fact
+// that makes a stadium the driest room a show ever plays, because whatever
+// radiates up over the pitch never comes back.
+//
+// The two movable panels are real and they are not symmetrical scenery: they
+// park over the EAST and WEST ends — behind the goals — and slide inward to
+// cover the pitch. 13,722 m² of the roof moves.
+function buildRoof({ segs, outer }) {
+  const Q = new Quads();
+  const IN = { a: BOWL_IN.a - 2, b: BOWL_IN.b - 2 };
+  const OUT = { a: outer.a + 4, b: outer.b + 4 };
+  const THICK = 2.6, RIBS = 5;
+  const yAt = (u) => ROOF_Y + 8 * (u * u * (3 - 2 * u));
+  const at = (u, t, dy = 0) =>
+    P(IN.a + (OUT.a - IN.a) * u, IN.b + (OUT.b - IN.b) * u, t, yAt(u) + dy);
+
+  for (let s = 0; s < segs; s++) {
+    const t0 = (s / segs) * TAU, t1 = ((s + 1) / segs) * TAU;
+    const bay = Math.floor(s / 4) % 2;          // ribs you can count, not a stripe
+    for (let k = 0; k < RIBS; k++) {
+      const u0 = k / RIBS, u1 = (k + 1) / RIBS;
+      Q.quad(at(u0, t0, THICK), at(u0, t1, THICK), at(u1, t1, THICK), at(u1, t0, THICK),
+             bay ? 0x6e7585 : 0x7a8293);
+      Q.quad(at(u0, t0), at(u1, t0), at(u1, t1), at(u0, t1), bay ? 0x1c1f28 : 0x232733);
+    }
+    Q.quad(at(0, t0), at(0, t1), at(0, t1, THICK), at(0, t0, THICK), 0x3f4453);
+    Q.quad(at(1, t0), at(1, t0, THICK), at(1, t1, THICK), at(1, t1), 0x353a49);
+  }
+
+  // the movable panels, parked over the two goal ends
+  const panels = new Quads();
+  for (const side of [-1, 1]) {
+    const tMid = side < 0 ? Math.PI : 0;
+    const HALF = 0.44;                      // parameter half-width of the panel
+    const NS = 20, DEPTH = 0.26;            // parked over the goal end
+    for (let i = 0; i < NS; i++) {
+      const t0 = tMid - HALF + (2 * HALF * i) / NS;
+      const t1 = tMid - HALF + (2 * HALF * (i + 1)) / NS;
+      for (let k = 0; k < 3; k++) {
+        const u0 = (k / 3) * DEPTH, u1 = ((k + 1) / 3) * DEPTH;
+        panels.quad(at(u0, t0, THICK + 1.4), at(u0, t1, THICK + 1.4),
+                    at(u1, t1, THICK + 1.4), at(u1, t0, THICK + 1.4),
+                    Math.floor(i / 2) % 2 ? 0x9aa2b5 : 0xa4acbe);
+      }
+      // the leading edge, which is what you actually see of them, and the
+      // rails they run in
+      panels.quad(at(0, t0, THICK + 0.3), at(0, t1, THICK + 0.3),
+                  at(0, t1, THICK + 2.2), at(0, t0, THICK + 2.2), 0x394050);
+      panels.quad(at(DEPTH, t0, THICK + 0.3), at(DEPTH, t0, THICK + 2.2),
+                  at(DEPTH, t1, THICK + 2.2), at(DEPTH, t1, THICK + 0.3), 0x394050);
+    }
+    for (const edge of [-HALF, HALF]) {     // the track at each side
+      panels.quad(at(0, tMid + edge, THICK + 0.3), at(DEPTH, tMid + edge, THICK + 0.3),
+                  at(DEPTH, tMid + edge, THICK + 2.2), at(0, tMid + edge, THICK + 2.2), 0x2f3542);
+    }
+  }
+  const fixedMat = lambert(0xffffff, { vertexColors: true, emissive: 0x000000 });
+  const panelMat = lambert(0xffffff, { vertexColors: true, emissive: 0x000000 });
+  const g = new THREE.Group();
+  g.add(Q.mesh(fixedMat));
+  g.add(panels.mesh(panelMat));
+  return { group: g, fixedMat, panelMat };
+}
+
+// ═══ THE FACADE ════════════════════════════════════════════════════════════
+//
+// A pale, ribbed drum with a glazed concourse band — and, because the plan is
+// a rounded rectangle, four readable sides with corners between them rather
+// than one continuous curve. Split into four horizontal bands so night can
+// uplight it the way the real one is lit: bright at the podium, falling off
+// toward the parapet.
+function buildFacade({ segs, outer }) {
+  const A = outer.a + 2, B = outer.b + 2;
+  const TOP = ROOF_Y + 8 - 2.6;
+  const BANDS = [
+    [0,      9.0,     0x1e212a, 0x242833],
+    [9.0,   13.0,     0x36415e, 0x2d3652],   // concourse glazing
+    [13.0,  TOP - 3,  0xbcbfc9, 0xaaadb8],
+    [TOP - 3, TOP,    0x91949e, 0x878a91],
+  ];
+  const group = new THREE.Group();
+  const bands = BANDS.map(([y0, y1, c0, c1]) => {
+    const q = new Quads();
+    for (let s = 0; s < segs; s++) {
+      const t0 = (s / segs) * TAU, t1 = ((s + 1) / segs) * TAU;
+      q.quad(P(A, B, t0, y0), P(A, B, t0, y1), P(A, B, t1, y1), P(A, B, t1, y0), s % 2 ? c0 : c1);
+    }
+    const m = q.mesh(lambert(0xffffff, { vertexColors: true, emissive: 0x000000 }));
+    group.add(m);
+    return m;
+  });
+  return { group, bands };
+}
+
+// ═══ THE PITCH ═════════════════════════════════════════════════════════════
+//
+// 105 × 69 m, long axis EAST-WEST, goals at the east and west ends. Getting
+// this axis right is what puts the arch alongside the show rather than over
+// it, and the Royal Box on a touchline where it belongs.
+function buildPitch({ segs }) {
+  const Q = new Quads();
+  const cen = V(0, 0, 0);
+
+  for (let s = 0; s < segs; s++) {
+    const t0 = (s / segs) * TAU, t1 = ((s + 1) / segs) * TAU;
+    Q.tri(cen, P(BOWL_IN.a, BOWL_IN.b, t1), P(BOWL_IN.a, BOWL_IN.b, t0), 0.075, 0.077, 0.092);
+  }
+
+  const flat = (x0, z0, x1, z1, y, hex) =>
+    Q.quad(V(x0, y, z0), V(x0, y, z1), V(x1, y, z1), V(x1, y, z0), hex);
+  const BANDS = 14, bw = (PITCH.hx * 2) / BANDS;     // mown across, end to end
+  for (let i = 0; i < BANDS; i++) {
+    const x0 = -PITCH.hx + i * bw;
+    flat(x0, -PITCH.hz, x0 + bw, PITCH.hz, 0.03, i % 2 ? 0x1f4727 : 0x1a3d21);
+  }
+
+  const line = (x0, z0, x1, z1, w = 0.16) => {
+    const dx = x1 - x0, dz = z1 - z0, L = Math.hypot(dx, dz);
+    const nx = (-dz / L) * w, nz = (dx / L) * w;
+    Q.quad(V(x0 - nx, 0.06, z0 - nz), V(x0 + nx, 0.06, z0 + nz),
+           V(x1 + nx, 0.06, z1 + nz), V(x1 - nx, 0.06, z1 - nz), 0xd9e3d7);
+  };
+  const box = (x0, z0, x1, z1) => {
+    line(x0, z0, x1, z0); line(x1, z0, x1, z1); line(x1, z1, x0, z1); line(x0, z1, x0, z0);
+  };
+  box(-PITCH.hx, -PITCH.hz, PITCH.hx, PITCH.hz);
+  line(0, -PITCH.hz, 0, PITCH.hz);                                  // halfway
+  for (let i = 0; i < 56; i++) {
+    const a0 = (i / 56) * TAU, a1 = ((i + 1) / 56) * TAU;
+    line(9.15 * Math.cos(a0), 9.15 * Math.sin(a0), 9.15 * Math.cos(a1), 9.15 * Math.sin(a1));
+  }
+  for (const s of [-1, 1]) {                                        // goals east and west
+    box(s * PITCH.hx, -20.16, s * (PITCH.hx - 16.5), 20.16);        // penalty area
+    box(s * PITCH.hx, -9.16,  s * (PITCH.hx - 5.5),   9.16);        // six-yard box
+  }
+
+  // the decked standing area in front of an end stage
+  const DX0 = -PITCH.hx + 4, DX1 = 46, SL = 44;
+  const halfAt = (x) => {
+    const k = 1 - Math.abs(x / BOWL_IN.a) ** N;
+    return k > 0 ? Math.min(40, BOWL_IN.b * k ** (1 / N) - 2) : 0;
+  };
+  for (let i = 0; i < SL; i++) {
+    const x0 = DX0 + ((DX1 - DX0) * i) / SL, x1 = DX0 + ((DX1 - DX0) * (i + 1)) / SL;
+    const h0 = halfAt(x0), h1 = halfAt(x1);
+    // wound so the face points UP — the other way round it is culled, and the
+    // pit crowd stands on grass at a show that decks the whole floor
+    Q.quad(V(x0, 0.11, -h0), V(x0, 0.11, h0), V(x1, 0.11, h1), V(x1, 0.11, -h1), 0x14151d);
+  }
+  return Q.mesh();
+}
+
+// ═══ THE ARCH ══════════════════════════════════════════════════════════════
+//
+// 315 m of clear span, 133 m to the apex, a 7.4 m tubular lattice leaning 22°
+// off vertical. It carries the whole north roof and 60 % of the south on the
+// cable net that fans off it, which is why the bowl below has no column
+// standing in anybody's sightline.
+//
+// It runs EAST-WEST over the north stand — parallel to the touchline, not
+// across a goal end. Its feet land just outside the building's east and west
+// corners: the span is 315 m and the building is 300 m long, so there are
+// barely eight metres to spare at each foot. That tightness is real, and it
+// is why the arch looks like part of the building rather than a monument
+// parked beside it.
+const ARCH_RISE = ARCH.apexY / Math.cos(ARCH.tilt);
+const ARCH_L    = ARCH.span / 2;
+const ARCH_R    = (ARCH_L * ARCH_L + ARCH_RISE * ARCH_RISE) / (2 * ARCH_RISE);
+const ARCH_PHI  = Math.asin(ARCH_L / ARCH_R);
+const ARCH_ZFT  = -75;                       // springing point, north of centre
+
+class ArchCurve extends THREE.Curve {
+  getPoint(u, target = new THREE.Vector3()) {
+    const a = (u * 2 - 1) * ARCH_PHI;
+    const yip = ARCH_R * Math.cos(a) - (ARCH_R - ARCH_RISE);
+    return target.set(
+      ARCH_R * Math.sin(a),
+      yip * Math.cos(ARCH.tilt),
+      ARCH_ZFT - yip * Math.sin(ARCH.tilt),
+    );
+  }
+}
+
+function buildArch() {
+  const g = new THREE.Group();
+  const curve = new ArchCurve();
+  const SEG = 176, RAD = 14, r = ARCH.dia / 2;
+
+  const skin = lambert(0xe0e4ed, { emissive: 0x000000 });
+  g.add(new THREE.Mesh(new THREE.TubeGeometry(curve, SEG, r, RAD, false), skin));
+
+  const frames = curve.computeFrenetFrames(SEG, false);
+  const pts = [];
+  for (let i = 0; i <= SEG; i++) pts.push(curve.getPoint(i / SEG));
+  const onTube = (i, th) => pts[i].clone()
+    .addScaledVector(frames.normals[Math.min(i, SEG - 1)], r * Math.cos(th))
+    .addScaledVector(frames.binormals[Math.min(i, SEG - 1)], r * Math.sin(th));
+
+  const collars = [];
+  const EVERY = 3;
+  for (let i = 0; i <= SEG; i += EVERY) {
+    const ring = new THREE.TorusGeometry(r + 0.06, 0.17, 5, 16);
+    const k = Math.min(i, SEG - 1);
+    const m = new THREE.Matrix4().makeBasis(frames.normals[k], frames.binormals[k], curve.getTangent(i / SEG));
+    m.setPosition(pts[i]);
+    ring.applyMatrix4(m);
+    collars.push(ring);
+  }
+  const collarMesh = new THREE.Mesh(mergeGeometries(collars), lambert(0xafb5c3));
+  g.add(collarMesh);
+
+  const web = [];
+  const CH = 6;
+  for (let c = 0; c < CH; c++) {
+    const th = (c / CH) * TAU;
+    for (let i = 0; i < SEG; i++) web.push(onTube(i, th), onTube(i + 1, th));
+  }
+  for (let i = 0; i < SEG; i += EVERY) {
+    const lean = (i / EVERY) % 2 ? 1 : -1;
+    for (let c = 0; c < CH; c++) {
+      web.push(onTube(i, (c / CH) * TAU), onTube(Math.min(i + EVERY, SEG), ((c + lean) / CH) * TAU));
+    }
+  }
+  const webLines = new THREE.LineSegments(
+    new THREE.BufferGeometry().setFromPoints(web),
+    new THREE.LineBasicMaterial({ color: 0x6d7488, transparent: true, opacity: 0.75 }),
+  );
+  g.add(webLines);
+
+  const lamps = [];
+  for (const u of [0.34, 0.5, 0.66]) {
+    const p = curve.getPoint(u);
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(1.1, 8, 6), basic(0xff2a2a));
+    lamp.position.copy(p).setY(p.y + r + 0.7);
+    g.add(lamp); lamps.push(lamp);
+  }
+  for (const s of [-1, 1]) {
+    const foot = new THREE.Mesh(new THREE.CylinderGeometry(7.5, 10.5, 13, 10), lambert(0x4b4e59));
+    foot.position.set(s * ARCH_L, 5.5, ARCH_ZFT);
+    g.add(foot);
+  }
+  return { group: g, curve, lamps, skin, collarMesh, webLines };
+}
+
+// The cable net: a dense fan down to the north roof's leading edge, and a
+// longer set reaching south across the opening to pick up the south roof.
+function buildCables(curve, outer) {
+  const IN = { a: BOWL_IN.a - 2, b: BOWL_IN.b - 2 };
+  const edge = (t) => P(IN.a, IN.b, t, ROOF_Y + 1.3);
+  const pts = [];
+  for (let i = 0; i <= 24; i++) {                     // north: t from π to 2π
+    const u = 0.06 + (i / 24) * 0.88;
+    pts.push(curve.getPoint(u), edge(Math.PI + 0.10 + u * (Math.PI - 0.20)));
+  }
+  for (let i = 0; i <= 12; i++) {                     // south, across the opening
+    const u = 0.17 + (i / 12) * 0.66;
+    pts.push(curve.getPoint(u), edge(Math.PI - 0.28 - ((u - 0.17) / 0.66) * (Math.PI - 0.56)));
+  }
+  return new THREE.LineSegments(
+    new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({ color: 0xc3cad9, transparent: true, opacity: 0.5 }),
+  );
+}
+
+// ═══ THE NORTH STAND: ROYAL BOX, TUNNEL, DUGOUTS ═══════════════════════════
+//
+// All three are on the north touchline at the halfway line — the traditional
+// position, and the one the 107-step trophy route is measured to. They are
+// small against a building this size and they are the landmarks that tell you
+// which stand you are looking at.
+function buildNorthStand() {
+  const g = new THREE.Group();
+  const zIn = -BOWL_IN.b;
+
+  // the tunnel mouth, at pitch level
+  const tunnel = new THREE.Mesh(new THREE.BoxGeometry(11, 6.5, 3), lambert(0x0b0c11));
+  tunnel.position.set(0, 3.25, zIn - 1.2);
+  g.add(tunnel);
+  const arch = new THREE.Mesh(new THREE.BoxGeometry(12.4, 0.7, 3.4), lambert(0x3b3f4c));
+  arch.position.set(0, 6.9, zIn - 1.2);
+  g.add(arch);
+
+  // dugouts, either side of it
+  for (const s of [-1, 1]) {
+    const d = new THREE.Mesh(new THREE.BoxGeometry(11, 2.4, 3.2), lambert(0x171922));
+    d.position.set(s * 13, 1.2, zIn + 1.4);
+    g.add(d);
+  }
+
+  // the Royal Box, sitting at the front of the middle tier
+  const y = TIERS[1].yBase;
+  const zBox = -(BOWL_IN.b + TIERS[1].gap + TIERS[0].rows * TREAD);
+  const box = new THREE.Mesh(new THREE.BoxGeometry(30, 3.4, 4), lambert(0x2a2028));
+  box.position.set(0, y + 1.7, zBox);
+  g.add(box);
+  const canopy = new THREE.Mesh(new THREE.BoxGeometry(33, 0.5, 5.5), lambert(0x4a3a2c));
+  canopy.position.set(0, y + 5.4, zBox + 0.4);
+  g.add(canopy);
+  const trim = new THREE.Mesh(new THREE.BoxGeometry(30, 0.5, 0.4), basic(0xc9a24a));
+  trim.position.set(0, y + 3.5, zBox + 2.1);
+  g.add(trim);
+  return g;
+}
+
+// ═══ RIGGING ═══════════════════════════════════════════════════════════════
+function latticeMast({ height, size = 2.4, r = 0.085, color = 0x1d1f28 }) {
+  const parts = [];
+  const h = size / 2;
+  for (const [dx, dz] of [[h, h], [h, -h], [-h, h], [-h, -h]]) {
+    const c = new THREE.CylinderGeometry(r, r, height, 5);
+    c.translate(dx, height / 2, dz); parts.push(c);
+  }
+  const bays = Math.max(1, Math.round(height / size)), step = height / bays;
+  for (let i = 0; i <= bays; i++) {
+    const y = i * step;
+    for (const [w, d, dx, dz] of [[size, r * 2, 0, h], [size, r * 2, 0, -h], [r * 2, size, h, 0], [r * 2, size, -h, 0]]) {
+      const t = new THREE.BoxGeometry(w, r * 2, d); t.translate(dx, y, dz); parts.push(t);
+    }
+    if (i < bays) {
+      const diag = Math.hypot(size, step), tilt = Math.atan2(size, step) * (i % 2 ? 1 : -1);
+      for (const dz of [h, -h]) {
+        const wv = new THREE.BoxGeometry(r * 1.5, diag, r * 1.5);
+        wv.rotateZ(tilt); wv.translate(0, y + step / 2, dz); parts.push(wv);
+      }
+    }
+  }
+  return new THREE.Mesh(mergeGeometries(parts), lambert(color));
+}
+
+// A flown hang: cabinets fanning downward, tighter at the top, which is what
+// a rigger actually does to one and what makes the shape readable at 200 m.
+function lineArray({ boxes = 14, width = 1.05, depth = 0.62 }) {
+  const parts = [];
+  let y = 0, angle = 0;
+  for (let i = 0; i < boxes; i++) {
+    const b = new THREE.BoxGeometry(depth, 0.33, width);   // long axis along Z
+    b.applyMatrix4(new THREE.Matrix4().makeRotationZ(-angle).setPosition(Math.sin(angle) * 0.15, y, 0));
+    parts.push(b);
+    angle += 0.03 + i * 0.011; y -= 0.35;
+  }
+  return new THREE.Mesh(mergeGeometries(parts), lambert(0x0e0d12));
+}
+
+// ═══ THE SHOW ══════════════════════════════════════════════════════════════
+//
+// An end stage behind the west goal, which is where a stadium show is built.
+// It faces east down the length of the pitch, and the arch crosses the sky to
+// its left — over the north touchline — rather than standing behind it.
+const STAGE = { x: -46, depth: 24, width: 46, deck: 3.0, wallY: 26 };
+
+function buildStage() {
+  const g = new THREE.Group();
+  const xBack = STAGE.x - STAGE.depth / 2, xFront = STAGE.x + STAGE.depth / 2;
+  const screens = [];
+
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(STAGE.depth, STAGE.deck, STAGE.width), lambert(0x14131a));
+  deck.position.set(STAGE.x, STAGE.deck / 2, 0);
+  g.add(deck);
+
+  const wall = new THREE.Mesh(new THREE.BoxGeometry(1.4, STAGE.wallY, 58), lambert(0x0b0b11));
+  wall.position.set(xBack - 0.7, STAGE.wallY / 2, 0);
+  g.add(wall);
+
+  const panel = (w, h, hex) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), basic(hex));
+    m.rotation.y = Math.PI / 2;                       // facing east, at the crowd
+    return m;
+  };
+  const main = panel(26, 13, 0x2a3550);
+  main.position.set(xBack + 0.2, STAGE.deck + 12.5, 0);
+  g.add(main); screens.push(main);
+  for (const s of [-1, 1]) {
+    const wing = panel(9, 12, 0x2a2438);
+    wing.position.set(xBack + 1.6, STAGE.deck + 10.5, s * 20.5);
+    wing.rotation.z = s * 0.30;
+    g.add(wing); screens.push(wing);
+  }
+
+  const canopy = new THREE.Mesh(new THREE.BoxGeometry(STAGE.depth + 5, 0.9, 56), lambert(0x101018));
+  canopy.position.set(STAGE.x + 1, STAGE.wallY + 1.5, 0);
+  g.add(canopy);
+  for (const x of [xBack + 5, STAGE.x, xFront - 3]) {
+    const t = latticeMast({ height: 50, size: 1.5, r: 0.06, color: 0x22232e });
+    t.rotation.x = Math.PI / 2;                        // laid across the stage, along Z
+    t.position.set(x, STAGE.wallY - 1.5, -25);
+    g.add(t);
+  }
+
+  for (const s of [-1, 1]) {
+    for (const [dz, n] of [[24, 16], [31, 12]]) {
+      const arr = lineArray({ boxes: n, width: n > 13 ? 1.15 : 0.95 });
+      arr.position.set(xBack + 3, STAGE.wallY - 2, s * dz);
+      g.add(arr);
+    }
+    for (let i = 0; i < 4; i++) {
+      const sub = new THREE.Mesh(new THREE.BoxGeometry(1.6, 3.3, 3.2), lambert(0x0e0d12));
+      sub.position.set(xFront + 1.4, 1.65, s * (7 + i * 3.6));
+      g.add(sub);
+    }
+  }
+
+  const thrust = new THREE.Mesh(new THREE.BoxGeometry(22, STAGE.deck, 5), lambert(0x14131a));
+  thrust.position.set(xFront + 11, STAGE.deck / 2, 0);
+  g.add(thrust);
+  return { group: g, screens };
+}
+
+// ═══ DELAY TOWERS ══════════════════════════════════════════════════════════
+//
+// The thing a stadium needs that an arena does not. Sound leaves the main
+// hangs at 343 m/s, so by the far end of the pitch it is most of a second
+// late and 20 dB down; these towers relaunch it, delayed to match, so the
+// back half of the crowd hears the show instead of an echo of it. Two pairs,
+// each with a hang and the screen the back of the pitch cannot do without.
+const TOWERS = [
+  { x: -4, z: -27, h: 17 }, { x: -4, z: 27, h: 17 },
+  { x: 34, z: -34, h: 20 }, { x: 34, z: 34, h: 20 },
+];
+
+function buildTowers() {
+  const g = new THREE.Group();
+  const screens = [];
+  for (const t of TOWERS) {
+    const tower = new THREE.Group();
+    tower.position.set(t.x, 0, t.z);
+    tower.add(latticeMast({ height: t.h, size: 2.6, r: 0.1 }));
+    const base = new THREE.Mesh(new THREE.BoxGeometry(6.5, 0.8, 6.5), lambert(0x17181f));
+    base.position.y = 0.4; tower.add(base);
+
+    const boom = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.5, 0.5), lambert(0x24252f));
+    boom.position.set(2.0, t.h - 0.3, 0); tower.add(boom);
+    const arr = lineArray({ boxes: 14, width: 1.0 });
+    arr.position.set(3.4, t.h - 0.9, 0); tower.add(arr);
+
+    const scr = new THREE.Mesh(new THREE.PlaneGeometry(7, 4), basic(0x27304a));
+    scr.rotation.y = Math.PI / 2;
+    scr.position.set(1.6, t.h * 0.62, 0);
+    tower.add(scr); screens.push(scr);
+    const bez = new THREE.Mesh(new THREE.BoxGeometry(0.3, 4.5, 7.5), lambert(0x0d0d13));
+    bez.position.set(1.4, t.h * 0.62, 0); tower.add(bez);
+    g.add(tower);
+  }
+  const foh = new THREE.Group();
+  foh.position.set(40, 0, 0);
+  const plat = new THREE.Mesh(new THREE.BoxGeometry(9, 1.6, 16), lambert(0x1a1b23));
+  plat.position.y = 0.8; foh.add(plat);
+  g.add(foh);
+  return { group: g, screens };
+}
+
+// ═══ THE CROWD ═════════════════════════════════════════════════════════════
+//
+// Ninety thousand people cannot be ninety thousand meshes, and at the distance
+// this building is viewed from they need not be: a person is two or three
+// pixels. One Points draw, a shader that sizes each speck by depth, sways it
+// and fogs it — one draw call for the entire house.
+function crowdPoints(positions, { size, color, twinkle = 0, additive = false }, fog) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const n = positions.length / 3;
+  const phase = new Float32Array(n);
+  for (let i = 0; i < n; i++) phase[i] = Math.random() * TAU;
+  geo.setAttribute('phase', new THREE.BufferAttribute(phase, 1));
+  const mat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 }, uSize: { value: size }, uColor: { value: new THREE.Color(color) },
+      uTwinkle: { value: twinkle }, uPixel: { value: 1 },
+      fogColor: { value: new THREE.Color(fog.color) },
+      fogNear: { value: fog.near }, fogFar: { value: fog.far },
+    },
+    transparent: true, depthWrite: !additive,
+    blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
+    vertexShader: `
+      attribute float phase;
+      uniform float uTime, uSize, uPixel, uTwinkle;
+      varying float vFade, vDepth;
+      void main() {
+        vec3 p = position;
+        p.x += sin(uTime * 1.15 + phase) * 0.16;
+        p.y += sin(uTime * 2.30 + phase) * 0.06;
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        vDepth = -mv.z;
+        gl_PointSize = clamp(uSize * uPixel * (240.0 / vDepth), 1.0, 34.0 * uPixel);
+        vFade = uTwinkle > 0.0 ? 0.35 + 0.65 * pow(max(0.0, sin(uTime * 2.6 + phase * 3.1)), 6.0) : 1.0;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `
+      uniform vec3 uColor, fogColor;
+      uniform float fogNear, fogFar;
+      varying float vFade, vDepth;
+      void main() {
+        vec2 d = gl_PointCoord - 0.5;
+        float r = dot(d, d);
+        if (r > 0.25) discard;
+        float a = smoothstep(0.25, 0.05, r) * vFade;
+        float f = smoothstep(fogNear, fogFar, vDepth);
+        gl_FragColor = vec4(mix(uColor, fogColor, f), a * (1.0 - f * 0.85));
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+  });
+  return new THREE.Points(geo, mat);
+}
+
+function pitchCrowd(count) {
+  const rnd = prng(9021);
+  const out = [];
+  const X0 = STAGE.x + STAGE.depth / 2 + 1, X1 = 47;
+  let guard = 0;
+  while (out.length < count * 3 && guard++ < count * 40) {
+    const x = X0 + rnd() * (X1 - X0);
+    const k = 1 - Math.abs(x / BOWL_IN.a) ** N;
+    const half = k > 0 ? Math.min(39, BOWL_IN.b * k ** (1 / N) - 3) : 0;
+    const z = (rnd() - 0.5) * 2 * half;
+    if (rnd() > 1.05 - ((x - X0) / (X1 - X0)) * 0.45) continue;   // the pit thins out
+    if (Math.abs(z) < 3.2 && x < STAGE.x + STAGE.depth / 2 + 23) continue;  // the thrust
+    if (Math.abs(z) < 9 && Math.abs(x - 40) < 5) continue;                  // front of house
+    out.push(x, 0.85 + rnd() * 0.25, z);
+  }
+  return new Float32Array(out);
+}
+
+function phoneLights(sources, count) {
+  const rnd = prng(3307);
+  const out = new Float32Array(count * 3);
+  const total = sources.reduce((n, s) => n + s.length / 3, 0);
+  for (let i = 0; i < count; i++) {
+    let k = Math.floor(rnd() * total), src = sources[0];
+    for (const s of sources) { if (k < s.length / 3) { src = s; break; } k -= s.length / 3; }
+    out[i * 3] = src[k * 3] + (rnd() - 0.5) * 0.4;
+    out[i * 3 + 1] = src[k * 3 + 1] + 0.55;
+    out[i * 3 + 2] = src[k * 3 + 2] + (rnd() - 0.5) * 0.4;
+  }
+  return out;
+}
+
+// Wembley's floodlights are a continuous run along the inner edge of the roof
+// rather than four corner pylons.
+function buildFloodlights({ segs }) {
+  const parts = [];
+  const A = BOWL_IN.a - 0.5, B = BOWL_IN.b - 0.5;
+  for (let s = 0; s < segs; s++) {
+    const t = (s / segs) * TAU;
+    const p = P(A, B, t, ROOF_Y - 1.4);
+    const q = new THREE.PlaneGeometry(1.5, 0.42);
+    q.rotateX(Math.PI / 2 - 0.55);
+    q.rotateY(-Math.atan2(p.z, p.x));
+    q.translate(p.x, p.y, p.z);
+    parts.push(q);
+  }
+  return new THREE.Mesh(mergeGeometries(parts), basic(0xf3f6ff, { side: THREE.DoubleSide }));
+}
+
+function buildSky() {
+  const mat = new THREE.ShaderMaterial({
+    side: THREE.BackSide, fog: false, depthWrite: false, toneMapped: false,
+    uniforms: {
+      uHorizon: { value: new THREE.Color(0x141026) },
+      uZenith: { value: new THREE.Color(0x03040c) },
+    },
+    vertexShader: 'varying float vY; void main(){ vY = normalize(position).y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+    fragmentShader: `
+      uniform vec3 uHorizon, uZenith; varying float vY;
+      void main(){
+        gl_FragColor = vec4(mix(uHorizon, uZenith, smoothstep(-0.1, 0.72, vY)), 1.0);
+        #include <colorspace_fragment>
+      }`,
+  });
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(2600, 32, 20), mat);
+  sky.renderOrder = -1;
+  return sky;
+}
+
+function buildStars(count) {
+  const rnd = prng(5150);
+  const pos = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    const a = rnd() * TAU, e = 0.03 + rnd() * 1.3, r = 2100;
+    pos[i * 3] = Math.cos(a) * Math.cos(e) * r;
+    pos[i * 3 + 1] = Math.sin(e) * r;
+    pos[i * 3 + 2] = Math.sin(a) * Math.cos(e) * r;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const stars = new THREE.Points(geo, new THREE.PointsMaterial({
+    color: 0xcfd9f2, size: 2.6, sizeAttenuation: false,
+    transparent: true, opacity: 0.85, fog: false, depthWrite: false,
+  }));
+  stars.renderOrder = -1;
+  return stars;
+}
+
+// ═══ ASSEMBLY ══════════════════════════════════════════════════════════════
+const canvas = document.getElementById('gl');
+const boot = document.getElementById('boot');
+const COARSE = matchMedia('(hover: none), (max-width: 900px)').matches;
+const Q = COARSE
+  ? { segPerBlock: 2, roofSegs: 128, facadeSegs: 128, floodSegs: 140, bowlCrowd: 16000, pitchCrowd: 6500, phones: 2600, stars: 480, dpr: 1.6 }
+  : { segPerBlock: 3, roofSegs: 192, facadeSegs: 192, floodSegs: 200, bowlCrowd: 34000, pitchCrowd: 15000, phones: 6500, stars: 900, dpr: 1.9 };
+
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: !COARSE, powerPreference: 'high-performance', alpha: false });
+} catch (e) {
+  boot.innerHTML = '<div>이 브라우저에서 WebGL 을 쓸 수 없습니다.</div>';
+  throw e;
+}
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, Q.dpr));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+
+const scene = new THREE.Scene();
+const FOG = { color: 0x141026, near: 260, far: 1400 };
+scene.fog = new THREE.Fog(FOG.color, FOG.near, FOG.far);
+const camera = new THREE.PerspectiveCamera(46, 1, 1, 6000);
+
+const sky = buildSky(); scene.add(sky);
+const stars = buildStars(Q.stars); scene.add(stars);
+const ground = new THREE.Mesh(new THREE.CircleGeometry(1800, 48), lambert(0x0c0d13));
+ground.rotation.x = -Math.PI / 2; ground.position.y = -0.6;
+scene.add(ground);
+
+const bowl = buildBowl({ segPerBlock: Q.segPerBlock, crowdCap: Q.bowlCrowd });
+scene.add(bowl.mesh);
+scene.add(buildPitch({ segs: 200 }));
+const facade = buildFacade({ segs: Q.facadeSegs, outer: bowl.outer });
+scene.add(facade.group);
+const roof = buildRoof({ segs: Q.roofSegs, outer: bowl.outer });
+scene.add(roof.group);
+const arch = buildArch(); scene.add(arch.group);
+const cables = buildCables(arch.curve, bowl.outer); scene.add(cables);
+const floods = buildFloodlights({ segs: Q.floodSegs }); scene.add(floods);
+scene.add(buildNorthStand());
+const stage = buildStage(); scene.add(stage.group);
+const towers = buildTowers(); scene.add(towers.group);
+
+// the lit fascia at the front of the two upper tiers
+const ribbons = [];
+for (const f of bowl.fascias.slice(1)) {
+  const q = new Quads();
+  const A = BOWL_IN.a + f.inset, B = BOWL_IN.b + f.inset;
+  const S = 200;
+  for (let s = 0; s < S; s++) {
+    const t0 = (s / S) * TAU, t1 = ((s + 1) / S) * TAU;
+    q.quad(P(A, B, t0, f.yBase - 1.5), P(A, B, t0, f.yBase - 0.4),
+           P(A, B, t1, f.yBase - 0.4), P(A, B, t1, f.yBase - 1.5), 0xffffff);
+  }
+  const r = q.mesh(basic(ACCENT, { side: THREE.DoubleSide, transparent: true }));
+  scene.add(r); ribbons.push(r);
+}
+
+const pitchers = pitchCrowd(Q.pitchCrowd);
+const crowdBowl = crowdPoints(bowl.crowd, { size: 1.5, color: 0x4a4256 }, FOG);
+const crowdPitch = crowdPoints(pitchers, { size: 1.4, color: 0x36303f }, FOG);
+const sparkle = crowdPoints(phoneLights([bowl.crowd, pitchers], Q.phones),
+                            { size: 1.4, color: 0xffdca0, twinkle: 1, additive: true }, FOG);
+scene.add(crowdBowl, crowdPitch, sparkle);
+const pointSets = [crowdBowl, crowdPitch, sparkle];
+
+const hemi = new THREE.HemisphereLight(0x1c2138, 0x07080d, 1.1); scene.add(hemi);
+const sun = new THREE.DirectionalLight(0x4b587f, 1.5);
+sun.position.set(420, 700, 260); scene.add(sun);
+const stageKey = new THREE.PointLight(ACCENT, 2400, 300, 2);
+stageKey.position.set(STAGE.x + 20, 24, 0); scene.add(stageKey);
+const bowlFill = new THREE.PointLight(0xbcd0ea, 30000, 900, 2);
+bowlFill.position.set(0, ROOF_Y - 4, 0); scene.add(bowlFill);
+
+// ═══ DAY / NIGHT ═══════════════════════════════════════════════════════════
+// Night is the show. Day is for checking the model — flat, even light, every
+// surface where you can see whether it is actually the right shape.
+const MODES = {
+  night: {
+    fog: { color: 0x141026, near: 260, far: 1400 },
+    horizon: 0x141026, zenith: 0x03040c, ground: 0x0c0d13,
+    hemi: [0x1c2138, 0x07080d, 1.1], sun: [0x4b587f, 1.5],
+    archSkin: 0xe0e4ed, archEmissive: 0x7b8399, collar: 0x9aa2b4,
+    floods: 0xf3f6ff, lamps: true, stars: 0.85,
+    stageKey: 2400, bowlFill: 30000, ribbon: 1, sparkle: 1,
+    facade: [0x1c202b, 0x5c6a90, 0x4e5466, 0x343947],
+    roof: 0x191c25, panel: 0x2b3040,
+    screens: [0x3a4a75, 0x2f2a4a], exposure: 1.1,
+  },
+  day: {
+    fog: { color: 0xa8bcd6, near: 700, far: 3200 },
+    horizon: 0xa8bcd6, zenith: 0x4a76b4, ground: 0x5a6053,
+    hemi: [0xcfe0ff, 0x4a5044, 1.7], sun: [0xfff3df, 2.2],
+    archSkin: 0xf2f4f8, archEmissive: 0x000000, collar: 0xd6dae2,
+    floods: 0x30333c, lamps: false, stars: 0,
+    stageKey: 0, bowlFill: 0, ribbon: 0.25, sparkle: 0,
+    facade: [0x000000, 0x0a0e18, 0x000000, 0x000000],
+    roof: 0x000000, panel: 0x000000,
+    screens: [0x18202e, 0x141826], exposure: 1.0,
+  },
+};
+
+let mode = 'night';
+function applyMode(next) {
+  mode = next;
+  const m = MODES[next];
+  scene.fog.color.setHex(m.fog.color);
+  scene.fog.near = m.fog.near; scene.fog.far = m.fog.far;
+  sky.material.uniforms.uHorizon.value.setHex(m.horizon);
+  sky.material.uniforms.uZenith.value.setHex(m.zenith);
+  ground.material.color.setHex(m.ground);
+  hemi.color.setHex(m.hemi[0]); hemi.groundColor.setHex(m.hemi[1]); hemi.intensity = m.hemi[2];
+  sun.color.setHex(m.sun[0]); sun.intensity = m.sun[1];
+  arch.skin.color.setHex(m.archSkin); arch.skin.emissive.setHex(m.archEmissive);
+  arch.collarMesh.material.color.setHex(m.collar);
+  arch.webLines.material.opacity = next === 'day' ? 0.35 : 0.75;
+  cables.material.opacity = next === 'day' ? 0.7 : 0.5;
+  cables.material.color.setHex(next === 'day' ? 0x8892a4 : 0xc3cad9);
+  floods.material.color.setHex(m.floods);
+  arch.lamps.forEach((l) => { l.visible = m.lamps; });
+  stars.material.opacity = m.stars; stars.visible = m.stars > 0;
+  stageKey.intensity = m.stageKey; bowlFill.intensity = m.bowlFill;
+  ribbons.forEach((r) => { r.material.opacity = m.ribbon; });
+  facade.bands.forEach((b, i) => b.material.emissive.setHex(m.facade[i]));
+  roof.fixedMat.emissive.setHex(m.roof);
+  roof.panelMat.emissive.setHex(m.panel);
+  stage.screens.forEach((s) => s.material.color.setHex(m.screens[0]));
+  towers.screens.forEach((s) => s.material.color.setHex(m.screens[1]));
+  sparkle.visible = m.sparkle > 0;
+  crowdBowl.material.uniforms.uColor.value.setHex(next === 'day' ? 0x7a6d84 : 0x4a4256);
+  crowdPitch.material.uniforms.uColor.value.setHex(next === 'day' ? 0x6b6172 : 0x36303f);
+  for (const p of pointSets) {
+    p.material.uniforms.fogColor.value.setHex(m.fog.color);
+    p.material.uniforms.fogNear.value = m.fog.near;
+    p.material.uniforms.fogFar.value = m.fog.far;
+  }
+  renderer.toneMappingExposure = m.exposure;
+  const btn = document.getElementById('mode');
+  btn.textContent = next === 'night' ? '야간' : '주간';
+  btn.setAttribute('aria-pressed', String(next === 'night'));
+}
+
+// ═══ CAMERA ════════════════════════════════════════════════════════════════
+//
+// `fit` says how each view survives a portrait phone, where the horizontal
+// field is a third of what these were composed for:
+//   wide  the whole building must be in frame, so back the camera off
+//   lens  widen the lens instead — backing off would put it in the stands
+//   none  already tall, and better left alone
+const VIEWS = {
+  exterior: { pos: V(258, 150, 300), target: V(0, 38, -20),  fov: 42, fit: 'wide' },
+  arch:     { pos: V(70, 178, 250),  target: V(0, 92, -92),  fov: 44, fit: 'wide' },
+  stage:    { pos: V(28, 15, 7),     target: V(-42, 13, 0),  fov: 58, fit: 'lens' },
+  // From the pitch, looking up. The stage and the arch are 90° apart in this
+  // building — the arch is over the north touchline, not behind a goal — so
+  // one ground-level frame cannot hold both. This one takes the arch; the
+  // stage has its own view.
+  pitch:    { pos: V(48, 2.6, 14),  target: V(-5, 55, -55), fov: 74, fit: 'none' },
+  seat:     { pos: V(26, 45, 138),   target: V(-30, 14, -4), fov: 52, fit: 'lens' },
+  top:      { pos: V(0, 560, 210),   target: V(0, 0, -14),   fov: 40, fit: 'wide' },
+};
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.075;
+controls.rotateSpeed = 0.55;
+controls.zoomSpeed = 0.85;
+controls.panSpeed = 0.6;
+controls.minDistance = 30;
+controls.maxDistance = 1500;
+// Past level, because the view from the pitch looks UP at an arch 133 m over
+// it: clamping at the horizon dragged that camera back off the ground every
+// frame. The floor is held by the y-clamp in the loop instead, which is the
+// constraint that actually matters.
+controls.maxPolarAngle = 2.20;
+controls.autoRotateSpeed = 0.32;
+// One finger orbits, two fingers zoom and pan. This is the whole mobile
+// interaction, and it is why the canvas carries touch-action:none — otherwise
+// the browser takes the pinch for its own page zoom and never forwards it.
+controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+
+const REF_ASPECT = 1.55;
+function framed(v) {
+  const need = REF_ASPECT / camera.aspect;
+  if (need <= 1 || v.fit === 'none') return { pos: v.pos.clone(), fov: v.fov };
+  if (v.fit === 'lens') return { pos: v.pos.clone(), fov: Math.min(v.fov * need, 78) };
+  const fov = Math.min(v.fov * 1.3, 62);
+  const back = Math.min(need / 1.3, 1.7);
+  return { pos: v.target.clone().add(v.pos.clone().sub(v.target).multiplyScalar(back)), fov };
+}
+
+let tween = null;
+let currentView = 'exterior';
+function goTo(name, instant = false) {
+  const v = VIEWS[name];
+  if (!v) return;
+  currentView = name;
+  document.querySelectorAll('#views button').forEach((b) =>
+    b.setAttribute('aria-pressed', String(b.dataset.view === name)));
+  const f = framed(v);
+  if (instant) {
+    camera.position.copy(f.pos); controls.target.copy(v.target);
+    camera.fov = f.fov; camera.updateProjectionMatrix(); controls.update();
+    return;
+  }
+  tween = {
+    t: 0, p0: camera.position.clone(), p1: f.pos,
+    t0: controls.target.clone(), t1: v.target.clone(),
+    f0: camera.fov, f1: f.fov,
+  };
+}
+
+// ═══ LABELS ════════════════════════════════════════════════════════════════
+// Each is pinned to the piece of geometry it describes, so a figure and its
+// object can be checked against each other rather than taken on trust.
+const LABELS = [
+  { at: V(0, 8, ARCH_ZFT - 8),          text: 'ARCH SPAN 315 m · NORTH STAND' },
+  { at: V(0, ARCH.apexY + 9, -128),     text: 'APEX 133 m · TILT 22°' },
+  { at: V(0, ROOF_Y + 12, bowl.outer.b), text: 'ROOF 52 → 60 m' },
+  { at: V(0, 2, 20),                    text: 'PITCH 105 × 69 m · E–W' },
+  { at: V(-118, 48, 78),                text: '148 BLOCKS · 47/15/28 ROWS' },
+  { at: V(TOWERS[3].x, TOWERS[3].h + 7, TOWERS[3].z), text: 'DELAY TOWER' },
+  { at: V(STAGE.x, STAGE.wallY + 7, 0), text: 'WEST-END STAGE + PA' },
+  { at: V(0, TIERS[1].yBase + 9, -(BOWL_IN.b + TIERS[1].gap + TIERS[0].rows * TREAD)), text: 'ROYAL BOX' },
+];
+const labelHost = document.createElement('div');
+labelHost.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:1;display:none';
+document.getElementById('app').appendChild(labelHost);
+for (const l of LABELS) {
+  l.el = document.createElement('div');
+  l.el.textContent = l.text;
+  l.el.style.cssText =
+    'position:absolute;transform:translate(-50%,-50%);white-space:nowrap;' +
+    "font-family:'JetBrains Mono',ui-monospace,monospace;font-size:9.5px;letter-spacing:.06em;" +
+    'color:#ffd9b0;background:rgba(6,7,14,.72);border:1px solid rgba(255,151,69,.45);' +
+    'border-radius:999px;padding:3px 8px;backdrop-filter:blur(6px)';
+  labelHost.appendChild(l.el);
+}
+let labelsOn = false;
+const proj = new THREE.Vector3();
+function layoutLabels(w, h) {
+  if (!labelsOn) return;
+  for (const l of LABELS) {
+    proj.copy(l.at).project(camera);
+    const vis = proj.z < 1 && Math.abs(proj.x) < 1.25 && Math.abs(proj.y) < 1.25;
+    l.el.style.display = vis ? 'block' : 'none';
+    if (!vis) continue;
+    l.el.style.left = `${(proj.x * 0.5 + 0.5) * w}px`;
+    l.el.style.top = `${(-proj.y * 0.5 + 0.5) * h}px`;
+  }
+}
+
+// ═══ HUD ═══════════════════════════════════════════════════════════════════
+const el = (id) => document.getElementById(id);
+document.querySelectorAll('#views button').forEach((b) =>
+  b.addEventListener('click', () => goTo(b.dataset.view)));
+el('mode').addEventListener('click', () => applyMode(mode === 'night' ? 'day' : 'night'));
+el('spin').addEventListener('click', (e) => {
+  controls.autoRotate = !controls.autoRotate;
+  e.currentTarget.setAttribute('aria-pressed', String(controls.autoRotate));
+});
+el('labels').addEventListener('click', (e) => {
+  labelsOn = !labelsOn;
+  labelHost.style.display = labelsOn ? 'block' : 'none';
+  e.currentTarget.setAttribute('aria-pressed', String(labelsOn));
+});
+controls.addEventListener('start', () => {
+  if (controls.autoRotate) {
+    controls.autoRotate = false;
+    el('spin').setAttribute('aria-pressed', 'false');
+  }
+  tween = null;
+});
+el('qual').textContent = COARSE ? 'MOBILE' : 'DESKTOP';
+
+let W = 1, H = 1;
+function resize() {
+  W = canvas.clientWidth || window.innerWidth;
+  H = canvas.clientHeight || window.innerHeight;
+  renderer.setSize(W, H, false);
+  camera.aspect = W / H;
+  camera.updateProjectionMatrix();
+  const px = renderer.getPixelRatio();
+  for (const p of pointSets) p.material.uniforms.uPixel.value = px;
+}
+new ResizeObserver(resize).observe(canvas);
+window.addEventListener('orientationchange', () => setTimeout(() => { resize(); goTo(currentView); }, 160));
+resize();
+
+// ═══ LOOP ══════════════════════════════════════════════════════════════════
+applyMode('night');
+goTo('exterior', true);
+
+let last = performance.now() / 1000, elapsed = 0;
+let frames = 0, acc = 0, booted = false;
+const ease = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+
+function frame() {
+  requestAnimationFrame(frame);
+  const now = performance.now() / 1000;
+  // Two clocks, and conflating them was a real bug. `dt` is clamped so that
+  // returning to a backgrounded tab does not integrate one enormous step into
+  // the crowd's sway. But a camera move should take 1.15 SECONDS, not
+  // 1.15 seconds' worth of clamped ticks — on a slow device that stretched a
+  // preset into a ten-second drift — and an fps counter built on the clamped
+  // value cannot report anything below 10 fps at all, which is exactly the
+  // range where you need it to be honest.
+  const dtReal = now - last;
+  const dt = Math.min(dtReal, 0.1);
+  last = now;
+  const t = (elapsed += dt);
+
+  if (tween) {
+    tween.t = Math.min(1, tween.t + dtReal / 1.15);
+    const k = ease(tween.t);
+    camera.position.lerpVectors(tween.p0, tween.p1, k);
+    controls.target.lerpVectors(tween.t0, tween.t1, k);
+    camera.fov = tween.f0 + (tween.f1 - tween.f0) * k;
+    camera.updateProjectionMatrix();
+    if (tween.t >= 1) tween = null;
+  }
+
+  controls.update();
+  if (camera.position.y < 2.2) camera.position.y = 2.2;
+  // the sky and stars ride with the camera, so the gradient is a function of
+  // where the viewer is looking rather than of where the centre spot is
+  sky.position.copy(camera.position);
+  stars.position.copy(camera.position);
+
+  for (const p of pointSets) p.material.uniforms.uTime.value = t;
+  if (mode === 'night') {
+    const pulse = 0.5 + 0.5 * Math.sin(t * 0.55);
+    stageKey.intensity = 2100 + pulse * 1500;
+    ribbons.forEach((r) => { r.material.color.setHex(ACCENT).multiplyScalar(0.55 + pulse * 0.45); });
+  }
+
+  renderer.render(scene, camera);
+  layoutLabels(W, H);
+
+  acc += dtReal; frames++;
+  if (acc >= 0.5) {
+    el('fps').textContent = Math.round(frames / acc);
+    el('tris').textContent = renderer.info.render.triangles.toLocaleString();
+    el('calls').textContent = renderer.info.render.calls;
+    acc = 0; frames = 0;
+  }
+  if (!booted) {
+    booted = true;
+    boot.classList.add('gone');
+    setTimeout(() => boot.remove(), 600);
+  }
+}
+frame();
+
+// ═══ THE CHECK ═════════════════════════════════════════════════════════════
+//
+// The whole claim of this file is that the geometry was solved from published
+// figures rather than drawn to look right. This is where that claim is
+// audited: the seats are COUNTED off the built geometry, block by block and
+// row by row, and compared with the stadium's own numbers. If a change to the
+// bowl ever pushes these apart, it has stopped being Wembley.
+{
+  const rows = [];
+  let seats = 0, len = 0;
+  bowl.tally.forEach((t, i) => {
+    seats += t.seats; len += t.rowLen;
+    rows.push(`${t.id.padEnd(6)} ${t.rows.toString().padStart(3)} rows  `
+      + `${t.seats.toLocaleString().padStart(7)} seats vs ${OFFICIAL_SEATS[i].toLocaleString().padStart(7)} `
+      + `(${((t.seats / OFFICIAL_SEATS[i] - 1) * 100).toFixed(1).padStart(5)}%)`);
+  });
+  const circ = perimeter(bowl.outer.a + 2, bowl.outer.b + 2);
+  console.log(
+    ['Wembley — built geometry vs published figures', ...rows,
+     `total  ${seats.toLocaleString().padStart(15)} seats vs  90,000`,
+     `rows   ${(len / 1000).toFixed(1).padStart(15)} km    vs      54 km`,
+     `plan   ${(2 * bowl.outer.a).toFixed(0)} × ${(2 * bowl.outer.b).toFixed(0)} m, superellipse n=${N}`,
+     `circum ${circ.toFixed(0).padStart(15)} m     vs   1,000 m`,
+     `arch   R=${ARCH_R.toFixed(1)} m, half-angle ${(ARCH_PHI / DEG).toFixed(1)}°, apex z=${(ARCH_ZFT - ARCH_RISE * Math.sin(ARCH.tilt)).toFixed(0)} m`,
+    ].join('\n'),
+  );
+}
+</script>
+</body>
+</html>
