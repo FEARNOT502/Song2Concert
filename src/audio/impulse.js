@@ -323,12 +323,33 @@ const energyOf = (buf) => {
 // Small and bounded: entries are a few megabytes each and a handful of venues,
 // plus the odd export at a different sample rate, is all that ever accumulates.
 const IR_CACHE = new Map();
-const IR_CACHE_MAX = 6;
+// Room for every venue at the playback rate, plus an export or two at another.
+const IR_CACHE_MAX = 8;
+
+export const impulseKey = ({ venueId, sampleRate, seed = 1 }) => `${venueId}@${sampleRate}#${seed}`;
+
+// Is this response already built? The engine asks before choosing between
+// applying a venue on the spot and waiting for the worker to build it — see
+// impulseworker.js.
+export function hasImpulseResponse(spec) {
+  return IR_CACHE.has(impulseKey(spec));
+}
+
+// Put a response built elsewhere — a worker, in practice — into the cache, so
+// the next synthesizeIR for it is a lookup. Overwrites nothing that is already
+// there: two builds of the same key are the same numbers.
+export function storeImpulseResponse(built) {
+  const key = impulseKey(built);
+  if (IR_CACHE.has(key)) return IR_CACHE.get(key);
+  IR_CACHE.set(key, built);
+  if (IR_CACHE.size > IR_CACHE_MAX) IR_CACHE.delete(IR_CACHE.keys().next().value);
+  return built;
+}
 
 // Build the four-channel response for a venue. Pure: no Web Audio, so the
 // verification script can measure it in Node.
 export function synthesizeIR({ venueId, sampleRate, seed = 1 }) {
-  const key = `${venueId}@${sampleRate}#${seed}`;
+  const key = impulseKey({ venueId, sampleRate, seed });
   const hit = IR_CACHE.get(key);
   if (hit) {
     IR_CACHE.delete(key);   // reinsert, so the Map's order is least-recent-first
@@ -340,6 +361,11 @@ export function synthesizeIR({ venueId, sampleRate, seed = 1 }) {
   if (IR_CACHE.size > IR_CACHE_MAX) IR_CACHE.delete(IR_CACHE.keys().next().value);
   return built;
 }
+
+// The same synthesis, bypassing the cache. For the worker, which hands its
+// result across to the main thread by transfer — an operation that empties the
+// arrays on the sending side, so caching them there would cache nothing.
+export const synthesizeIRUncached = ({ venueId, sampleRate, seed = 1 }) => synthesize({ venueId, sampleRate, seed });
 
 function synthesize({ venueId, sampleRate, seed }) {
   const room = VENUE_ROOMS[venueId];
@@ -466,6 +492,8 @@ function synthesize({ venueId, sampleRate, seed }) {
   }
 
   return {
+    venueId,
+    seed,
     channels: out,
     sampleRate,
     length,

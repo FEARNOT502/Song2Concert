@@ -2,7 +2,7 @@
 // audiophile-console overlay, driven by a real Web Audio convolution engine.
 // Upload-only: drop a FLAC/WAV to hear it re-rendered in the chosen venue.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { findVenue } from './data.js';
 import Scene from './components/Scene.jsx';
 import TopBar from './components/TopBar.jsx';
@@ -26,6 +26,21 @@ const RENDER_SHARE = 0.72;
 
 const stripExt = (name) => name.replace(/\.[^.]+$/, '');
 
+// Tags and cover art, extracted once per File and kept until the track is
+// loaded — the read-ahead fills this, the switch drains it. A cover is an
+// object URL, so an entry is taken out when used and the URL's life is then
+// the upload state's to manage.
+const metadataCache = new WeakMap();
+function metadataFor(file, take = false) {
+  let p = metadataCache.get(file);
+  if (!p) {
+    p = extractMetadata(file);
+    metadataCache.set(file, p);
+  }
+  if (take) metadataCache.delete(file);
+  return p;
+}
+
 // shown before anything is uploaded
 const PLACEHOLDER_FILE = {
   name: 'no file loaded',
@@ -45,8 +60,8 @@ export default function App() {
   const [volume, setVolume] = useState(85);
   const [filePickerOpen, setFilePickerOpen] = useState(false);
   const [venuePickerOpen, setVenuePickerOpen] = useState(false);
-  const [pulse, setPulse] = useState(0);
-  // the scene reads this every frame; `pulse` state exists only for the DOM
+  // The artwork pulse. The scene and the stage art read this every frame; it
+  // is never React state, so the beat of a track does not re-render the app.
   const pulseRef = useRef(0);
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0); // 0..1 while exporting
@@ -67,12 +82,12 @@ export default function App() {
   // derived
   const venue = findVenue(venueId);
 
-  const displayFile = upload
+  const displayFile = useMemo(() => (upload
     ? {
         name: upload.name, track: upload.track, artist: upload.artist,
         format: upload.format, durSec: Math.round(upload.durSec || 0), cover: 'blueRoom',
       }
-    : PLACEHOLDER_FILE;
+    : PLACEHOLDER_FILE), [upload]);
   const effDurSec = hasAudio && duration ? duration : displayFile.durSec;
   const coverSrc = upload?.coverSrc || null;
 
@@ -113,15 +128,14 @@ export default function App() {
   // playback up: the audio thread is separate, but it does not get a whole core
   // to itself, and a main thread that never yields starves it.
   //
-  // Now one loop. The 3D scene reads the pulse straight off `pulseRef` every
-  // frame — no React involved — and state is written only fast enough for what
-  // it actually drives: a clock that shows seconds, and a glow behind the art.
+  // Now one loop. The 3D scene and the glow behind the art both read the pulse
+  // straight off `pulseRef` every frame — no React involved — and the only
+  // state written is the clock, at the rate a clock that shows seconds needs.
   useEffect(() => {
-    if (!playing || !hasAudio) { pulseRef.current = 0; setPulse(0); return undefined; }
+    if (!playing || !hasAudio) { pulseRef.current = 0; return undefined; }
     let raf;
     let stopped = false;
     let lastTime = -1;
-    let lastPulse = -1;
     const smooth = { v: 0 };
     const loop = () => {
       if (stopped) return;
@@ -143,7 +157,6 @@ export default function App() {
 
       const t = engine.currentTime;
       if (Math.abs(t - lastTime) >= 0.2) { lastTime = t; setTime(t); }
-      if (Math.abs(p - lastPulse) >= 0.06) { lastPulse = p; setPulse(p); }
     };
     raf = requestAnimationFrame(loop);
     return () => { stopped = true; cancelAnimationFrame(raf); };
@@ -178,10 +191,16 @@ export default function App() {
   }, [hasAudio, engine]);
 
   // ── pickers / state transitions ─────────────────────────────────────────
-  const handlePickVenue = (id) => {
+  const handlePickVenue = useCallback((id) => {
     setVenueId(id);
     setWetDry(findVenue(id).position.wet); // reset wet/dry to the venue default
-  };
+  }, []);
+  // Stable, so the memoised chrome that takes them is not re-rendered by the
+  // playback clock.
+  const openFilePicker = useCallback(() => setFilePickerOpen(true), []);
+  const openVenuePicker = useCallback(() => setVenuePickerOpen(true), []);
+  const closeFilePicker = useCallback(() => setFilePickerOpen(false), []);
+  const closeVenuePicker = useCallback(() => setVenuePickerOpen(false), []);
 
   // Load whatever sits at the FRONT of the queue (index 0) and play it.
   // The queue is consumed from the front, so the current track is always [0].
@@ -192,7 +211,7 @@ export default function App() {
       setPlaying(false);
       setStatus('ready');
       setTime(0);
-      setPulse(0);
+      pulseRef.current = 0;
       return;
     }
     const f = q[0];
@@ -204,7 +223,7 @@ export default function App() {
       return loadFront(autoplay);
     }
     const fmt = `${(f.name.split('.').pop() || 'PCM').toUpperCase()} · streaming`;
-    const meta = await extractMetadata(f);
+    const meta = await metadataFor(f, true);
     setUpload((prev) => {
       if (prev?.coverSrc) URL.revokeObjectURL(prev.coverSrc);
       return {
@@ -246,12 +265,23 @@ export default function App() {
 
   // Decode the track AFTER the current one, so switching to it costs nothing.
   // Called whenever the queue changes shape or a new track starts.
+  //
+  // The tags and cover art are read ahead as well. It is a small read — the
+  // first few megabytes of the file — but it was happening at the switch
+  // itself, between the last note of one track and the first of the next, and
+  // at that moment everything else the switch involves (a new source, a new
+  // cover on the stage, a new lock-screen card) is also landing on the main
+  // thread while the previous room's tail is still being convolved. Anything
+  // that can be moved out of that instant should be.
   const readAheadTimer = useRef(0);
   const readAhead = useCallback((delay = 0) => {
     clearTimeout(readAheadTimer.current);
     const next = queueRef.current[1];
     if (!next) return;
-    readAheadTimer.current = setTimeout(() => engine.prepareNext(next), delay);
+    readAheadTimer.current = setTimeout(() => {
+      engine.prepareNext(next);
+      metadataFor(next).catch(() => {});
+    }, delay);
   }, [engine]);
   const readAheadRef = useRef(readAhead);
   readAheadRef.current = readAhead;
@@ -364,13 +394,18 @@ export default function App() {
   });
 
   // ── keyboard (Space / ←→ / F V / Esc) ───────────────────────────────────
+  // The clock is read through a ref so the listener is not removed and added
+  // again on every tick.
+  const clockRef = useRef({ time, effDurSec });
+  clockRef.current = { time, effDurSec };
   useEffect(() => {
     const onKey = (e) => {
       const tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      const { time: now, effDurSec: dur } = clockRef.current;
       if (e.key === ' ') { e.preventDefault(); togglePlay(); }
-      else if (e.key === 'ArrowRight') handleSeek(Math.min(effDurSec, time + 5));
-      else if (e.key === 'ArrowLeft') handleSeek(Math.max(0, time - 5));
+      else if (e.key === 'ArrowRight') handleSeek(Math.min(dur, now + 5));
+      else if (e.key === 'ArrowLeft') handleSeek(Math.max(0, now - 5));
       else if (e.key === 'f' || e.key === 'F') setFilePickerOpen(true);
       else if (e.key === 'v' || e.key === 'V') setVenuePickerOpen(true);
       else if (e.key === 'Escape') {
@@ -379,7 +414,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [togglePlay, handleSeek, time, effDurSec]);
+  }, [togglePlay, handleSeek]);
 
   const audioStatus = hasAudio ? (playing ? 'live' : (status === 'loading' ? 'loading' : 'ready')) : 'demo';
 
@@ -388,12 +423,12 @@ export default function App() {
     <>
       <FilePicker
         open={filePickerOpen}
-        onClose={() => setFilePickerOpen(false)}
+        onClose={closeFilePicker}
         onUpload={handleUpload}
         uploadedName={upload?.name}
         queueCount={queue.length}
       />
-      <VenuePicker open={venuePickerOpen} onClose={() => setVenuePickerOpen(false)} current={venueId} onPick={handlePickVenue} />
+      <VenuePicker open={venuePickerOpen} onClose={closeVenuePicker} current={venueId} onPick={handlePickVenue} />
     </>
   );
 
@@ -404,7 +439,6 @@ export default function App() {
           venue={venue}
           displayFile={displayFile}
           coverSrc={coverSrc}
-          pulse={pulse}
           pulseRef={pulseRef}
           upload={upload}
           audioStatus={audioStatus}
@@ -425,8 +459,8 @@ export default function App() {
           exportProgress={exportProgress}
           volume={volume}
           onVolumeChange={setVolume}
-          onFileClick={() => setFilePickerOpen(true)}
-          onVenueClick={() => setVenuePickerOpen(true)}
+          onFileClick={openFilePicker}
+          onVenueClick={openVenuePicker}
           strain={strain}
         />
         {pickers}
@@ -440,7 +474,6 @@ export default function App() {
         venueId={venueId}
         coverId={displayFile.cover}
         coverSrc={coverSrc}
-        pulse={pulse}
         pulseRef={pulseRef}
         title={upload ? upload.name : null}
         artist={upload ? upload.artist : null}
@@ -451,8 +484,8 @@ export default function App() {
         file={displayFile}
         venue={venue}
         audioStatus={audioStatus}
-        onFileClick={() => setFilePickerOpen(true)}
-        onVenueClick={() => setVenuePickerOpen(true)}
+        onFileClick={openFilePicker}
+        onVenueClick={openVenuePicker}
       />
       <LeftDataPanel venue={venue} />
       <RightDataPanel venue={venue} file={displayFile} />
@@ -463,7 +496,7 @@ export default function App() {
           it doesn't cover the cover/caption on the stage */}
       {!hasAudio && (
         <button
-          onClick={() => setFilePickerOpen(true)}
+          onClick={openFilePicker}
           className="absolute bottom-[150px] left-1/2 -translate-x-1/2 z-20 border border-[oklch(0.78_0.16_55)]/60 text-[oklch(0.78_0.16_55)] px-5 py-2.5 text-[10px] tracking-[0.3em] uppercase hover:bg-[oklch(0.78_0.16_55)] hover:text-black transition-colors font-mono"
         >
           ↓ Drop a FLAC / WAV to begin

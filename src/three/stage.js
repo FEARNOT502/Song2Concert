@@ -68,39 +68,125 @@ export function createStage(canvas, { quality = 'high' } = {}) {
   const corner = new THREE.Vector3();
 
   // ── venue ──────────────────────────────────────────────────────────────────
+  //
+  // A room is built, its shaders are compiled, and only THEN is it swapped in
+  // for the one on screen. The compile is the expensive part: a dozen
+  // materials' worth of GLSL going through the driver, which on the first
+  // visit to a venue is a stall of a hundred milliseconds or more — and it
+  // used to land on the main thread at the moment a venue was picked, on top
+  // of the audio engine's own work for the same change, while the previous
+  // room's tail was being convolved. Where the driver can compile in parallel
+  // (KHR_parallel_shader_compile, which is everywhere that matters) the main
+  // thread is not held at all; where it cannot, the stall still happens but
+  // the old room stays up until the new one is ready, so nothing goes black.
+  //
+  // The programs are compiled against a staging scene carrying the venue's own
+  // fog and background, because those are part of a program's identity: a
+  // material compiled without fog is a different program from the one the
+  // render will ask for, and would be compiled again, synchronously, on the
+  // first frame.
+  const staging = new THREE.Scene();
+  let venueGen = 0;
+  let pending = null;        // { venue, cancel } — a room built and compiling
+
+  // Issue the compile for everything in `root` and call back once every
+  // program reports ready. This is three's own compileAsync, minus the part
+  // that made it unusable here: its poll cannot be cancelled, and a poll left
+  // running across renderer.dispose() — which React's StrictMode does on every
+  // mount in development — throws from inside the library. This one is cancelled
+  // when the room it is compiling is superseded or the stage goes away.
+  function whenCompiled(root, done) {
+    let materials;
+    try {
+      materials = renderer.compile(root, camera, staging);
+    } catch (e) {
+      done();
+      return () => {};
+    }
+    // Without a way to read back a program's readiness there is nothing to wait
+    // for: the compile above has already happened, so install straight away.
+    // Never leave the room uninstalled — that is a black screen.
+    if (!materials || !renderer.properties || typeof renderer.properties.get !== 'function') {
+      done();
+      return () => {};
+    }
+    let cancelled = false;
+    let timer = 0;
+    // A ceiling on the wait. A driver that never reports ready would otherwise
+    // hold the old room on screen for ever; after this the new one goes up and
+    // whatever compiling is left happens on its first frame, as it used to.
+    const deadline = performance.now() + 4000;
+    const check = () => {
+      if (cancelled) return;
+      try {
+        for (const m of Array.from(materials)) {
+          const props = renderer.properties.get(m);
+          const program = props && props.currentProgram;
+          if (!program || typeof program.isReady !== 'function' || program.isReady()) materials.delete(m);
+        }
+      } catch (e) {
+        done();
+        return;
+      }
+      if (materials.size === 0 || performance.now() > deadline) { done(); return; }
+      timer = setTimeout(check, 10);
+    };
+    check();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }
+
+  function dropPending() {
+    if (!pending) return;
+    pending.cancel();
+    disposeTree(pending.venue.root);
+    pending = null;
+  }
 
   function setVenue(id) {
-    if (venue) {
-      scene.remove(venue.root);
-      disposeTree(venue.root);
-      venue = null;
-    }
-    venue = buildVenue(id, u);
-    scene.add(venue.root);
-    scene.background = venue.background;
-    scene.fog = venue.fog;
-    camera.fov = venue.camera.fov;
-    camera.position.copy(venue.camera.position);
-    camera.lookAt(venue.camera.target);
-    camera.updateProjectionMatrix();
-    if (bloom && venue.bloom) {
-      bloom.strength = venue.bloom.strength;
-      bloom.radius = venue.bloom.radius;
-      bloom.threshold = venue.bloom.threshold;
-    }
+    const gen = ++venueGen;
+    dropPending();
+    const next = buildVenue(id, u);
     // point fields fade into the same fog the meshes do
-    if (venue.fog) {
-      venue.root.traverse((o) => {
+    if (next.fog) {
+      next.root.traverse((o) => {
         const m = o.material;
         if (m && m.uniforms && m.uniforms.fogFar) {
-          m.uniforms.fogColor.value.copy(venue.fog.color);
-          m.uniforms.fogNear.value = venue.fog.far * 0.75;
-          m.uniforms.fogFar.value = venue.fog.far * 1.25;
+          m.uniforms.fogColor.value.copy(next.fog.color);
+          m.uniforms.fogNear.value = next.fog.far * 0.75;
+          m.uniforms.fogFar.value = next.fog.far * 1.25;
         }
       });
     }
-    applyPointScale();
-    publishLayout();
+
+    const install = () => {
+      if (gen !== venueGen) return;   // superseded; dropPending took care of it
+      pending = null;
+      if (venue) {
+        scene.remove(venue.root);
+        disposeTree(venue.root);
+        venue = null;
+      }
+      venue = next;
+      scene.add(venue.root);
+      scene.background = venue.background;
+      scene.fog = venue.fog;
+      camera.fov = venue.camera.fov;
+      camera.position.copy(venue.camera.position);
+      camera.lookAt(venue.camera.target);
+      camera.updateProjectionMatrix();
+      if (bloom && venue.bloom) {
+        bloom.strength = venue.bloom.strength;
+        bloom.radius = venue.bloom.radius;
+        bloom.threshold = venue.bloom.threshold;
+      }
+      applyPointScale();
+      publishLayout();
+    };
+
+    staging.fog = next.fog || null;
+    staging.background = next.background || null;
+    pending = { venue: next, cancel: () => {} };
+    pending.cancel = whenCompiled(next.root, install);
   }
 
   // ── projection of the on-stage screen ──────────────────────────────────────
@@ -248,6 +334,8 @@ export function createStage(canvas, { quality = 'high' } = {}) {
     dispose() {
       running = false;
       cancelAnimationFrame(raf);
+      venueGen++;
+      dropPending();
       if (venue) { scene.remove(venue.root); disposeTree(venue.root); venue = null; }
       composer.dispose();
       renderer.dispose();

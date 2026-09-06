@@ -2,8 +2,10 @@
 // No per-seat selection: each venue exposes one representative listening
 // `position` (distributed-PA model — the mix is ~the same across the house).
 
+import { memo } from 'react';
+
 // Left rail — "where you are" + the wet/direct balance at this position
-export function LeftDataPanel({ venue }) {
+function LeftDataPanel({ venue }) {
   const pos = venue.position;
   const direct = 100 - pos.wet;
   return (
@@ -36,7 +38,7 @@ export function LeftDataPanel({ venue }) {
 }
 
 // Right rail — "what you're hearing" (file + venue signature)
-export function RightDataPanel({ venue, file }) {
+function RightDataPanel({ venue, file }) {
   return (
     <div className="absolute top-[100px] right-10 z-20 text-[12px] tracking-[0.2em] uppercase text-neutral-500 text-right max-w-[300px] font-mono">
       <div className="text-neutral-300">PLAYING</div>
@@ -61,10 +63,17 @@ export function RightDataPanel({ venue, file }) {
 }
 
 // Center chip — "You are listening …"
-export function SeatChip({ venue }) {
+function SeatChip({ venue }) {
   return (
     <div className="absolute top-[100px] left-1/2 -translate-x-1/2 z-20 border border-white/15 px-4 py-2 text-[12px] tracking-[0.25em] uppercase text-neutral-400 bg-black/40 backdrop-blur-sm flex items-center gap-3 font-mono">
       <span>◧ You are listening · {venue.name}</span>
     </div>
   );
 }
+
+// Memoised: the playback clock re-renders the app several times a second and
+// none of these change with it.
+const LeftDataPanelMemo = memo(LeftDataPanel);
+const RightDataPanelMemo = memo(RightDataPanel);
+const SeatChipMemo = memo(SeatChip);
+export { LeftDataPanelMemo as LeftDataPanel, RightDataPanelMemo as RightDataPanel, SeatChipMemo as SeatChip };

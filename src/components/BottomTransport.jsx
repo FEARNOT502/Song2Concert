@@ -2,7 +2,7 @@
 // All sliders are real draggable controls (pointer capture), independent of one
 // another. Wet/dry drives the GainNode crossfader; EXPORT FLAC renders offline.
 
-import { useRef } from 'react';
+import { memo, useRef } from 'react';
 
 export function formatTime(sec) {
   const m = Math.floor(sec / 60);
@@ -53,7 +53,7 @@ function Slider({ value, max = 100, onChange, fillClass, knobClass, disabled }) 
   );
 }
 
-export default function BottomTransport({
+function BottomTransport({
   playing, onToggle, onPrev, onNext, hasNext, hasPrev,
   time, durSec, wetDry, onWetChange, onSeek,
   onExport, exporting, exportProgress = 0, volume, onVolumeChange,
@@ -138,3 +138,6 @@ export default function BottomTransport({
     </div>
   );
 }
+
+// Memoised: the playback clock re-renders the app several times a second.
+export default memo(BottomTransport);

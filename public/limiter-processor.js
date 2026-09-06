@@ -121,6 +121,13 @@ class LimiterProcessor extends AudioWorkletProcessor {
     this.split = [];
     this.low = new BandGain(this.len, sr);
     this.high = new BandGain(this.len, sr);
+    // The two parameter conversions, cached on the value they were computed
+    // from — see process().
+    this.thrDbLast = NaN;
+    this.thresholdLast = 1;
+    this.relLast = NaN;
+    this.releaseLast = 1;
+    this.srcs = [];
   }
 
   alloc(chans) {
@@ -128,6 +135,7 @@ class LimiterProcessor extends AudioWorkletProcessor {
     this.lowDelay = [];
     this.highDelay = [];
     this.split = [];
+    this.srcs = new Array(chans).fill(null);
     const sr = sampleRate;
     for (let c = 0; c < chans; c++) {
       this.lowDelay.push(new Float32Array(this.len));
@@ -157,42 +165,70 @@ class LimiterProcessor extends AudioWorkletProcessor {
     const thrP = parameters.threshold;
     const relP = parameters.release;
 
-    this.low.sane();
-    this.high.sane();
+    // Both parameters are k-rate here — nothing in the graph automates them —
+    // so their conversions (a pow and an exp) are done once, when the value
+    // changes, rather than once per sample. The numbers are the same numbers:
+    // each depends on nothing but the parameter. The per-sample path is kept
+    // for the a-rate case, where they genuinely differ sample to sample.
+    const thrK = thrP.length === 1;
+    const relK = relP.length === 1;
+    if (thrK && thrP[0] !== this.thrDbLast) {
+      this.thrDbLast = thrP[0];
+      this.thresholdLast = Math.pow(10, thrP[0] / 20);
+    }
+    if (relK && relP[0] !== this.relLast) {
+      this.relLast = relP[0];
+      this.releaseLast = Math.exp(-1 / (relP[0] * sampleRate));
+    }
+    const thresholdK = this.thresholdLast;
+    const releaseK = this.releaseLast;
+
+    // Which array each output channel reads, resolved once per block rather
+    // than once per sample per channel.
+    const srcs = this.srcs;
+    for (let c = 0; c < chans; c++) srcs[c] = input[c] || input[0] || null;
+    const lowDelay = this.lowDelay;
+    const highDelay = this.highDelay;
+    const split = this.split;
+    const low = this.low;
+    const high = this.high;
+    const len = this.len;
+    let pos = this.pos;
+
+    low.sane();
+    high.sane();
     for (let c = 0; c < chans; c++) {
-      const s = this.split[c];
+      const s = split[c];
       s.lp[0].sane(); s.lp[1].sane(); s.hp[0].sane(); s.hp[1].sane();
     }
 
     for (let i = 0; i < frames; i++) {
-      const thrDb = thrP.length > 1 ? thrP[i] : thrP[0];
-      const relSec = relP.length > 1 ? relP[i] : relP[0];
-      const threshold = Math.pow(10, thrDb / 20);
-      const releaseCoef = Math.exp(-1 / (relSec * sampleRate));
+      const threshold = thrK ? thresholdK : Math.pow(10, thrP[i] / 20);
+      const releaseCoef = relK ? releaseK : Math.exp(-1 / (relP[i] * sampleRate));
 
       // Split, and find each band's loudest channel this frame.
       let lowPeak = 0, highPeak = 0;
       for (let c = 0; c < chans; c++) {
-        const src = input[c] || input[0];
+        const src = srcs[c];
         const x = clean(src ? src[i] : 0);
-        const s = this.split[c];
+        const s = split[c];
         const lo = s.lp[1].run(s.lp[0].run(x));
         const hi = s.hp[1].run(s.hp[0].run(x));
-        this.lowDelay[c][this.pos] = lo;
-        this.highDelay[c][this.pos] = hi;
+        lowDelay[c][pos] = lo;
+        highDelay[c][pos] = hi;
         const la = lo < 0 ? -lo : lo;
         const ha = hi < 0 ? -hi : hi;
         if (la > lowPeak) lowPeak = la;
         if (ha > highPeak) highPeak = ha;
       }
 
-      const lowGain = this.low.step(lowPeak, threshold, releaseCoef);
-      const highGain = this.high.step(highPeak, threshold, releaseCoef);
+      const lowGain = low.step(lowPeak, threshold, releaseCoef);
+      const highGain = high.step(highPeak, threshold, releaseCoef);
 
       // Read the delayed bands back out and rejoin them.
-      const read = (this.pos + 1) % this.len;
+      const read = pos + 1 === len ? 0 : pos + 1;
       for (let c = 0; c < chans; c++) {
-        const sum = this.lowDelay[c][read] * lowGain + this.highDelay[c][read] * highGain;
+        const sum = lowDelay[c][read] * lowGain + highDelay[c][read] * highGain;
         // The two bands are controlled separately, so their sum can exceed the
         // ceiling where both are loud at once. A soft knee at the very top is
         // the last resort — it is inaudible at the fraction of a decibel it ever
@@ -200,8 +236,9 @@ class LimiterProcessor extends AudioWorkletProcessor {
         const a = sum < 0 ? -sum : sum;
         out[c][i] = clean(a <= threshold ? sum : Math.sign(sum) * (threshold + (a - threshold) / (1 + ((a - threshold) / threshold) * 4)));
       }
-      this.pos = read;
+      pos = read;
     }
+    this.pos = pos;
     return true;
   }
 }

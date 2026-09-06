@@ -63,6 +63,9 @@ class TransientProcessor extends AudioWorkletProcessor {
     }
 
     const frames = out[0].length;
+    // Which array each output channel reads, resolved once per block.
+    const srcs = this.srcs || (this.srcs = []);
+    for (let c = 0; c < out.length; c++) srcs[c] = input[c] || input[0] || null;
     const amountP = parameters.amount;
     const maxP = parameters.maxBoost;
     const chans = input.length;
@@ -96,9 +99,10 @@ class TransientProcessor extends AudioWorkletProcessor {
 
       this.g = this.gSm * this.g + (1 - this.gSm) * g;
 
+      const gain = this.g;
       for (let c = 0; c < out.length; c++) {
-        const src = input[c] || input[0];
-        out[c][i] = (src ? src[i] : 0) * this.g;
+        const src = srcs[c];
+        out[c][i] = (src ? src[i] : 0) * gain;
       }
     }
     return true;

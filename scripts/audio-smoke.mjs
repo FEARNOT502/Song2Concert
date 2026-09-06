@@ -57,6 +57,46 @@ const life = await page.evaluate(async () => {
   engine.setVenue(VENUES.find((v) => v.id === 'arena'));
   engine.attachPageLifecycle();
   await engine.resume();
+  const r = {};
+
+  // The response is built in a worker and applied when it arrives, so a fresh
+  // graph has no room loaded for a moment. It has to arrive, and quickly.
+  const t0 = performance.now();
+  while (!(engine.graph && engine.graph.active) && performance.now() - t0 < 5000) {
+    await new Promise((res) => setTimeout(res, 20));
+  }
+  r.responseArrives = !!(engine.graph && engine.graph.active);
+  r.responseArrivalMs = Math.round(performance.now() - t0);
+  r.responseHasFourChannels = !!(engine.graph && engine.graph.active
+    && engine.graph[`conv${engine.graph.active}`].buffer
+    && engine.graph[`conv${engine.graph.active}`].buffer.numberOfChannels === 4);
+
+  // The worker itself, on a response nothing on this page has built: it has to
+  // exist, build the thing, and leave it in the cache the graph reads from.
+  {
+    const { ensureImpulseResponse, impulseWorkerAvailable } = await import('/Song2Concert/src/audio/impulseworker.js');
+    const { hasImpulseResponse, venueSeed } = await import('/Song2Concert/src/audio/impulse.js');
+    const spec = { venueId: 'concerthall', sampleRate: 88200, seed: venueSeed('concerthall') };
+    r.workerAvailable = impulseWorkerAvailable();
+    r.workerSpecUncachedBefore = !hasImpulseResponse(spec);
+    const tw = performance.now();
+    const built = await ensureImpulseResponse(spec);
+    r.workerBuildMs = Math.round(performance.now() - tw);
+    r.workerBuildHasFourChannels = !!(built && built.channels && built.channels.length === 4 && built.channels[0].length === built.length);
+    r.workerBuildCached = hasImpulseResponse(spec);
+    r.workerStillAvailable = impulseWorkerAvailable();
+  }
+
+  // A venue change while playing goes the same way: nothing synthesised on
+  // this thread, the new room applied once its response is back.
+  const slotBefore = engine.graph.active;
+  engine.setVenue(VENUES.find((v) => v.id === 'dome'));
+  const t1 = performance.now();
+  while (engine.graph.active === slotBefore && performance.now() - t1 < 5000) {
+    await new Promise((res) => setTimeout(res, 20));
+  }
+  r.venueChangeArrives = engine.graph.active !== slotBefore;
+  r.venueChangeMs = Math.round(performance.now() - t1);
 
   // A silent decoded buffer stands in for a dropped file; what is under test is
   // transport and context state, not the audio.
@@ -69,7 +109,6 @@ const life = await page.evaluate(async () => {
     Object.defineProperty(document, 'visibilityState', { value: v, configurable: true });
     document.dispatchEvent(new Event('visibilitychange'));
   };
-  const r = {};
 
   // Leaving the tab does not stop the music. Suspending the context while hidden
   // was tried and does cut the load, but a player that goes quiet when you look
@@ -109,6 +148,12 @@ const life = await page.evaluate(async () => {
   r.rebuildKeepsPlaying = engine._bufPlaying;
   r.rebuildPositionDrift_s = +Math.abs(engine.currentTime - before).toFixed(2);
   r.rebuildGraphConnected = !!(engine.graph && engine.graph.limiter && engine.graph.wet);
+  // The rebuilt graph asks for its room the same way the first one did.
+  const t2 = performance.now();
+  while (!(engine.graph && engine.graph.active) && performance.now() - t2 < 5000) {
+    await new Promise((res) => setTimeout(res, 20));
+  }
+  r.rebuildGetsItsRoom = !!(engine.graph && engine.graph.active);
   engine.destroy();
   return r;
 });

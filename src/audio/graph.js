@@ -285,7 +285,13 @@ const TRANSIENT_BANDS = [
 // Build the whole chain on any context. `worklets` says which AudioWorklet
 // modules successfully loaded; anything missing is simply skipped, and its
 // contribution was additive, so the chain stays correct without it.
-export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {} }) {
+//
+// `deferResponse` builds everything except the room: the convolver slots are
+// left empty for a later applyVenue to fill, which is how the engine avoids
+// synthesising a response on the main thread when a worker can do it instead.
+// The first applyVenue on such a graph simply brings the room up, since there
+// is nothing to cross-fade from.
+export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {}, deferResponse = false }) {
   const n = {};
 
   n.trim = ctx.createGain();
@@ -624,7 +630,7 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {} })
   }
   n.volume.connect(n.limiter);
 
-  applyVenue(ctx, n, venue, { fadeIn: 0, fadeOut: 0 });
+  applyVenue(ctx, n, venue, { fadeIn: 0, fadeOut: 0, loadResponse: !deferResponse });
   return n;
 }
 
@@ -651,7 +657,7 @@ export const VENUE_FADE_OUT = 1.2;
 // ones was costing an audible gap on every change — the source had to be
 // detached and reattached, the reverberation tail was cut dead, and the graph
 // left behind was only partly disconnected, so its worklets went on running.
-export function applyVenue(ctx, n, venue, { fadeIn = VENUE_FADE_IN, fadeOut = VENUE_FADE_OUT } = {}) {
+export function applyVenue(ctx, n, venue, { fadeIn = VENUE_FADE_IN, fadeOut = VENUE_FADE_OUT, loadResponse = true } = {}) {
   const t = ctx.currentTime;
 
   // A change arriving before the previous one has finished blending is queued,
@@ -690,6 +696,9 @@ export function applyVenue(ctx, n, venue, { fadeIn = VENUE_FADE_IN, fadeOut = VE
   if (n.glue) ramp(n.glue.parameters.get('amount'), pa.glue ?? 0);
 
   n.sat.curve = makeSatCurve(pa.drive ?? 0);
+
+  // Everything but the room — see buildGraph's `deferResponse`.
+  if (!loadResponse) return;
 
   // Load the idle convolver slot and blend across to it. On the first call
   // there is no slot in use yet, so it simply comes up.

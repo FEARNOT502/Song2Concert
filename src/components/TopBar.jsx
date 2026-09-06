@@ -3,6 +3,8 @@
 // 'ready' | 'live'. It replaces the prototype's static "IN SEAT" badge with a
 // truthful indicator of whether real audio is loaded.
 
+import { memo } from 'react';
+
 import SoundInfo from './SoundInfo.jsx';
 
 // Brand mark — "Wave → Hall Arc" (icon-exports). Inlined so it inherits color
@@ -28,7 +30,7 @@ const STATUS_LABEL = {
   live: '● IN VENUE',
 };
 
-export default function TopBar({ file, venue, audioStatus = 'demo', onFileClick, onVenueClick }) {
+function TopBar({ file, venue, audioStatus = 'demo', onFileClick, onVenueClick }) {
   const liveish = audioStatus === 'live' || audioStatus === 'ready';
   return (
     <div className="absolute top-0 inset-x-0 z-40 flex items-center justify-between px-10 pt-6 pb-4 text-[13px] tracking-[0.2em] uppercase text-neutral-500 border-b border-white/5 bg-black/40 backdrop-blur-sm font-mono">
@@ -62,3 +64,6 @@ export default function TopBar({ file, venue, audioStatus = 'demo', onFileClick,
     </div>
   );
 }
+
+// Memoised: the playback clock re-renders the app several times a second.
+export default memo(TopBar);

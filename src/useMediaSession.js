@@ -18,15 +18,31 @@
 //     nothing else is competing for it, and it is the honest answer to what you
 //     are listening to: not the file, the room it is being played in.
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 const FALLBACK_ART = `${import.meta.env.BASE_URL}apple-touch-icon.png`;
+
+// How far the reported position may drift from what the platform is already
+// showing before it is told again. The platform interpolates from the last
+// anchor at the playback rate, so while a track simply plays there is nothing
+// to say — a seek, a pause, or a new track is what moves it.
+const POSITION_SLACK_S = 1;
 
 export function useMediaSession({
   hasAudio, playing, title, artist, album, artworkSrc,
   duration, position, onPlay, onPause, onPrev, onNext, onSeek, hasNext, hasPrev,
 }) {
   const ms = typeof navigator !== 'undefined' ? navigator.mediaSession : null;
+
+  // The seek handlers read the current position and duration from here rather
+  // than closing over them, so the handler set does not have to be torn down
+  // and re-registered every time the clock ticks. It was — eight handlers,
+  // cleared and set again, five times a second, each a call across to the
+  // browser process — for a value the handlers only read when a button is
+  // actually pressed.
+  const posRef = useRef({ position, duration });
+  posRef.current.position = position;
+  posRef.current.duration = duration;
 
   // ── what is playing ──
   useEffect(() => {
@@ -60,8 +76,8 @@ export function useMediaSession({
       pause: onPause,
       previoustrack: hasPrev ? onPrev : null,
       nexttrack: hasNext ? onNext : null,
-      seekbackward: (d) => onSeek(Math.max(0, position - (d.seekOffset || 10))),
-      seekforward: (d) => onSeek(Math.min(duration, position + (d.seekOffset || 10))),
+      seekbackward: (d) => onSeek(Math.max(0, posRef.current.position - (d.seekOffset || 10))),
+      seekforward: (d) => onSeek(Math.min(posRef.current.duration, posRef.current.position + (d.seekOffset || 10))),
       seekto: (d) => { if (Number.isFinite(d.seekTime)) onSeek(d.seekTime); },
       stop: onPause,
     };
@@ -75,21 +91,36 @@ export function useMediaSession({
         try { ms.setActionHandler(action, null); } catch (e) { /* noop */ }
       }
     };
-  }, [ms, onPlay, onPause, onPrev, onNext, onSeek, hasNext, hasPrev, position, duration]);
+  }, [ms, onPlay, onPause, onPrev, onNext, onSeek, hasNext, hasPrev]);
 
   // ── where in the track ──
+  //
+  // Told only when it would otherwise be wrong. The platform runs its own
+  // clock from the last anchor it was given, so restating the position five
+  // times a second — as the clock effect ticks — sent it nothing it did not
+  // already know, at the price of a cross-process call each time. It is
+  // restated when the interpolation would have drifted (a seek), when the
+  // playing state flips (the anchor's rate changed), and when the track does.
+  const anchor = useRef(null);   // { position, duration, playing, at } last told
   useEffect(() => {
     if (!ms || typeof ms.setPositionState !== 'function') return;
     if (!hasAudio || !Number.isFinite(duration) || duration <= 0) {
-      try { ms.setPositionState(); } catch (e) { /* noop */ }
+      if (anchor.current !== null) {
+        anchor.current = null;
+        try { ms.setPositionState(); } catch (e) { /* noop */ }
+      }
       return;
     }
+    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
+    const last = anchor.current;
+    if (last && last.duration === duration && last.playing === playing) {
+      const expected = last.position + (last.playing ? now - last.at : 0);
+      if (Math.abs((position || 0) - expected) < POSITION_SLACK_S) return;
+    }
+    const clamped = Math.max(0, Math.min(duration, position || 0));
     try {
-      ms.setPositionState({
-        duration,
-        playbackRate: 1,
-        position: Math.max(0, Math.min(duration, position || 0)),
-      });
+      ms.setPositionState({ duration, playbackRate: 1, position: clamped });
+      anchor.current = { position: clamped, duration, playing, at: now };
     } catch (e) { /* inconsistent for one frame; the next one corrects it */ }
-  }, [ms, hasAudio, duration, position]);
+  }, [ms, hasAudio, duration, position, playing]);
 }

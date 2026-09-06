@@ -12,7 +12,8 @@ import { buildGraph, applyVenue, disposeGraph, wetTrimDb } from './graph.js';
 import { readAudioFormat } from './bitdepth.js';
 import { reverbTimes } from './roomacoustics.js';
 import { roomAbsorption, VENUE_ROOMS } from './venuerooms.js';
-import { synthesizeIR, venueSeed } from './impulse.js';
+import { hasImpulseResponse, venueSeed } from './impulse.js';
+import { ensureImpulseResponse, impulseWorkerAvailable } from './impulseworker.js';
 
 // AudioWorklet modules live in public/ so they are served verbatim and can be
 // fetched as standalone modules. BASE_URL keeps them correct under the Pages
@@ -92,6 +93,11 @@ export class ConcertEngine {
 
     // Audio-thread load, filled by _watchLoad() where the browser reports it.
     this._load = { average: 0, peak: 0, underrun: 0, supported: false };
+
+    // The venue whose response is being built off-thread and has not been
+    // applied yet. Only the most recent one asked for is ever applied — see
+    // _applyVenueWhenReady.
+    this._venueWanted = null;
   }
 
   // Build the AudioContext and the graph. Idempotent; called on first gesture.
@@ -177,40 +183,85 @@ export class ConcertEngine {
     return this._load || { average: 0, peak: 0, underrun: 0, supported: false };
   }
 
-  // Synthesise every venue's response ahead of time, one per idle slot.
+  // Synthesise every venue's response ahead of time, one at a time, the venue
+  // on screen first.
   //
-  // Building one costs 40–200 ms, and doing it at the moment a venue is chosen
-  // put that on the main thread while audio was playing. They are cached, so
-  // this is paid once, quietly, and only the first change to a venue would ever
-  // have been slow anyway.
-  // Synthesising one is 30–170 ms of straight-line arithmetic on the main thread
-  // — several frames on a desktop and a good deal worse on a phone — so it only
-  // ever runs when nothing is playing and the page is on screen. It used to run
-  // regardless, on an idle callback, and idle callbacks do not fire in a
-  // backgrounded tab: they queue up and then all land at once on the way back,
-  // which is the worst possible moment. A blocked main thread does not stop the
-  // audio thread, but on a phone the two are not independent — they contend for
-  // the same little cores, and an audio callback that misses its deadline is
-  // heard, not measured.
+  // Building one costs 40–130 ms on a desktop and several times that on a
+  // phone, and doing it at the moment a venue was chosen put that on the main
+  // thread while audio was playing. They are cached, so this is paid once.
+  //
+  // The building happens in a worker (impulseworker.js), which is what lets it
+  // run while music plays. It used to be gated on playback being stopped and
+  // the page being on screen, because it ran on the main thread and a main
+  // thread blocked for a hundred milliseconds is, on a phone, an audio callback
+  // that misses its deadline. That gate had a cost of its own: someone who
+  // loads a file and presses play straight away — everyone — never had a
+  // single response built ahead, so every venue change they made was the slow
+  // one. Off the main thread there is nothing to wait for, only something to
+  // pace: one response, then a pause, then the next.
+  //
+  // Where no worker can be had the old gate stays, for the old reason.
   _prewarmResponses() {
+    const ctx = this.ctx;
+    const rate = ctx.sampleRate;
     const ids = Object.keys(VENUE_ROOMS);
-    const rate = this.ctx.sampleRate;
-    const busy = () => this._bufPlaying
-      || (this.audioEl && !this.audioEl.paused)
-      || (typeof document !== 'undefined' && document.visibilityState === 'hidden');
-    const next = () => {
-      if (!this.ctx || this.ctx.state === 'closed') return;
-      if (busy()) { schedule(1500); return; }   // come back when it is free
-      const id = ids.shift();
-      if (!id) return;
-      try { synthesizeIR({ venueId: id, sampleRate: rate, seed: venueSeed(id) }); } catch (e) { /* not fatal */ }
-      schedule();
+    // Checked each time rather than once: a worker that fails does so on its
+    // first job, and from then on the building is back on this thread.
+    const offThread = () => impulseWorkerAvailable();
+    // The room being listened to goes first, whichever it is by the time the
+    // queue starts moving — this runs before a venue has been selected.
+    const takeNext = () => {
+      const current = this._venue ? this._venue.id : null;
+      const at = current ? ids.indexOf(current) : -1;
+      return at >= 0 ? ids.splice(at, 1)[0] : ids.shift();
     };
-    const schedule = (delay = 200) => {
-      if (typeof requestIdleCallback === 'function') requestIdleCallback(next, { timeout: 2000 });
+    const busy = () => !offThread() && (this._bufPlaying
+      || (this.audioEl && !this.audioEl.paused)
+      || (typeof document !== 'undefined' && document.visibilityState === 'hidden'));
+    const next = () => {
+      if (this.ctx !== ctx || ctx.state === 'closed') return;
+      if (busy()) { schedule(1500); return; }   // come back when it is free
+      const id = takeNext();
+      if (!id) return;
+      ensureImpulseResponse({ venueId: id, sampleRate: rate, seed: venueSeed(id) })
+        .then(() => schedule(), () => schedule());
+    };
+    const schedule = (delay = 250) => {
+      if (!offThread() && typeof requestIdleCallback === 'function') requestIdleCallback(next, { timeout: 2000 });
       else setTimeout(next, delay);
     };
     schedule();
+  }
+
+  // Apply a venue to the live graph once its response exists, building it in
+  // the worker if it does not yet.
+  //
+  // Only the venue most recently asked for is applied. Someone stepping through
+  // the picker faster than responses can be built should hear the room they
+  // stopped on, not every room they passed — and the graph's own fade queue
+  // already handles the case where two applications land within a fade.
+  _applyVenueWhenReady(venue) {
+    const ctx = this.ctx;
+    const graph = this.graph;
+    const spec = { venueId: venue.id, sampleRate: ctx.sampleRate, seed: venueSeed(venue.id) };
+    this._venueWanted = venue;
+    const apply = () => {
+      // The context or the graph may have been rebuilt while the response was
+      // being built; the rebuild asks for its own.
+      if (this.ctx !== ctx || this.graph !== graph || ctx.state === 'closed') return;
+      if (this._venueWanted !== venue) return;   // superseded
+      this._venueWanted = null;
+      applyVenue(ctx, graph, venue);
+      this._applyWet();
+    };
+    if (hasImpulseResponse(spec)) { apply(); return; }
+    // ensureImpulseResponse falls back to building inline if the worker fails,
+    // so the rejection path is only for a synthesis error — in which case the
+    // venue's parameters are still applied and the room simply does not change.
+    ensureImpulseResponse(spec).then(apply, (e) => {
+      console.warn('[engine] response unavailable:', e && e.message);
+      apply();
+    });
   }
 
   // ── page lifecycle ────────────────────────────────────────────────────────
@@ -293,6 +344,7 @@ export class ConcertEngine {
     const old = this.ctx;
     this.ctx = null;
     this.graph = null;
+    this._venueWanted = null;
     this.source = null;
     if (this.audioEl && this.audioEl.parentNode) this.audioEl.parentNode.removeChild(this.audioEl);
     this.audioEl = null;
@@ -339,11 +391,19 @@ export class ConcertEngine {
     const wetDb = this._bypass
       ? -1000
       : wetTrimDb(this._wetPercent ?? venue.position.wet, venue);
+    // A response that is not cached yet is built in the worker and applied when
+    // it arrives, rather than synthesised here on the main thread. The graph
+    // plays dry for the few tens of milliseconds that takes — on the very first
+    // build that is before any file has been loaded, and on a rebuild it is the
+    // difference between a brief dry moment and a dropout.
+    const spec = { venueId: venue.id, sampleRate: this.ctx.sampleRate, seed: venueSeed(venue.id) };
+    const deferResponse = !hasImpulseResponse(spec) && impulseWorkerAvailable();
     const graph = buildGraph(this.ctx, {
       venue,
       volume: this._volume,
       wetDb,
       worklets: this._worklets,
+      deferResponse,
     });
     graph.out.connect(this.analyser); // ahead of the volume control
     graph.limiter.connect(this.ctx.destination);
@@ -356,6 +416,7 @@ export class ConcertEngine {
       this._bufSrc.connect(graph.trim);
     }
     if (old) disposeGraph(old);
+    if (deferResponse) this._applyVenueWhenReady(venue);
   }
 
   // Browser autoplay policy: must resume() inside a user gesture.
@@ -512,9 +573,16 @@ export class ConcertEngine {
   }
 
   // WASM FLAC fallback → AudioBuffer (handles 16/24-bit, any sample rate).
+  //
+  // The decoder runs in its own worker where one can be had. On the main
+  // thread the same call is seconds of synchronous WASM for a long hi-res
+  // track — and this path is reached from the read-ahead, which runs while the
+  // previous track is playing. The worker variant transfers the decoded
+  // channels back rather than copying them.
   async _decodeFlacWasm(arrayBuffer) {
-    const { FLACDecoder } = await import('@wasm-audio-decoders/flac');
-    const decoder = new FLACDecoder();
+    const { FLACDecoder, FLACDecoderWebWorker } = await import('@wasm-audio-decoders/flac');
+    const offThread = typeof Worker === 'function' && typeof FLACDecoderWebWorker === 'function';
+    const decoder = offThread ? new FLACDecoderWebWorker() : new FLACDecoder();
     await decoder.ready;
     try {
       const { channelData, samplesDecoded, sampleRate } = await decoder.decodeFile(new Uint8Array(arrayBuffer));
@@ -524,7 +592,8 @@ export class ConcertEngine {
       for (let c = 0; c < ch; c++) buf.copyToChannel(channelData[c], c);
       return buf;
     } finally {
-      decoder.free();
+      try { await decoder.free(); } catch (e) { /* already gone */ }
+      if (typeof decoder.terminate === 'function') decoder.terminate();
     }
   }
 
@@ -602,9 +671,9 @@ export class ConcertEngine {
       this._applyWet();
       return;
     }
-    // Parameters only — the graph is never rebuilt for a venue change.
-    applyVenue(this.ctx, this.graph, venue);
-    this._applyWet();
+    // Parameters only — the graph is never rebuilt for a venue change. The
+    // response is built off-thread first if it has not been already.
+    this._applyVenueWhenReady(venue);
   }
 
   // 0..100. The venue's own default is the physically correct reverberant level
@@ -821,6 +890,9 @@ export class ConcertEngine {
       2, decoded.length + sr * tail, sr,
     );
     const worklets = await loadWorklets(offline);
+    // The response at the export's rate, built off-thread — playback is very
+    // likely still running while this happens.
+    await ensureImpulseResponse({ venueId: venue.id, sampleRate: sr, seed: venueSeed(venue.id) });
 
     const def = venue.position.wet;
     const graph = buildGraph(offline, {

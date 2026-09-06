@@ -10,11 +10,11 @@
 // the HTML overlay carrying the album art and title. The overlay's box is
 // projected from the 3D screen inside the room, so the art sits on that screen.
 
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import StageArt from './StageArt.jsx';
 import { createStage } from '../three/stage.js';
 
-export default function Scene({ venueId, coverId, coverSrc, pulse, pulseRef, title, artist, strain = 0 }) {
+function Scene({ venueId, coverId, coverSrc, pulse = 0, pulseRef = null, title, artist, strain = 0 }) {
   const hostRef = useRef(null);
   const canvasRef = useRef(null);
   const stageRef = useRef(null);
@@ -76,9 +76,14 @@ export default function Scene({ venueId, coverId, coverSrc, pulse, pulseRef, tit
         coverId={coverId}
         coverSrc={coverSrc}
         pulse={pulse}
+        pulseRef={pulseRef}
         title={title}
         artist={artist}
       />
     </div>
   );
 }
+
+// Memoised: the clock above re-renders the app several times a second, and
+// nothing about the room changes when it does.
+export default memo(Scene);

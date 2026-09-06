@@ -4,9 +4,11 @@
 // Finished tracks are removed automatically by App, so this only ever lists the
 // current track + what's still to come.
 
+import { memo } from 'react';
+
 const ACCENT = 'oklch(0.78 0.16 55)';
 
-export default function QueuePanel({ queue, onJump, onRemove, playing }) {
+function QueuePanel({ queue, onJump, onRemove, playing }) {
   if (!queue || queue.length === 0) return null;
 
   return (
@@ -59,3 +61,6 @@ export default function QueuePanel({ queue, onJump, onRemove, playing }) {
     </div>
   );
 }
+
+// Memoised: the playback clock re-renders the app several times a second.
+export default memo(QueuePanel);

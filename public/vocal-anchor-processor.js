@@ -74,6 +74,9 @@ class VocalAnchorProcessor extends AudioWorkletProcessor {
     // has arrived.
     this.gUp = Math.exp(-1 / (0.20 * sr));
     this.gDown = Math.exp(-1 / (1.50 * sr));
+    // How much of the eight-second priming each sample contributes. The same
+    // quotient the loop used to form on every sample.
+    this.primeStep = 1 / (8.0 * sr);
   }
 
   process(inputs, outputs, parameters) {
@@ -127,7 +130,7 @@ class VocalAnchorProcessor extends AudioWorkletProcessor {
       if (singing) {
         const r = this.envV / (this.envP + 1e-9);
         this.rLong = this.longCoef * this.rLong + (1 - this.longCoef) * r;
-        if (this.primed < 1) this.primed = Math.min(1, this.primed + 1 / (8.0 * sampleRate));
+        if (this.primed < 1) this.primed = Math.min(1, this.primed + this.primeStep);
         const want = r > 1e-9 ? this.rLong / r - 1 : 0;
         target = Math.max(0, Math.min(maxBoost, want)) * this.primed;
       } else {

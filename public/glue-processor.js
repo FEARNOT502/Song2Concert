@@ -108,10 +108,34 @@ class GlueProcessor extends AudioWorkletProcessor {
       return true;
     }
 
+    // Everything that depends on `amount` alone is settled once per block when
+    // the parameter is constant across it — which is always, outside the
+    // quarter-second it ramps on a venue change. The values are the ones the
+    // per-sample expressions produce; only how often they are evaluated moves.
+    // With no gain reduction the makeup is the whole gain, and that pow is
+    // cached too, since (makeupDb − 0) / 20 is makeupDb / 20 exactly.
+    let thresholdK = 0, ratioK = 1, slopeK = 0, makeupK = 0, makeupGainK = 1;
+    if (constant) {
+      thresholdK = -12 - 6 * amountP[0];
+      ratioK = 1.2 + 0.8 * amountP[0];
+      slopeK = 1 - 1 / ratioK;
+      makeupK = Math.max(0, -6 - thresholdK) * slopeK;
+      makeupGainK = Math.pow(10, makeupK / 20);
+    }
+    const srcs = this.srcs || (this.srcs = []);
+    for (let c = 0; c < out.length; c++) srcs[c] = input[c] || input[0] || null;
+
     for (let i = 0; i < frames; i++) {
-      const a = constant ? amountP[0] : amountP[i];
-      const thresholdDb = -12 - 6 * a;
-      const ratio = 1.2 + 0.8 * a;
+      let thresholdDb, ratio, slope, makeupDb;
+      if (constant) {
+        thresholdDb = thresholdK; ratio = ratioK; slope = slopeK; makeupDb = makeupK;
+      } else {
+        const a = amountP[i];
+        thresholdDb = -12 - 6 * a;
+        ratio = 1.2 + 0.8 * a;
+        slope = 1 - 1 / ratio;
+        makeupDb = Math.max(0, -6 - thresholdDb) * slope;
+      }
 
       const peak = this.detect(input, i);
       const peakDb = peak > 1e-7 ? 20 * Math.log10(peak) : -140;
@@ -124,20 +148,21 @@ class GlueProcessor extends AudioWorkletProcessor {
       const over = this.envDb - thresholdDb;
       let reduction = 0;
       if (over >= KNEE_DB / 2) {
-        reduction = over * (1 - 1 / ratio);
+        reduction = over * slope;
       } else if (over > -KNEE_DB / 2) {
         const x = over + KNEE_DB / 2;
-        reduction = ((1 - 1 / ratio) * x * x) / (2 * KNEE_DB);
+        reduction = (slope * x * x) / (2 * KNEE_DB);
       }
       this.grDb = reduction;
 
       // Makeup referenced to a −6 dBFS programme peak, so engaging the stage
       // does not also change the level and read as the venue getting louder.
-      const makeupDb = Math.max(0, -6 - thresholdDb) * (1 - 1 / ratio);
-      const gain = Math.pow(10, (makeupDb - this.grDb) / 20);
+      const gain = (constant && reduction === 0)
+        ? makeupGainK
+        : Math.pow(10, (makeupDb - reduction) / 20);
 
       for (let c = 0; c < out.length; c++) {
-        const src = input[c] || input[0];
+        const src = srcs[c];
         out[c][i] = (src ? src[i] : 0) * gain;
       }
     }
