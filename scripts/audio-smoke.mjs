@@ -6,13 +6,15 @@
 // by the convolver, or that anything comes out the other end. This does.
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
+import { existsSync } from 'node:fs';
 
 const server = await createServer({ server: { port: 5199 }, logLevel: 'error' });
 await server.listen();
-// The pinned Chromium in this environment lives at a fixed path; let the
-// project's playwright version use it rather than downloading its own.
+const PINNED = '/opt/pw-browsers/chromium';
 const browser = await chromium.launch({
-  executablePath: '/opt/pw-browsers/chromium',
+  // Use the pinned build where it exists; fall back to whatever playwright
+  // installed for itself, so the check also runs on a developer's machine.
+  ...(existsSync(PINNED) ? { executablePath: PINNED } : {}),
   // The lifecycle checks below need a context that actually starts, and there is
   // no user gesture in a headless run.
   args: ['--autoplay-policy=no-user-gesture-required'],

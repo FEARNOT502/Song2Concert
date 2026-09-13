@@ -667,7 +667,20 @@ export function applyVenue(ctx, n, venue, { fadeIn = VENUE_FADE_IN, fadeOut = VE
   // fades also made the gain curves restart from zero rather than from where
   // they had got to, which measured as an 8 dB dip. Waiting is both simpler and
   // what the listener wants: the last venue asked for is the one they get.
-  if (n.fadeUntil && t < n.fadeUntil) {
+  //
+  // The test is whether the previous fade's release has actually RUN, not
+  // whether its deadline has passed. Those are not the same clock. The deadline
+  // was ctx.currentTime, which advances in real time no matter what; the release
+  // is a setTimeout, which does not. A main thread busy decoding the next track
+  // — or a backgrounded tab, where timers are clamped — runs the release long
+  // after the audio clock has sailed past the deadline, and gating on the
+  // deadline let a second fade start while the first slot was still connected
+  // and still holding its response. The late release then disconnected and
+  // cleared whichever convolver had since become the live one, so the tail
+  // either vanished or rang on underneath the new room's. It reproduced only
+  // under load, because only under load do the two clocks separate. The release
+  // handle IS the state, and it cannot skew.
+  if (n.releaseIdle) {
     n.pendingVenue = venue;
     return;
   }
@@ -731,11 +744,11 @@ export function applyVenue(ctx, n, venue, { fadeIn = VENUE_FADE_IN, fadeOut = VE
   fromGain.cancelScheduledValues(t);
   fromGain.setValueCurveAtTime(curve(Math.cos), t, fadeOut);
 
-  // Free the room that was left, once it has finished ringing out.
-  n.fadeUntil = t + fadeOut;
+  // Free the room that was left, once it has finished ringing out. Until this
+  // has run, the slot it frees is not available and the guard above holds the
+  // next change back.
   n.releaseIdle = setTimeout(() => {
     n.releaseIdle = null;
-    n.fadeUntil = 0;
     try { n.sendHF.disconnect(fromConv); } catch (e) { /* noop */ }
     fromConv.buffer = null;
     if (n.pendingVenue) {
@@ -751,7 +764,8 @@ export function applyVenue(ctx, n, venue, { fadeIn = VENUE_FADE_IN, fadeOut = VE
 // disconnected graph keeps its worklet processors alive, and one was leaked per
 // venue change before venue changes stopped rebuilding anything.
 export function disposeGraph(n) {
-  if (n.releaseIdle) clearTimeout(n.releaseIdle);
+  if (n.releaseIdle) { clearTimeout(n.releaseIdle); n.releaseIdle = null; }
+  n.pendingVenue = null;
   for (const value of Object.values(n)) {
     if (value && typeof value.disconnect === 'function') {
       try { value.disconnect(); } catch (e) { /* already gone */ }
