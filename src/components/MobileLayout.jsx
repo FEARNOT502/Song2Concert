@@ -7,6 +7,7 @@
 import { useState } from 'react';
 import Scene from './Scene.jsx';
 import { formatTime } from './BottomTransport.jsx';
+import { EffectsToggle } from './TopBar.jsx';
 
 // Brand mark — same "Wave → Hall Arc" as the desktop TopBar, inlined.
 function BrandMark({ size = 20 }) {
@@ -84,6 +85,7 @@ export default function MobileLayout({
   // pickers
   onFileClick, onVenueClick,
   strain = 0,
+  effects = true, onEffectsChange,
 }) {
   const [showMixer, setShowMixer] = useState(false);
   const exportPct = Math.round(exportProgress * 100);
@@ -99,9 +101,12 @@ export default function MobileLayout({
           <BrandMark size={20} />
           <span className="text-[12px] tracking-[0.18em] text-neutral-300">SONG2CONCERT</span>
         </div>
-        <span className={`text-[10px] tracking-[0.15em] ${liveish ? 'text-[oklch(0.78_0.16_55)]' : 'text-neutral-500'}`}>
-          {STATUS_LABEL[audioStatus] || STATUS_LABEL.demo}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className={`text-[10px] tracking-[0.15em] ${liveish ? 'text-[oklch(0.78_0.16_55)]' : 'text-neutral-500'}`}>
+            {STATUS_LABEL[audioStatus] || STATUS_LABEL.demo}
+          </span>
+          {onEffectsChange && <EffectsToggle on={effects} onChange={onEffectsChange} />}
+        </div>
       </header>
 
       {/* ── scrolling content ── */}
@@ -116,6 +121,7 @@ export default function MobileLayout({
             title={upload ? upload.name : null}
             artist={upload ? upload.artist : null}
             strain={strain}
+            effects={effects}
           />
         </div>
 

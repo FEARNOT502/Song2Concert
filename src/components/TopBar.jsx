@@ -23,6 +23,46 @@ function BrandMark({ size = 22 }) {
   );
 }
 
+// The effects switch. Two states of one mark rather than two marks: the rays
+// around the lamp are exactly what the switch controls — the shafts, the sparks,
+// the glow — so they are what goes out.
+function EffectsMark({ on, size = 17 }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.6" fill={on ? 'currentColor' : 'none'} fillOpacity={on ? 0.25 : 0} />
+      <g stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" opacity={on ? 1 : 0.25}>
+        <line x1="12" y1="2.5" x2="12" y2="5" />
+        <line x1="12" y1="19" x2="12" y2="21.5" />
+        <line x1="2.5" y1="12" x2="5" y2="12" />
+        <line x1="19" y1="12" x2="21.5" y2="12" />
+        <line x1="5.6" y1="5.6" x2="7.4" y2="7.4" />
+        <line x1="16.6" y1="16.6" x2="18.4" y2="18.4" />
+        <line x1="18.4" y1="5.6" x2="16.6" y2="7.4" />
+        <line x1="7.4" y1="16.6" x2="5.6" y2="18.4" />
+      </g>
+    </svg>
+  );
+}
+
+export function EffectsToggle({ on, onChange, className = '' }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!on)}
+      aria-pressed={on}
+      title={on
+        ? 'Scene effects on — crowd, light shafts, bloom. Click for a lighter scene.'
+        : 'Scene effects off — the room only. Click to bring the show back.'}
+      className={`p-1.5 rounded transition-colors hover:bg-white/5 ${
+        on ? 'text-[oklch(0.78_0.16_55)]' : 'text-neutral-600 hover:text-neutral-400'
+      } ${className}`}
+    >
+      <EffectsMark on={on} />
+      <span className="sr-only">Scene effects</span>
+    </button>
+  );
+}
+
 const STATUS_LABEL = {
   demo: '○ NO FILE',
   loading: '◌ DECODING…',
@@ -30,7 +70,7 @@ const STATUS_LABEL = {
   live: '● IN VENUE',
 };
 
-function TopBar({ file, venue, audioStatus = 'demo', onFileClick, onVenueClick }) {
+function TopBar({ file, venue, audioStatus = 'demo', onFileClick, onVenueClick, effects = true, onEffectsChange }) {
   const liveish = audioStatus === 'live' || audioStatus === 'ready';
   return (
     <div className="absolute top-0 inset-x-0 z-40 flex items-center justify-between px-10 pt-6 pb-4 text-[13px] tracking-[0.2em] uppercase text-neutral-500 border-b border-white/5 bg-black/40 backdrop-blur-sm font-mono">
@@ -55,6 +95,7 @@ function TopBar({ file, venue, audioStatus = 'demo', onFileClick, onVenueClick }
       </div>
 
       <div className="flex items-center gap-4">
+        {onEffectsChange && <EffectsToggle on={effects} onChange={onEffectsChange} />}
         <SoundInfo venue={venue} />
         <span>{file.format.split(' · ').slice(0, 2).join(' · ')}</span>
         <span className={liveish ? 'text-[oklch(0.78_0.16_55)]' : 'text-neutral-500'}>

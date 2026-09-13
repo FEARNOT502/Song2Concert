@@ -14,10 +14,14 @@ import { memo, useEffect, useRef, useState } from 'react';
 import StageArt from './StageArt.jsx';
 import { createStage } from '../three/stage.js';
 
-function Scene({ venueId, coverId, coverSrc, pulse = 0, pulseRef = null, title, artist, strain = 0 }) {
+function Scene({ venueId, coverId, coverSrc, pulse = 0, pulseRef = null, title, artist, strain = 0, effects = true }) {
   const hostRef = useRef(null);
   const canvasRef = useRef(null);
   const stageRef = useRef(null);
+  // Read once, at mount. The stage builds its first room straight away, and a
+  // scene that came up with the effects on and dropped them a tick later would
+  // pay for them anyway — which is the one thing the switch exists to avoid.
+  const effectsAtMount = useRef(effects);
   const [rect, setRect] = useState(null);
   const [host, setHost] = useState({ w: 0, h: 0 });
   const [ok, setOk] = useState(true);
@@ -27,7 +31,7 @@ function Scene({ venueId, coverId, coverSrc, pulse = 0, pulseRef = null, title, 
     // Phones get a cheaper renderer: no bloom, lower pixel ratio. Everything
     // else about the scene is identical.
     const quality = window.matchMedia?.('(max-width: 900px)').matches ? 'low' : 'high';
-    const stage = createStage(canvasRef.current, { quality });
+    const stage = createStage(canvasRef.current, { quality, effects: effectsAtMount.current });
     const el = hostRef.current;
 
     if (stage) {
@@ -57,6 +61,9 @@ function Scene({ venueId, coverId, coverSrc, pulse = 0, pulseRef = null, title, 
   // How hard the audio thread is finding it — see stage.js setStrain. The scene
   // gives frames back when the sound needs them.
   useEffect(() => { stageRef.current?.setStrain(strain); }, [strain]);
+  // Switching this rebuilds the room — see stage.js setEffects. It is a no-op
+  // when the value has not moved, so the mount pass costs nothing.
+  useEffect(() => { stageRef.current?.setEffects(effects); }, [effects]);
   // the scene samples the pulse itself, once per rendered frame, so a loud track
   // does not turn into sixty React renders a second
   useEffect(() => { stageRef.current?.setPulseRef(pulseRef); }, [pulseRef]);

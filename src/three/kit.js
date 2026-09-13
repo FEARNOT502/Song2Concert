@@ -34,8 +34,22 @@ export function reactive() {
     uPulse: { value: 0 },
     // Set by the stage on resize: converts a world-space radius to gl_PointSize.
     uScale: { value: 600 },
+    // Not a uniform. The three effects below — crowds, point fields, light
+    // shafts — check this and build nothing when it is false, which is how the
+    // quality switch costs nothing rather than merely drawing nothing: the
+    // geometry is never generated, never uploaded, and never traversed. It
+    // rides on the uniforms object because that object is already threaded to
+    // every venue and every effect in the kit, so nothing else needed a new
+    // argument. Shaders name the uniforms they want one at a time, so an extra
+    // plain field here reaches no GLSL.
+    effects: true,
   };
 }
+
+// What an effect returns when it has been switched off: an empty group, so a
+// venue can go on calling root.add() and positioning the result without
+// knowing. Three skips an empty group's subtree entirely during traversal.
+const NOTHING = () => new THREE.Group();
 
 // ── textures ────────────────────────────────────────────────────────────────
 
@@ -189,6 +203,7 @@ export function beamMaterial(color, opacity, u) {
 // A shaft hanging from a fixture. The pivot is the lamp, so rotating the fixture
 // swings the shaft about it the way a moving head does.
 export function makeBeam({ color = ACCENT, length = 12, top = 0.1, spread = 2.4, opacity = 0.13, react = 1 }, u) {
+  if (u.effects === false) return NOTHING();
   const geo = new THREE.CylinderGeometry(top, spread, length, 18, 1, true);
   geo.translate(0, -length / 2, 0);
   const mesh = new THREE.Mesh(geo, beamMaterial(color, opacity, u));
@@ -203,6 +218,7 @@ export function makeBeam({ color = ACCENT, length = 12, top = 0.1, spread = 2.4,
 // One draw call for thousands of lights. Each point carries its own phase, so
 // the field shimmers rather than flashing in unison, and its own colour.
 export function sparkField(points, { react = 1, base = 0.3, twinkle = 3.6, additive = true, maxPx = 34 }, u) {
+  if (u.effects === false) return NOTHING();
   const n = points.length;
   const pos = new Float32Array(n * 3);
   const col = new Float32Array(n * 3);
@@ -292,6 +308,7 @@ function personGeometry() {
 // sways with the music entirely on the GPU, so 5,000 of them cost one draw call
 // and no per-frame CPU work.
 export function crowdField(people, { color = 0x05040a, react = 1, sway = 0.09 }, u) {
+  if (u.effects === false) return NOTHING();
   const geo = personGeometry();
   const mat = new THREE.MeshLambertMaterial({ color, emissive: 0x000000 });
   const phase = new Float32Array(people.length);

@@ -24,7 +24,7 @@ import { buildVenue } from './venues/index.js';
 
 const DEG = Math.PI / 180;
 
-export function createStage(canvas, { quality = 'high' } = {}) {
+export function createStage(canvas, { quality = 'high', effects = true } = {}) {
   const bloomOn = quality !== 'low';
   // Device pixel ratio is the single biggest lever on GPU cost — 1.75 on a
   // retina panel is three times the pixels of 1.0 — and this scene shares a
@@ -48,6 +48,11 @@ export function createStage(canvas, { quality = 'high' } = {}) {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(52, 1, 0.1, 2000);
   const u = reactive();
+  u.effects = effects;
+  // Current venue id, so the effects switch can rebuild the room it is looking
+  // at. setVenue is the only path that builds one and it is already gated on
+  // shader compilation, so switching reuses it rather than inventing a second.
+  let venueId = null;
 
   const composer = new EffectComposer(renderer);
   const renderPass = new RenderPass(scene, camera);
@@ -143,6 +148,7 @@ export function createStage(canvas, { quality = 'high' } = {}) {
   }
 
   function setVenue(id) {
+    venueId = id;
     const gen = ++venueGen;
     dropPending();
     const next = buildVenue(id, u);
@@ -272,13 +278,43 @@ export function createStage(canvas, { quality = 'high' } = {}) {
     strain = next;
     const severe = strain >= 2;
     if (severe === wasSevere) return;
-    if (bloom) bloom.enabled = !severe;
+    applyBloom();
     renderer.setPixelRatio(severe ? 1 : Math.min(window.devicePixelRatio || 1, maxRatio));
     renderer.setSize(size.w, size.h, false);
     composer.setSize(size.w, size.h);
     applyPointScale();
     publishLayout();
   }
+
+  // Two independent reasons to drop the bloom pass — the user asked for a
+  // cheaper scene, or the audio thread is underrunning — and either is enough.
+  // Kept in one place so neither can switch it back on over the other's head.
+  function applyBloom() {
+    if (bloom) bloom.enabled = u.effects && strain < 2;
+  }
+
+  // The scene's share of the machine, as a switch rather than a reaction. This
+  // is the same trade setStrain makes under duress, made deliberately and kept:
+  // the crowds, the point fields and the light shafts stop being built, and the
+  // bloom pass stops running. The room, its seating, the rig and the screens
+  // are the venue itself and stay.
+  function setEffects(on) {
+    const next = !!on;
+    if (next === u.effects) return;
+    u.effects = next;
+    applyBloom();
+    // The effects are decided at build time, so the room has to be built again
+    // to gain or lose them. A venue change is a rebuild too, and this is that
+    // same path: the new root is compiled before the old one is taken down, so
+    // the switch does not flash black.
+    if (venueId) setVenue(venueId);
+  }
+
+  // A pass is enabled until told otherwise, so settle it now — the switch can
+  // arrive already off, out of the setting the last visit saved. This has to sit
+  // below `strain`'s declaration rather than up with the composer, because
+  // applyBloom reads it.
+  applyBloom();
 
   function frame(now) {
     raf = requestAnimationFrame(frame);
@@ -325,12 +361,13 @@ export function createStage(canvas, { quality = 'high' } = {}) {
     setPulse: (p) => { pulse = p; },
     setPulseRef: (ref) => { pulseRef = ref || null; },
     setStrain,
+    setEffects,
     resize,
     onLayout(fn) { onLayout = fn; if (layoutRect) fn({ ...layoutRect }); },
     start() { if (!running) { running = true; clock.start(); raf = requestAnimationFrame(frame); } },
     // Frames actually drawn, for the frame-rate check in scripts/audio-smoke.mjs.
     // Nothing in the app reads it.
-    stats: () => ({ drawn, heavy, strain, frameMs: +frameBudget.toFixed(2) }),
+    stats: () => ({ drawn, heavy, strain, effects: u.effects, frameMs: +frameBudget.toFixed(2) }),
     dispose() {
       running = false;
       cancelAnimationFrame(raf);

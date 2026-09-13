@@ -11,6 +11,7 @@ import { LeftDataPanel, RightDataPanel, SeatChip } from './components/Panels.jsx
 import { FilePicker, VenuePicker } from './components/Modals.jsx';
 import QueuePanel from './components/QueuePanel.jsx';
 import MobileLayout from './components/MobileLayout.jsx';
+import { useSceneEffects } from './useSceneEffects.js';
 import { useIsMobile } from './useIsMobile.js';
 import { useMediaSession } from './useMediaSession.js';
 import { useEngine } from './audio/useEngine.js';
@@ -78,6 +79,10 @@ export default function App() {
   const isMobile = useIsMobile();
   // The scene draws less when the audio thread starts missing its deadline.
   const strain = useAudioStrain(engine, playing);
+  // ...and less again if the listener has asked it to, for good. Nothing in the
+  // signal path is on this switch: the room being convolved is the same room
+  // either way, only the picture of it is cheaper.
+  const [effects, setEffects] = useSceneEffects();
 
   // derived
   const venue = findVenue(venueId);
@@ -462,6 +467,8 @@ export default function App() {
           onFileClick={openFilePicker}
           onVenueClick={openVenuePicker}
           strain={strain}
+          effects={effects}
+          onEffectsChange={setEffects}
         />
         {pickers}
       </>
@@ -478,6 +485,7 @@ export default function App() {
         title={upload ? upload.name : null}
         artist={upload ? upload.artist : null}
         strain={strain}
+        effects={effects}
       />
 
       <TopBar
@@ -486,6 +494,8 @@ export default function App() {
         audioStatus={audioStatus}
         onFileClick={openFilePicker}
         onVenueClick={openVenuePicker}
+        effects={effects}
+        onEffectsChange={setEffects}
       />
       <LeftDataPanel venue={venue} />
       <RightDataPanel venue={venue} file={displayFile} />
