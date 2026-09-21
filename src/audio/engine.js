@@ -51,6 +51,8 @@ const DECODE_SHARE = 0.12;
 // suspension costs a round trip through the event loop, so this is enough to
 // look continuous and few enough to be free.
 const PROGRESS_STEPS = 40;
+// The highest rate the live context is allowed to run at — see _ensureGraph.
+const MAX_CONTEXT_RATE = 48000;
 
 export class ConcertEngine {
   constructor() {
@@ -126,7 +128,24 @@ export class ConcertEngine {
     // run at, and a graph with no margin left is one governor step away from
     // missing its deadline. Not a sample of the signal path differs; there is
     // simply somewhere for a late quantum to go.
+    //
+    // The rate is capped at 48 kHz. Left alone the context runs at whatever the
+    // output device is set to, and a device set to 192 kHz — a DAC, or a driver
+    // update changing the Windows default format — makes every node, the
+    // convolver above all, do four times the work of 48 kHz. That is more than
+    // the audio thread can finish in real time: measured on such a device, the
+    // context clock advanced at about a third of wall-clock speed and nothing
+    // audible came out. The browser resamples to the device at the output, and
+    // the responses are synthesised at the context's rate, so nothing about the
+    // room changes but its cost.
     this.ctx = new AC({ latencyHint: 'playback' });
+    if (this.ctx.sampleRate > MAX_CONTEXT_RATE) {
+      try {
+        const capped = new AC({ latencyHint: 'playback', sampleRate: MAX_CONTEXT_RATE });
+        this.ctx.close().catch(() => {});
+        this.ctx = capped;
+      } catch (e) { /* this browser cannot pick a rate; keep the device's */ }
+    }
     this._watchLoad();
 
     this.audioEl = new Audio();
