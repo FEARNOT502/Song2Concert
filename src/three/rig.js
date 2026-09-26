@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { APP, V3, aluminium, blackSteel, concreteTex, glowMat, grilleTex, lerp, phys, prng, seatStripTex, smooth, stageTex, std, withRepeat } from './core.js';
+import { APP, V3, aluminium, blackSteel, clamp, concreteTex, glowMat, grilleTex, lerp, phys, prng, seatStripTex, smooth, stageTex, std, withRepeat } from './core.js';
 import { humanGeometry } from './people.js';
 
 export const MATS = {};
@@ -628,6 +628,84 @@ export function ringPath({ hx, hz, zc, rc }) {
   return { pts, at };
 }
 
+// The stairs that make every tier of a bowl reachable on foot. As in the
+// building, they are not cut through the seating: a flight runs along the
+// concourse between two tiers, up from the lower tier's back row — through an
+// opening in its back wall — to the upper tier's front row. Where a lower
+// stand begins too high to step onto from the floor (an outfield stand above
+// its fence), a flight runs along the wall in front of it instead. One every
+// `every` metres round the bowl, staggered tier to tier. Returns the step
+// boxes and, per tier, the path segments whose back wall is left open.
+export function accessStairs(path, s0, TD, { every = 40, block, aisle, rise = 0.25, run = 0.28 }) {
+  const P = path.pts;
+  const openings = TD.map(() => new Set());
+  const geos = [];
+  const list = [];      // where each flight is: the way on and the way off
+  if (!every) return { openings, geos, list };
+  const total = s0[P.length - 1];
+  const closed = Math.hypot(path.at(P[0], 0).x - path.at(P[P.length - 1], 0).x, path.at(P[0], 0).z - path.at(P[P.length - 1], 0).z) < 1e-3;
+  const loc = (s) => {
+    if (closed) s = ((s % total) + total) % total;
+    s = clamp(s, 0, total);
+    let k = 0;
+    while (k < P.length - 2 && s0[k + 1] < s) k++;
+    return { k, f: clamp((s - s0[k]) / Math.max(1e-6, s0[k + 1] - s0[k])) };
+  };
+  // the outline at arc s (measured at offset 0), pushed out by d
+  const pt = (s, d) => {
+    const { k, f } = loc(s);
+    const a = path.at(P[k], d), b = path.at(P[k + 1], d);
+    return { x: lerp(a.x, b.x, f), z: lerp(a.z, b.z, f), k, f };
+  };
+  const liftAt = (D, s) => { const { k, f } = loc(s); return lerp(D.lift[k], D.lift[k + 1], f); };
+  const inclAt = (D, s) => D.incl[loc(s).k];
+  // a flight between offsets d0..d1 that climbs along the outline from y0 to
+  // y1, arriving at arc sTop; each step follows the curve
+  const flight = (sTop, d0, d1, y0, y1, base) => {
+    const n = Math.max(1, Math.ceil((y1 - y0) / rise));
+    const dm = (d0 + d1) / 2;
+    for (let i = 0; i < n; i++) {
+      const a = pt(sTop - (n - i) * run, dm), b = pt(sTop - (n - i - 1) * run, dm);
+      const tx = b.x - a.x, tz = b.z - a.z;
+      const top = y0 + (y1 - y0) * (i + 1) / n;
+      const g = new THREE.BoxGeometry(d1 - d0, Math.max(0.05, top - base(top)), Math.hypot(tx, tz) + 0.02);
+      g.rotateY(Math.atan2(tx, tz));
+      g.translate((a.x + b.x) / 2, (top + base(top)) / 2, (a.z + b.z) / 2);
+      geos.push(g);
+    }
+    return n * run;
+  };
+  const nAisles = Math.floor(total / block);
+  const stride = Math.max(1, Math.round(every / block));
+  TD.forEach((D, ti) => {
+    for (let a = (ti * 2) % stride; a < nAisles; a += stride) {
+      const sTop = a * block + aisle / 2;
+      if (!inclAt(D, sTop)) continue;
+      const top = D.tops[0] + liftAt(D, sTop);
+      if (ti === 0) {
+        // along the wall, from the floor up to the front row
+        if (top <= 1.4) continue;
+        const L = Math.ceil(top / rise) * run;
+        if (!inclAt(D, sTop - L)) continue;
+        flight(sTop, D.inner - 1.2, D.inner, 0, top, () => 0);
+        list.push({ tier: 0, from: pt(sTop - L + run, D.inner - 1.8), start: pt(sTop - L + run, D.inner - 0.6), end: pt(sTop - run / 2, D.inner - 0.6), to: pt(sTop - run / 2, D.inner + 0.45), y: top });
+        continue;
+      }
+      // along the concourse, from the tier below's back row to this one's front
+      const B = TD[ti - 1];
+      if (D.inner - B.back < 0.8) continue;
+      const low = B.tops[B.tops.length - 1] + liftAt(B, sTop);
+      const L = Math.ceil((top - low) / rise) * run;
+      if (!inclAt(B, sTop) || !inclAt(B, sTop - L) || !inclAt(D, sTop - L)) continue;
+      flight(sTop, B.back, D.inner, low, top, (y) => Math.max(low - 0.5, y - 1.8));
+      const dm = (B.back + D.inner) / 2;
+      list.push({ tier: ti, from: pt(sTop - L + run * 1.5, B.back - 0.4), start: pt(sTop - L + run * 1.5, dm), end: pt(sTop - run / 2, dm), to: pt(sTop - run / 2, D.inner + 0.45), y: top });
+      for (let k = 0; k < P.length - 1; k++) if (s0[k + 1] > sTop - L - 0.3 && s0[k] < sTop + 0.3) openings[ti - 1].add(k);
+    }
+  });
+  return { openings, geos, list };
+}
+
 // tiers: [{ rows, rise, riseFar, run, yBase, inset, cutZ, crowd: bool, ribbon: bool, face }]
 export function buildBowl(pipe, {
   hx, hz, zc, rc, tiers, seatColor = 0x2a2e3a, seatSpacing = 0.5, block = 14, aisle = 1.3,
@@ -636,6 +714,7 @@ export function buildBowl(pipe, {
   occ = null,          // (x, z) => occupancy multiplier
   path: givenPath = null, // any outline with the ringPath interface (open or closed)
   caps = false,        // close the ends of an open outline with walls
+  access = 40,         // metres of aisle between the stairs up to each tier; 0 for none
 }) {
   const path = givenPath || ringPath({ hx, hz, zc, rc });
   const P = path.pts;
@@ -656,7 +735,9 @@ export function buildBowl(pipe, {
   const s0 = [0];
   for (let k = 1; k < P.length; k++) { const a = path.at(P[k - 1], 0), b = path.at(P[k], 0); s0.push(s0[k - 1] + Math.hypot(b.x - a.x, b.z - a.z)); }
   const inAisle = (s) => { const m = s % block; return m < aisle; };
-  tiers.forEach((T, ti) => {
+  // every tier's rows, lift and extent first: the stairs between tiers need
+  // to know them all before any wall is built
+  const TD = tiers.map((T) => {
     const cut = T.cutZ ?? -Infinity;
     let y = T.yBase;
     const tops = [];
@@ -670,6 +751,11 @@ export function buildBowl(pipe, {
       const a = path.at(P[k], inner), b = path.at(P[k + 1], inner);
       return !(Math.min(a.z, b.z) < cut || (T.where && !T.where((a.x + b.x) / 2, (a.z + b.z) / 2)));
     });
+    return { T, cut, tops, inner, back: inner + T.rows * T.run, lift, incl };
+  });
+  const access_ = accessStairs(path, s0, TD, { every: access, block, aisle });
+  tiers.forEach((T, ti) => {
+    const { cut, tops, inner, lift, incl } = TD[ti];
     // tier front face (the fascia/balcony front), from below the tier to its first tread
     const f0 = ti === 0 ? 0 : T.yBase - (T.face ?? 2.6);
     for (let k = 0; k < P.length - 1; k++) {
@@ -731,7 +817,8 @@ export function buildBowl(pipe, {
     const dB = inner + T.rows * T.run;
     for (let k = 0; k < P.length - 1; k++) {
       const a = path.at(P[k], dB), b = path.at(P[k + 1], dB);
-      if (!incl[k]) continue;
+      // left open where a flight of stairs goes up through it to the tier above
+      if (!incl[k] || access_.openings[ti].has(k)) continue;
       const n = V3(-(a.nx + b.nx) / 2, 0, -(a.nz + b.nz) / 2).normalize();
       const topY = tops[T.rows - 1];
       const ta = topY + lift[k], tb = topY + lift[k + 1];
@@ -763,6 +850,8 @@ export function buildBowl(pipe, {
   const conc = withRepeat(concreteTex({ key: `bowlconc${concreteTone}`, tone: concreteTone }), 1 / 4, 1 / 4);
   const struct = new THREE.Mesh(mk(pos, nor, uvs), std({ ...conc, color: 0xffffff, roughness: 0.95 }));
   struct.receiveShadow = true;
+  const stairs = access_.geos.length ? new THREE.Mesh(mergeGeometries(access_.geos), struct.material) : null;
+  if (stairs) { stairs.receiveShadow = true; stairs.userData.flights = access_.list; }
   const sg = mk(sPos, sNor, sUv);
   sg.setAttribute('uv1', new THREE.Float32BufferAttribute(sUv2, 2));
   const stripSet = seatStripTex(seatColor);
@@ -779,6 +868,7 @@ export function buildBowl(pipe, {
   seats.userData.noCollide = true;
   const g = new THREE.Group();
   g.add(struct, seats);
+  if (stairs) g.add(stairs);
   if (tPos.length) {
     const tarp = new THREE.Mesh(mk(tPos, tNor, tUv), std({ color: 0x050506, roughness: 0.75, metalness: 0.05, side: THREE.DoubleSide }));
     g.add(tarp);

@@ -465,9 +465,9 @@ export function silhouettes(people, cu, { seed = 5 } = {}) {
   return mesh;
 }
 
-// One light per person: a lightstick under central control (the palette,
-// running in waves round the house) or a phone's torch, switched from the UI.
-export function crowdLights(people, cu, { sync = true, size = 0.07, maxPx = 7 } = {}) {
+// One light per person: a lightstick, held steady in one of the palette's
+// colours, or a phone's torch, switched from the UI.
+export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
   const n = people.length;
   const pos = new Float32Array(n * 3), look = new Float32Array(n * 4);
   const rnd = prng(911);
@@ -482,23 +482,22 @@ export function crowdLights(people, cu, { sync = true, size = 0.07, maxPx = 7 } 
   geo.setAttribute('aLook', new THREE.BufferAttribute(look, 4));
   const mat = new THREE.ShaderMaterial({
     uniforms: {
-      uTime: cu.uTime, uKick: cu.uKick, uEnergy: cu.uEnergy,
-      uScale: { value: 800 }, uMax: { value: maxPx }, uGain: { value: 1 }, uSync: { value: sync ? 1 : 0 },
+      uTime: cu.uTime,
+      uScale: { value: 800 }, uMax: { value: maxPx }, uGain: { value: 1 },
       uMode: { value: 0 }, uHouse: { value: 0 },
       uPal: { value: [V3(1, 0.6, 0.3), V3(0.8, 0.4, 1), V3(0.5, 0.7, 1), V3(1, 0.85, 0.55)] },
       tGlow: { value: glowSprite() },
     },
     vertexShader: /* glsl */`
       attribute vec4 aLook;
-      uniform float uTime, uKick, uEnergy, uScale, uMax, uSync, uMode, uHouse;
+      uniform float uTime, uScale, uMax, uMode, uHouse;
       uniform vec3 uPal[4];
       varying vec3 vC;
       void main() {
         vec4 mv = modelViewMatrix * vec4(position, 1.0);
         float d = -mv.z;
-        float wave = sin(position.x * 0.05 + position.z * 0.035 - uTime * 1.6);
-        int k = int(mod(aLook.y + (uSync > 0.5 ? step(0.0, wave) + floor(uTime * 0.25) : 0.0), 4.0));
-        vec3 stick = uPal[k] * (0.6 + 0.4 * uKick * (0.5 + 0.5 * wave)) * (0.65 + 0.35 * uEnergy);
+        // a stick keeps its colour and its brightness: no waves, no beat
+        vec3 stick = uPal[int(aLook.y)] * 0.75;
         float tw = 0.75 + 0.25 * sin(uTime * 2.3 + aLook.x);
         vec3 flash = vec3(1.0, 0.95, 0.88) * tw * 1.25;
         // most hold a stick; fewer have a phone up at any moment

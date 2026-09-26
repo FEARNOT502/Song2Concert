@@ -353,7 +353,7 @@ export function buildDome(ctx) {
       fieldPeople.push({ x: x + (rnd() - 0.5) * 0.18, y: 0, z: z + (rnd() - 0.5) * 0.2, h: 0.92 + rnd() * 0.14 });
     }
   }
-  bigCrowd(root, cu, q, fieldPeople.concat(bowl.people.map((p) => ({ ...p, h: 0.97 }))), { seed: 21, sync: true });
+  bigCrowd(root, cu, q, fieldPeople.concat(bowl.people.map((p) => ({ ...p, h: 0.97 }))), { seed: 21 });
   const aisleField = lightPoints(bowl.aisleLights.map((a) => ({ ...a, white: true, size: 0.04 })), cu, { maxPx: 3 });
   aisleField.material.uniforms.uGain.value = 0.25;
   root.add(aisleField);

@@ -233,7 +233,7 @@ export function buildStadium(ctx) {
   };
   const avoid = (x, z) => (Math.abs(x) < 3.6 && z < 56.5) || (Math.abs(x - eye.x) < 5 && Math.abs(z - eye.z) < 4.5);
   const standing = packFloor({ x0: -HX + 3, x1: HX - 3, z0: 37, z1: ZC + HZ - 3, avoid, inside: onPitch, seed: 177 });
-  bigCrowd(root, cu, q, standing.concat(bowl.people.map((p) => ({ ...p, h: 0.97 }))), { seed: 21, sync: true });
+  bigCrowd(root, cu, q, standing.concat(bowl.people.map((p) => ({ ...p, h: 0.97 }))), { seed: 21 });
   const aisleField = lightPoints(bowl.aisleLights.map((a) => ({ ...a, white: true, size: 0.05 })), cu, { maxPx: 3 });
   aisleField.material.uniforms.uGain.value = 0.25;
   root.add(aisleField);

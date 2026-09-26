@@ -15,11 +15,12 @@ import * as THREE from 'three';
 import { MeshBVH } from 'three-mesh-bvh';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { DEG, V3, clamp } from './core.js';
-import { mats } from './rig.js';
 
 export const WALK = {
   eye: 1.6,        // standing eye height above the floor
   step: 0.85,      // a step: a stand's row, a stair, a kerb
+  drop: 1.5,       // the most that is stepped down: a stage's front edge, a
+                   // balcony's or the pit's is a place to stop, not to fall from
   climb: 1.5,      // the most that is climbed onto, and only onto something
                    // broad — a stand's front row, a terrace, a low deck; an
                    // amp or a drum of the same height is walked round
@@ -40,8 +41,8 @@ export function collisionGeometry(root) {
     if (!o.isMesh || o.isInstancedMesh || o.isSkinnedMesh || o.userData.noCollide) return;
     const g = o.geometry;
     if (!g || g.isInstancedBufferGeometry || !g.attributes.position) return;
-    const mats = Array.isArray(o.material) ? o.material : [o.material];
-    if (mats.every((m) => !m || m.blending === THREE.AdditiveBlending || (m.transparent && m.opacity < 0.5) || m.visible === false)) return;
+    const list = Array.isArray(o.material) ? o.material : [o.material];
+    if (list.every((m) => !m || m.blending === THREE.AdditiveBlending || (m.transparent && m.opacity < 0.5) || m.visible === false)) return;
     const c = new THREE.BufferGeometry();
     c.setAttribute('position', g.attributes.position.clone());
     if (g.index) c.setIndex(g.index.clone());
@@ -151,7 +152,7 @@ export class Walker {
     if (!dx && !dz) return true;
     const x = this.feet.x + dx, z = this.feet.z + dz;
     const g = this.ground(x, z, this.gy + WALK.climb);
-    if (g === null) return false;
+    if (g === null || g < this.gy - WALK.drop) return false;
     const rise = g - this.gy;
     if (rise > WALK.step) {
       // broad enough? Most of a ring just inside the edge has to be at that

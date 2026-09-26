@@ -181,11 +181,11 @@ export function packFloor({ x0, x1, z0, z1, spacing = 0.62, avoid = null, seed =
 }
 
 // The crowd of a big room: silhouettes and their lights, thinned on Low.
-export function bigCrowd(root, cu, q, people, { seed = 21, sync = false } = {}) {
+export function bigCrowd(root, cu, q, people, { seed = 21 } = {}) {
   if (!q.crowd) return 0;
   const all = withCells(people, seed);
   const shown = q.crowd < 1 ? thin(all, Math.round(all.length * 0.7)) : all;
   root.add(silhouettes(shown, cu, { seed }));
-  root.add(crowdLights(shown, cu, { sync }));
+  root.add(crowdLights(shown, cu));
   return shown.length;
 }
