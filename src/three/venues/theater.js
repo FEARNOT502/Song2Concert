@@ -1,202 +1,404 @@
-// theater.js — a 3,000-seat proscenium house, 26 × 40 × 16 m.
-//
-// The arch is the room's defining object and the reason it sounds the way it
-// does: the stage house behind it is, acoustically, a hole in the wall, and a
-// good deal of what goes into it never comes back. So it is modelled as an
-// actual aperture in a full-height wall rather than painted on — you are looking
-// through a 14 m opening into a darker volume.
+// ─────────────────────────────────────────────────────────────────────────────
+// THEATER — a musical house after Blue Square's Shinhan Card Hall: three
+// levels (1,066 / 430 / 270 at the real one), the stalls 27 m deep from the
+// stage edge to the back row, the first balcony 18.5 m from the stage. A black
+// portal, the house curtain gathered up, a pit, box booms, and a show running.
+// Room model: 26 × 40 × 16 m, mid stalls, 14 m from the source.
+// ─────────────────────────────────────────────────────────────────────────────
 
 import * as THREE from 'three';
-import { ACCENT, WARM, basic, crowdField, lambert, makeScreen, prng, sparkField } from '../kit.js';
-import { drape, fixture, footlights, performer, rakedBlock, roomShell, seatBank, stageDeck, truss } from '../props.js';
-import { frame } from './frame.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { APP, KELVIN, V3, carpetTex, glowMat, prng, std, velvet, withRepeat, woodTex } from '../core.js';
+import { crowd3D, lightPoints } from '../people.js';
+import { drapeGeometry, ledScreen, lineArray, mats, performer, seatField, shadowSpot, stageDeck, stageSteps } from '../rig.js';
 
-// The proscenium opening, as a closed 2D path. Both the wall's hole and the gilt
-// trim around it are cut from this, so they can never drift apart.
-function openingPath(halfWidth, sill, springing, crown) {
-  const p = new THREE.Path();
-  p.moveTo(-halfWidth, sill);
-  p.lineTo(-halfWidth, springing);
-  p.quadraticCurveTo(0, crown, halfWidth, springing);
-  p.lineTo(halfWidth, sill);
-  p.lineTo(-halfWidth, sill);
-  return p;
-}
-
-export default function buildTheater(u) {
-  const f = frame('theater');
+export function buildTheater(ctx) {
+  const { pipe, q, cu } = ctx;
   const root = new THREE.Group();
+  const W = 26, D = 40, H = 16, X = W / 2;
+  const PZ = 4.0, PT = 0.7;            // proscenium wall: audience face at PZ + PT
+  const OW = 15.2, OB = 1.1, OT = 10.4; // opening width, sill (deck), head
+  const DECK = 1.1;
+  const APRON = 5.9;                    // stage edge
+  const PIT0 = APRON, PIT1 = 8.3;       // orchestra pit
+  const ROW0 = 8.9, ROWD = 0.95, ROWS = 28;
+  const rowY = (r) => 0.12 + r * 0.075 + r * r * 0.0032;
+  const eyeRow = Math.round((17 - ROW0) / ROWD);
+  const eye = V3(0, rowY(eyeRow) + 1.2, 17);
+  const tung = KELVIN(3200);
 
-  const ARCH_Z = 5.4, ARCH_D = 1.0;
-  const OPEN_HW = 7, SILL = 1.3, SPRING = 8.4, CROWN = 10.4;
-  const DECK = 1.15;
+  // ── materials ──
+  const walnut = woodTex({ key: 'walnut', planks: 8, joints: 1, base: [0.2, 0.11, 0.06], tone: 0.12, grain: 0.35, rough: 0.5, seed: 12 });
+  const wallMat = std({ ...withRepeat(walnut, 1 / 1.2, 1 / 4), roughness: 1 });
+  const black = std({ color: 0x050506, roughness: 0.9 });
+  const carpet = std({ ...withRepeat(carpetTex({ key: 'theatercarpet', base: [0.16, 0.035, 0.04] }), 16, 20), roughness: 1 });
+  const seatVel = velvet(0x7a0c16, 'seatred');
 
-  // ── the room ──
-  root.add(roomShell({
-    width: f.width, depth: f.depth, height: f.height,
-    faces: {
-      right: lambert(0x2c1e14, { emissive: 0x0a0705 }), left: lambert(0x2c1e14, { emissive: 0x0a0705 }),
-      ceiling: lambert(0x16100c), floor: lambert(0x14100c),
-      back: lambert(0x1e1610), stageEnd: lambert(0x050406),
-    },
-  }));
-
-  // ── stage house behind the arch ──
-  root.add(stageDeck({ width: 18, depth: 9, height: DECK, z: 1.6 }));
-  root.add(footlights({ width: 13, count: 22, y: DECK + 0.05, z: 6.02 }));
-
-  const screen = makeScreen({ w: 6.4, h: 4.5, pixels: false }, u);
-  screen.position.set(0, 5.4, 2.9);
-  root.add(screen);
-
-  // a shallow back-of-house wall, so the opening reads as depth rather than void
-  const rear = new THREE.Mesh(new THREE.PlaneGeometry(20, 14), lambert(0x0b0910));
-  rear.position.set(0, 7, 0.4);
-  root.add(rear);
-
-  // ── the proscenium wall, with the opening cut out of it ──
-  const wall = new THREE.Shape();
-  wall.moveTo(f.xMin, 0); wall.lineTo(f.xMax, 0);
-  wall.lineTo(f.xMax, f.height); wall.lineTo(f.xMin, f.height);
-  wall.lineTo(f.xMin, 0);
-  wall.holes.push(openingPath(OPEN_HW, SILL, SPRING, CROWN));
-  const arch = new THREE.Mesh(
-    new THREE.ExtrudeGeometry(wall, { depth: ARCH_D, bevelEnabled: false }),
-    lambert(0x2e2118, { emissive: 0x0d0906 }),
-  );
-  arch.position.z = ARCH_Z;
-  root.add(arch);
-
-  // gilt trim: the same opening, 0.3 m proud, extruded thin
-  const trimOuter = new THREE.Shape();
-  const outer = openingPath(OPEN_HW + 0.34, SILL - 0.34, SPRING + 0.2, CROWN + 0.42);
-  trimOuter.curves = outer.curves;
-  trimOuter.holes.push(openingPath(OPEN_HW, SILL, SPRING, CROWN));
-  const trim = new THREE.Mesh(
-    new THREE.ExtrudeGeometry(trimOuter, { depth: 0.16, bevelEnabled: false }),
-    basic(0x3e2b12),
-  );
-  trim.position.z = ARCH_Z + ARCH_D;
-  root.add(trim);
-
-  // ── drapes: legs either side of the opening, a border across the top ──
+  // ── the house ──
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D - PIT1), carpet);
+  floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0.01, (PIT1 + D) / 2); floor.receiveShadow = true;
+  root.add(floor);
   for (const side of [-1, 1]) {
-    const leg = drape({ width: 2.6, height: SPRING + 1.4, folds: 6 });
-    leg.position.set(side * (OPEN_HW - 1.2), (SPRING + 1.4) / 2 + SILL - 0.6, ARCH_Z - 0.2);
-    root.add(leg);
+    const wall = new THREE.Mesh(new THREE.PlaneGeometry(D - PZ, H), wallMat.clone());
+    wall.material.map = walnut.map.clone(); wall.material.map.repeat.set((D - PZ) / 1.2, H / 4);
+    wall.material.normalMap = walnut.normalMap.clone(); wall.material.normalMap.repeat.copy(wall.material.map.repeat);
+    wall.rotation.y = -side * Math.PI / 2;
+    wall.position.set(side * X, H / 2, (D + PZ) / 2);
+    wall.receiveShadow = true;
+    root.add(wall);
+    // acoustic fins down the side walls, catching the light edge-on
+    const fins = [];
+    for (let z = PZ + 3; z < D - 1; z += 1.4) { const f = new THREE.BoxGeometry(0.22, H - 1, 0.06); f.translate(side * (X - 0.11), H / 2 + 0.5, z); fins.push(f); }
+    root.add(new THREE.Mesh(mergeGeometries(fins), std({ color: 0x2a1a10, roughness: 0.6 })));
   }
-  const border = drape({ width: OPEN_HW * 2, height: 1.9, folds: 5, color: 0x1e0a09 });
-  border.position.set(0, CROWN - 0.6, ARCH_Z - 0.2);
-  root.add(border);
+  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W, D), std({ color: 0x08080a, roughness: 0.95 }));
+  ceil.rotation.x = Math.PI / 2; ceil.position.set(0, H, D / 2); root.add(ceil);
+  const backW = new THREE.Mesh(new THREE.PlaneGeometry(W, H), wallMat); backW.rotation.y = Math.PI; backW.position.set(0, H / 2, D); root.add(backW);
+  // FOH bridges: slots across the ceiling
+  for (const z of [11, 19]) {
+    const slot = new THREE.Mesh(new THREE.BoxGeometry(W - 2, 1.2, 1.6), std({ color: 0x030304, roughness: 1 }));
+    slot.position.set(0, H - 0.6, z); root.add(slot);
+  }
 
-  // ── boxes up the side walls ──
-  const rnd = prng(23);
-  const boxPeople = [];
-  for (let tier = 0; tier < 3; tier++) {
-    const y = 3.6 + tier * 3.1;
+  // ── proscenium wall with the opening ──
+  const wallShape = new THREE.Shape();
+  wallShape.moveTo(-X, 0); wallShape.lineTo(X, 0); wallShape.lineTo(X, H); wallShape.lineTo(-X, H); wallShape.lineTo(-X, 0);
+  const hole = new THREE.Path();
+  hole.moveTo(-OW / 2, OB); hole.lineTo(OW / 2, OB); hole.lineTo(OW / 2, OT); hole.lineTo(-OW / 2, OT); hole.lineTo(-OW / 2, OB);
+  wallShape.holes.push(hole);
+  const pros = new THREE.Mesh(new THREE.ExtrudeGeometry(wallShape, { depth: PT, bevelEnabled: false }), std({ ...withRepeat(walnut, 1 / 1.2, 1 / 4), roughness: 1 }));
+  pros.position.z = PZ;
+  pros.receiveShadow = true;
+  root.add(pros);
+  // the black portal frame inside the opening
+  const portal = [];
+  for (const [w, h, x, y] of [[OW + 1.2, 0.6, 0, OT + 0.3], [0.6, OT - OB, -OW / 2 - 0.3, (OT + OB) / 2], [0.6, OT - OB, OW / 2 + 0.3, (OT + OB) / 2]]) {
+    const b = new THREE.BoxGeometry(w, h, 0.3); b.translate(x, y, PZ + PT + 0.16); portal.push(b);
+  }
+  root.add(new THREE.Mesh(mergeGeometries(portal), black));
+
+  // house curtain: a gathered valance and two tabs
+  const houseVel = velvet(0x5a0710, 'housecurtain');
+  const valance = new THREE.Mesh(drapeGeometry(OW + 0.4, 1.7, 34, 0.12), houseVel);
+  valance.position.set(0, OT - 0.85, PZ + 0.35); root.add(valance);
+  for (const side of [-1, 1]) {
+    const tab = new THREE.Mesh(drapeGeometry(1.5, OT - OB, 9, 0.16), houseVel);
+    tab.position.set(side * (OW / 2 - 0.55), (OT + OB) / 2, PZ + 0.3); root.add(tab);
+    const tie = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.05, 6, 16), std({ color: 0x8a6a2a, metalness: 0.8, roughness: 0.35 }));
+    tie.rotation.x = Math.PI / 2; tie.position.set(side * (OW / 2 - 0.55), 4.2, PZ + 0.3); root.add(tie);
+  }
+
+  // ── stage house ──
+  const deck = stageDeck({ w: 24, d: 18, h: DECK, z: -14 + 9, lip: false, fascia: 0x050505 });
+  root.add(deck);
+  // apron, curved, out to the pit
+  const apron = stageDeck({ w: OW + 2, d: APRON - PZ - PT + 1, h: DECK, z: (PZ + PT + APRON) / 2 - 0.5, round: 0.8, fascia: 0x050505 });
+  root.add(apron);
+  // side steps from the house floor up to the apron, either side of the pit
+  for (const s of [-1, 1]) {
+    root.add(stageSteps({ x: s * 9.95, z: 8.45, h: DECK, dir: [0, -1], width: 1.4 }));
+    // a landing at the top, and a step across to the apron clear of the pit
+    const lm = std({ color: 0x0c0c0e, roughness: 0.8 });
+    const landing = new THREE.Mesh(new THREE.BoxGeometry(1.5, DECK, 2.15), lm);
+    landing.position.set(s * 9.9, DECK / 2, 5.775); root.add(landing);
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(1.3, DECK, 1.15), lm);
+    bridge.position.set(s * 8.55, DECK / 2, 5.275); root.add(bridge);
+  }
+  const lipM = glowMat(APP.accent, 0.35);
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(OW + 1.8, 0.02, 0.02), lipM);
+  lip.position.set(0, DECK - 0.01, APRON + 0.62); root.add(lip);
+  const stageBack = new THREE.Mesh(new THREE.PlaneGeometry(24, 16), black);
+  stageBack.position.set(0, 8, -14); root.add(stageBack);
+  // legs and borders: the black masking that makes wings
+  const maskMat = velvet(0x050505, 'blackvel', { sheenColor: new THREE.Color(0x151515) });
+  for (const z of [2.6, -1.0, -4.6]) {
     for (const side of [-1, 1]) {
-      const front = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.05, 17), lambert(0x3a2812, { emissive: 0x0e0904 }));
-      front.position.set(side * (f.width / 2 - 2.6), y + 0.5, 17.5);
-      root.add(front);
-      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.06, 17), basic(0x7a5624));
-      rail.position.set(side * (f.width / 2 - 2.6), y + 1.05, 17.5);
-      root.add(rail);
-      const floorSlab = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.3, 17), lambert(0x140e0a));
-      floorSlab.position.set(side * (f.width / 2 - 1.3), y - 0.15, 17.5);
-      root.add(floorSlab);
-      for (let k = 0; k < 14; k++) {
-        boxPeople.push({
-          x: side * (f.width / 2 - 1.9) + (rnd() - 0.5) * 0.5,
-          y, z: 9.5 + k * 1.2 + (rnd() - 0.5) * 0.3,
-          height: 1.24 + rnd() * 0.1, turn: side * 1.4,
-        });
-      }
+      const leg = new THREE.Mesh(drapeGeometry(2.4, 11, 6, 0.1), maskMat);
+      leg.position.set(side * (OW / 2 + 0.2 - (z < 0 ? 0.6 : 0)), DECK + 5.5, z); root.add(leg);
+    }
+    const border = new THREE.Mesh(drapeGeometry(OW + 2, 1.8, 10, 0.06), maskMat);
+    border.position.set(0, OT - 0.4 - (z < 0 ? 0.3 : 0), z); root.add(border);
+  }
+
+  // the set: an LED wall upstage, framed by two steel towers
+  const aspect = 16 / 9;
+  const SW = 12.4, SH = SW / aspect;
+  const screen = ledScreen({ w: SW, h: SH, tex: ctx.art.texture(aspect), pitch: 0.0039, bright: 1.3, frame: 0.2, lightPower: 1.7 });
+  screen.position.set(0, DECK + 1.2 + SH / 2, -6.2);
+  root.add(screen);
+  ctx.addScreen(screen, aspect, 'main');
+  const steel = std({ color: 0x1b1a1c, metalness: 0.8, roughness: 0.45 });
+  const practical = new THREE.MeshBasicMaterial({ color: KELVIN(2600).clone().multiplyScalar(6), toneMapped: false });
+  const practicals = [];
+  for (const side of [-1, 1]) {
+    const tw = [];
+    const x0 = side * 5.2;
+    for (const [dx, dz] of [[-0.9, -0.9], [0.9, -0.9], [-0.9, 0.9], [0.9, 0.9]]) { const p = new THREE.BoxGeometry(0.12, 6.4, 0.12); p.translate(x0 + dx, DECK + 3.2, -2.6 + dz); tw.push(p); }
+    for (const y of [3.0, 5.6]) {
+      const pl = new THREE.BoxGeometry(2.0, 0.12, 2.0); pl.translate(x0, DECK + y, -2.6); tw.push(pl);
+      for (const dz of [-0.95, 0.95]) { const r = new THREE.BoxGeometry(2.0, 0.05, 0.05); r.translate(x0, DECK + y + 1.0, -2.6 + dz); tw.push(r); }
+      const r2 = new THREE.BoxGeometry(0.05, 0.05, 2.0); r2.translate(x0 - side * 0.95, DECK + y + 1.0, -2.6); tw.push(r2);
+    }
+    for (let k = 0; k < 8; k++) { const st = new THREE.BoxGeometry(1.1, 0.08, 0.34); st.translate(x0 - side * 1.6, DECK + 0.37 * (k + 1), -2.6 + 1.2 - k * 0.3); tw.push(st); }
+    const tower = new THREE.Mesh(mergeGeometries(tw), steel);
+    tower.castShadow = true; tower.receiveShadow = true;
+    root.add(tower);
+    for (const y of [3.4, 6.0]) {
+      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), practical);
+      lamp.position.set(x0 - side * 0.8, DECK + y, -1.75); root.add(lamp);
+      practicals.push(pipe.flares.add(lamp.position, KELVIN(2600), 0.5, 0.6));
     }
   }
 
-  // ── raked stalls ──
-  const stalls = rakedBlock({
-    x0: f.xMin + 2.4, x1: f.xMax - 2.4, zNear: 8.5, zFar: 36,
-    rows: 28, riseFirst: 0.12, rise: 0.13, seatSpacing: 0.58,
-    headHeight: 1.26, seed: 41, fill: 0.94, color: 0x120c0a, tint: '#241708',
-  });
-  root.add(stalls.mesh);
-  // real seats in the rows you can actually resolve from mid-stalls
-  root.add(seatBank(stalls.treads.filter((s) => s.z < f.eye.z + 6), { color: 0x2a1a12 }));
-  // our own seat, and the one beside it, stay empty
-  const seated = stalls.people.filter((p) => !(Math.abs(p.z - f.eye.z) < 1.1 && Math.abs(p.x - f.eye.x) < 1.4));
-  root.add(crowdField(seated.concat(boxPeople), { color: 0x040409, react: 0.35, sway: 0.035 }, u));
+  // the stage stands empty between numbers: the lead's mark is a pool of
+  // followspot on the deck
+  const lead = { position: V3(-0.9, DECK, 3.3) };
 
-  // the rake under our feet decides the eye height, not a guess
-  const seatFloor = 0.12 + Math.floor((f.eye.z - 8.5) / ((36 - 8.5) / 28)) * 0.13;
-
-  // ── front-of-house bar + the bridge over the apron ──
-  const bar = truss(16, { size: 0.42, color: 0x231a12 });
-  bar.position.set(0, 12.4, 11);
-  root.add(bar);
-
-  const lamps = [];
-  for (let i = 0; i < 7; i++) {
-    const x = -6 + i * 2;
-    const fx = fixture({
-      color: i % 3 === 1 ? WARM : ACCENT,
-      beamLength: 13, spread: 1.4, opacity: 0.045, react: 0.8,
-    }, u);
-    fx.position.set(x, 12.1, 11);
-    fx.rotation.x = 0.62;
-    root.add(fx);
-    lamps.push(fx);
+  // ── the pit ──
+  const pitFloor = new THREE.Mesh(new THREE.PlaneGeometry(OW + 3, PIT1 - PIT0), std({ color: 0x080808, roughness: 1 }));
+  pitFloor.rotation.x = -Math.PI / 2; pitFloor.position.set(0, -2.2, (PIT0 + PIT1) / 2); root.add(pitFloor);
+  const pitWall = new THREE.Mesh(new THREE.BoxGeometry(OW + 3, 3.2, 0.2), std({ ...withRepeat(walnut, 3, 1), roughness: 1 }));
+  pitWall.position.set(0, -0.6, PIT1); root.add(pitWall);
+  const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, OW + 3, 8), std({ color: 0xb08a40, metalness: 1, roughness: 0.3 }));
+  rail.rotation.z = Math.PI / 2; rail.position.set(0, 1.02, PIT1); root.add(rail);
+  const pitLight = new THREE.PointLight(KELVIN(3000), 0, 9, 2);
+  pitLight.position.set(0, -0.6, (PIT0 + PIT1) / 2); root.add(pitLight);
+  // the players' way out, a flight at each end of the pit
+  for (const s of [-1, 1]) root.add(stageSteps({ x: s * 6.0, z: (PIT0 + PIT1) / 2, y0: -2.2, h: 0, dir: [s, 0], width: 1.4 }));
+  const standLights = [];
+  for (let i = 0; i < 16; i++) {
+    const x = -7 + i * 0.95, z = PIT0 + 0.6 + (i % 2) * 0.9;
+    standLights.push(pipe.flares.add(V3(x, -0.95, z), KELVIN(3000), 0.28, 0.45));
   }
-  // a second bar just inside the arch, washing the deck
-  for (let i = 0; i < 5; i++) {
-    const x = -4.8 + i * 2.4;
-    const fx = fixture({ color: ACCENT, beamLength: 8, spread: 1.0, opacity: 0.05 }, u);
-    fx.position.set(x, SPRING + 0.6, 4.2);
-    fx.rotation.x = 0.2;
-    root.add(fx);
-    lamps.push(fx);
+  const conductorHead = performer('conductor', { top: 0x050505, skin: 0.3, cast: false });
+  conductorHead.position.set(0.3, -1.4, PIT1 - 0.5); conductorHead.rotation.y = Math.PI; root.add(conductorHead);
+
+  // ── PA: centre cluster and left/right columns ──
+  const cluster = lineArray({ boxes: 6, width: 1.1, depth: 0.6, height: 0.34, splay: 0.05 });
+  cluster.position.set(0, OT + 2.4, PZ + PT + 0.7); root.add(cluster);
+  for (const side of [-1, 1]) {
+    const col = lineArray({ boxes: 12, width: 0.7, depth: 0.5, height: 0.3, splay: 0.012 });
+    col.position.set(side * (OW / 2 + 1.35), OT - 0.4, PZ + PT + 0.5); col.rotation.y = -side * 0.25; root.add(col);
   }
 
-  // ── performers downstage ──
-  for (const dx of [-3.2, -1.1, 1.1, 3.2]) {
-    const p = performer({ height: 1.74, arms: Math.abs(dx) > 2 });
-    p.position.set(dx, DECK, 4.6);
-    root.add(p);
+  // ── seats and people ──
+  const spots = [], people = [];
+  const rnd = prng(23);
+  const aisles = [-4.6, 4.6];
+  for (let r = 0; r < ROWS; r++) {
+    const z = ROW0 + r * ROWD;
+    const y = rowY(r);
+    const half = Math.min(X - 1.4, 8.5 + r * 0.14);
+    // curved rows, as in a fan-shaped house
+    for (let x = -half; x <= half; x += 0.54) {
+      if (aisles.some((a) => Math.abs(x - a) < 0.6)) continue;
+      const zc = z + (x * x) * 0.006;
+      const turn = Math.PI + Math.atan2(x, zc - 2) * 0.35;
+      spots.push({ x, y, z: zc, turn });
+      const mine = Math.abs(zc - eye.z) < 0.5 && Math.abs(x - eye.x) < 0.8;
+      if (!mine && rnd() < 0.94) people.push({ x, y: y + 0.02, z: zc - 0.05, turn: turn + (rnd() - 0.5) * 0.2, h: 0.93 + rnd() * 0.12 });
+    }
+  }
+  // raked floor under the stalls
+  const rake = [];
+  for (let r = 0; r < ROWS; r++) {
+    const b = new THREE.BoxGeometry(W - 0.2, rowY(r) + 0.01, ROWD); b.translate(0, rowY(r) / 2, ROW0 + r * ROWD + ROWD * 0.3); rake.push(b);
+  }
+  const rakeMesh = new THREE.Mesh(mergeGeometries(rake), carpet); rakeMesh.receiveShadow = true; root.add(rakeMesh);
+  const seatFrame = std({ color: 0x140c08, roughness: 0.5 });
+  // side balconies (slips) at the second and third levels, and the balcony
+  // fronts that wrap the back of the house
+  const slipPeople = [];
+  const balconyFront = std({ ...withRepeat(walnut, 3, 1), roughness: 1 });
+  const underGlow = [];
+  for (const [lvl, y] of [[2, 5.6], [3, 9.4]]) {
+    for (const side of [-1, 1]) {
+      const x0 = side * (X - 1.6);
+      const slab = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.35, 16), std({ color: 0x0c0806, roughness: 1 }));
+      slab.position.set(side * (X - 1.6), y - 0.18, 17); root.add(slab);
+      const front = new THREE.Mesh(new THREE.BoxGeometry(0.16, 1.05, 16), balconyFront);
+      front.position.set(x0 - side * 1.5, y + 0.5, 17); root.add(front);
+      const glow = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.03, 15.6), glowMat(KELVIN(2700), 1.5));
+      glow.position.set(x0 - side * 1.56, y - 0.38, 17); root.add(glow); underGlow.push(glow);
+      for (let k = 0; k < 2; k++) for (let z = 9.6; z < 24.6; z += 0.56) {
+        const sx = x0 - side * (0.7 - k * 0.9);
+        const sy = y + k * 0.35;
+        spots.push({ x: sx, y: sy, z, turn: -side * Math.PI / 2 + Math.PI * 0 - side * 0.35 });
+        if (rnd() < 0.9) slipPeople.push({ x: sx, y: sy + 0.02, z, turn: -side * Math.PI / 2 - side * 0.35, h: 0.95 + rnd() * 0.1 });
+      }
+    }
+    // the rear balcony front, behind us
+    const rf = new THREE.Mesh(new THREE.BoxGeometry(W - 6.4, 1.05, 0.16), balconyFront);
+    rf.position.set(0, y + 0.5, lvl === 2 ? 24.2 : 29); root.add(rf);
+    const rs = new THREE.Mesh(new THREE.BoxGeometry(W - 6.4, 0.4, D - (lvl === 2 ? 24.2 : 29)), std({ color: 0x0c0806 }));
+    rs.position.set(0, y - 0.2, (D + (lvl === 2 ? 24.2 : 29)) / 2); root.add(rs);
+  }
+  root.add(seatField(spots, { fabric: seatVel, frame: seatFrame }));
+  if (q.crowd) root.add(crowd3D(people.concat(slipPeople), cu, { kind: 'seated', detail: 1, seed: 5 }));
+  // aisle step lights
+  const stepPts = [];
+  for (const a of aisles) for (let r = 0; r < ROWS; r++) stepPts.push({ x: a + 0.5, y: rowY(r) + 0.06, z: ROW0 + r * ROWD, white: true, size: 0.02, phase: 0 });
+  const steps = lightPoints(stepPts, cu, { maxPx: 5 });
+  steps.material.uniforms.uGain.value = 0.35;
+  root.add(steps);
+  // exit signs
+  for (const side of [-1, 1]) for (const z of [9.5, 30]) {
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.18), glowMat(0x19c26a, 2.2));
+    sign.position.set(side * (X - 0.03), 2.6, z); sign.rotation.y = -side * Math.PI / 2; root.add(sign);
   }
 
-  // house dust in the FOH beams
-  const dust = Array.from({ length: 120 }).map(() => ({
-    x: (rnd() - 0.5) * 18, y: 2 + rnd() * 9, z: 2 + rnd() * 14,
-    size: 0.025 + rnd() * 0.035, color: 0xffca94, phase: rnd() * 6.283,
-  }));
-  root.add(sparkField(dust, { react: 0.3, base: 0.1, twinkle: 0.6, maxPx: 20 }, u));
+  // ── lighting rig ──
+  const rig = ctx.rig({ finish: 'black' });
+  // box booms on the side walls, near the stage
+  const booms = [];
+  for (const side of [-1, 1]) {
+    const pipeM = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 8, 6), mats().black);
+    pipeM.position.set(side * (X - 0.5), 7, 9.6); root.add(pipeM);
+    for (let i = 0; i < 5; i++) {
+      const f = rig.add({ kind: 'profile', pos: V3(side * (X - 0.8), 4 + i * 1.4, 9.6), color: KELVIN(3400), length: 24, scale: 0.7, beamGain: 0.06, flareGain: 0.6 });
+      rig.aim(f, V3(-side * 1.5 + side * i * 0.4, DECK + 1.2, 1.5 - i * 0.8));
+      booms.push(f);
+    }
+  }
+  // overhead backlight: moving heads on the upstage electric, above the border
+  const backs = [];
+  for (let i = 0; i < 8; i++) {
+    const f = rig.add({ kind: 'spot', pos: V3(-6.3 + i * 1.8, OT + 0.6, -3.4), color: 0xffffff, length: 18, scale: 0.8, beamGain: 1.0, flareGain: 0.4, angle: 0.07 });
+    backs.push(f);
+  }
+  // side light from the wings (dance booms)
+  const sides = [];
+  for (const side of [-1, 1]) for (const [y, z] of [[2.2, 0.8], [3.6, -2.8]]) {
+    const f = rig.add({ kind: 'profile', pos: V3(side * (OW / 2 + 1.0), DECK + y, z), color: 0xffffff, length: 18, scale: 0.7, beamGain: 0.3, flareGain: 0.2, angle: 0.13, body: true });
+    rig.aim(f, V3(-side * 4, DECK + 1.2, z + 0.4));
+    sides.push(f);
+  }
+  // followspots from the booth at the back
+  const follows = [];
+  for (const side of [-1, 1]) {
+    const f = rig.add({ kind: 'follow', pos: V3(side * 3.5, 13.2, D - 1.5), color: KELVIN(5600), length: 44, scale: 1.2, beamGain: 0.35, flareGain: 0.6, body: false, soft: 0.2 });
+    follows.push(f);
+  }
+  // FOH front light from the ceiling bridges (above frame; their beams cross it)
+  const fohs = [];
+  for (const z of [11, 19]) for (let i = 0; i < 6; i++) {
+    const f = rig.add({ kind: 'profile', pos: V3(-6 + i * 2.4, H - 1.3, z), color: KELVIN(3200), length: 26, scale: 0.7, beamGain: 0.02, flareGain: 0.4 });
+    rig.aim(f, V3(-4 + i * 1.6, DECK + 1.3, 2.2 - (z - 11) * 0.1));
+    fohs.push(f);
+  }
 
-  root.add(new THREE.AmbientLight(0x2a2230, 1.25));
-  const key = new THREE.PointLight(0xffb87a, 90, 40, 2);
-  key.position.set(0, 8, 7.5);
-  root.add(key);
-  const house = new THREE.PointLight(0x6a5880, 110, 46, 2);
-  house.position.set(0, 12, 14);
-  root.add(house);
+  // real light: two shadowed front lights, a colour wash, a backlight, the pit
+  const front1 = shadowSpot(tung, 0, { angle: 0.32, penumbra: 0.6, size: q.shadowSize, far: 40, cast: q.shadows });
+  front1.position.set(-5, H - 1.3, 12); front1.target.position.set(-0.5, DECK, 1.5);
+  const front2 = shadowSpot(tung, 0, { angle: 0.32, penumbra: 0.6, size: q.shadowSize, far: 40, cast: q.shadows });
+  front2.position.set(6, H - 1.3, 14); front2.target.position.set(0.5, DECK, 0.5);
+  const washA = shadowSpot(0xffffff, 0, { angle: 0.6, penumbra: 1, cast: false });
+  washA.position.set(0, OT + 1, -2); washA.target.position.set(0, DECK, 2);
+  const backC = shadowSpot(0xffffff, 0, { angle: 0.7, penumbra: 1, cast: false });
+  backC.position.set(0, OT + 0.8, -5); backC.target.position.set(0, DECK, 3);
+  const followL = shadowSpot(KELVIN(5600), 0, { angle: 0.035, penumbra: 0.4, cast: false });
+  for (const s of [front1, front2, washA, backC, followL]) { root.add(s); root.add(s.target); }
+  const houseLights = [];
+  for (const [x, z] of [[-6, 12], [6, 12], [-6, 24], [6, 24], [0, 32]]) {
+    const l = new THREE.PointLight(KELVIN(2800), 0, 30, 2);
+    l.position.set(x, H - 1, z); root.add(l); houseLights.push(l);
+  }
+  root.add(new THREE.HemisphereLight(0x1a1418, 0x080506, 0.12));
+  // what the stage throws back into the house: a broad soft source in the
+  // opening, coloured by the show
+  const bounce = new THREE.RectAreaLight(0xffffff, 0, OW, OT - OB);
+  bounce.position.set(0, (OT + OB) / 2, PZ + PT + 1.2); bounce.lookAt(0, (OT + OB) / 2, 30);
+  root.add(bounce);
+  // curtain warmers from the first bridge onto the valance and tabs
+  const warmers = [];
+  for (const side of [-1, 1]) {
+    const w = shadowSpot(KELVIN(2900), 0, { angle: 0.5, penumbra: 1, cast: false });
+    w.position.set(side * 4, H - 1.2, 11); w.target.position.set(side * 5, OT - 1.5, PZ + 0.5);
+    root.add(w, w.target); warmers.push(w);
+  }
+  // little shaded lamps along the balcony fronts
+  const lampFl = [];
+  const lampMat = glowMat(KELVIN(2500), 3.5);
+  for (const [y] of [[5.6], [9.4]]) for (const side of [-1, 1]) for (let z = 10; z <= 24; z += 2.8) {
+    const lp = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.08, 0.12, 10, 1, true), lampMat);
+    lp.position.set(side * (X - 3.18), y + 1.1, z); root.add(lp);
+    lampFl.push(pipe.flares.add(lp.position, KELVIN(2500), 0.35, 0.5));
+  }
+  // grazers at the foot of the proscenium wall, up the walnut
+  const grazers = [];
+  for (const side of [-1, 1]) for (const x of [9.2, 11.6]) {
+    const gz = shadowSpot(KELVIN(2700), 0, { angle: 0.5, penumbra: 1, cast: false });
+    gz.position.set(side * x, 0.4, PZ + PT + 0.35); gz.target.position.set(side * x, 9, PZ + PT - 0.2);
+    root.add(gz, gz.target); grazers.push(gz);
+  }
+  const wallWash = [];
+  for (const side of [-1, 1]) for (const z of [12, 21]) {
+    const l = new THREE.PointLight(KELVIN(2500), 0, 9, 2);
+    l.position.set(side * (X - 3.3), 7.4, z); root.add(l); wallWash.push(l);
+  }
 
+  // haze points: the screen, the practicals, the followspot booth
+  const hz = pipe.haze;
+  const offs = [[-0.6, 0.4], [0.6, 0.4], [-0.6, -0.4], [0.6, -0.4], [0, 0]];
+  const hzs = offs.map(([dx, dy]) => hz.add(V3(dx * SW * 0.5, screen.position.y + dy * SH * 0.5, -5.8), 0xffffff, 0));
+  ctx.screenHaze(screen, hzs, offs);
+  screen.userData.hazePower = 26;
+  const hzBooth = [-1, 1].map((s) => hz.add(V3(s * 3.5, 13.2, D - 1.6), KELVIN(5600), 0));
+  const hzStage = hz.add(V3(0, DECK + 3, 1), tung, 0);
+
+  let aimT = 0;
   return {
-    root,
-    screen,
-    camera: {
-      position: new THREE.Vector3(0, seatFloor + f.eye.y, f.eye.z),
-      target: new THREE.Vector3(0, 5.2, 3.4),
-      fov: 54,
-    },
-    background: new THREE.Color(0x040308),
-    fog: new THREE.Fog(0x0a0709, 12, 62),
-    bloom: { strength: 0.5, radius: 0.7, threshold: 0.48 },
-    update(t, pulse) {
-      screen.userData.update(pulse);
-      key.intensity = 110 + pulse * 30;
-      lamps.forEach((fx, i) => {
-        fx.rotation.z = Math.sin(t * 0.5 + i * 1.3) * 0.055;
-        if (fx.userData.glare) fx.userData.glare.material.opacity = 0.26 + pulse * 0.16 * (0.5 + 0.5 * Math.sin(t * 2 + i));
+    root, eye,
+    camera: { pos: eye, target: V3(0, 5.3, 0), fov: 54, near: 0.1, far: 120 },
+    background: new THREE.Color(0),
+    fog: new THREE.FogExp2(0x050304, 0.008),
+    hazeDensity: 0.0014, beamGain: 0.3, hazeAmb: new THREE.Color(0x030202), hazeAmbDist: 90,
+    bloom: { strength: 0.55, radius: 0.6, threshold: 1.1 },
+    grade: { exposure: 1.25, vignette: 0.42, ca: 0.004, grain: 0.04, sat: 1.06, lift: [0.01, 0.006, 0.006] },
+    env: { w: W, h: H, d: D, eye, wall: 0x1a0d08, floor: 0x0c0405, emitters: [
+      { w: SW, h: SH, pos: V3(0, screen.position.y, -6), normal: V3(0, 0, 1), screen: true, power: 1.4, aspect },
+      { w: 12, h: 3, pos: V3(0, DECK + 0.5, 1), normal: V3(0, 1, 0), color: tung, power: 3 },
+    ] },
+    envIntensity: 0.55,
+    update(f) {
+      const show = 1 - f.house;
+      const { a, b, c, d } = f.pal;
+      aimT += f.dt * (0.4 + f.energy * 0.6);
+      const leadPos = V3(lead.position.x, DECK + 1.3, lead.position.z);
+      front1.intensity = (170 + f.energy * 60) * show + 60 * f.house;
+      front2.intensity = (140 + f.energy * 50) * show + 50 * f.house;
+      washA.color.copy(a); washA.intensity = (120 + f.energy * 200 + f.kick * 80) * show;
+      backC.color.copy(b); backC.intensity = (140 + f.energy * 220 + f.snare * 90) * show;
+      followL.position.set(3.5, 13.2, D - 1.5); followL.target.position.copy(leadPos); followL.target.updateMatrixWorld();
+      followL.intensity = 900 * show;
+      booms.forEach((fx) => { fx.color.copy(tung); fx.intensity = 0.8 * show + 0.1 * f.house; });
+      fohs.forEach((fx) => { fx.intensity = 0.9 * show + 0.15 * f.house; });
+      backs.forEach((fx, i) => {
+        const sw = Math.sin(aimT * 1.3 + i * 0.8);
+        fx.color.copy(i % 2 ? b : a);
+        rig.aim(fx, V3(-6.3 + i * 1.8 + sw * 2.2, DECK, 1.8 + Math.cos(aimT + i) * 1.5));
+        fx.intensity = (0.25 + 0.55 * f.energy + (i % 2 ? f.snare : f.kick) * 0.4) * show;
       });
+      sides.forEach((fx, i) => { fx.color.copy(i % 2 ? c : d); fx.intensity = (0.35 + 0.45 * f.energy) * show; });
+      follows.forEach((fx) => { rig.aim(fx, leadPos); fx.intensity = 1.4 * show; });
+      practicals.forEach((p, i) => { p.intensity = (0.45 + 0.1 * Math.sin(f.t * 2 + i)) * (0.6 + 0.4 * show); });
+      standLights.forEach((p) => { p.intensity = 0.4 * show + 0.25 * f.house; });
+      pitLight.intensity = 3 * show + 1 * f.house;
+      houseLights.forEach((l) => { l.intensity = 420 * f.house; });
+      bounce.color.copy(tung).lerp(a, 0.4).lerp(b, 0.2);
+      bounce.intensity = (0.9 + f.energy * 0.6 + f.kick * 0.2) * show + 0.3 * f.house;
+      warmers.forEach((w) => { w.intensity = 60 * show + 120 * f.house; });
+      wallWash.forEach((l) => { l.intensity = 6 + 20 * f.house; });
+      grazers.forEach((g) => { g.intensity = 18 + 40 * f.house; });
+      underGlow.forEach((g) => g.material.color.copy(KELVIN(2700)).multiplyScalar(0.6 + 1.6 * f.house));
+      steps.material.uniforms.uGain.value = 0.3 + 0.2 * f.house;
+      lipM.color.setHex(APP.accent).multiplyScalar(0.25 + 0.3 * f.kick * show);
+      hzBooth.forEach((h) => { h.power = 30 * show; });
+      hzStage.power = (20 + f.energy * 20) * show + 6 * f.house;
+      cu.uRimColor.value.copy(tung).lerp(a, 0.35).multiplyScalar(0.05 * show + 0.01);
+      cu.uStage.value.set(0, 5, 0);
+      cu.uWash.value.copy(tung).multiplyScalar(0.02 * show);
+      cu.uAmb.value.setRGB(0.008, 0.006, 0.005).multiplyScalar(1 + f.house * 6);
     },
   };
 }

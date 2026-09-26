@@ -1,225 +1,178 @@
-// arena.js — Saitama Super Arena in arena mode: 110 × 130 × 33 m, 22,500 seats,
-// seen from the FOH position 35 m out on the floor.
-//
-// The sight line is the honest one. FOH is on a riser in the middle of a standing
-// floor, so the bottom of the frame is the back of the crowd's heads and the show
-// is above them. The rig overhead is what a room this size needs: two trusses of
-// moving heads, two line-array hangs, and a wall of LED big enough to be seen
-// from the back of the upper bowl.
+// ─────────────────────────────────────────────────────────────────────────────
+// ARENA — Saitama Super Arena in arena mode: 110 × 130 × 37 m, 22,500 seats,
+// seen from FOH 35 m out on a standing floor. The 200 level, the three-row
+// 300 balcony, the 400 level above it and the 500 level along the middle of
+// each side; a stage set of its own with the seats behind it left empty; a
+// roof of deep steel over a rig of three trusses.
+// ─────────────────────────────────────────────────────────────────────────────
 
 import * as THREE from 'three';
-import { ACCENT, COOL, MAGENTA, crowdField, lambert, makeScreen, prng, sparkField } from '../kit.js';
-import {
-  ampStack, bowl, fixture, footlights, lineArray, monitorWedge, performer,
-  ribbonRing, roomShell, seatBank, thin, speakerStack, stageDeck, standingCrowd, truss,
-} from '../props.js';
-import { frame } from './frame.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { APP, KELVIN, V3, concreteTex, std, withRepeat } from '../core.js';
+import { lightPoints } from '../people.js';
+import { ampStack, buildBowl, drumKit, guitar, hoists, keyboardRig, latticeInto, lineArray, micStand, ribbonBoards, shadowSpot, stageDeck, stageSteps, subStack, truss, wedge } from '../rig.js';
+import { bigCrowd, bigScreens, fohPosition, packFloor, runLasers, runShow, stageSet } from '../show.js';
 
-export default function buildArena(u) {
-  const f = frame('arena');
+export function buildArena(ctx) {
+  const { pipe, q, cu } = ctx;
   const root = new THREE.Group();
-  const DECK = 2.2, RIG_Y = 19, CLEAR = 9;
-  // The bowl's inner edge. It runs behind the stage as well, so the building is
-  // drawn longer than the acoustic box, which stops at the stage-end wall — the
-  // block behind the stage is part of the arena, just not part of the room the
-  // reverb is computed in.
-  const BOWL_X = 26, BOWL_Z0 = 2, BOWL_Z1 = 64, BACKSTAGE = 30;
+  const W = 110, D = 130, H = 37;
+  const DECK = 2.2, RIG = 20;
+  const eye = V3(0, 1.6 + 0.9, 43);
+  const STAGE = V3(0, DECK, 8);
 
-  const shell = roomShell({
-    width: f.width, depth: f.depth + BACKSTAGE, height: f.height,
-    faces: {
-      right: lambert(0x0d0c12), left: lambert(0x0d0c12),
-      ceiling: lambert(0x0a0910), floor: lambert(0x0c0b10),
-      back: lambert(0x0b0a10), stageEnd: lambert(0x070610),
-    },
-  });
-  shell.position.z -= BACKSTAGE;
-  root.add(shell);
-
-  // roof structure — girders across the ceiling give the volume a scale
-  for (let i = 0; i < 7; i++) {
-    const g = truss(f.width - 8, { size: 1.4, color: 0x161520 });
-    g.position.set(0, f.height - 1.6, 8 + i * 17);
-    root.add(g);
-  }
-
-  // ── stage ──
-  // No seats behind or beside the stage: the stage end is closed off with flat
-  // masking, the way an end-stage production actually does it. One wall across
-  // the back, two returns out to the side stands.
-  const maskMat = lambert(0x0b0a11);
-  const backWall = new THREE.Mesh(new THREE.BoxGeometry(f.width, 21, 0.6), maskMat);
-  backWall.position.set(0, 10.5, -2.4);
-  root.add(backWall);
-  // the returns fill only the gap between the stage edge and the side stands;
-  // running them the full width would put a wall in front of the seating
-  for (const side of [-1, 1]) {
-    const wing = new THREE.Mesh(new THREE.BoxGeometry(BOWL_X - 15, 13, 0.6), maskMat);
-    wing.position.set(side * (15 + (BOWL_X - 15) / 2), 6.5, BOWL_Z0 - 0.6);
-    root.add(wing);
-  }
-  root.add(stageDeck({ width: 30, depth: 16, height: DECK, z: 7 }));
-  root.add(footlights({ width: 28, count: 34, y: DECK + 0.06, z: 15.05 }));
-
-  const screen = makeScreen({ w: 28, h: 13 }, u);
-  screen.position.set(0, DECK + 7.8, 1.6);
-  root.add(screen);
-
-  // side LED wings
-  const wings = [];
-  for (const side of [-1, 1]) {
-    const wing = makeScreen({ w: 6, h: 11, halo: MAGENTA, bezel: 0x8a4a2a, content: COOL }, u);
-    wing.position.set(side * 18.6, DECK + 7.4, 2.4);
-    wing.rotation.y = -side * 0.32;
-    root.add(wing);
-    wings.push(wing);
-  }
-
-  // upstage riser + band
-  const riser = new THREE.Mesh(new THREE.BoxGeometry(9, 1.1, 5), lambert(0x110e14));
-  riser.position.set(0, DECK + 0.55, 4.5);
-  root.add(riser);
-  const front = performer({ height: 1.8, arms: true });
-  front.position.set(0, DECK, 12.5);
-  root.add(front);
-  for (const [x, z] of [[-8, 9], [8, 9], [-4.5, 5.5], [4.5, 5.5]]) {
-    const p = performer({ height: 1.78 });
-    p.position.set(x, DECK, z);
-    root.add(p);
-  }
-  // backline and wedges — the floor of a stage this size is never empty
-  for (const [x, z] of [[-10.5, 5.2], [10.5, 5.2]]) {
-    const amp = ampStack({ count: 2 });
-    amp.position.set(x, DECK, z);
-    root.add(amp);
-  }
-  for (let i = 0; i < 7; i++) {
-    const wedge = monitorWedge();
-    wedge.position.set(-12 + i * 4, DECK, 13.4);
-    wedge.rotation.y = Math.PI;
-    root.add(wedge);
-  }
-
-  // ── rig ──
-  for (const z of [3.5, 9.5, 15.5]) {
-    const t = truss(34, { size: 1.0, color: 0x1c1a24 });
-    t.position.set(0, RIG_Y, z);
-    root.add(t);
-  }
-  for (const side of [-1, 1]) {
-    const hang = lineArray({ boxes: 14, width: 1.3 });
-    hang.position.set(side * 14, RIG_Y - 0.8, 6);
-    root.add(hang);
-    const outfill = lineArray({ boxes: 8, width: 1.0 });
-    outfill.position.set(side * 22, RIG_Y - 1.6, 8);
-    root.add(outfill);
-    for (const dz of [-1.2, 1.2]) {
-      const subs = speakerStack({ w: 2.2, h: 0.8, d: 1.2, count: 3 });
-      subs.position.set(side * 9, 0, 16.5 + dz);
-      root.add(subs);
-    }
-  }
-
-  const heads = [];
-  const PALETTE = [ACCENT, MAGENTA, COOL, 0xffd08a];
-  for (let i = 0; i < 16; i++) {
-    const x = -16 + (i % 8) * 4.6;
-    const z = i < 8 ? 3.5 : 15.5;
-    const color = PALETTE[i % PALETTE.length];
-    const fx = fixture({ color, beamLength: 34, spread: 3.0, opacity: 0.05, react: 1.1 }, u);
-    fx.position.set(x, RIG_Y - 0.9, z);
-    root.add(fx);
-    heads.push({ fx, i, x, z });
+  // ── the building ──
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D), std({ ...withRepeat(concreteTex({ key: 'arenafloor', tone: 0.1 }), W / 4, D / 4), roughness: 0.9 }));
+  floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, D / 2 - 10); floor.receiveShadow = true;
+  root.add(floor);
+  // the building's walls stand behind the last row of every level
+  const SX = 68, SZ0 = -42, SZ1 = 116;
+  const shellMat = std({ color: 0x0b0b0e, roughness: 0.95, side: THREE.BackSide });
+  const shell = new THREE.Mesh(new THREE.BoxGeometry(SX * 2, H, SZ1 - SZ0), shellMat);
+  shell.position.set(0, H / 2, (SZ0 + SZ1) / 2); root.add(shell);
+  // roof: deep trusses both ways, a space-frame grid
+  const roofParts = [];
+  for (let z = SZ0 + 4; z <= SZ1 - 4; z += 12) latticeInto(roofParts, V3(-SX, H - 2.2, z), V3(SX, H - 2.2, z), 2.6, 0.08);
+  for (let x = -64; x <= 64; x += 16) latticeInto(roofParts, V3(x, H - 1.2, SZ0), V3(x, H - 1.2, SZ1), 1.6, 0.06);
+  root.add(new THREE.Mesh(mergeGeometries(roofParts), std({ color: 0x2a2c32, metalness: 0.6, roughness: 0.5 })));
+  // catwalks and the house lights on them
+  const houseFix = [];
+  for (let z = 12; z <= 96; z += 21) for (let x = -36; x <= 36; x += 18) {
+    houseFix.push(pipe.flares.add(V3(x, H - 4.2, z), KELVIN(4200), 1.2, 0));
   }
 
   // ── the bowl ──
-  // One ring, first row to last, all the way round including behind the stage.
-  // The seats behind the stage are real and empty — that block is sold off, and
-  // its treated face is the `arenaTreated` surface the room model puts there.
-  const people = [];
-  people.push(...standingCrowd({ x0: -25, x1: 25, zNear: 16, zFar: f.eye.z - CLEAR, count: 1700, seed: 3 }));
-  people.push(...standingCrowd({ x0: -25, x1: 25, zNear: f.eye.z + CLEAR, zFar: 70, count: 700, seed: 8 }));
-
-  const near = (x, z) => Math.hypot(x - f.eye.x, z - f.eye.z);
-  const ring = bowl({
-    halfWidth: BOWL_X, zFront: BOWL_Z0, zBack: BOWL_Z1,
-    // ~25° lower, ~31° upper. A bowl is a shallow thing; the steep rake it had
-    // was closer to a ski jump than to seating.
+  const bowl = buildBowl(pipe, {
+    hx: 27, hz: 41, zc: 36, rc: 11,
+    seatColor: 0x243044, concreteTone: 0.2, stage: STAGE, seed: 200, block: 13, aisle: 1.3,
+    // nobody behind the stage: those seats are empty, the block straight
+    // behind the set is tarped; every other seat is sold
+    cover: (x, z) => z < 2 && Math.abs(x) < 23,
+    occ: (x, z) => (z < 4 ? 0 : 1),
+    occupancy: 1,
     tiers: [
-      { rows: 14, rise: 0.38, riseFar: 0.44, run: 0.82, yBase: 0.5, inset0: 0, sides: { front: false } },
-      { rows: 12, rise: 0.50, riseFar: 0.60, run: 0.86, yBase: 8.7, inset0: 12.9, sides: { front: false } },
+      { rows: 16, rise: 0.36, riseFar: 0.46, run: 0.84, yBase: 0.9, inset: 0, crowd: true },   // 200 level
+      { rows: 3, rise: 0.46, run: 0.9, yBase: 10.2, inset: 15.4, crowd: true, face: 2.8, backWall: 2.6 }, // 300 balcony
+      { rows: 15, rise: 0.54, riseFar: 0.66, run: 0.9, yBase: 14.9, inset: 19.3, crowd: true, face: 2.6, backWall: 2.4 }, // 400 level
+      // 500 level: the top balcony, along the middle of the long sides only
+      { rows: 6, rise: 0.6, run: 0.9, yBase: 27.2, inset: 35.2, crowd: true, face: 3.2, backWall: 2.4,
+        where: (x, z) => Math.abs(x) > 26 && z > 8 && z < 66 },
     ],
-    seatSpacing: 0.56, headHeight: 1.25, seed: 200, blockLength: 11,
-    density: () => 1,                     // the house is full
-    maxPeople: 5200, emissive: 0x241f31,
   });
-  root.add(ring.mesh);
-  root.add(ring.blocks);
-  // the rows close enough that a bare block would read as wrong get real seats
-  root.add(seatBank(thin(ring.treads.filter((s) => near(s.x, s.z) < 34), 1800)));
+  root.add(bowl.group);
+  const ribbons = ribbonBoards(bowl, { tiers: [1, 2], height: 0.95, bright: 1.6 });
+  root.add(ribbons);
+  ctx.addScreen({ userData: { face: ribbons } }, 1, 'ribbon');
+  // the set stands on the deck; the building's stands carry on round it
+  stageSet(root, { w: 24, h: 17, z: 1.8, deck: DECK, towerX: 13.6, backdropW: 32, backdropH: 16, wingX: 19.5, wingW: 8, wingH: 11 });
 
-  const ribbons = [];
-  for (const { inset, yTop } of ring.fascias.slice(0, 1)) {
-    const r = ribbonRing({
-      halfWidth: BOWL_X + inset, zFront: BOWL_Z0 - inset, zBack: BOWL_Z1 + inset,
-      y: yTop + 1.4, height: 0.7, thickness: 0.24,
-    });
-    root.add(r);
-    ribbons.push(r);
+  // ── stage ──
+  const deck = stageDeck({ w: 34, d: 15, h: DECK, z: 8.5 });
+  root.add(deck);
+  const thrust = stageDeck({ w: 3.6, d: 9, h: DECK, z: 20.5, lip: false });
+  for (const s of [-1, 1]) root.add(stageSteps({ x: s * 17.75, z: 16, h: DECK, dir: [0, -1] }));
+  root.add(thrust);
+  const scr = bigScreens(ctx, root, { w: 24, y: DECK + 1.4 + 24 / (16 / 9) / 2, z: 1.8, imagW: 11, imagX: 22.5, imagY: 13.5, imagZ: 5, imagYaw: 0.3 });
+  const riser = stageDeck({ w: 10, d: 4, h: 1.0, z: 4.2, lip: false }); riser.position.y = DECK; root.add(riser);
+  // the backline, set and waiting; no one on stage
+  for (const [x, z, col] of [[-7, 9.0, 0x5a1a0e], [7, 9.0, 0x1a1a1c]]) {
+    const gt = guitar({ color: col, bass: x > 0 }); gt.scale.setScalar(0.8); gt.position.set(x, DECK + 0.5, z); gt.rotation.x = -0.28; root.add(gt);
+    const m = micStand({ height: 1.5 }); m.position.set(x, DECK, z + 1.2); m.rotation.y = Math.PI; root.add(m);
+  }
+  const keysL = keyboardRig(); keysL.position.set(-4, DECK + 1, 4.6); root.add(keysL);
+  const kit = drumKit({ shell: 0x1a1a1e }); kit.position.set(0, DECK + 1, 3.6); kit.scale.setScalar(1.1); root.add(kit);
+  for (const x of [-12, 12]) { const a = ampStack({ count: 2 }); a.position.set(x, DECK, 4.5); root.add(a); }
+  for (let i = 0; i < 8; i++) { const w = wedge(); w.position.set(-10.5 + i * 3, DECK, 15.4); w.rotation.y = Math.PI; root.add(w); }
+  const mic = micStand({ height: 1.5 }); mic.position.set(0.05, DECK, 13.6); root.add(mic);
+  for (const side of [-1, 1]) for (const dz of [-1.2, 1.2]) {
+    const sub = subStack({ count: 3, cols: 2 }); sub.position.set(side * 10, 0, 17.5 + dz); root.add(sub);
   }
 
-  root.add(crowdField(ring.people, { color: 0x2e2a3e, react: 1, sway: 0.066 }, u));
-  root.add(crowdField(people, { color: 0x0c0b14, react: 1, sway: 0.11 }, u));
+  // ── rig ──
+  const rig = ctx.rig({ finish: 'black' });
+  const trussZ = [3.2, 9.2, 15.2];
+  for (const z of trussZ) { const t = truss(36, { size: 0.76, finish: 'black' }); t.position.set(0, RIG, z); root.add(t); root.add(hoists([-16, -6, 6, 16], RIG, z, H - 2.2)); }
+  const pa = [];
+  for (const side of [-1, 1]) {
+    const main = lineArray({ boxes: 16, width: 1.3 }); main.position.set(side * 15.5, RIG - 0.6, 16.5); main.rotation.y = -side * 0.08; root.add(main); pa.push(main);
+    const out = lineArray({ boxes: 12, width: 1.1 }); out.position.set(side * 23.5, RIG - 1.2, 15); out.rotation.y = -side * 0.4; root.add(out);
+    const subs = lineArray({ boxes: 8, width: 1.3, depth: 1.0, splay: 0.01 }); subs.position.set(side * 13.4, RIG - 0.6, 15.8); root.add(subs);
+  }
+  const spots = [], beams = [], washes = [], ups = [], lasers = [];
+  for (let i = 0; i < 12; i++) spots.push({ fx: rig.add({ kind: 'spot', pos: V3(-15.5 + i * (31 / 11), RIG - 0.5, 15.2), length: 45, angle: 0.085, beamGain: 1.0 }), i, n: 12, group: 0 });
+  for (let i = 0; i < 12; i++) beams.push({ fx: rig.add({ kind: 'beam', pos: V3(-15.5 + i * (31 / 11), RIG - 0.5, 9.2), length: 60, beamGain: 1.2 }), i, n: 12, group: 1 });
+  for (let i = 0; i < 10; i++) washes.push({ fx: rig.add({ kind: 'wash', pos: V3(-15 + i * (30 / 9), RIG - 0.5, 3.2), length: 22, beamGain: 0.5 }), i, n: 10, group: 2 });
+  for (let i = 0; i < 10; i++) ups.push({ fx: rig.add({ kind: 'beam', pos: V3(-15 + i * (30 / 9), DECK + 0.25, 15.6), hang: 'up', length: 50, beamGain: 1.0 }), i, n: 10, group: 3 });
+  for (let i = 0; i < 4; i++) lasers.push({ fx: rig.add({ kind: 'laser', pos: V3(-6 + i * 4, DECK + 0.3, 15.8), body: false, length: 90, beamGain: 6, flareGain: 0.2, noise: 0.4 }), i, n: 4 });
+  // real light where the rig lands
+  const moverLights = [];
+  for (const k of [2, 5, 8, 10]) moverLights.push(rig.light(spots[k].fx, shadowSpot(0xffffff, 0, { cast: false, penumbra: 0.5, decay: 2 }), 5200));
+  const front1 = shadowSpot(KELVIN(5600), 0, { angle: 0.2, penumbra: 0.7, size: q.shadowSize, far: 80, cast: q.shadows });
+  front1.position.set(-6, RIG + 2, 40); front1.target.position.set(0, DECK + 1, 12);
+  const front2 = shadowSpot(KELVIN(5600), 0, { angle: 0.12, penumbra: 0.6, cast: false });
+  front2.position.set(4, RIG + 3, 44); front2.target.position.set(0, DECK + 1.5, 13.2);
+  const stageWash = shadowSpot(0xffffff, 0, { angle: 0.8, penumbra: 1, cast: false });
+  stageWash.position.set(0, RIG - 1, 2); stageWash.target.position.set(0, DECK, 12);
+  for (const l of [front1, front2, stageWash]) root.add(l, l.target);
+  const fill = [];
+  for (const [x, y, z] of [[-20, 18, 30], [20, 18, 30], [0, 24, 60]]) { const l = new THREE.PointLight(0xffffff, 0, 90, 2); l.position.set(x, y, z); root.add(l); fill.push(l); }
+  const house = [];
+  for (const [x, z] of [[-24, 20], [24, 20], [-24, 60], [24, 60], [0, 40], [0, 80]]) { const l = new THREE.PointLight(KELVIN(4200), 0, 120, 2); l.position.set(x, H - 4.5, z); root.add(l); house.push(l); }
+  root.add(new THREE.HemisphereLight(0x14141c, 0x050508, 0.18));
 
-  // phone torches over the floor and the near stands
-  const rnd = prng(33);
-  const phones = Array.from({ length: 620 }).map(() => {
-    const inStand = rnd() < 0.62;
-    return inStand
-      ? { x: (rnd() < 0.5 ? -1 : 1) * (27 + rnd() * 20), y: 2 + rnd() * 14, z: 4 + rnd() * 68, size: 0.11, color: 0xfff0c8, phase: rnd() * 6.283 }
-      : { x: (rnd() - 0.5) * 50, y: 1.5 + rnd() * 0.5, z: 16 + rnd() * 48, size: 0.1, color: 0xfff0c8, phase: rnd() * 6.283 };
-  });
-  root.add(sparkField(phones.filter((p) => Math.abs(p.z - f.eye.z) > CLEAR), { react: 1.2, base: 0.18, twinkle: 4.2, maxPx: 20 }, u));
+  // ── people ──
+  // a packed standing floor, and every sold seat taken
+  const avoidFoh = (x, z) => (Math.abs(x - eye.x) < 4.6 && Math.abs(z - eye.z) < 4.2) || (Math.abs(x) < 2.2 && z < 25.5);
+  const standing = packFloor({ x0: -25.5, x1: 25.5, z0: 17.4, z1: 76, avoid: avoidFoh, seed: 3 });
+  bigCrowd(root, cu, q, standing.concat(bowl.people.map((p) => ({ ...p, h: 0.97 }))), { seed: 21 });
+  const aisleField = lightPoints(bowl.aisleLights.map((a) => ({ ...a, white: true, size: 0.03 })), cu, { maxPx: 3 });
+  aisleField.material.uniforms.uGain.value = 0.3;
+  root.add(aisleField);
+  const fohLeds = lightPoints(fohPosition(pipe, root, eye), cu, { maxPx: 4 });
+  root.add(fohLeds);
 
-  const haze = Array.from({ length: 130 }).map(() => ({
-    x: (rnd() - 0.5) * 60, y: 2 + rnd() * 16, z: rnd() * 34,
-    size: 0.09 + rnd() * 0.14, color: 0xffb070, phase: rnd() * 6.283,
-  }));
-  root.add(sparkField(haze, { react: 0.5, base: 0.05, twinkle: 0.4, maxPx: 40 }, u));
-
-  root.add(new THREE.AmbientLight(0x24222f, 1.3));
-  const key = new THREE.PointLight(ACCENT, 900, 78, 2);
-  key.position.set(0, 14, 12);
-  root.add(key);
-  const rear = new THREE.PointLight(MAGENTA, 500, 80, 2);
-  rear.position.set(0, 18, 40);
-  root.add(rear);
-  // grazes the top of the floor crowd so the heads read as heads
-  const floorFill = new THREE.PointLight(ACCENT, 260, 46, 2);
-  floorFill.position.set(0, 6, 22);
-  root.add(floorFill);
+  // ── haze ──
+  const hz = pipe.haze;
+  const offs = [[-0.6, 0.35], [0.6, 0.35], [-0.6, -0.35], [0.6, -0.35], [0, 0]];
+  const hzs = offs.map(([dx, dy]) => hz.add(V3(dx * 12, scr.main.position.y + dy * scr.h * 0.5, 2.6), 0xffffff, 0));
+  ctx.screenHaze(scr.main, hzs, offs);
+  scr.main.userData.hazePower = 90;
+  const hzWash = [hz.add(V3(-10, RIG - 1, 10), 0xffffff, 0), hz.add(V3(10, RIG - 1, 10), 0xffffff, 0), hz.add(V3(0, DECK + 3, 12), 0xffffff, 0)];
 
   return {
-    root,
-    screen,
-    camera: { position: f.eye.clone(), target: new THREE.Vector3(0, DECK + 7.4, 2), fov: 60 },
-    background: new THREE.Color(0x05040b),
-    fog: new THREE.Fog(0x0a0812, 30, 190),
-    bloom: { strength: 0.72, radius: 0.75, threshold: 0.38 },
-    update(t, pulse) {
-      screen.userData.update(pulse);
-      wings.forEach((w) => w.userData.update(pulse));
-      key.intensity = 1000 + pulse * 380;
-      ribbons.forEach((r) => r.material.color.setHex(ACCENT).multiplyScalar(0.10 + pulse * 0.3));
-      rear.intensity = 500 + pulse * 190;
-      heads.forEach(({ fx, i }) => {
-        // the rig dances: each head on its own phase, swinging harder as the
-        // track pushes
-        const swing = Math.sin(t * 1.05 + i * 0.7);
-        fx.rotation.z = swing * 0.34;
-        fx.rotation.x = 0.24 + Math.sin(t * 0.72 + i * 1.3) * 0.15;
-        if (fx.userData.glare) fx.userData.glare.material.opacity = 0.34 + pulse * 0.2 * (0.5 + 0.5 * swing);
-      });
+    root, eye,
+    camera: { pos: eye, target: V3(0, DECK + 7.2, 2), fov: 58, near: 0.15, far: 400 },
+    background: new THREE.Color(0),
+    fog: new THREE.FogExp2(0x060508, 0.0045),
+    hazeDensity: 0.0016, beamGain: 0.55, hazeAmb: new THREE.Color(0x040306), hazeAmbDist: 160,
+    bloom: { strength: 0.7, radius: 0.65, threshold: 1.15 },
+    grade: { exposure: 1.2, vignette: 0.4, ca: 0.005, grain: 0.04, sat: 1.08, lift: [0.004, 0.004, 0.008] },
+    env: { w: W, h: H, d: D, eye, wall: 0x0a0a10, floor: 0x050507, emitters: [
+      { w: 24, h: 13.5, pos: V3(0, 10.35, 2), normal: V3(0, 0, 1), screen: true, power: 1.5, aspect: 16 / 9 },
+      { w: 30, h: 1, pos: V3(0, RIG, 12), normal: V3(0, -1, 0), color: APP.accent, power: 4 },
+    ] },
+    envIntensity: 0.6,
+    update(f) {
+      const show = 1 - f.house;
+      runShow(rig, spots, f, { house: V3(0, 1, 42), stage: STAGE, span: 34 });
+      runShow(rig, beams, f, { house: V3(0, 12, 60), stage: STAGE, span: 44 });
+      runShow(rig, washes, f, { house: V3(0, 0, 18), stage: STAGE, span: 20, strobe: false });
+      runShow(rig, ups, f, { house: V3(0, 30, 40), stage: STAGE, up: true });
+      runLasers(lasers, f);
+      washes.forEach(({ fx }) => { fx.angle = 0.3; });
+      front1.intensity = 26000 * show + 4000 * f.house;
+      front2.intensity = 9000 * show;
+      stageWash.color.copy(f.pal.a); stageWash.intensity = (5000 + 6000 * f.energy + 3000 * f.kick) * show;
+      fill.forEach((l, i) => { l.color.copy(i ? f.pal.b : f.pal.a); l.intensity = (120 + 300 * f.energy) * show; });
+      house.forEach((l) => { l.intensity = 9000 * f.house; });
+      houseFix.forEach((h) => { h.intensity = 1.5 * f.house; });
+      hzWash[0].color.copy(f.pal.a); hzWash[1].color.copy(f.pal.b); hzWash[2].color.copy(f.pal.d);
+      hzWash.forEach((h, i) => { h.power = (i < 2 ? 260 : 120) * (0.4 + 0.6 * f.energy + 0.3 * f.kick) * show; });
+      deck.userData.lip.color.setHex(APP.accent).multiplyScalar((0.6 + 0.8 * f.kick) * show + 0.2);
+      cu.uRimColor.value.copy(f.pal.a).lerp(new THREE.Color(1, 1, 1), 0.3).multiplyScalar((0.22 + 0.25 * f.kick) * show);
+      cu.uStage.value.set(0, 10, 4);
+      cu.uWash.value.copy(f.pal.b).multiplyScalar(0.012 * show + 0.2 * f.house);
+      cu.uAmb.value.setRGB(0.004, 0.004, 0.006).multiplyScalar(1 + f.house * 8);
     },
   };
 }

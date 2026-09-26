@@ -1,10 +1,9 @@
-// StageArt.jsx — the album art and title, mounted on the venue's on-stage screen.
+// StageArt.jsx — the album art and title as HTML, for a browser without WebGL.
 //
-// This stays HTML rather than becoming a texture in the 3D scene, on purpose:
-// the fictional covers are React components, uploaded art is an <img>, and type
-// rendered by the browser stays crisp at any size. What makes it read as part of
-// the room is that its box comes from the 3D screen — `stage.js` projects that
-// screen's corners and hands the rectangle back.
+// With WebGL the art is drawn on the room's own LED walls (src/three/art.js), so
+// it can be walked round and hidden by the rig like everything else on stage.
+// Without it there is no room to draw, but the record still plays: Scene lays
+// this out in the middle of a black frame instead.
 
 import { memo, useEffect, useMemo, useRef } from 'react';
 import Cover from './Cover.jsx';

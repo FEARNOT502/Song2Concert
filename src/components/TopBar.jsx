@@ -6,6 +6,7 @@
 import { memo } from 'react';
 
 import SoundInfo from './SoundInfo.jsx';
+import { CROWD_LIGHT_VENUES } from '../useCrowdLight.js';
 
 // Brand mark — "Wave → Hall Arc" (icon-exports). Inlined so it inherits color
 // and needs no extra request. Cream waveform morphs into an accent hall arc.
@@ -63,6 +64,32 @@ export function EffectsToggle({ on, onChange, className = '' }) {
   );
 }
 
+// What the crowd holds up in the big rooms: lightsticks, or phone torches.
+export function CrowdLightToggle({ mode, onChange, className = '' }) {
+  return (
+    <div
+      role="group"
+      aria-label="Crowd lights"
+      title="Crowd lights — lightsticks under central control, or phone torches"
+      className={`flex items-center border border-white/10 rounded overflow-hidden text-[10px] tracking-[0.18em] ${className}`}
+    >
+      {[['stick', 'Stick'], ['flash', 'Flash']].map(([v, label]) => (
+        <button
+          key={v}
+          type="button"
+          aria-pressed={mode === v}
+          onClick={() => onChange(v)}
+          className={`px-2 py-1 transition-colors ${
+            mode === v ? 'bg-white/10 text-[oklch(0.78_0.16_55)]' : 'text-neutral-500 hover:text-neutral-300'
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 const STATUS_LABEL = {
   demo: '○ NO FILE',
   loading: '◌ DECODING…',
@@ -70,7 +97,10 @@ const STATUS_LABEL = {
   live: '● IN VENUE',
 };
 
-function TopBar({ file, venue, audioStatus = 'demo', onFileClick, onVenueClick, effects = true, onEffectsChange }) {
+function TopBar({
+  file, venue, audioStatus = 'demo', onFileClick, onVenueClick, effects = true, onEffectsChange,
+  crowdLight = 'stick', onCrowdLightChange,
+}) {
   const liveish = audioStatus === 'live' || audioStatus === 'ready';
   return (
     <div className="absolute top-0 inset-x-0 z-40 flex items-center justify-between px-10 pt-6 pb-4 text-[13px] tracking-[0.2em] uppercase text-neutral-500 border-b border-white/5 bg-black/40 backdrop-blur-sm font-mono">
@@ -95,6 +125,9 @@ function TopBar({ file, venue, audioStatus = 'demo', onFileClick, onVenueClick, 
       </div>
 
       <div className="flex items-center gap-4">
+        {onCrowdLightChange && CROWD_LIGHT_VENUES.includes(venue.id) && (
+          <CrowdLightToggle mode={crowdLight} onChange={onCrowdLightChange} />
+        )}
         {onEffectsChange && <EffectsToggle on={effects} onChange={onEffectsChange} />}
         <SoundInfo venue={venue} />
         <span>{file.format.split(' · ').slice(0, 2).join(' · ')}</span>

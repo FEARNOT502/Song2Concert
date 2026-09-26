@@ -12,6 +12,7 @@ import { FilePicker, VenuePicker } from './components/Modals.jsx';
 import QueuePanel from './components/QueuePanel.jsx';
 import MobileLayout from './components/MobileLayout.jsx';
 import { useSceneEffects } from './useSceneEffects.js';
+import { useCrowdLight } from './useCrowdLight.js';
 import { useIsMobile } from './useIsMobile.js';
 import { useMediaSession } from './useMediaSession.js';
 import { useEngine } from './audio/useEngine.js';
@@ -83,6 +84,11 @@ export default function App() {
   // signal path is on this switch: the room being convolved is the same room
   // either way, only the picture of it is cheaper.
   const [effects, setEffects] = useSceneEffects();
+  // lightsticks or phone torches in the big rooms' crowds — a picture choice
+  const [crowdLight, setCrowdLight] = useCrowdLight();
+  // The scene reads the engine's analyser for the kick drum. A getter, because
+  // the analyser is made with the audio context, after the first file loads.
+  const getAnalyser = useCallback(() => engine.analyser || null, [engine]);
 
   // derived
   const venue = findVenue(venueId);
@@ -469,6 +475,9 @@ export default function App() {
           strain={strain}
           effects={effects}
           onEffectsChange={setEffects}
+          crowdLight={crowdLight}
+          onCrowdLightChange={setCrowdLight}
+          analyser={getAnalyser}
         />
         {pickers}
       </>
@@ -486,6 +495,9 @@ export default function App() {
         artist={upload ? upload.artist : null}
         strain={strain}
         effects={effects}
+        playing={playing}
+        crowdLight={crowdLight}
+        analyser={getAnalyser}
       />
 
       <TopBar
@@ -496,6 +508,8 @@ export default function App() {
         onVenueClick={openVenuePicker}
         effects={effects}
         onEffectsChange={setEffects}
+        crowdLight={crowdLight}
+        onCrowdLightChange={setCrowdLight}
       />
       <LeftDataPanel venue={venue} />
       <RightDataPanel venue={venue} file={displayFile} />
@@ -518,6 +532,7 @@ export default function App() {
         <span>[SPACE] play/pause</span>
         <span>[F] file</span>
         <span>[V] venue</span>
+        <span>[WASD] walk · drag to look</span>
       </div>
 
       <BottomTransport

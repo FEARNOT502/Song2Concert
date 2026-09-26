@@ -1,381 +1,346 @@
 // stage.js — the renderer the venue scenes live in.
 //
-// One WebGL context for the whole app. Changing venue tears the old group down
-// and builds the new one; nothing else is recreated. The React layer talks to it
-// through four calls: setVenue, setPulse, resize and attachOverlay.
+// One WebGL context for the whole app. Changing venue fades the room out,
+// tears it down, builds the next one, compiles its shaders and fades it in.
+// The React layer talks to it through a handful of calls: setVenue, the pulse,
+// setArt, setPlaying, setCrowdLight, resize, and the two cost switches
+// (setEffects, setStrain).
 //
-// The album art and title are still DOM — keeping them as HTML is what keeps the
-// type crisp at any size and lets the existing <Cover> components render
-// unchanged — but they have to sit exactly on the screen inside the 3D room. So
-// on every venue change and every resize the stage projects that screen's four
-// corners through the camera and hands the rectangle to React, which lays the
-// overlay out on it.
+// The listener is not bolted to the seat any more. They start at it — the
+// seat the room model is heard from — and can walk: W A S D, with the feet on
+// whatever is underfoot, and a drag to look anywhere. The sound stays at the
+// seat; only the picture moves (see walk.js).
 //
-// The camera does not move. It stands at the seat and stays there, which is what
-// a seat does; the room in front of it is what moves.
+// The album art is part of the room: drawn on the LED walls (see art.js), so
+// it is hidden by what stands in front of it and seen at an angle from the
+// side, like everything else there.
 
 import * as THREE from 'three';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { disposeTree, reactive } from './kit.js';
+import { DEG, clamp, regionColor } from './core.js';
+import { Pipeline, QUALITY, buildEnvironment } from './render.js';
+import { crowdUniforms } from './people.js';
+import { Rig } from './rig.js';
+import { Walker } from './walk.js';
+import { createArt } from './art.js';
+import { BeatFollower } from './beat.js';
 import { buildVenue } from './venues/index.js';
 
-const DEG = Math.PI / 180;
+// How far a new venue's camera may widen on a portrait screen: at least ~56°
+// across, so the stage is still in the room rather than a keyhole on it.
+const MIN_HFOV = 56 * DEG;
 
 export function createStage(canvas, { quality = 'high', effects = true } = {}) {
-  const bloomOn = quality !== 'low';
-  // Device pixel ratio is the single biggest lever on GPU cost — 1.75 on a
-  // retina panel is three times the pixels of 1.0 — and this scene shares a
-  // machine with a convolution reverb and five audio worklets. 1.35 keeps the
-  // LED bezels and the type crisp without spending the audio's headroom.
-  const maxRatio = quality === 'low' ? 1 : 1.35;
-
-  let renderer;
+  let pipe;
   try {
-    renderer = new THREE.WebGLRenderer({
-      canvas, antialias: quality !== 'low', powerPreference: 'high-performance',
-      alpha: false, stencil: false,
-    });
+    pipe = new Pipeline(canvas);
   } catch {
     return null; // no WebGL — Scene falls back to a plain backdrop
   }
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, maxRatio));
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.15;
+  const qName = quality === 'low' ? 'low' : 'high';
+  // Device pixel ratio is the single biggest lever on GPU cost, and this scene
+  // shares a machine with a convolution reverb and five audio worklets.
+  const baseDpr = qName === 'low' ? 1 : 1.35;
+  let fx = !!effects;
+  let strain = 0;
 
-  const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(52, 1, 0.1, 2000);
-  const u = reactive();
-  u.effects = effects;
-  // Current venue id, so the effects switch can rebuild the room it is looking
-  // at. setVenue is the only path that builds one and it is already gated on
-  // shader compilation, so switching reuses it rather than inventing a second.
-  let venueId = null;
+  const walker = new Walker(canvas);
+  const beat = new BeatFollower();
+  const art = createArt(() => { if (venue) applyArt(); });
 
-  const composer = new EffectComposer(renderer);
-  const renderPass = new RenderPass(scene, camera);
-  const bloom = bloomOn ? new UnrealBloomPass(new THREE.Vector2(1, 1), 0.6, 0.75, 0.4) : null;
-  composer.addPass(renderPass);
-  if (bloom) composer.addPass(bloom);
-  composer.addPass(new OutputPass());
-
-  let venue = null;
+  let venue = null, ctx = null, venueId = null, envRT = null;
+  let buildGen = 0;
+  let pulse = 0, pulseRef = null, analyser = null;
+  let playing = false;
+  // Before anything plays the house lights are up — the room as you find it
+  // walking in — and they go down when the music starts.
+  let house = 1, houseTarget = 1;
+  let crowdLight = 'stick';
+  const pal = art.palette ? clonePal(art.palette) : null;
   let size = { w: 1, h: 1 };
-  let pulse = 0;
-  let pulseRef = null;
-  let raf = 0;
-  let frameBudget = 0;      // ms of headroom; see the adaptive skip in frame()
-  let running = false;
-  let onLayout = null;
+  let raf = 0, running = false;
   const clock = new THREE.Clock();
-  const corner = new THREE.Vector3();
+  // per-venue lists, collected once rather than found by a traversal each frame
+  let pointMats = [], lightMats = [], fogMats = [];
+
+  function clonePal(p) { return { a: p.a.clone(), b: p.b.clone(), c: p.c.clone(), d: p.d.clone() }; }
+
+  // ── quality ────────────────────────────────────────────────────────────────
+
+  function applyQuality() {
+    pipe.setQuality(qName);
+    pipe.q = { ...QUALITY[qName], dpr: strain >= 2 ? 1 : baseDpr };
+    pipe.resize(size.w, size.h);
+    applyPasses();
+  }
+  // Two independent reasons to drop the costly passes — the listener asked for
+  // a lighter scene, or the audio thread is underrunning — and either is enough.
+  function applyPasses() {
+    const on = fx && strain < 2;
+    pipe.bloom.enabled = on && pipe.q.bloom;
+    pipe.volOn = on;
+  }
 
   // ── venue ──────────────────────────────────────────────────────────────────
-  //
-  // A room is built, its shaders are compiled, and only THEN is it swapped in
-  // for the one on screen. The compile is the expensive part: a dozen
-  // materials' worth of GLSL going through the driver, which on the first
-  // visit to a venue is a stall of a hundred milliseconds or more — and it
-  // used to land on the main thread at the moment a venue was picked, on top
-  // of the audio engine's own work for the same change, while the previous
-  // room's tail was being convolved. Where the driver can compile in parallel
-  // (KHR_parallel_shader_compile, which is everywhere that matters) the main
-  // thread is not held at all; where it cannot, the stall still happens but
-  // the old room stays up until the new one is ready, so nothing goes black.
-  //
-  // The programs are compiled against a staging scene carrying the venue's own
-  // fog and background, because those are part of a program's identity: a
-  // material compiled without fog is a different program from the one the
-  // render will ask for, and would be compiled again, synchronously, on the
-  // first frame.
-  const staging = new THREE.Scene();
-  let venueGen = 0;
-  let pending = null;        // { venue, cancel } — a room built and compiling
 
-  // Issue the compile for everything in `root` and call back once every
-  // program reports ready. This is three's own compileAsync, minus the part
-  // that made it unusable here: its poll cannot be cancelled, and a poll left
-  // running across renderer.dispose() — which React's StrictMode does on every
-  // mount in development — throws from inside the library. This one is cancelled
-  // when the room it is compiling is superseded or the stage goes away.
-  function whenCompiled(root, done) {
-    let materials;
-    try {
-      materials = renderer.compile(root, camera, staging);
-    } catch (e) {
-      done();
-      return () => {};
-    }
-    // Without a way to read back a program's readiness there is nothing to wait
-    // for: the compile above has already happened, so install straight away.
-    // Never leave the room uninstalled — that is a black screen.
-    if (!materials || !renderer.properties || typeof renderer.properties.get !== 'function') {
-      done();
-      return () => {};
-    }
-    let cancelled = false;
-    let timer = 0;
-    // A ceiling on the wait. A driver that never reports ready would otherwise
-    // hold the old room on screen for ever; after this the new one goes up and
-    // whatever compiling is left happens on its first frame, as it used to.
-    const deadline = performance.now() + 4000;
-    const check = () => {
-      if (cancelled) return;
-      try {
-        for (const m of Array.from(materials)) {
-          const props = renderer.properties.get(m);
-          const program = props && props.currentProgram;
-          if (!program || typeof program.isReady !== 'function' || program.isReady()) materials.delete(m);
-        }
-      } catch (e) {
-        done();
-        return;
-      }
-      if (materials.size === 0 || performance.now() > deadline) { done(); return; }
-      timer = setTimeout(check, 10);
+  function fade(to, ms) {
+    const U = pipe.final.material.uniforms.uFade;
+    const from = U.value, t0 = performance.now();
+    return new Promise((resolve) => {
+      if (ms <= 0) { U.value = to; resolve(); return; }
+      const step = () => {
+        const k = clamp((performance.now() - t0) / ms);
+        U.value = from + (to - from) * k * k * (3 - 2 * k);
+        if (k < 1 && running) requestAnimationFrame(step); else { U.value = to; resolve(); }
+      };
+      step();
+    });
+  }
+
+  function makeCtx() {
+    const screens = [], rigs = [];
+    const cu = crowdUniforms();
+    return {
+      pipe, cu, screens, rigs,
+      // the crowd is decided at build time: off, it is not built at all
+      q: fx ? pipe.q : { ...pipe.q, crowd: 0 },
+      art: { texture: (aspect) => art.texture(aspect), cover: () => art.cover() },
+      addScreen: (group, aspect, kind = 'main') => {
+        screens.push({ group, aspect, kind, haze: [] });
+        if (kind !== 'ribbon' && group.userData.face) pipe.mask.add(group.userData.face);
+      },
+      screenHaze: (group, items, offsets) => { const s = screens.find((x) => x.group === group); if (s) s.haze.push(...items.map((h, i) => ({ h, o: offsets[i] }))); },
+      rig: (opts) => { const r = new Rig(pipe, opts); rigs.push(r); return r; },
     };
-    check();
-    return () => { cancelled = true; clearTimeout(timer); };
   }
 
-  function dropPending() {
-    if (!pending) return;
-    pending.cancel();
-    disposeTree(pending.venue.root);
-    pending = null;
+  function teardown() {
+    if (venue) {
+      pipe.scene.remove(venue.root);
+      disposeTree(venue.root);
+      venue = null; ctx = null;
+    }
+    envRT?.dispose(); envRT = null;
+    pipe.beams.clear(); pipe.haze.clear(); pipe.flares.clear(); pipe.mask.clear();
+    pipe.scene.remove(pipe.flares.mesh);
+    pointMats = []; lightMats = []; fogMats = [];
   }
 
-  function setVenue(id) {
+  async function setVenue(id) {
     venueId = id;
-    const gen = ++venueGen;
-    dropPending();
-    const next = buildVenue(id, u);
-    // point fields fade into the same fog the meshes do
-    if (next.fog) {
-      next.root.traverse((o) => {
-        const m = o.material;
-        if (m && m.uniforms && m.uniforms.fogFar) {
-          m.uniforms.fogColor.value.copy(next.fog.color);
-          m.uniforms.fogNear.value = next.fog.far * 0.75;
-          m.uniforms.fogFar.value = next.fog.far * 1.25;
-        }
-      });
-    }
-
-    const install = () => {
-      if (gen !== venueGen) return;   // superseded; dropPending took care of it
-      pending = null;
-      if (venue) {
-        scene.remove(venue.root);
-        disposeTree(venue.root);
-        venue = null;
-      }
-      venue = next;
-      scene.add(venue.root);
-      scene.background = venue.background;
-      scene.fog = venue.fog;
-      camera.fov = venue.camera.fov;
-      camera.position.copy(venue.camera.position);
-      camera.lookAt(venue.camera.target);
-      camera.updateProjectionMatrix();
-      if (bloom && venue.bloom) {
-        bloom.strength = venue.bloom.strength;
-        bloom.radius = venue.bloom.radius;
-        bloom.threshold = venue.bloom.threshold;
-      }
-      applyPointScale();
-      publishLayout();
-    };
-
-    staging.fog = next.fog || null;
-    staging.background = next.background || null;
-    pending = { venue: next, cancel: () => {} };
-    pending.cancel = whenCompiled(next.root, install);
+    const gen = ++buildGen;
+    await fade(0, venue ? 180 : 0);
+    if (gen !== buildGen || !running) return;
+    teardown();
+    // a frame for the fade to land before the build takes the thread
+    await new Promise((r) => setTimeout(r, 16));
+    if (gen !== buildGen || !running) return;
+    const c = makeCtx();
+    const v = buildVenue(id, c);
+    for (const r of c.rigs) v.root.add(r.build());
+    pipe.scene.add(v.root);
+    pipe.scene.add(pipe.flares.mesh);
+    pipe.scene.background = v.background || new THREE.Color(0);
+    pipe.scene.fog = v.fog || null;
+    const cam = pipe.camera;
+    cam.fov = v.camera.fov; cam.near = v.camera.near ?? 0.1; cam.far = v.camera.far ?? 2000;
+    cam.updateProjectionMatrix();
+    venue = v; ctx = c;
+    walker.setVenue(v.root, v.camera.pos, v.camera.target);
+    const b = v.bloom || {};
+    pipe.bloom.strength = b.strength ?? 0.6; pipe.bloom.radius = b.radius ?? 0.6; pipe.bloom.threshold = b.threshold ?? 0.9;
+    const G = pipe.final.material.uniforms, g = v.grade || {};
+    G.uExposure.value = g.exposure ?? 1; G.uVignette.value = g.vignette ?? 0.35; G.uCA.value = g.ca ?? 0.004;
+    G.uGrain.value = pipe.q.grain ? (g.grain ?? 0.035) : 0; G.uSat.value = g.sat ?? 1.05;
+    G.uLift.value.setRGB(...(g.lift || [0, 0, 0]));
+    pipe.haze.uniforms.uDensity.value = v.hazeDensity ?? 0.02;
+    pipe.beams.uniforms.uGain.value = v.beamGain ?? 1;
+    pipe.haze.uniforms.uAmb.value.copy(v.hazeAmb || new THREE.Color(0));
+    pipe.haze.uniforms.uAmbDist.value = v.hazeAmbDist ?? 80;
+    v.root.traverse((o) => {
+      const U = o.material?.uniforms;
+      if (!U) return;
+      if (o.isPoints && U.uPal) pointMats.push(U);
+      if (o.userData.crowdLights) lightMats.push(U);
+      if (U.fogDensity) fogMats.push(U);
+    });
+    applyArt();
+    applyCamera(0);
+    try { await pipe.renderer.compileAsync(pipe.scene, cam); } catch { /* compiles on the first frame instead */ }
+    if (gen !== buildGen || !running) return;
+    frame(0.016, clock.getElapsedTime());
+    fade(1, 420);
   }
 
-  // ── projection of the on-stage screen ──────────────────────────────────────
-
-  // The screen's four corners in CSS pixels relative to the canvas. Returns an
-  // axis-aligned box: every venue's screen faces the camera, so the projected
-  // quad is a rectangle to well under a pixel.
-  function projectScreen() {
-    if (!venue) return null;
-    const { w, h } = venue.screen.userData.size;
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const [cx, cy] of [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]]) {
-      corner.set(cx, cy, 0).applyMatrix4(venue.screen.matrixWorld).project(camera);
-      const px = (corner.x * 0.5 + 0.5) * size.w;
-      const py = (-corner.y * 0.5 + 0.5) * size.h;
-      minX = Math.min(minX, px); maxX = Math.max(maxX, px);
-      minY = Math.min(minY, py); maxY = Math.max(maxY, py);
-    }
-    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
-  }
-
-  // Where the overlay goes. Recomputed when the venue or the viewport changes,
-  // which is the only time it can move.
-  let layoutRect = null;
-  function publishLayout() {
+  // screens, their light, their haze, and the reflections, from the current art
+  function applyArt() {
     if (!venue) return;
-    camera.updateMatrixWorld(true);
-    scene.updateMatrixWorld(true);
-    layoutRect = projectScreen();
-    if (onLayout && layoutRect) onLayout({ ...layoutRect });
+    for (const s of ctx.screens) {
+      const face = s.group.userData.face;
+      const tex = s.kind === 'main' ? art.texture(s.aspect) : art.cover();
+      if (face) face.material.uniforms.tArt.value = tex;
+      const img = s.kind === 'main' ? tex.image : art.canvas;
+      const avg = regionColor(img, 0, 0, 1, 1);
+      if (s.group.userData.rect) s.group.userData.rect.color.copy(avg).multiplyScalar(1 / Math.max(0.05, Math.max(avg.r, avg.g, avg.b)));
+      s.lum = Math.max(avg.r, avg.g, avg.b);
+      for (const { h, o } of s.haze) h.color.copy(regionColor(img, 0.5 + o[0] * 0.5 - 0.2, 0.5 - o[1] * 0.5 - 0.2, 0.5 + o[0] * 0.5 + 0.2, 0.5 - o[1] * 0.5 + 0.2));
+    }
+    if (venue.env) {
+      const spec = { ...venue.env, emitters: (venue.env.emitters || []).map((e) => (e.screen ? { ...e, map: art.texture(e.aspect || 16 / 9) } : e)) };
+      envRT?.dispose();
+      envRT = buildEnvironment(pipe, spec);
+      pipe.scene.environment = envRT.texture;
+      pipe.scene.environmentIntensity = venue.envIntensity ?? 0.6;
+    }
+  }
+
+  // ── camera ─────────────────────────────────────────────────────────────────
+
+  function applyCamera(dt) {
+    const cam = pipe.camera;
+    const fov = Math.min(100, Math.max(venue.camera.fov, 2 * Math.atan(Math.tan(MIN_HFOV / 2) / cam.aspect) / DEG));
+    if (Math.abs(cam.fov - fov) > 0.01) { cam.fov = fov; cam.updateProjectionMatrix(); }
+    walker.update(dt, cam);
   }
 
   // ── frame ──────────────────────────────────────────────────────────────────
 
-  function applyPointScale() {
-    const pr = renderer.getPixelRatio();
-    u.uScale.value = (size.h * pr * 0.5) / Math.tan(camera.fov * 0.5 * DEG);
+  function frame(dt, t) {
+    const level = pulseRef ? (pulseRef.current || 0) : pulse;
+    beat.update(dt, { level, analyser: playing ? analyser?.() : null, playing });
+    house += (houseTarget - house) * Math.min(1, dt * 1.4);
+    const target = art.palette;
+    for (const k of ['a', 'b', 'c', 'd']) pal[k].lerp(target[k], Math.min(1, dt * 2.2));
+    applyCamera(dt);
+    const B = beat;
+    const f = { t, dt, kick: B.kick, snare: 0, hat: 0, energy: B.energy, bar: B.bar, beat: B.beat, sec: playing ? B.sec : null, house, pal, cam: pipe.camera.position };
+    const cu = ctx.cu;
+    cu.uTime.value = t; cu.uKick.value = B.kick * (1 - house); cu.uEnergy.value = B.energy * (1 - house * 0.8);
+    cu.uFlick.value = B.kick * (1 - house);
+    venue.update(f);
+    for (const r of ctx.rigs) r.update(1, pipe.camera.position);
+    const glow = clamp(B.kick * 0.6 + B.energy * 0.3) * (1 - house);
+    for (const s of ctx.screens) {
+      const face = s.group.userData.face;
+      if (face) {
+        const U = face.material.uniforms;
+        U.uTime.value = t; U.uPulse.value = glow; U.uHouse.value = house;
+        if (U.uTint) U.uTint.value.copy(pal.a);
+        if (U.uTint2) U.uTint2.value.copy(pal.b);
+      }
+      const rect = s.group.userData.rect;
+      if (rect) rect.intensity = (s.lum ?? 0.3) * (face?.material.uniforms.uBright.value ?? 1) * (s.group.userData.lightPower ?? 1) * (0.9 + 0.2 * glow) * (1 - 0.45 * house) * 1.6;
+      for (const { h } of s.haze) h.power = (s.group.userData.hazePower ?? 20) * (0.85 + 0.3 * glow) * (1 - 0.6 * house);
+      if (s.group.userData.bezel) s.group.userData.bezel.color.setHex(0xff9745).multiplyScalar(0.7 + glow * 0.6);
+    }
+    // the lightsticks and phones take the palette; the crowd's own lights follow
+    // the stick/torch switch and dim when the house lights come up
+    const scale = (pipe.size.h * pipe.renderer.getPixelRatio() * 0.5) / Math.tan(pipe.camera.fov * 0.5 * DEG);
+    for (const U of pointMats) {
+      ['a', 'b', 'c', 'd'].forEach((k, i) => U.uPal.value[i].set(pal[k].r, pal[k].g, pal[k].b));
+      U.uScale.value = scale;
+    }
+    const mode = crowdLight === 'flash' ? 1 : 0;
+    for (const U of lightMats) { U.uMode.value = mode; U.uHouse.value = house; }
+    if (pipe.scene.fog) for (const U of fogMats) { U.fogDensity.value = pipe.scene.fog.density ?? 0; U.fogColor.value.copy(pipe.scene.fog.color); }
+    pipe.render(t);
   }
 
   // ── how often to draw ──────────────────────────────────────────────────────
   //
-  // A PHONE IS CAPPED AT 30. Nothing in this scene moves fast — lights swing over
-  // seconds, the screen pulses with the music — so the second thirty frames buy
-  // almost nothing to look at, and they are drawn on the same small cores the
-  // audio thread is trying to meet a deadline on. Halving the work here is the
-  // largest single saving available on mobile, and it is larger than anything
-  // left in the audio graph.
-  //
-  // The gate is on ELAPSED TIME rather than on frame parity. Parity assumes the
-  // panel runs at 60: on a 120 Hz phone — which is most of them now — skipping
-  // every other frame still leaves 60, and the saving never happened. On a panel
-  // already struggling at 40 it gives 20.
-  //
-  // If a rendered frame still costs too much, the interval doubles. A steady 30
-  // looks like a choice; a wobbling 45 looks like a fault, and the frames it
-  // drops come out of the audio thread.
-  const targetMs = 1000 / (quality === 'low' ? 30 : 60);
-  let heavy = false;
-  let lastDrawn = -1e9;
-  let drawn = 0;
+  // A phone is capped at 30: nothing here moves fast enough to need sixty, and
+  // the frames are drawn on the cores the audio thread is trying to meet a
+  // deadline on. If a frame still costs too much the interval doubles, and it
+  // doubles again under strain reported from the audio thread (setStrain) —
+  // which takes precedence, because a dropped frame is a frame and a dropped
+  // audio quantum is a click.
+  const targetMs = 1000 / (qName === 'low' ? 30 : 60);
+  let heavy = false, lastDrawn = -1e9, drawn = 0, frameBudget = 0, lastT = 0;
 
-  // ── the drawing yields to the sound, never the other way round ─────────────
-  //
-  // `heavy` above measures what a frame costs US. That is the wrong question on
-  // a machine where the frame is affordable and the audio callback is not — a
-  // laptop on battery, most obviously, where the governor drops the clock and
-  // the scene carries on hitting sixty while the convolver starts missing its
-  // deadline. The frame-cost governor never fires, because nothing about the
-  // frame got slower; what got slower is everything.
-  //
-  // So strain is reported from outside, from the audio thread's own underrun
-  // count, and it takes precedence. Level 1 halves the frame rate. Level 2 also
-  // drops the pixel ratio and switches the bloom pass off, which together are
-  // most of what a frame costs.
-  //
-  // The scene looks worse. That is the correct trade: a dropped frame is a
-  // frame, and a dropped audio quantum is a click.
-  let strain = 0;
-  function setStrain(level) {
-    const next = Math.max(0, Math.min(2, level | 0));
-    if (next === strain) return;
-    const wasSevere = strain >= 2;
-    strain = next;
-    const severe = strain >= 2;
-    if (severe === wasSevere) return;
-    applyBloom();
-    renderer.setPixelRatio(severe ? 1 : Math.min(window.devicePixelRatio || 1, maxRatio));
-    renderer.setSize(size.w, size.h, false);
-    composer.setSize(size.w, size.h);
-    applyPointScale();
-    publishLayout();
-  }
-
-  // Two independent reasons to drop the bloom pass — the user asked for a
-  // cheaper scene, or the audio thread is underrunning — and either is enough.
-  // Kept in one place so neither can switch it back on over the other's head.
-  function applyBloom() {
-    if (bloom) bloom.enabled = u.effects && strain < 2;
-  }
-
-  // The scene's share of the machine, as a switch rather than a reaction. This
-  // is the same trade setStrain makes under duress, made deliberately and kept:
-  // the crowds, the point fields and the light shafts stop being built, and the
-  // bloom pass stops running. The room, its seating, the rig and the screens
-  // are the venue itself and stay.
-  function setEffects(on) {
-    const next = !!on;
-    if (next === u.effects) return;
-    u.effects = next;
-    applyBloom();
-    // The effects are decided at build time, so the room has to be built again
-    // to gain or lose them. A venue change is a rebuild too, and this is that
-    // same path: the new root is compiled before the old one is taken down, so
-    // the switch does not flash black.
-    if (venueId) setVenue(venueId);
-  }
-
-  // A pass is enabled until told otherwise, so settle it now — the switch can
-  // arrive already off, out of the setting the last visit saved. This has to sit
-  // below `strain`'s declaration rather than up with the composer, because
-  // applyBloom reads it.
-  applyBloom();
-
-  function frame(now) {
-    raf = requestAnimationFrame(frame);
+  function tick(now) {
+    raf = requestAnimationFrame(tick);
     if (!venue || document.hidden) return;
-    // A millisecond of slack, so a frame arriving a hair early is not held back
-    // to the one after it — which would halve the rate rather than cap it.
-    if (now - lastDrawn < ((heavy || strain > 0) ? targetMs * 2 : targetMs) - 1) return;
+    // walking is not throttled with the show: a halved rate reads as lag
+    const interval = (heavy || strain > 0) && !walker.moving && !walker.drag ? targetMs * 2 : targetMs;
+    if (now - lastDrawn < interval - 1) return;
     lastDrawn = now;
     drawn++;
-
     const started = performance.now();
     const t = clock.getElapsedTime();
-    const p = pulseRef ? pulseRef.current : pulse;
-    u.uTime.value = t;
-    u.uPulse.value = p;
-    venue.update(t, p);
-    composer.render();
-
-    // rolling average of how long a rendered frame costs us, against the
-    // interval we are actually trying to hold
+    const dt = Math.min(0.1, Math.max(0, t - lastT));
+    lastT = t;
+    frame(dt, t);
     frameBudget += ((performance.now() - started) - frameBudget) * 0.05;
     if (!heavy && frameBudget > targetMs * 0.78) heavy = true;
     else if (heavy && frameBudget < targetMs * 0.42) heavy = false;
   }
 
-  // ── plumbing ───────────────────────────────────────────────────────────────
-
-  function resize(w, h) {
-    size = { w: Math.max(1, w), h: Math.max(1, h) };
-    // Keep whatever strain has decided; a resize is not a reason to hand the
-    // pixels back to a machine that could not afford them a moment ago.
-    renderer.setPixelRatio(strain >= 2 ? 1 : Math.min(window.devicePixelRatio || 1, maxRatio));
-    renderer.setSize(size.w, size.h, false);
-    composer.setSize(size.w, size.h);
-    bloom?.setSize(size.w, size.h);
-    camera.aspect = size.w / size.h;
-    camera.updateProjectionMatrix();
-    applyPointScale();
-    publishLayout();
+  function disposeTree(root) {
+    const keep = new Set([art.coverTex, ...art.cache.values()]);
+    root.traverse((o) => {
+      if (o.isInstancedMesh) o.dispose();
+      o.geometry?.dispose();
+      const ms = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+      for (const m of ms) {
+        for (const k of Object.keys(m)) { const v = m[k]; if (v && v.isTexture && !v.userData.shared && !keep.has(v)) v.dispose(); }
+        if (m.uniforms) for (const u of Object.values(m.uniforms)) { const v = u?.value; if (v && v.isTexture && !v.userData?.shared && !keep.has(v)) v.dispose(); }
+        m.dispose();
+      }
+      if (o.isLight && o.shadow?.map) o.shadow.map.dispose();
+    });
   }
 
+  applyQuality();
+  // the drawn sleeves use the app's fonts; draw them again once those load
+  document.fonts?.ready?.then(() => { if (running) art.refresh(); });
+
   return {
-    setVenue,
+    setVenue(id) { if (id !== venueId || !venue) setVenue(id); },
     setPulse: (p) => { pulse = p; },
     setPulseRef: (ref) => { pulseRef = ref || null; },
-    setStrain,
-    setEffects,
-    resize,
-    onLayout(fn) { onLayout = fn; if (layoutRect) fn({ ...layoutRect }); },
-    start() { if (!running) { running = true; clock.start(); raf = requestAnimationFrame(frame); } },
-    // Frames actually drawn, for the frame-rate check in scripts/audio-smoke.mjs.
-    // Nothing in the app reads it.
-    stats: () => ({ drawn, heavy, strain, effects: u.effects, frameMs: +frameBudget.toFixed(2) }),
+    // () => AnalyserNode | null — read for the kick, never connected to
+    setAnalyser: (get) => { analyser = typeof get === 'function' ? get : null; },
+    setArt: (want) => { art.set(want); },
+    setPlaying: (on) => { playing = !!on; houseTarget = playing ? 0 : 1; },
+    setCrowdLight: (mode) => { crowdLight = mode === 'flash' ? 'flash' : 'stick'; },
+    setStrain(level) {
+      const next = Math.max(0, Math.min(2, level | 0));
+      if (next === strain) return;
+      const severe = (next >= 2) !== (strain >= 2);
+      strain = next;
+      if (severe) applyQuality();
+    },
+    // The crowd is decided when the room is built, so switching rebuilds it;
+    // the light shafts and bloom go at once.
+    setEffects(on) {
+      const next = !!on;
+      if (next === fx) return;
+      fx = next;
+      applyPasses();
+      if (venueId) setVenue(venueId);
+    },
+    resize(w, h) {
+      size = { w: Math.max(1, w), h: Math.max(1, h) };
+      pipe.resize(size.w, size.h);
+      if (venue) applyCamera(0);
+    },
+    start() {
+      if (running) return;
+      running = true;
+      clock.start();
+      raf = requestAnimationFrame(tick);
+      if (venueId && !venue) setVenue(venueId);
+    },
+    stats: () => ({ drawn, heavy, strain, effects: fx, frameMs: +frameBudget.toFixed(2), venue: venueId, walker: walker.feet.toArray().map((v) => +v.toFixed(2)) }),
+    // for tests and the walk-through: the walker and the pipeline
+    debug: { walker, pipe, art, beat },
     dispose() {
       running = false;
+      buildGen++;
       cancelAnimationFrame(raf);
-      venueGen++;
-      dropPending();
-      if (venue) { scene.remove(venue.root); disposeTree(venue.root); venue = null; }
-      composer.dispose();
-      renderer.dispose();
+      teardown();
+      walker.dispose();
+      art.dispose();
+      pipe.dispose();
     },
   };
 }

@@ -7,7 +7,8 @@
 import { useState } from 'react';
 import Scene from './Scene.jsx';
 import { formatTime } from './BottomTransport.jsx';
-import { EffectsToggle } from './TopBar.jsx';
+import { CrowdLightToggle, EffectsToggle } from './TopBar.jsx';
+import { CROWD_LIGHT_VENUES } from '../useCrowdLight.js';
 
 // Brand mark — same "Wave → Hall Arc" as the desktop TopBar, inlined.
 function BrandMark({ size = 20 }) {
@@ -86,6 +87,7 @@ export default function MobileLayout({
   onFileClick, onVenueClick,
   strain = 0,
   effects = true, onEffectsChange,
+  crowdLight = 'stick', onCrowdLightChange, analyser = null,
 }) {
   const [showMixer, setShowMixer] = useState(false);
   const exportPct = Math.round(exportProgress * 100);
@@ -122,7 +124,14 @@ export default function MobileLayout({
             artist={upload ? upload.artist : null}
             strain={strain}
             effects={effects}
+            playing={playing}
+            crowdLight={crowdLight}
+            analyser={analyser}
           />
+          {/* the crowd-light switch sits on the scene it changes; the header has no room */}
+          {onCrowdLightChange && CROWD_LIGHT_VENUES.includes(venue.id) && (
+            <CrowdLightToggle mode={crowdLight} onChange={onCrowdLightChange} className="absolute bottom-2 right-2 z-10 bg-black/50 backdrop-blur-sm" />
+          )}
         </div>
 
         {/* cards */}

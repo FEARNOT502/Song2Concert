@@ -1,227 +1,329 @@
-// concerthall.js — a vineyard hall: terraced blocks stepping down around a
-// central platform, audience wrapping behind the orchestra as well as in front.
-//
-// The low wall at the front of every block is the thing to look at. It is what
-// makes the form work: each seat gets a lateral reflection off a surface a few
-// metres away, where a shoebox has to send it twenty metres across the room. The
-// blocks are drawn with those parapets proud of the seating for that reason.
-//
-// `dims` in the room model describes the listener's BLOCK, not the building — the
-// image-source solver needs the local geometry. So the block below is the modelled
-// 18 m wide, and the hall around it is drawn larger.
+// ─────────────────────────────────────────────────────────────────────────────
+// CONCERT HALL — a vineyard after Lotte Concert Hall: pale timber, red seats,
+// terraces stepping round a rounded platform, choir seats behind the orchestra
+// and the organ over them, a rippled ceiling with a canopy over the stage.
+// The model's block is the listener's terrace (18 m wide): we sit 13 m out.
+// ─────────────────────────────────────────────────────────────────────────────
 
 import * as THREE from 'three';
-import { WARM, basic, crowdField, lambert, makeScreen, prng, sparkField } from '../kit.js';
-import { fixture, organFacade, performer, rakedBlock, reflectorCloud, seatBank, thin } from '../props.js';
-import { frame } from './frame.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { KELVIN, V3, glowMat, plasterTex, prng, std, thin, velvet, withRepeat, woodTex } from '../core.js';
+import { crowd3D } from '../people.js';
+import { ledScreen, mats, performer, seatField, shadowSpot } from '../rig.js';
+import { orchestra } from './orchestra.js';
 
-// A terrace: raked seats behind a low reflecting wall, with a lit coping.
-function terrace(opts, root, people, treads) {
-  const block = rakedBlock(opts);
-  root.add(block.mesh);
-  if (treads) treads.push(...block.treads);
-  const w = opts.x1 - opts.x0;
-  const wall = new THREE.Mesh(new THREE.BoxGeometry(w, opts.parapet ?? 1.05, 0.32), lambert(0x3a2c1c, { emissive: 0x0c0805 }));
-  wall.position.set((opts.x0 + opts.x1) / 2, (opts.yBase ?? 0) + (opts.parapet ?? 1.05) / 2, opts.zNear - 0.16);
-  root.add(wall);
-  const coping = new THREE.Mesh(new THREE.BoxGeometry(w, 0.05, 0.38), basic(0x8a6428));
-  coping.position.set((opts.x0 + opts.x1) / 2, (opts.yBase ?? 0) + (opts.parapet ?? 1.05), opts.zNear - 0.16);
-  root.add(coping);
-  people.push(...block.people);
-  return block;
+// A terrace of seats in its own frame: rows run along local x, depth runs along
+// local +z away from the stage, and the front parapet is at z = 0. The block is
+// placed with `at` (front centre) and `yaw` (0 = facing -z, toward a stage at
+// smaller z).
+export function terrace(ctx, out, { at, yaw = 0, width, rows, rowD = 0.92, rise = 0.16, jump = [], parapet = 1.0, seat = 0.54, curve = 0.012, fill = 0.94, seed = 1, mats: M, stage, empty = null }) {
+  const g = new THREE.Group();
+  g.position.copy(at); g.rotation.y = yaw;
+  const steps = [];
+  let y = 0.08;
+  const tops = [];
+  for (let r = 0; r < rows; r++) {
+    if (jump.includes(r)) y += 0.55;
+    y += r === 0 ? 0 : rise;
+    tops.push(y);
+    // solid down to the hall floor, so a raised block is a mass, not a shelf
+    const b = new THREE.BoxGeometry(width + r * 0.3, y + at.y, rowD);
+    b.translate(0, (y - at.y) / 2, 0.2 + r * rowD + rowD / 2);
+    steps.push(b);
+    // the side walls: a low timber wall up each edge of the block, stepping
+    // with the rake, so the ends are closed as the front is
+    for (const sd of [-1, 1]) {
+      const sw = new THREE.BoxGeometry(0.18, 1.0, rowD + 0.02);
+      sw.translate(sd * ((width + r * 0.3) / 2 + 0.09), y + 0.5, 0.2 + r * rowD + rowD / 2);
+      sw.applyMatrix4(new THREE.Matrix4().makeRotationY(yaw)); sw.translate(at.x, at.y, at.z);
+      out.parapets.push(sw);
+    }
+    // a step wall where a section jumps: the low wall the vineyard is for
+    if (jump.includes(r)) {
+      const w = new THREE.BoxGeometry(width + r * 0.3, 0.95, 0.14); w.translate(0, y - 0.1, 0.2 + r * rowD - 0.07);
+      out.parapets.push(w.applyMatrix4(new THREE.Matrix4().makeRotationY(yaw)).translate(at.x, at.y, at.z));
+    }
+  }
+  const stepGeo = mergeGeometries(steps);
+  stepGeo.applyMatrix4(new THREE.Matrix4().makeRotationY(yaw)); stepGeo.translate(at.x, at.y, at.z);
+  out.steps.push(stepGeo);
+  // front parapet, curved in plan
+  const segs = 8;
+  for (let i = 0; i < segs; i++) {
+    const x0 = -width / 2 + (i / segs) * width, x1 = x0 + width / segs;
+    const zc = (x) => x * x * curve;
+    const len = Math.hypot(x1 - x0, zc(x1) - zc(x0));
+    const w = new THREE.BoxGeometry(len + 0.02, parapet + at.y, 0.18);
+    w.rotateY(-Math.atan2(zc(x1) - zc(x0), x1 - x0));
+    w.translate((x0 + x1) / 2, (parapet - at.y) / 2, (zc(x0) + zc(x1)) / 2);
+    w.applyMatrix4(new THREE.Matrix4().makeRotationY(yaw)); w.translate(at.x, at.y, at.z);
+    out.parapets.push(w);
+    const c = new THREE.BoxGeometry(len + 0.02, 0.05, 0.26);
+    c.rotateY(-Math.atan2(zc(x1) - zc(x0), x1 - x0));
+    c.translate((x0 + x1) / 2, parapet + 0.025, (zc(x0) + zc(x1)) / 2);
+    c.applyMatrix4(new THREE.Matrix4().makeRotationY(yaw)); c.translate(at.x, at.y, at.z);
+    out.copings.push(c);
+  }
+  const rnd = prng(seed);
+  const m = new THREE.Matrix4().makeRotationY(yaw).setPosition(at);
+  for (let r = 0; r < rows; r++) {
+    const wr = width + r * 0.3 - 0.8;
+    const n = Math.floor(wr / seat);
+    for (let i = 0; i < n; i++) {
+      const lx = -wr / 2 + (i + 0.5) * (wr / n);
+      const lz = 0.2 + r * rowD + rowD * 0.5 + lx * lx * curve * 0.5;
+      const p = V3(lx, tops[r], lz).applyMatrix4(m);
+      const turn = Math.atan2(stage.x - p.x, stage.z - p.z);
+      out.seats.push({ x: p.x, y: p.y, z: p.z, turn });
+      if (empty && empty(p)) continue;
+      if (rnd() < fill) out.people.push({ x: p.x, y: p.y + 0.02, z: p.z, turn: turn + (rnd() - 0.5) * 0.15, h: 0.93 + rnd() * 0.12 });
+    }
+  }
+  return tops;
 }
 
-export default function buildConcertHall(u) {
-  const f = frame('concerthall');
-  const root = new THREE.Group();
-  const HALL_W = 46, HALL_D = 44, HALL_H = f.height;
-  const PLATFORM_Z = f.source.z;   // 6 m from the stage end — the model's stage
-  const DECK = 1.0;
+export function organ(M) {
+  const g = new THREE.Group();
+  const pipes = [];
+  const add = (x, h, r, y0 = 0) => pipes.push({ x, h, r, y0 });
+  // towers and flats, symmetric: a tall centre tower, flats, side towers
+  const tower = (cx, n, hMax, r, curve = 0.5) => {
+    for (let i = 0; i < n; i++) {
+      const t = n === 1 ? 0 : (i / (n - 1)) * 2 - 1;
+      add(cx + t * (n - 1) * r * 1.1, hMax * (1 - curve * 0.12 * Math.abs(t)), r);
+    }
+  };
+  const flat = (x0, x1, n, h0, h1, r) => {
+    for (let i = 0; i < n; i++) { const t = i / (n - 1); add(x0 + (x1 - x0) * t, h0 + (h1 - h0) * t, r, 0.6); }
+  };
+  tower(0, 7, 9.6, 0.21);
+  for (const s of [-1, 1]) {
+    flat(s * 1.9, s * 4.1, 9, 7.0, 5.4, 0.12);
+    tower(s * 5.2, 5, 8.2, 0.18);
+    flat(s * 6.4, s * 7.7, 6, 5.6, 4.4, 0.1);
+  }
+  const bodyG = new THREE.CylinderGeometry(1, 1, 1, 18, 1, false);
+  bodyG.translate(0, 0.5, 0);
+  const footG = new THREE.ConeGeometry(1, 1, 18, 1, true); footG.rotateX(Math.PI); footG.translate(0, 0.5, 0);
+  const mouthG = new THREE.PlaneGeometry(1, 1);
+  const tin = std({ color: 0xd8d9dc, metalness: 1, roughness: 0.2 });
+  const bI = new THREE.InstancedMesh(bodyG, tin, pipes.length);
+  const fI = new THREE.InstancedMesh(footG, tin, pipes.length);
+  const mI = new THREE.InstancedMesh(mouthG, std({ color: 0x050505, roughness: 1 }), pipes.length);
+  const m4 = new THREE.Matrix4();
+  pipes.forEach((p, i) => {
+    const foot = Math.min(1.2, p.h * 0.16);
+    m4.compose(V3(p.x, p.y0 + foot, 0), new THREE.Quaternion(), V3(p.r, p.h - foot, p.r)); bI.setMatrixAt(i, m4);
+    m4.compose(V3(p.x, p.y0, 0), new THREE.Quaternion(), V3(p.r, foot, p.r)); fI.setMatrixAt(i, m4);
+    m4.compose(V3(p.x, p.y0 + foot + p.r * 1.4, p.r * 1.001), new THREE.Quaternion(), V3(p.r * 1.1, p.r * 1.8, 1)); mI.setMatrixAt(i, m4);
+  });
+  g.add(bI, fI, mI);
+  // the case: stiles between the towers, cornices over them, the impost below
+  const wood = M.lightWood;
+  const cs = [];
+  const box = (w, h, d, x, y, z) => { const b = new THREE.BoxGeometry(w, h, d); b.translate(x, y, z); cs.push(b); };
+  box(17.2, 0.9, 1.4, 0, -0.45, -0.3);
+  box(17.6, 0.18, 1.6, 0, 0.02, -0.2);
+  for (const s of [-1, 1]) {
+    for (const x of [1.75, 4.35, 6.1, 8.2]) box(0.3, x === 8.2 ? 6.2 : 9.2 - x * 0.35, 0.9, s * x, (x === 8.2 ? 6.2 : 9.2 - x * 0.35) / 2, -0.25);
+    box(1.3, 0.35, 1.0, s * 5.2, 8.5, -0.2);
+  }
+  box(3.4, 0.4, 1.1, 0, 10.0, -0.2);
+  box(17, 11, 0.3, 0, 5, -0.9);
+  const caseM = new THREE.Mesh(mergeGeometries(cs), wood);
+  g.add(caseM);
+  return g;
+}
 
-  // ── shell: no ceiling box, a masonry vault instead ──
-  const shellMat = lambert(0x2c2115, { side: THREE.BackSide, emissive: 0x080604 });
-  const shell = new THREE.Mesh(new THREE.BoxGeometry(HALL_W, HALL_H, HALL_D), shellMat);
-  shell.position.set(0, HALL_H / 2, HALL_D / 2 - 4);
-  root.add(shell);
-  const vault = new THREE.Mesh(
-    new THREE.SphereGeometry(30, 26, 12, 0, Math.PI * 2, 0, Math.PI * 0.34),
-    lambert(0x2a2016, { side: THREE.BackSide, emissive: 0x0a0705 }),
-  );
-  vault.position.set(0, HALL_H - 8, 14);
-  root.add(vault);
+export function buildConcertHall(ctx) {
+  const { pipe, q, cu } = ctx;
+  const root = new THREE.Group();
+  const HW = 21, Z0 = -15, Z1 = 38, HH = 20;
+  const STAGE = V3(0, 1.0, 6);
+  const DECK = 1.0;
+  const hinoki = woodTex({ key: 'hinoki', planks: 7, joints: 2, base: [0.74, 0.57, 0.39], tone: 0.08, grain: 0.18, rough: 0.35, seed: 31 });
+  const oak = woodTex({ key: 'lightoak', planks: 5, joints: 1, base: [0.62, 0.45, 0.3], tone: 0.1, grain: 0.25, rough: 0.5, seed: 33 });
+  const M = {
+    lightWood: std({ ...withRepeat(oak, 1 / 1.5, 1 / 1.5), roughness: 1 }),
+    parapet: std({ ...withRepeat(oak, 1 / 1.2, 1 / 1.2), roughness: 1 }),
+  };
+  const bumps = plasterTex({ key: 'hallbumps', base: [0.7, 0.58, 0.45], bumps: 5 });
+  const wallMat = std({ ...withRepeat(bumps, 1 / 2.4, 1 / 2.4), roughness: 1, normalScale: new THREE.Vector2(1.6, 1.6) });
+
+  // ── shell: a rounded plan, walls of bumped timber ──
+  const plan = [[-HW, Z1], [HW, Z1], [HW, 6], [17, -9], [8, Z0], [-8, Z0], [-17, -9], [-HW, 6]];
+  for (let i = 0; i < plan.length; i++) {
+    const [x0, z0] = plan[i], [x1, z1] = plan[(i + 1) % plan.length];
+    const len = Math.hypot(x1 - x0, z1 - z0);
+    const geo = new THREE.PlaneGeometry(len, HH);
+    const uv = geo.attributes.uv; for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getX(k) * len / 2.4, uv.getY(k) * HH / 2.4);
+    const w = new THREE.Mesh(geo, wallMat);
+    w.position.set((x0 + x1) / 2, HH / 2, (z0 + z1) / 2);
+    w.rotation.y = Math.atan2(x0 - x1, z0 - z1) + Math.PI / 2;
+    w.material.side = THREE.DoubleSide;
+    w.receiveShadow = true;
+    root.add(w);
+  }
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(HW * 2, Z1 - Z0), std({ color: 0x1a120c, roughness: 0.9 }));
+  floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, (Z0 + Z1) / 2); root.add(floor);
+  // the ceiling: a shallow dome with ripples, cream plaster
+  const cg = new THREE.PlaneGeometry(HW * 2, Z1 - Z0, 60, 70);
+  cg.rotateX(Math.PI / 2);
+  const cp = cg.attributes.position;
+  for (let i = 0; i < cp.count; i++) {
+    const x = cp.getX(i), z = cp.getZ(i);
+    const r2 = (x / HW) ** 2 + (z / ((Z1 - Z0) / 2)) ** 2;
+    cp.setY(i, HH + 2.5 * (1 - r2) + 0.45 * Math.sin(x * 0.45 + z * 0.12) * Math.cos(z * 0.33));
+  }
+  cg.computeVertexNormals();
+  const ceil = new THREE.Mesh(cg, std({ ...withRepeat(plasterTex({ key: 'ceilplaster', base: [0.86, 0.82, 0.76] }), 8, 10), roughness: 1, side: THREE.DoubleSide }));
+  ceil.position.z = (Z0 + Z1) / 2; root.add(ceil);
+  // the canopy over the platform
+  const can = new THREE.Mesh(new THREE.SphereGeometry(1, 72, 18, 0, Math.PI * 2, Math.PI * 0.78, Math.PI * 0.22), std({ color: 0xd9cbb4, roughness: 0.7, side: THREE.DoubleSide }));
+  can.scale.set(9, 2.4, 6); can.position.set(0, 16.2, 4.5); root.add(can);
+  const canFill = new THREE.PointLight(KELVIN(3600), 0, 16, 2);
+  canFill.position.set(0, 10.5, 7); root.add(canFill);
+  const canRim = new THREE.Mesh(new THREE.TorusGeometry(1, 0.012, 6, 60), glowMat(KELVIN(3000), 2.5));
+  canRim.rotation.x = Math.PI / 2; canRim.scale.set(9 * Math.sin(Math.PI * 0.22), 6 * Math.sin(Math.PI * 0.22), 1); canRim.position.set(0, 16.2 - 2.4 * Math.cos(Math.PI * 0.22), 4.5); root.add(canRim);
+  // downlights in the ceiling and a cove along the top of the walls
+  const dl = [];
+  for (let x = -16; x <= 16; x += 4) for (let z = -8; z <= 34; z += 4.5) {
+    if (Math.abs(x) < 9 && z > -1 && z < 10) continue;
+    dl.push(pipe.flares.add(V3(x, HH + 2.5 * (1 - (x / HW) ** 2 - ((z - (Z0 + Z1) / 2) / ((Z1 - Z0) / 2)) ** 2) - 0.2, z), KELVIN(3000), 0.5, 0.4));
+  }
+  const coveM = glowMat(KELVIN(2700), 1.2);
+  for (let i = 0; i < plan.length; i++) {
+    const [x0, z0] = plan[i], [x1, z1] = plan[(i + 1) % plan.length];
+    const len = Math.hypot(x1 - x0, z1 - z0);
+    const s = new THREE.Mesh(new THREE.BoxGeometry(len, 0.06, 0.06), coveM);
+    s.position.set((x0 + x1) / 2 * 0.985, HH - 0.3, (z0 + z1) / 2 * 0.985 + 0.2);
+    s.rotation.y = Math.atan2(z0 - z1, x1 - x0);
+    root.add(s);
+  }
 
   // ── the platform ──
-  const podium = new THREE.Mesh(new THREE.CylinderGeometry(8.2, 8.6, DECK, 40), lambert(0x2f2416, { emissive: 0x0c0804 }));
-  podium.scale.z = 0.72;
-  podium.position.set(0, DECK / 2, PLATFORM_Z);
-  root.add(podium);
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(8.2, 0.05, 6, 44), basic(0x9a7030));
-  rim.rotation.x = Math.PI / 2;
-  rim.scale.y = 0.72;
-  rim.position.set(0, DECK, PLATFORM_Z);
-  root.add(rim);
-  // risers for the back desks
-  for (let i = 0; i < 2; i++) {
-    const r = new THREE.Mesh(new THREE.BoxGeometry(13 - i * 3, 0.32, 2.2), lambert(0x1a120c));
-    r.position.set(0, DECK + 0.16 + i * 0.32, PLATFORM_Z - 2.4 - i * 2.2);
-    root.add(r);
+  const plat = new THREE.Group();
+  const s = new THREE.Shape();
+  s.moveTo(-10, -7); s.lineTo(10, -7); s.lineTo(10, 1.5);
+  s.bezierCurveTo(10, 4.8, 5.5, 6.3, 0, 6.3); s.bezierCurveTo(-5.5, 6.3, -10, 4.8, -10, 1.5); s.lineTo(-10, -7);
+  const pg = new THREE.ExtrudeGeometry(s, { depth: DECK, bevelEnabled: false, curveSegments: 32 });
+  pg.rotateX(Math.PI / 2); pg.translate(0, DECK, 0);
+  const stageTop = std({ ...withRepeat(hinoki, 1 / 1.3, 1 / 2.6), roughness: 1 });
+  // top faces carry UVs in extrude units; scale them to metres
+  const platMesh = new THREE.Mesh(pg, [stageTop, std({ color: 0x3a2818, roughness: 0.6 })]);
+  platMesh.position.set(0, 0, 5.2); platMesh.receiveShadow = true;
+  plat.add(platMesh);
+  root.add(plat);
+
+  // ── seating: our block, the side terraces, the choir behind ──
+  const out = { steps: [], parapets: [], copings: [], seats: [], people: [] };
+  const eyeZ = 19;
+  const stageC = V3(0, DECK, 5);
+  const notMine = (p) => Math.abs(p.z - eyeZ) < 0.55 && Math.abs(p.x) < 0.8;
+  const ours = terrace(ctx, out, { at: V3(0, 0, 12.6), width: 18, rows: 19, rise: 0.11, jump: [8, 14], parapet: 0.95, curve: 0.008, seed: 71, stage: stageC, empty: notMine });
+  const eyeRow = Math.floor((eyeZ - 12.8) / 0.92);
+  const eye = V3(0, ours[Math.min(ours.length - 1, eyeRow)] + 1.4, eyeZ);
+  for (const sd of [-1, 1]) {
+    terrace(ctx, out, { at: V3(sd * 13.6, 0.8, 11.2), yaw: sd * 0.62, width: 7.5, rows: 12, rise: 0.2, jump: [6], parapet: 1.05, seed: 81 + sd, stage: stageC });
+    terrace(ctx, out, { at: V3(sd * 14.2, 3.4, 2.0), yaw: sd * 1.22, width: 9, rows: 6, rise: 0.36, parapet: 1.1, curve: 0.02, seed: 91 + sd, stage: stageC });
+    terrace(ctx, out, { at: V3(sd * 12.0, 3.2, -6.2), yaw: sd * 2.1, width: 7, rows: 5, rise: 0.4, parapet: 1.1, curve: 0.02, seed: 95 + sd, stage: stageC });
+    terrace(ctx, out, { at: V3(sd * 17.4, 7.6, 16), yaw: sd * 1.45, width: 16, rows: 4, rise: 0.42, parapet: 1.05, curve: 0.004, seed: 99 + sd, stage: stageC });
+    terrace(ctx, out, { at: V3(sd * 15.6, 7.8, -3.5), yaw: sd * 1.9, width: 8, rows: 4, rise: 0.45, parapet: 1.05, curve: 0.01, seed: 103 + sd, stage: stageC });
   }
+  terrace(ctx, out, { at: V3(0, 2.0, -2.8), yaw: Math.PI, width: 15, rows: 7, rise: 0.46, parapet: 1.0, curve: 0.01, seed: 111, stage: stageC });
+  terrace(ctx, out, { at: V3(0, 7.4, 31), width: 36, rows: 6, rise: 0.4, parapet: 1.05, curve: 0.002, seed: 121, stage: stageC });
+  const stepsMesh = new THREE.Mesh(mergeGeometries(out.steps), std({ color: 0x2a1a12, roughness: 0.95 }));
+  stepsMesh.receiveShadow = true;
+  root.add(stepsMesh);
+  root.add(new THREE.Mesh(mergeGeometries(out.parapets), M.parapet));
+  root.add(new THREE.Mesh(mergeGeometries(out.copings), std({ color: 0xc9a878, roughness: 0.35 })));
+  root.add(seatField(out.seats, { fabric: velvet(0x8e1018, 'lotteseat'), frame: std({ color: 0x5a3c22, roughness: 0.45 }) }));
+  if (q.crowd) root.add(crowd3D(thin(out.people, Math.round(out.people.length * Math.max(0.5, q.crowd))), cu, { kind: 'seated', detail: 1, seed: 17 }));
 
-  // ── the organ, and the choir terrace under it ──
-  const organ = organFacade({ width: 17, height: 9, color: 0x33281a });
-  organ.position.set(0, 6.4, -1.6);
-  root.add(organ);
+  // ── the organ ──
+  const org = organ(M);
+  org.position.set(0, 7.0, Z0 + 1.6);
+  root.add(org);
 
-  // the album art, hung over the platform as a discreet projection panel
-  const screen = makeScreen({ w: 7.2, h: 5.0, pixels: false, halo: WARM }, u);
-  screen.position.set(0, 7.8, 1.4);
+  // ── the orchestra: a four-wind orchestra in American seating ──
+  const cond = V3(0, DECK + 0.25, 10.2);
+  orchestra(root, cu, { DECK, cond, q });
+  const conductor = performer('conductor', { top: 0x050507, skin: 0.3, cast: true });
+  conductor.position.copy(cond); conductor.rotation.y = Math.PI; root.add(conductor);
+  const podium = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.6, 0.25, 24), std({ color: 0x2a1c12 }));
+  podium.position.set(cond.x, DECK + 0.125, cond.z); root.add(podium);
+
+  // ── the art: a projection screen hung over the choir, below the pipes ──
+  const aspect = 16 / 9;
+  const SW = 7.4, SH = SW / aspect;
+  const screen = ledScreen({ w: SW, h: SH, tex: ctx.art.texture(aspect), pitch: 0.0012, bright: 1.1, frame: 0.06, light: true, lightPower: 0.6 });
+  screen.position.set(0, 9.7, -8.2);
   root.add(screen);
-
-  const people = [];
-  const treads = [];
-  const rnd = prng(71);
-
-  // choir/rear block, behind the orchestra, facing us
-  const rear = rakedBlock({
-    x0: -9, x1: 9, zNear: -3.6, zFar: 0.4, rows: 4,
-    riseFirst: 1.2, rise: 0.45, seatSpacing: 0.95, headHeight: 1.2, fill: 0.55,
-    seed: 12, color: 0x2e2115, tint: '#4a331a', emissive: 0x0a0705,
-  });
-  root.add(rear.mesh);
-  people.push(...rear.people.map((p) => ({ ...p, turn: Math.PI })));
-
-  // ── terraced blocks ──
-  // ours: the modelled 18 m block, stepping up away from the platform
-  const own = terrace({
-    x0: f.xMin, x1: f.xMax, zNear: 11.5, zFar: 30, rows: 14,
-    riseFirst: 0.55, rise: 0.42, seatSpacing: 0.6, headHeight: 1.26,
-    seed: 71, fill: 0.95, color: 0x2e2115, tint: '#4a331a', emissive: 0x0e0a06,
-  }, root, people, treads);
-  const ownRowDepth = (30 - 11.5) / 14;
-  const seatFloor = 0.55 + Math.floor((f.eye.z - 11.5) / ownRowDepth) * 0.42;
-
-  // side blocks, stepping down toward the platform
-  for (const side of [-1, 1]) {
-    terrace({
-      x0: side > 0 ? 11 : -21, x1: side > 0 ? 21 : -11,
-      zNear: 2.5, zFar: 13, rows: 8, yBase: 3.4,
-      riseFirst: 0.5, rise: 0.46, seatSpacing: 0.62, headHeight: 1.24,
-      seed: 91 + side, fill: 0.9, parapet: 1.2, color: 0x2a1e13, tint: '#452f18', emissive: 0x0e0a06,
-    }, root, people, treads);
-    terrace({
-      x0: side > 0 ? 10 : -22, x1: side > 0 ? 22 : -10,
-      zNear: 14, zFar: 26, rows: 9, yBase: 1.4,
-      riseFirst: 0.5, rise: 0.44, seatSpacing: 0.62, headHeight: 1.24,
-      seed: 131 + side, fill: 0.9, parapet: 1.1, color: 0x2a1e13, tint: '#452f18', emissive: 0x0e0a06,
-    }, root, people, treads);
+  ctx.addScreen(screen, aspect, 'main');
+  for (const sx of [-SW / 2 + 0.3, SW / 2 - 0.3]) {
+    const cable = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 10, 4), mats().black);
+    cable.position.set(sx, 9.7 + SH / 2 + 5, -8.2); root.add(cable);
   }
 
-  // ── the orchestra ──
-  const players = [];
-  const desks = [];
-  const arcs = [
-    { r: 7.0, n: 15, dz: 0.6 },
-    { r: 5.4, n: 12, dz: 0.2 },
-    { r: 3.6, n: 8, dz: -0.2 },
-  ];
-  arcs.forEach((arc, ai) => {
-    for (let i = 0; i < arc.n; i++) {
-      const t = arc.n === 1 ? 0.5 : i / (arc.n - 1);
-      const a = Math.PI * (0.1 + t * 0.8);
-      const x = -Math.cos(a) * arc.r;
-      const z = PLATFORM_Z - Math.sin(a) * arc.r * 0.55 + arc.dz;
-      players.push({ x, y: DECK + (ai === 2 ? 0.32 : 0), z, height: 1.28, turn: Math.atan2(-x, PLATFORM_Z + 3 - z) });
-      desks.push([x, DECK + 0.7, z + 0.5, Math.atan2(-x, PLATFORM_Z + 3 - z)]);
-    }
-  });
-  root.add(crowdField(players, { color: 0x08060c, react: 0.5, sway: 0.03 }, u));
-
-  const standGeo = new THREE.BoxGeometry(0.42, 0.3, 0.02);
-  const stands = new THREE.InstancedMesh(standGeo, lambert(0x2a2018), desks.length);
-  const m = new THREE.Matrix4();
-  desks.forEach(([x, y, z, ry], i) => {
-    m.compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ry), new THREE.Vector3(1, 1, 1));
-    stands.setMatrixAt(i, m);
-  });
-  stands.instanceMatrix.needsUpdate = true;
-  root.add(stands);
-
-  const conductor = performer({ height: 1.8, arms: true, color: 0x05050a });
-  conductor.position.set(0, DECK + 0.3, PLATFORM_Z + 4.6);
-  conductor.rotation.y = Math.PI;
-  root.add(conductor);
-  const rostrum = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.75, 0.3, 16), lambert(0x1a120c));
-  rostrum.position.set(0, DECK + 0.15, PLATFORM_Z + 4.6);
-  root.add(rostrum);
-
-  // the terraces are what you look at in this room, so they carry real seats
-  root.add(seatBank(thin(treads, 4200), { color: 0x3a2a18 }));
-  root.add(crowdField(people, { color: 0x050409, react: 0.3, sway: 0.03 }, u));
-
-  // ── reflectors overhead ──
-  const clouds = [];
-  for (const c of [
-    { x: -7.5, z: 3.2, w: 8.5, d: 5, tilt: -0.1 },
-    { x: 0.5, z: 6.5, w: 11, d: 6, tilt: 0.03 },
-    { x: 8.2, z: 3.8, w: 8, d: 5, tilt: 0.11 },
-    { x: -3.5, z: 11.5, w: 9, d: 4.5, tilt: -0.06 },
-    { x: 5.5, z: 12.5, w: 9, d: 4.5, tilt: 0.07 },
-  ]) {
-    const cloud = reflectorCloud({ width: c.w, depth: c.d, y: 12.2, ceiling: HALL_H, tilt: c.tilt });
-    cloud.position.x = c.x;
-    cloud.position.z = c.z;
-    root.add(cloud);
-    clouds.push(cloud);
+  // ── light: the platform is lit, the house is warm and low ──
+  const warm = KELVIN(3900);
+  const key1 = shadowSpot(warm, 0, { angle: 0.42, penumbra: 0.8, size: q.shadowSize, far: 60, cast: q.shadows });
+  key1.position.set(-7, 18.5, 17); key1.target.position.set(0, DECK, 4);
+  const key2 = shadowSpot(warm, 0, { angle: 0.42, penumbra: 0.8, size: q.shadowSize, far: 60, cast: q.shadows });
+  key2.position.set(7, 18.5, 15); key2.target.position.set(0, DECK, 3);
+  const organLight = shadowSpot(KELVIN(3100), 0, { angle: 0.36, penumbra: 0.9, cast: false });
+  organLight.position.set(0, 19, 8); organLight.target.position.set(0, 12, Z0 + 1.5);
+  const choirWash = shadowSpot(warm, 0, { angle: 0.5, penumbra: 1, cast: false });
+  choirWash.position.set(0, 18, 12); choirWash.target.position.set(0, 4, -5);
+  for (const l of [key1, key2, organLight, choirWash]) { root.add(l, l.target); }
+  const top = new THREE.RectAreaLight(warm, 0, 14, 9);
+  top.position.set(0, 14.4, 4.5); top.lookAt(0, 0, 4.5); root.add(top);
+  const house = [];
+  for (const [x, y, z] of [[-12, 17, 10], [12, 17, 10], [0, 19, 24], [-10, 16, 28], [10, 16, 28], [0, 18, -6]]) {
+    const l = new THREE.PointLight(KELVIN(2900), 0, 40, 2); l.position.set(x, y, z); root.add(l); house.push(l);
   }
-
-  // soft downlights from the clouds — a hall is lit, not rigged
-  const lamps = [];
-  for (const [x, z] of [[-5, 5], [0, 7], [5, 5], [0, 2]]) {
-    const fx = fixture({ color: 0xffd9a8, beamLength: 12, spread: 3.0, opacity: 0.022, react: 0.35 }, u);
-    fx.position.set(x, 12, z);
-    root.add(fx);
-    lamps.push(fx);
-  }
-
-  const dust = Array.from({ length: 110 }).map(() => ({
-    x: (rnd() - 0.5) * 28, y: 1.5 + rnd() * 11, z: rnd() * 20,
-    size: 0.03 + rnd() * 0.04, color: 0xffd9a8, phase: rnd() * 6.283,
-  }));
-  root.add(sparkField(dust, { react: 0.25, base: 0.12, twinkle: 0.5, maxPx: 18 }, u));
-
-  root.add(new THREE.AmbientLight(0x342b24, 1.35));
-  const key = new THREE.PointLight(0xffd2a0, 210, 40, 2);
-  key.position.set(0, 10, PLATFORM_Z + 1);
-  root.add(key);
-  // house light: four soft sources over the terraces. Without them the seats
-  // read as a void, and a hall lit like a rock show is the wrong room entirely.
-  for (const [x, y, z] of [[-14, 15, 12], [14, 15, 12], [0, 16, 24], [0, 13, 1]]) {
-    const l = new THREE.PointLight(0xc8a67e, 380, 55, 2);
-    l.position.set(x, y, z);
-    root.add(l);
-  }
+  root.add(new THREE.HemisphereLight(0x3a2c22, 0x140c08, 0.2));
+  const hz = pipe.haze;
+  const offs = [[-0.5, 0.3], [0.5, 0.3], [0, -0.3]];
+  ctx.screenHaze(screen, offs.map(([dx, dy]) => hz.add(V3(dx * SW * 0.5, 9.7 + dy * SH * 0.5, -7.9), 0xffffff, 0)), offs);
+  screen.userData.hazePower = 6;
+  const hzStage = hz.add(V3(0, DECK + 2, 4), warm, 0);
 
   return {
-    root,
-    screen,
-    camera: {
-      position: new THREE.Vector3(0, seatFloor + f.eye.y, f.eye.z),
-      target: new THREE.Vector3(0, 5.8, PLATFORM_Z - 3),
-      fov: 54,
-    },
-    background: new THREE.Color(0x07050a),
-    fog: new THREE.Fog(0x120d0b, 16, 78),
-    bloom: { strength: 0.34, radius: 0.8, threshold: 0.58 },
-    update(t, pulse) {
-      screen.userData.update(pulse);
-      key.intensity = 240 + pulse * 45;
-      clouds.forEach((c, i) => {
-        c.position.y = 12.2 + Math.sin(t * 0.35 + i) * 0.05;
-        c.userData.panel.material.emissive.setHex(0x120a04).multiplyScalar(0.9 + pulse * 0.4);
-      });
-      lamps.forEach((fx) => {
-        if (fx.userData.glare) fx.userData.glare.material.opacity = 0.22 + pulse * 0.1;
-      });
+    root, eye,
+    camera: { pos: eye, target: V3(0, 6.4, -3), fov: 54, near: 0.1, far: 200 },
+    background: new THREE.Color(0),
+    fog: new THREE.FogExp2(0x0a0706, 0.004),
+    hazeDensity: 0.0008, beamGain: 0.2, hazeAmb: new THREE.Color(0x020201),
+    bloom: { strength: 0.35, radius: 0.5, threshold: 1.1 },
+    grade: { exposure: 1.15, vignette: 0.32, ca: 0.003, grain: 0.03, sat: 0.96, lift: [0.008, 0.006, 0.004] },
+    env: { w: HW * 2, h: HH, d: Z1 - Z0, eye, wall: 0x3a2818, floor: 0x3a2014, ambient: 0x0c0806, emitters: [
+      { w: 18, h: 10, pos: V3(0, DECK + 0.1, 3), normal: V3(0, 1, 0), color: KELVIN(3400), power: 2.2 },
+      { w: SW, h: SH, pos: V3(0, 9.7, -8), normal: V3(0, 0, 1), screen: true, power: 1, aspect },
+      { w: 30, h: 30, pos: V3(0, HH + 2, 10), normal: V3(0, -1, 0), color: KELVIN(3000), power: 0.35 },
+    ] },
+    envIntensity: 0.9,
+    update(f) {
+      const show = 1 - f.house;
+      const lift = 0.9 + 0.1 * f.energy;
+      key1.intensity = 2600 * lift; key2.intensity = 2200 * lift;
+      canFill.intensity = 40 + 20 * f.house;
+      top.intensity = 5 * lift;
+      organLight.intensity = 1600 + 300 * f.house;
+      choirWash.intensity = 700 + 400 * f.house;
+      house.forEach((l) => { l.intensity = 90 + 420 * f.house; });
+      dl.forEach((d) => { d.intensity = 0.2 + 0.6 * f.house; });
+      coveM.color.copy(KELVIN(2700)).lerp(f.pal.a, 0.75 * show).multiplyScalar(0.9 + 1.4 * f.house);
+      canRim.material.color.copy(KELVIN(3000)).lerp(f.pal.d, 0.8 * show).multiplyScalar(1.6 + 1.3 * f.house);
+      hzStage.power = 10 * lift;
+      // the only nod to the palette here: a faint tint in the canopy's light
+      top.color.copy(warm).lerp(f.pal.d, 0.35 * show);
+      organLight.color.copy(KELVIN(3100)).lerp(f.pal.c, 0.35 * show);
+      choirWash.color.copy(warm).lerp(f.pal.a, 0.25 * show);
+      cu.uRimColor.value.copy(warm).multiplyScalar(0.05);
+      cu.uStage.value.set(0, 6, 4);
+      cu.uWash.value.copy(warm).multiplyScalar(0.015 + 0.03 * f.house);
+      cu.uAmb.value.setRGB(0.01, 0.008, 0.006).multiplyScalar(1 + f.house * 3);
     },
   };
 }
