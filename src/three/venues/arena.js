@@ -8,61 +8,84 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { buildBowl, planBlocks, ribbonBoards, stretches } from '../bowl.js';
 import { APP, KELVIN, V3, concreteTex, std, withRepeat } from '../core.js';
 import { lightPoints } from '../people.js';
-import { ampStack, buildBowl, drumKit, guitar, hoists, keyboardRig, latticeInto, lineArray, micStand, ribbonBoards, shadowSpot, stageDeck, stageSteps, subStack, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, fohPosition, packFloor, runLasers, runShow, stageSet } from '../show.js';
+import { ampStack, drumKit, guitar, hoists, keyboardRig, latticeInto, lineArray, micStand, shadowSpot, stageDeck, stageSteps, subStack, truss, wedge } from '../rig.js';
+import { bigCrowd, bigScreens, blockGrid, floorBlocks, floorChairs, fohPosition, runLasers, runShow, stageSet } from '../show.js';
 
 export function buildArena(ctx) {
   const { pipe, q, cu } = ctx;
   const root = new THREE.Group();
-  const W = 110, D = 130, H = 37;
+  const H = 42;
   const DECK = 2.2, RIG = 20;
   const eye = V3(0, 1.6 + 0.9, 43);
   const STAGE = V3(0, DECK, 8);
 
-  // ── the building ──
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D), std({ ...withRepeat(concreteTex({ key: 'arenafloor', tone: 0.1 }), W / 4, D / 4), roughness: 0.9 }));
-  floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, D / 2 - 10); floor.receiveShadow = true;
-  root.add(floor);
-  // the building's walls stand behind the last row of every level
-  const SX = 68, SZ0 = -42, SZ1 = 116;
-  const shellMat = std({ color: 0x0b0b0e, roughness: 0.95, side: THREE.BackSide });
-  const shell = new THREE.Mesh(new THREE.BoxGeometry(SX * 2, H, SZ1 - SZ0), shellMat);
-  shell.position.set(0, H / 2, (SZ0 + SZ1) / 2); root.add(shell);
-  // roof: deep trusses both ways, a space-frame grid
-  const roofParts = [];
-  for (let z = SZ0 + 4; z <= SZ1 - 4; z += 12) latticeInto(roofParts, V3(-SX, H - 2.2, z), V3(SX, H - 2.2, z), 2.6, 0.08);
-  for (let x = -64; x <= 64; x += 16) latticeInto(roofParts, V3(x, H - 1.2, SZ0), V3(x, H - 1.2, SZ1), 1.6, 0.06);
-  root.add(new THREE.Mesh(mergeGeometries(roofParts), std({ color: 0x2a2c32, metalness: 0.6, roughness: 0.5 })));
-  // catwalks and the house lights on them
-  const houseFix = [];
-  for (let z = 12; z <= 96; z += 21) for (let x = -36; x <= 36; x += 18) {
-    houseFix.push(pipe.flares.add(V3(x, H - 4.2, z), KELVIN(4200), 1.2, 0));
-  }
-
-  // ── the bowl ──
+  // ── the bowl, by the seating plan ──
+  // The arena floor inside a rounded rectangle 54 × 82 m. Round it: the 200
+  // level, a horseshoe that stops either side of the stage; the 300 level,
+  // four short balconies of three rows on the long sides; the 400 level, all
+  // the way round, entered by tunnels onto a walkway along its front; the 500
+  // level, a top balcony along the middle of each long side. Doors (扉) at the
+  // head of the 200 level's aisles and along the back of the balconies.
+  const RING = { hx: 27, hz: 41, zc: 36, rc: 11 };
+  const behindStage = (x, z) => z < 0;
+  const balcony = (x, z) => Math.abs(x) > 37 && ((z > 10 && z < 28) || (z > 44 && z < 62));
   const bowl = buildBowl(pipe, {
-    hx: 27, hz: 41, zc: 36, rc: 11,
-    seatColor: 0x243044, concreteTone: 0.2, stage: STAGE, seed: 200, block: 13, aisle: 1.3,
+    ...RING,
+    seatColor: 0x243044, concreteTone: 0.2, stage: STAGE, seed: 200,
     // nobody behind the stage: those seats are empty, the block straight
     // behind the set is tarped; every other seat is sold
     cover: (x, z) => z < 2 && Math.abs(x) < 23,
     occ: (x, z) => (z < 4 ? 0 : 1),
     occupancy: 1,
     tiers: [
-      { rows: 16, rise: 0.36, riseFar: 0.46, run: 0.84, yBase: 0.9, inset: 0, crowd: true },   // 200 level
-      { rows: 3, rise: 0.46, run: 0.9, yBase: 10.2, inset: 15.4, crowd: true, face: 2.8, backWall: 2.6 }, // 300 balcony
-      { rows: 15, rise: 0.54, riseFar: 0.66, run: 0.9, yBase: 14.9, inset: 19.3, crowd: true, face: 2.6, backWall: 2.4 }, // 400 level
-      // 500 level: the top balcony, along the middle of the long sides only
-      { rows: 6, rise: 0.6, run: 0.9, yBase: 27.2, inset: 35.2, crowd: true, face: 3.2, backWall: 2.4,
-        where: (x, z) => Math.abs(x) > 26 && z > 8 && z < 66 },
+      // 200 level: 26 rows, an aisle every ten metres, a door at the top of each
+      { rows: 26, rise: 0.34, riseFar: 0.46, run: 0.82, yBase: 0.9, inset: 0, crowd: true, backWall: 3.2,
+        where: (x, z) => z > -1, aisle: 1.1,
+        blocks: (O, D) => planBlocks(O, D, { step: 10.5, door: { at: 'aisle', w: 1.6 } }) },
+      // 300 level: the four balconies, a door behind each block, a stair up
+      // from the 200 level at one end
+      { rows: 3, rise: 0.46, run: 0.9, yBase: 14.3, inset: 22.9, crowd: true, face: 2.8, backWall: 2.6, where: balcony,
+        blocks: (O, D) => planBlocks(O, D, { step: 9, door: { w: 1.6 } }),
+        stairs: (O, D) => stretches(O, D).map((st) => st.b - 1) },
+      // 400 level: 18 rows over a front walkway, tunnels up onto it from the
+      // concourse under the rows, one per block
+      { rows: 18, rise: 0.52, riseFar: 0.66, run: 0.9, yBase: 18.9, inset: 27.1, crowd: true, face: 2.8, backWall: 2.6,
+        cross: [0], crossRun: 1.4,
+        blocks: (O, D) => planBlocks(O, D, { step: 11, vom: { row: 0, w: 2.0 }, skip: behindStage }),
+        stairs: (O) => stretches(O, { incl: O.P.map((p) => { const a = O.path.at(p, 22.9); return balcony(a.x, a.z); }) }).map((st) => st.a + 8.5) },
+      // 500 level: seven rows along the middle of each long side
+      { rows: 7, rise: 0.62, run: 0.9, yBase: 32.7, inset: 46.2, crowd: true, face: 3.0, backWall: 2.4,
+        where: (x, z) => Math.abs(x) > 60 && z > 8 && z < 64,
+        blocks: (O, D) => planBlocks(O, D, { step: 11, door: { at: 'aisle', w: 1.6 } }),
+        stairs: (O, D) => stretches(O, D).flatMap((st) => [st.a + 10, st.b - 2]) },
     ],
   });
   root.add(bowl.group);
   const ribbons = ribbonBoards(bowl, { tiers: [1, 2], height: 0.95, bright: 1.6 });
   root.add(ribbons);
   ctx.addScreen({ userData: { face: ribbons } }, 1, 'ribbon');
+
+  // ── the building: the walls stand behind the last row of every level ──
+  const SX = 81, SZ0 = -51, SZ1 = 123;
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(SX * 2, SZ1 - SZ0), std({ ...withRepeat(concreteTex({ key: 'arenafloor', tone: 0.1 }), SX / 2, (SZ1 - SZ0) / 4), roughness: 0.9 }));
+  floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, (SZ0 + SZ1) / 2); floor.receiveShadow = true;
+  root.add(floor);
+  const shellMat = std({ color: 0x0b0b0e, roughness: 0.95, side: THREE.BackSide });
+  const shell = new THREE.Mesh(new THREE.BoxGeometry(SX * 2, H, SZ1 - SZ0), shellMat);
+  shell.position.set(0, H / 2, (SZ0 + SZ1) / 2); root.add(shell);
+  // roof: deep trusses both ways, a space-frame grid
+  const roofParts = [];
+  for (let z = SZ0 + 5; z <= SZ1 - 4; z += 12) latticeInto(roofParts, V3(-SX, H - 2.2, z), V3(SX, H - 2.2, z), 2.6, 0.08);
+  for (let x = -SX + 5; x <= SX - 4; x += 16) latticeInto(roofParts, V3(x, H - 1.2, SZ0), V3(x, H - 1.2, SZ1), 1.6, 0.06);
+  root.add(new THREE.Mesh(mergeGeometries(roofParts), std({ color: 0x2a2c32, metalness: 0.6, roughness: 0.5 })));
+  // catwalks and the house lights on them
+  const houseFix = [];
+  for (let z = 12; z <= 96; z += 21) for (let x = -36; x <= 36; x += 18) {
+    houseFix.push(pipe.flares.add(V3(x, H - 4.2, z), KELVIN(4200), 1.2, 0));
+  }
   // the set stands on the deck; the building's stands carry on round it
   stageSet(root, { w: 24, h: 17, z: 1.8, deck: DECK, towerX: 13.6, backdropW: 32, backdropH: 16, wingX: 19.5, wingW: 8, wingH: 11 });
 
@@ -121,10 +144,20 @@ export function buildArena(ctx) {
   root.add(new THREE.HemisphereLight(0x14141c, 0x050508, 0.18));
 
   // ── people ──
-  // a packed standing floor, and every sold seat taken
-  const avoidFoh = (x, z) => (Math.abs(x - eye.x) < 4.6 && Math.abs(z - eye.z) < 4.2) || (Math.abs(x) < 2.2 && z < 25.5);
-  const standing = packFloor({ x0: -25.5, x1: 25.5, z0: 17.4, z1: 76, avoid: avoidFoh, seed: 3 });
-  bigCrowd(root, cu, q, standing.concat(bowl.people.map((p) => ({ ...p, h: 0.97 }))), { seed: 21 });
+  // the floor seated in lettered blocks — A at the front to F at the back,
+  // 1 to 4 across — with the runway and the desk left clear; every sold seat
+  // in the stands taken
+  const inRing = (x, z, m) => {
+    const dx = Math.max(Math.abs(x) - (RING.hx - RING.rc), 0), dz = Math.max(Math.abs(z - RING.zc) - (RING.hz - RING.rc), 0);
+    return Math.hypot(dx, dz) < RING.rc - m;
+  };
+  const keep = (x, z) => inRing(x, z, 1.4) && !(Math.abs(x) < 2.4 && z < 25.6) && !(Math.abs(x - eye.x) < 4.6 && Math.abs(z - eye.z) < 4.2);
+  const floorSeats = floorBlocks(blockGrid(
+    [[19.5, 27.6], [29.2, 37.3], [38.9, 47.0], [48.6, 56.7], [58.3, 66.4], [68.0, 75.6]],
+    [[-25.4, -13.3], [-11.9, -1.0], [1.0, 11.9], [13.3, 25.4]],
+  ), { keep, seed: 3 });
+  root.add(floorChairs(floorSeats.chairs));
+  bigCrowd(root, cu, q, floorSeats.people.concat(bowl.people.map((p) => ({ ...p, h: 0.97 }))), { seed: 21 });
   const aisleField = lightPoints(bowl.aisleLights.map((a) => ({ ...a, white: true, size: 0.03 })), cu, { maxPx: 3 });
   aisleField.material.uniforms.uGain.value = 0.3;
   root.add(aisleField);
@@ -147,7 +180,7 @@ export function buildArena(ctx) {
     hazeDensity: 0.0016, beamGain: 0.55, hazeAmb: new THREE.Color(0x040306), hazeAmbDist: 160,
     bloom: { strength: 0.7, radius: 0.65, threshold: 1.15 },
     grade: { exposure: 1.2, vignette: 0.4, ca: 0.005, grain: 0.04, sat: 1.08, lift: [0.004, 0.004, 0.008] },
-    env: { w: W, h: H, d: D, eye, wall: 0x0a0a10, floor: 0x050507, emitters: [
+    env: { w: SX * 2, h: H, d: SZ1 - SZ0, eye, wall: 0x0a0a10, floor: 0x050507, emitters: [
       { w: 24, h: 13.5, pos: V3(0, 10.35, 2), normal: V3(0, 0, 1), screen: true, power: 1.5, aspect: 16 / 9 },
       { w: 30, h: 1, pos: V3(0, RIG, 12), normal: V3(0, -1, 0), color: APP.accent, power: 4 },
     ] },

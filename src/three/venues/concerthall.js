@@ -16,7 +16,7 @@ import { orchestra } from './orchestra.js';
 // local +z away from the stage, and the front parapet is at z = 0. The block is
 // placed with `at` (front centre) and `yaw` (0 = facing -z, toward a stage at
 // smaller z).
-export function terrace(ctx, out, { at, yaw = 0, width, rows, rowD = 0.92, rise = 0.16, jump = [], parapet = 1.0, seat = 0.54, curve = 0.012, fill = 0.94, seed = 1, mats: M, stage, empty = null }) {
+export function terrace(ctx, out, { at, yaw = 0, width, rows, rowD = 0.92, rise = 0.16, jump = [], parapet = 1.0, seat = 0.54, curve = 0.012, fill = 0.94, seed = 1, mats: M, stage, empty = null, grow = 0.3, gaps = [] }) {
   const g = new THREE.Group();
   g.position.copy(at); g.rotation.y = yaw;
   const steps = [];
@@ -24,23 +24,23 @@ export function terrace(ctx, out, { at, yaw = 0, width, rows, rowD = 0.92, rise 
   const tops = [];
   for (let r = 0; r < rows; r++) {
     if (jump.includes(r)) y += 0.55;
-    y += r === 0 ? 0 : rise;
+    y += r === 0 ? 0 : typeof rise === 'function' ? rise(r) : rise;
     tops.push(y);
     // solid down to the hall floor, so a raised block is a mass, not a shelf
-    const b = new THREE.BoxGeometry(width + r * 0.3, y + at.y, rowD);
+    const b = new THREE.BoxGeometry(width + r * grow, y + at.y, rowD);
     b.translate(0, (y - at.y) / 2, 0.2 + r * rowD + rowD / 2);
     steps.push(b);
     // the side walls: a low timber wall up each edge of the block, stepping
     // with the rake, so the ends are closed as the front is
     for (const sd of [-1, 1]) {
       const sw = new THREE.BoxGeometry(0.18, 1.0, rowD + 0.02);
-      sw.translate(sd * ((width + r * 0.3) / 2 + 0.09), y + 0.5, 0.2 + r * rowD + rowD / 2);
+      sw.translate(sd * ((width + r * grow) / 2 + 0.09), y + 0.5, 0.2 + r * rowD + rowD / 2);
       sw.applyMatrix4(new THREE.Matrix4().makeRotationY(yaw)); sw.translate(at.x, at.y, at.z);
       out.parapets.push(sw);
     }
     // a step wall where a section jumps: the low wall the vineyard is for
     if (jump.includes(r)) {
-      const w = new THREE.BoxGeometry(width + r * 0.3, 0.95, 0.14); w.translate(0, y - 0.1, 0.2 + r * rowD - 0.07);
+      const w = new THREE.BoxGeometry(width + r * grow, 0.95, 0.14); w.translate(0, y - 0.1, 0.2 + r * rowD - 0.07);
       out.parapets.push(w.applyMatrix4(new THREE.Matrix4().makeRotationY(yaw)).translate(at.x, at.y, at.z));
     }
   }
@@ -67,10 +67,11 @@ export function terrace(ctx, out, { at, yaw = 0, width, rows, rowD = 0.92, rise 
   const rnd = prng(seed);
   const m = new THREE.Matrix4().makeRotationY(yaw).setPosition(at);
   for (let r = 0; r < rows; r++) {
-    const wr = width + r * 0.3 - 0.8;
+    const wr = width + r * grow - 0.8;
     const n = Math.floor(wr / seat);
     for (let i = 0; i < n; i++) {
       const lx = -wr / 2 + (i + 0.5) * (wr / n);
+      if (gaps.some((a) => Math.abs(lx - a) < 0.55)) continue;
       const lz = 0.2 + r * rowD + rowD * 0.5 + lx * lx * curve * 0.5;
       const p = V3(lx, tops[r], lz).applyMatrix4(m);
       const turn = Math.atan2(stage.x - p.x, stage.z - p.z);
@@ -138,7 +139,7 @@ export function organ(M) {
 export function buildConcertHall(ctx) {
   const { pipe, q, cu } = ctx;
   const root = new THREE.Group();
-  const HW = 21, Z0 = -15, Z1 = 38, HH = 20;
+  const HW = 23, Z0 = -15, Z1 = 42, HH = 20;
   const STAGE = V3(0, 1.0, 6);
   const DECK = 1.0;
   const hinoki = woodTex({ key: 'hinoki', planks: 7, joints: 2, base: [0.74, 0.57, 0.39], tone: 0.08, grain: 0.18, rough: 0.35, seed: 31 });
@@ -151,7 +152,7 @@ export function buildConcertHall(ctx) {
   const wallMat = std({ ...withRepeat(bumps, 1 / 2.4, 1 / 2.4), roughness: 1, normalScale: new THREE.Vector2(1.6, 1.6) });
 
   // ── shell: a rounded plan, walls of bumped timber ──
-  const plan = [[-HW, Z1], [HW, Z1], [HW, 6], [17, -9], [8, Z0], [-8, Z0], [-17, -9], [-HW, 6]];
+  const plan = [[-HW, Z1], [HW, Z1], [HW, 6], [18, -9], [8, Z0], [-8, Z0], [-18, -9], [-HW, 6]];
   for (let i = 0; i < plan.length; i++) {
     const [x0, z0] = plan[i], [x1, z1] = plan[(i + 1) % plan.length];
     const len = Math.hypot(x1 - x0, z1 - z0);
@@ -215,23 +216,31 @@ export function buildConcertHall(ctx) {
   plat.add(platMesh);
   root.add(plat);
 
-  // ── seating: our block, the side terraces, the choir behind ──
+  // ── seating, by the seating plan ──
+  // In front of the platform, the 1st floor's five blocks A to E across the
+  // hall, each 23 rows in three terraces: rows 1–8 nearly flat, a wall, rows
+  // 9–16, another wall, rows 17–23 climbing to the height of the 2nd floor.
+  // Beside the platform L and R, behind it on either side LP and RP, and the
+  // choir seats P behind the orchestra under the organ. On the 2nd floor, A to
+  // E across the back of the hall, and L and R above the platform's sides.
   const out = { steps: [], parapets: [], copings: [], seats: [], people: [] };
   const eyeZ = 19;
   const stageC = V3(0, DECK, 5);
   const notMine = (p) => Math.abs(p.z - eyeZ) < 0.55 && Math.abs(p.x) < 0.8;
-  const ours = terrace(ctx, out, { at: V3(0, 0, 12.6), width: 18, rows: 19, rise: 0.11, jump: [8, 14], parapet: 0.95, curve: 0.008, seed: 71, stage: stageC, empty: notMine });
-  const eyeRow = Math.floor((eyeZ - 12.8) / 0.92);
-  const eye = V3(0, ours[Math.min(ours.length - 1, eyeRow)] + 1.4, eyeZ);
+  const rake = (r) => (r < 8 ? 0.1 : r < 16 ? 0.2 : 0.36);
+  const front = { rows: 23, rowD: 0.9, rise: rake, jump: [8, 16], parapet: 0.95, stage: stageC };
+  const ours = terrace(ctx, out, { ...front, at: V3(0, 0, 12.6), width: 7.6, grow: 0.12, curve: 0.01, seed: 71, empty: notMine });         // C
   for (const sd of [-1, 1]) {
-    terrace(ctx, out, { at: V3(sd * 13.6, 0.8, 11.2), yaw: sd * 0.62, width: 7.5, rows: 12, rise: 0.2, jump: [6], parapet: 1.05, seed: 81 + sd, stage: stageC });
-    terrace(ctx, out, { at: V3(sd * 14.2, 3.4, 2.0), yaw: sd * 1.22, width: 9, rows: 6, rise: 0.36, parapet: 1.1, curve: 0.02, seed: 91 + sd, stage: stageC });
-    terrace(ctx, out, { at: V3(sd * 12.0, 3.2, -6.2), yaw: sd * 2.1, width: 7, rows: 5, rise: 0.4, parapet: 1.1, curve: 0.02, seed: 95 + sd, stage: stageC });
-    terrace(ctx, out, { at: V3(sd * 17.4, 7.6, 16), yaw: sd * 1.45, width: 16, rows: 4, rise: 0.42, parapet: 1.05, curve: 0.004, seed: 99 + sd, stage: stageC });
-    terrace(ctx, out, { at: V3(sd * 15.6, 7.8, -3.5), yaw: sd * 1.9, width: 8, rows: 4, rise: 0.45, parapet: 1.05, curve: 0.01, seed: 103 + sd, stage: stageC });
+    terrace(ctx, out, { ...front, at: V3(sd * 8.9, 0, 12.3), yaw: sd * 0.08, width: 7.4, grow: 0.1, curve: 0.008, seed: 72 + sd });       // B, D
+    terrace(ctx, out, { ...front, at: V3(sd * 16.6, 0, 11.6), yaw: sd * 0.1, width: 5.8, grow: 0.06, curve: 0.006, seed: 75 + sd });      // A, E
+    terrace(ctx, out, { at: V3(sd * 14.2, 3.4, 2.0), yaw: sd * 1.22, width: 9, rows: 6, rise: 0.36, parapet: 1.1, curve: 0.02, seed: 91 + sd, stage: stageC });   // L, R
+    terrace(ctx, out, { at: V3(sd * 12.0, 3.2, -6.2), yaw: sd * 2.1, width: 7, rows: 5, rise: 0.4, parapet: 1.1, curve: 0.02, seed: 95 + sd, stage: stageC });   // LP, RP
+    terrace(ctx, out, { at: V3(sd * 15.6, 7.8, -3.5), yaw: sd * 1.9, width: 8, rows: 4, rise: 0.45, parapet: 1.05, curve: 0.01, seed: 103 + sd, stage: stageC }); // 2F L, R
   }
-  terrace(ctx, out, { at: V3(0, 2.0, -2.8), yaw: Math.PI, width: 15, rows: 7, rise: 0.46, parapet: 1.0, curve: 0.01, seed: 111, stage: stageC });
-  terrace(ctx, out, { at: V3(0, 7.4, 31), width: 36, rows: 6, rise: 0.4, parapet: 1.05, curve: 0.002, seed: 121, stage: stageC });
+  terrace(ctx, out, { at: V3(0, 2.0, -2.8), yaw: Math.PI, width: 15, rows: 7, rise: 0.46, parapet: 1.0, curve: 0.01, seed: 111, stage: stageC });                // P
+  terrace(ctx, out, { at: V3(0, 7.6, 34.2), width: 38, rows: 6, rise: 0.4, parapet: 1.05, curve: 0.002, grow: 0.2, gaps: [-13, -5.2, 5.2, 13], seed: 121, stage: stageC }); // 2F A–E
+  const eyeRow = Math.floor((eyeZ - 12.8) / 0.9);
+  const eye = V3(0, ours[Math.min(ours.length - 1, eyeRow)] + 1.4, eyeZ);
   const stepsMesh = new THREE.Mesh(mergeGeometries(out.steps), std({ color: 0x2a1a12, roughness: 0.95 }));
   stepsMesh.receiveShadow = true;
   root.add(stepsMesh);

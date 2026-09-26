@@ -12,7 +12,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { V3, glowMat, prng, std, thin, velvet } from './core.js';
 import { crowdLights, silhouettes, withCells } from './people.js';
-import { drapeGeometry, latticeInto, ledScreen, mats } from './rig.js';
+import { drapeGeometry, latticeInto, ledScreen, mats, seatField } from './rig.js';
 
 // The simulated song's shape: verse, pre-chorus, chorus, break over 24 bars.
 // A real track brings its own (`f.sec`, from the beat follower).
@@ -36,8 +36,8 @@ export function runShow(rig, list, f, { house, stage, span = 30, up = false, str
     let lvl = 0, col = cols[0];
     if (up) {
       // floor fixtures: beams up and out into the room
-      const spread = sec === 'chorus' ? 0.55 : sec === 'pre' ? 0.35 : 0.2;
-      const sway = Math.sin(t * (sec === 'chorus' ? 1.6 : 0.5) + ph) * spread;
+      const swing = sec === 'chorus' ? 0.55 : sec === 'pre' ? 0.35 : 0.2;
+      const sway = Math.sin(t * (sec === 'chorus' ? 1.6 : 0.5) + ph) * swing;
       fx.dir.set(u * 1.2 + sway, 1, (sec === 'break' ? 0.1 : 0.35) + 0.2 * Math.cos(t * 0.7 + ph)).normalize();
       lvl = sec === 'break' ? 0.1 : sec === 'verse' ? 0.35 : 0.6 + 0.4 * f.kick;
       col = cols[(i + (sec === 'chorus' ? Math.floor(f.beat / 2) : 0)) % 2];
@@ -178,6 +178,39 @@ export function packFloor({ x0, x1, z0, z1, spacing = 0.62, avoid = null, seed =
     }
   }
   return out;
+}
+
+// Arena seats on the floor, in the lettered blocks of the seating plan: each
+// block { x0, x1, z0, z1 } filled with rows `pitch` apart and chairs `seat`
+// apart, all facing the stage (towards -z). The crowd stands at the chairs.
+// `keep(x, z)` drops chairs where something else stands (a runway, the desk).
+export function floorBlocks(blocks, { seat = 0.5, pitch = 0.9, seed = 5, occupancy = 0.97, keep = null } = {}) {
+  const rnd = prng(seed);
+  const people = [], chairs = [];
+  for (const b of blocks) {
+    const nx = Math.floor((b.x1 - b.x0) / seat), nz = Math.floor((b.z1 - b.z0) / pitch);
+    const ox = b.x0 + (b.x1 - b.x0 - nx * seat) / 2 + seat / 2;
+    for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
+      const x = ox + i * seat, z = b.z0 + (j + 0.5) * pitch;
+      if (keep && !keep(x, z)) continue;
+      chairs.push({ x, y: 0, z: z + 0.16, turn: Math.PI });
+      if (rnd() < occupancy) people.push({ x: x + (rnd() - 0.5) * 0.08, y: 0, z: z - 0.16 + (rnd() - 0.5) * 0.06, h: 0.92 + rnd() * 0.14 });
+    }
+  }
+  return { people, chairs };
+}
+
+// A grid of lettered blocks: `rows` of z ranges (front to back) by `cols` of
+// x ranges, each clipped to what `inside` allows.
+export function blockGrid(zs, xs) {
+  const out = [];
+  zs.forEach(([z0, z1], r) => xs.forEach(([x0, x1], c) => out.push({ x0, x1, z0, z1, name: String.fromCharCode(65 + r) + (c + 1) })));
+  return out;
+}
+
+// The chairs themselves, instanced; they are not in the way of a walk.
+export function floorChairs(chairs, { color = 0x1a1c22 } = {}) {
+  return seatField(chairs, { style: 'folding', fabric: std({ color, roughness: 0.6 }), frame: std({ color: 0x3a3c40, roughness: 0.4, metalness: 0.7 }) });
 }
 
 // The crowd of a big room: silhouettes and their lights, thinned on Low.

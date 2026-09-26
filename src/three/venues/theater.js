@@ -181,63 +181,99 @@ export function buildTheater(ctx) {
     col.position.set(side * (OW / 2 + 1.35), OT - 0.4, PZ + PT + 0.5); col.rotation.y = -side * 0.25; root.add(col);
   }
 
-  // ── seats and people ──
+  // ── seats and people, by the seating plan ──
+  // The 1st floor: 27 rows in three blocks — the side blocks run to the walls —
+  // with two aisles and a cross-aisle after row 13, the rows curved, and each
+  // row's seats set half a seat over from the row in front (the staggered
+  // seating the house is known for), so every seat looks between two heads.
+  // The 2nd floor: a balcony across the back, nine rows in three blocks,
+  // wrapping down the side walls as two-row slips. The 3rd floor: eight rows
+  // across the back above it, three blocks.
   const spots = [], people = [];
   const rnd = prng(23);
+  const SEAT = 0.54, CROSS = 13, CROSSW = 1.2;
   const aisles = [-4.6, 4.6];
+  const curve = (x) => x * x * 0.006;
+  const rowZ = (r) => ROW0 + r * ROWD + (r >= CROSS ? CROSSW : 0);
+  const facing = (x, z) => Math.PI + Math.atan2(x, z - 2) * 0.35;
+  const sit = (x, y, z, turn) => {
+    spots.push({ x, y, z, turn });
+    const mine = Math.abs(z - eye.z) < 0.5 && Math.abs(x - eye.x) < 0.8;
+    if (!mine && rnd() < 0.94) people.push({ x, y: y + 0.02, z: z - 0.05, turn: turn + (rnd() - 0.5) * 0.2, h: 0.93 + rnd() * 0.12 });
+  };
   for (let r = 0; r < ROWS; r++) {
-    const z = ROW0 + r * ROWD;
-    const y = rowY(r);
+    const z = rowZ(r), y = rowY(r);
     const half = Math.min(X - 1.4, 8.5 + r * 0.14);
-    // curved rows, as in a fan-shaped house
-    for (let x = -half; x <= half; x += 0.54) {
+    for (let x = -half + (r % 2) * SEAT / 2; x <= half; x += SEAT) {
       if (aisles.some((a) => Math.abs(x - a) < 0.6)) continue;
-      const zc = z + (x * x) * 0.006;
-      const turn = Math.PI + Math.atan2(x, zc - 2) * 0.35;
-      spots.push({ x, y, z: zc, turn });
-      const mine = Math.abs(zc - eye.z) < 0.5 && Math.abs(x - eye.x) < 0.8;
-      if (!mine && rnd() < 0.94) people.push({ x, y: y + 0.02, z: zc - 0.05, turn: turn + (rnd() - 0.5) * 0.2, h: 0.93 + rnd() * 0.12 });
+      const zc = z + curve(x);
+      sit(x, y, zc, facing(x, zc));
     }
   }
-  // raked floor under the stalls
+  // raked floor under the stalls, and the cross-aisle level with row 13
   const rake = [];
   for (let r = 0; r < ROWS; r++) {
-    const b = new THREE.BoxGeometry(W - 0.2, rowY(r) + 0.01, ROWD); b.translate(0, rowY(r) / 2, ROW0 + r * ROWD + ROWD * 0.3); rake.push(b);
+    const b = new THREE.BoxGeometry(W - 0.2, rowY(r) + 0.01, ROWD); b.translate(0, rowY(r) / 2, rowZ(r) + ROWD * 0.3); rake.push(b);
   }
+  { const yc = rowY(CROSS - 1), z0 = rowZ(CROSS - 1) + ROWD * 0.8, b = new THREE.BoxGeometry(W - 0.2, yc + 0.01, CROSSW); b.translate(0, yc / 2, z0 + CROSSW / 2); rake.push(b); }
   const rakeMesh = new THREE.Mesh(mergeGeometries(rake), carpet); rakeMesh.receiveShadow = true; root.add(rakeMesh);
   const seatFrame = std({ color: 0x140c08, roughness: 0.5 });
-  // side balconies (slips) at the second and third levels, and the balcony
-  // fronts that wrap the back of the house
-  const slipPeople = [];
   const balconyFront = std({ ...withRepeat(walnut, 3, 1), roughness: 1 });
-  const underGlow = [];
-  for (const [lvl, y] of [[2, 5.6], [3, 9.4]]) {
-    for (const side of [-1, 1]) {
-      const x0 = side * (X - 1.6);
-      const slab = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.35, 16), std({ color: 0x0c0806, roughness: 1 }));
-      slab.position.set(side * (X - 1.6), y - 0.18, 17); root.add(slab);
-      const front = new THREE.Mesh(new THREE.BoxGeometry(0.16, 1.05, 16), balconyFront);
-      front.position.set(x0 - side * 1.5, y + 0.5, 17); root.add(front);
-      const glow = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.03, 15.6), glowMat(KELVIN(2700), 1.5));
-      glow.position.set(x0 - side * 1.56, y - 0.38, 17); root.add(glow); underGlow.push(glow);
-      for (let k = 0; k < 2; k++) for (let z = 9.6; z < 24.6; z += 0.56) {
-        const sx = x0 - side * (0.7 - k * 0.9);
-        const sy = y + k * 0.35;
-        spots.push({ x: sx, y: sy, z, turn: -side * Math.PI / 2 + Math.PI * 0 - side * 0.35 });
-        if (rnd() < 0.9) slipPeople.push({ x: sx, y: sy + 0.02, z, turn: -side * Math.PI / 2 - side * 0.35, h: 0.95 + rnd() * 0.1 });
+  const slabMat = std({ color: 0x0c0806, roughness: 1 });
+  // a balcony across the back: curved stepped treads, a curved front, seats
+  // staggered row to row, and a walkway behind the last row to the back wall
+  const balcony = ({ z0, y0, rows, run, rise, half, gaps }) => {
+    const parts = [], front = [];
+    const N = 18;
+    for (let r = 0; r < rows; r++) {
+      const z = z0 + r * run, y = y0 + r * rise;
+      for (let i = 0; i < N; i++) {
+        const xa = -half + 2 * half * i / N, xb = -half + 2 * half * (i + 1) / N, xm = (xa + xb) / 2;
+        const b = new THREE.BoxGeometry(xb - xa + 0.02, y - y0 + 0.4, run + 0.02);
+        b.translate(xm, (y + y0 - 0.4) / 2, z + run / 2 + curve(xm));
+        parts.push(b);
+      }
+      for (let x = -half + 0.45 + (r % 2) * SEAT / 2; x <= half - 0.45; x += SEAT) {
+        if (gaps.some((a) => Math.abs(x - a) < 0.6)) continue;
+        const zc = z + run * 0.55 + curve(x);
+        sit(x, y, zc, facing(x, zc));
       }
     }
-    // the rear balcony front, behind us
-    const rf = new THREE.Mesh(new THREE.BoxGeometry(W - 6.4, 1.05, 0.16), balconyFront);
-    rf.position.set(0, y + 0.5, lvl === 2 ? 24.2 : 29); root.add(rf);
-    const rs = new THREE.Mesh(new THREE.BoxGeometry(W - 6.4, 0.4, D - (lvl === 2 ? 24.2 : 29)), std({ color: 0x0c0806 }));
-    rs.position.set(0, y - 0.2, (D + (lvl === 2 ? 24.2 : 29)) / 2); root.add(rs);
+    const yl = y0 + (rows - 1) * rise, zl = z0 + rows * run;
+    const back = new THREE.BoxGeometry(2 * half, yl - y0 + 0.4, D - zl); back.translate(0, (yl + y0 - 0.4) / 2, (zl + D) / 2); parts.push(back);
+    root.add(new THREE.Mesh(mergeGeometries(parts), slabMat));
+    for (let i = 0; i < N; i++) {
+      const xa = -half + 2 * half * i / N, xb = -half + 2 * half * (i + 1) / N;
+      const f = new THREE.BoxGeometry(Math.hypot(xb - xa, curve(xb) - curve(xa)) + 0.02, 1.05, 0.16);
+      f.rotateY(-Math.atan2(curve(xb) - curve(xa), xb - xa));
+      f.translate((xa + xb) / 2, y0 + 0.5, z0 - 0.08 + (curve(xa) + curve(xb)) / 2);
+      front.push(f);
+    }
+    root.add(new THREE.Mesh(mergeGeometries(front), balconyFront));
+  };
+  balcony({ z0: 24.2, y0: 5.2, rows: 9, run: 0.9, rise: 0.3, half: X - 3.2, gaps: [-3.6, 3.6] });
+  balcony({ z0: 29.0, y0: 10.6, rows: 8, run: 0.9, rise: 0.36, half: X - 0.2, gaps: [-4.2, 4.2] });
+  // the 2nd floor's slips down the side walls, two rows each
+  const underGlow = [];
+  for (const side of [-1, 1]) {
+    const y = 5.2, x0 = side * (X - 1.6);
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.35, 15.2), slabMat);
+    slab.position.set(x0, y - 0.18, 16.6); root.add(slab);
+    const front = new THREE.Mesh(new THREE.BoxGeometry(0.16, 1.05, 15.2), balconyFront);
+    front.position.set(x0 - side * 1.5, y + 0.5, 16.6); root.add(front);
+    const glow = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.03, 14.8), glowMat(KELVIN(2700), 1.5));
+    glow.position.set(x0 - side * 1.56, y - 0.38, 16.6); root.add(glow); underGlow.push(glow);
+    for (let k = 0; k < 2; k++) for (let z = 9.6 + k * 0.28; z < 23.6; z += 0.56) {
+      const sx = x0 - side * (0.7 - k * 0.9), sy = y + k * 0.35;
+      spots.push({ x: sx, y: sy, z, turn: -side * Math.PI / 2 - side * 0.35 });
+      if (rnd() < 0.9) people.push({ x: sx, y: sy + 0.02, z, turn: -side * Math.PI / 2 - side * 0.35, h: 0.95 + rnd() * 0.1 });
+    }
   }
   root.add(seatField(spots, { fabric: seatVel, frame: seatFrame }));
-  if (q.crowd) root.add(crowd3D(people.concat(slipPeople), cu, { kind: 'seated', detail: 1, seed: 5 }));
+  if (q.crowd) root.add(crowd3D(people, cu, { kind: 'seated', detail: 1, seed: 5 }));
   // aisle step lights
   const stepPts = [];
-  for (const a of aisles) for (let r = 0; r < ROWS; r++) stepPts.push({ x: a + 0.5, y: rowY(r) + 0.06, z: ROW0 + r * ROWD, white: true, size: 0.02, phase: 0 });
+  for (const a of aisles) for (let r = 0; r < ROWS; r++) stepPts.push({ x: a + 0.5, y: rowY(r) + 0.06, z: rowZ(r) + curve(a + 0.5), white: true, size: 0.02, phase: 0 });
   const steps = lightPoints(stepPts, cu, { maxPx: 5 });
   steps.material.uniforms.uGain.value = 0.35;
   root.add(steps);
@@ -276,7 +312,7 @@ export function buildTheater(ctx) {
   // followspots from the booth at the back
   const follows = [];
   for (const side of [-1, 1]) {
-    const f = rig.add({ kind: 'follow', pos: V3(side * 3.5, 13.2, D - 1.5), color: KELVIN(5600), length: 44, scale: 1.2, beamGain: 0.35, flareGain: 0.6, body: false, soft: 0.2 });
+    const f = rig.add({ kind: 'follow', pos: V3(side * 3.5, 14.8, D - 1.2), color: KELVIN(5600), length: 44, scale: 1.2, beamGain: 0.35, flareGain: 0.6, body: false, soft: 0.2 });
     follows.push(f);
   }
   // FOH front light from the ceiling bridges (above frame; their beams cross it)
@@ -343,7 +379,7 @@ export function buildTheater(ctx) {
   const hzs = offs.map(([dx, dy]) => hz.add(V3(dx * SW * 0.5, screen.position.y + dy * SH * 0.5, -5.8), 0xffffff, 0));
   ctx.screenHaze(screen, hzs, offs);
   screen.userData.hazePower = 26;
-  const hzBooth = [-1, 1].map((s) => hz.add(V3(s * 3.5, 13.2, D - 1.6), KELVIN(5600), 0));
+  const hzBooth = [-1, 1].map((s) => hz.add(V3(s * 3.5, 14.8, D - 1.3), KELVIN(5600), 0));
   const hzStage = hz.add(V3(0, DECK + 3, 1), tung, 0);
 
   let aimT = 0;
@@ -369,7 +405,7 @@ export function buildTheater(ctx) {
       front2.intensity = (140 + f.energy * 50) * show + 50 * f.house;
       washA.color.copy(a); washA.intensity = (120 + f.energy * 200 + f.kick * 80) * show;
       backC.color.copy(b); backC.intensity = (140 + f.energy * 220 + f.snare * 90) * show;
-      followL.position.set(3.5, 13.2, D - 1.5); followL.target.position.copy(leadPos); followL.target.updateMatrixWorld();
+      followL.position.set(3.5, 14.8, D - 1.2); followL.target.position.copy(leadPos); followL.target.updateMatrixWorld();
       followL.intensity = 900 * show;
       booms.forEach((fx) => { fx.color.copy(tung); fx.intensity = 0.8 * show + 0.1 * f.house; });
       fohs.forEach((fx) => { fx.intensity = 0.9 * show + 0.15 * f.house; });

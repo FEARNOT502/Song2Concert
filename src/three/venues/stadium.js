@@ -6,9 +6,10 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { buildBowl, divide, planBlocks, ribbonBoards } from '../bowl.js';
 import { APP, DEG, KELVIN, V3, floorPanelTex, noise3D, prng, std, velvet, withRepeat } from '../core.js';
 import { lightPoints } from '../people.js';
-import { ampStack, buildBowl, drapeGeometry, drumKit, guitar, keyboardRig, latticeInto, lineArray, mats, micStand, ribbonBoards, shadowSpot, stageDeck, stageSteps, subStack, wedge } from '../rig.js';
+import { ampStack, drapeGeometry, drumKit, guitar, keyboardRig, latticeInto, lineArray, mats, micStand, shadowSpot, stageDeck, stageSteps, subStack, wedge } from '../rig.js';
 import { bigCrowd, bigScreens, fohPosition, packFloor, runLasers, runShow } from '../show.js';
 
 export function nightSky(u) {
@@ -39,12 +40,14 @@ export function nightSky(u) {
 }
 
 // The arch: 315 m, 133 m high, leaning 22 degrees north over the north stand.
-// A lattice tube, floodlit white.
-export function wembleyArch({ x0 = -34, zc = 64, span = 315, height = 133, lean = 22 * DEG }) {
+// A lattice tube, floodlit white. Its feet stand on their own bases outside
+// the bowl, past each end; from there it climbs steeply enough to clear the
+// roof everywhere it passes over it.
+export function wembleyArch({ x0 = -65, zc = 64, span = 315, height = 133, lean = 22 * DEG, leg = 0.6 }) {
   const pts = [];
-  for (let i = 0; i <= 80; i++) {
-    const s = i / 80;
-    const h = height * Math.sin(Math.PI * s) ** 0.9;
+  for (let i = 0; i <= 120; i++) {
+    const s = i / 120;
+    const h = height * Math.sin(Math.PI * s) ** leg;
     pts.push(V3(x0 - h * Math.sin(lean), h * Math.cos(lean) - 6, zc + (s - 0.5) * span));
   }
   const curve = new THREE.CatmullRomCurve3(pts);
@@ -63,17 +66,24 @@ export function wembleyArch({ x0 = -34, zc = 64, span = 315, height = 133, lean 
   };
   m.defines = { USE_UV: '' };
   m.customProgramCacheKey = () => 'arch';
-  const mesh = new THREE.Mesh(geo, m);
-  return mesh;
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(geo, m));
+  // the concrete bases the hinges sit on
+  for (const e of [-1, 1]) {
+    const base = new THREE.Mesh(new THREE.BoxGeometry(14, 4, 14), std({ color: 0x3a3a3e, roughness: 0.9 }));
+    base.position.set(x0, 2, zc + e * span / 2); g.add(base);
+  }
+  return g;
 }
 
 export function buildStadium(ctx) {
   const { pipe, q, cu } = ctx;
   const root = new THREE.Group();
-  const DECK = 3.2, ROOF = 50, RIG = 36;
+  const DECK = 3.2, ROOF = 56, RIG = 36;
   const eye = V3(0, 1.6 + 1.2, 85);
   const STAGE = V3(0, DECK, 20);
-  const HX = 66, HZ = 84, ZC = 64, RC = 30;
+  // the bowl's front: 105 × 68 m of pitch with its run-off, the corners rounded
+  const HX = 46, HZ = 65, ZC = 64, RC = 18;
 
   root.add(nightSky(cu));
   const rnd = prng(199);
@@ -88,52 +98,73 @@ export function buildStadium(ctx) {
   root.add(starField);
 
   // ── pitch, covered for the show ──
-  const pitch = new THREE.Mesh(new THREE.PlaneGeometry(HX * 2 + 10, HZ * 2 + 10), std({ ...withRepeat(floorPanelTex({ key: 'pitchcover', tone: 0.07, seed: 57 }), 24, 30), roughness: 0.85 }));
+  const pitch = new THREE.Mesh(new THREE.PlaneGeometry(HX * 2 + 10, HZ * 2 + 10), std({ ...withRepeat(floorPanelTex({ key: 'pitchcover', tone: 0.07, seed: 57 }), 20, 28), roughness: 0.85 }));
   pitch.rotation.x = -Math.PI / 2; pitch.position.set(0, 0.02, ZC); pitch.receiveShadow = true; root.add(pitch);
 
-  // ── the bowl: three tiers ──
+  // ── the bowl, by the seating plan ──
+  // Blocks numbered clockwise from the halfway line. Level 1: 44 blocks —
+  // twelve down each side, eight behind each goal, one in each corner — each
+  // entered by its own tunnel halfway up. Level 2, the club tier: 52 blocks,
+  // fourteen a side, eight an end, two a corner, entered from the back.
+  // Level 5: 52 blocks the same way, tunnels opening a third of the way up.
+  // The stage stands in front of the east end (blocks 130–137 and above).
+  const byPiece = (per) => (O) => (st) => {
+    const P = O.pieces();
+    const out = [];
+    for (let k = 0; k < 8; k++) { const [a, b] = P[k]; const d = divide(a, b, per[k % 2 ? 1 : k % 4 ? 2 : 0]); out.push(...(out.length ? d.slice(1) : d)); }
+    return out;
+  };
+  const L1 = byPiece([12, 1, 8]), L25 = byPiece([14, 2, 8]);
   const bowl = buildBowl(pipe, {
-    hx: HX, hz: HZ, zc: ZC, rc: RC, seatColor: 0x9a1418, concreteTone: 0.26, stage: STAGE, seed: 600, block: 14, aisle: 1.3,
+    hx: HX, hz: HZ, zc: ZC, rc: RC, seatColor: 0x9a1418, concreteTone: 0.26, stage: STAGE, seed: 600,
     // the east stand behind the stage is built like the rest but not sold:
     // empty seats round the set, the block straight behind it tarped
     cover: (x, z) => z < 0 && Math.abs(x) < 34,
     occ: (x, z) => (z < 12 ? 0 : 1),
     occupancy: 1,
     tiers: [
-      { rows: 26, rise: 0.36, riseFar: 0.46, run: 0.82, yBase: 1.0, inset: 0, crowd: true },
-      { rows: 14, rise: 0.5, riseFar: 0.6, run: 0.9, yBase: 14.6, inset: 24, crowd: true, face: 3, backWall: 3 },
-      { rows: 30, rise: 0.58, riseFar: 0.72, run: 0.95, yBase: 25.6, inset: 40, crowd: true, face: 3, backWall: 10 },
+      { rows: 38, rise: 0.3, riseFar: 0.44, run: 0.8, yBase: 1.0, inset: 0, crowd: true, backWall: 3.4, aisle: 1.1,
+        blocks: (O, D) => planBlocks(O, D, { cuts: L1(O), vom: { row: 16, w: 2.4 } }) },
+      { rows: 13, rise: 0.5, riseFar: 0.56, run: 0.9, yBase: 18.5, inset: 32.2, crowd: true, face: 3, backWall: 3,
+        blocks: (O, D) => planBlocks(O, D, { cuts: L25(O), door: { w: 1.6 } }) },
+      { rows: 30, rise: 0.58, riseFar: 0.74, run: 0.85, yBase: 29.0, inset: 45.7, crowd: true, face: 3, backWall: ROOF - 48.8 + 1,
+        blocks: (O, D) => planBlocks(O, D, { cuts: L25(O), vom: { row: 8, w: 2.2 } }) },
     ],
   });
   root.add(bowl.group);
   const ribbons = ribbonBoards(bowl, { tiers: [1, 2], height: 1.2, bright: 1.6 });
   root.add(ribbons);
   ctx.addScreen({ userData: { face: ribbons } }, 1, 'ribbon');
+  const OUT = bowl.tiers[2].back + 1.5;
 
   // ── roof: a plate over the seats with the pitch cut out, and its steel ──
-  const OX = HX + 76, OZ0 = ZC - HZ - 76, OZ1 = ZC + HZ + 76;
-  const plate = new THREE.Shape();
-  plate.moveTo(-OX, OZ0); plate.lineTo(OX, OZ0); plate.lineTo(OX, OZ1); plate.lineTo(-OX, OZ1); plate.lineTo(-OX, OZ0);
-  const hole = new THREE.Path();
-  const ax = HX - RC, az = HZ - RC;
-  const holePts = [];
-  for (let i = 0; i <= 64; i++) {
-    const a = (i / 64) * Math.PI * 2;
-    const cx = Math.cos(a) >= 0 ? ax : -ax, cz = Math.sin(a) >= 0 ? az : -az;
-    holePts.push(new THREE.Vector2(cx + Math.cos(a) * (RC + 6), ZC + cz + Math.sin(a) * (RC + 6)));
-  }
-  hole.setFromPoints(holePts);
-  plate.holes.push(hole);
+  const ring = (d) => bowl.path.pts.slice(0, -1).map((p) => { const a = bowl.path.at(p, d); return new THREE.Vector2(a.x, a.z); });
+  const plate = new THREE.Shape(ring(OUT));
+  plate.holes.push(new THREE.Path(ring(6).reverse()));
   const roofGeo = new THREE.ExtrudeGeometry(plate, { depth: 2.5, bevelEnabled: false, curveSegments: 4 });
   roofGeo.rotateX(Math.PI / 2);
-  const roof = new THREE.Mesh(roofGeo, std({ color: 0x9aa0a8, roughness: 0.7, metalness: 0.3, emissive: 0x0a0c10 }));
+  const roof = new THREE.Mesh(roofGeo, std({ color: 0x9aa0a8, roughness: 0.7, metalness: 0.3, emissive: 0x0a0c10, side: THREE.DoubleSide }));
   roof.position.y = ROOF + 2.5;
   root.add(roof);
+  // the outer wall, from the ground up to the roof, and the ground round it
+  {
+    const pts = ring(OUT + 0.2);
+    const pos = [], idx = [];
+    pts.concat([pts[0]]).forEach((p) => pos.push(p.x, 0, p.y, p.x, ROOF + 2.5, p.y));
+    for (let i = 0; i < pts.length; i++) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setIndex(idx); g.computeVertexNormals();
+    root.add(new THREE.Mesh(g, std({ color: 0x1a1c20, roughness: 0.8, metalness: 0.2, side: THREE.DoubleSide })));
+    const ground = new THREE.Mesh(new THREE.CircleGeometry(700, 48), std({ color: 0x0b0b0c, roughness: 1 }));
+    ground.rotation.x = -Math.PI / 2; ground.position.set(0, -0.02, ZC); ground.userData.noCollide = true;
+    root.add(ground);
+  }
   // cantilever trusses under the plate, radiating in to the opening
   const steel = [];
   const P = bowl.path.pts;
   for (let k = 0; k < P.length; k += 3) {
-    const inner = bowl.path.at(P[k], 6), outer = bowl.path.at(P[k], 70);
+    const inner = bowl.path.at(P[k], 6), outer = bowl.path.at(P[k], OUT - 1);
     if (inner.z < -8 && Math.abs(inner.x) < HX - 5) continue;
     latticeInto(steel, V3(outer.x, ROOF - 2, outer.z), V3(inner.x, ROOF - 0.3, inner.z), 2.2, 0.09);
   }
@@ -149,7 +180,7 @@ export function buildStadium(ctx) {
     const a = bowl.path.at(P[k], 5.5);
     flood.push(pipe.flares.add(V3(a.x, ROOF - 1.2, a.z), KELVIN(5600), 1.8, 0));
   }
-  root.add(wembleyArch({}));
+  root.add(wembleyArch({ zc: ZC }));
 
   // ── stage: a steel roof on four towers, a wall of LED under it ──
   // a backdrop under the stage roof, only as wide as the set, and wings
@@ -158,7 +189,7 @@ export function buildStadium(ctx) {
   drop.position.set(0, DECK + 16.5, 6.2); root.add(drop);
   for (const s of [-1, 1]) {
     const wing = new THREE.Mesh(drapeGeometry(14, 22, 10, 0.2), bv);
-    wing.position.set(s * 38.5, DECK + 11, 5.5); wing.rotation.y = -s * 0.2; root.add(wing);
+    wing.position.set(s * 37.5, DECK + 11, 6.5); wing.rotation.y = -s * 0.2; root.add(wing);
   }
   const deck = stageDeck({ w: 72, d: 26, h: DECK, z: 20 });
   root.add(deck);
@@ -170,7 +201,7 @@ export function buildStadium(ctx) {
   for (const z of [8, 19, 30]) latticeInto(towers, V3(-36, RIG + 5, z), V3(36, RIG + 5, z), 2.4, 0.09);
   for (const x of [-34, 34]) latticeInto(towers, V3(x, RIG + 5, 8), V3(x, RIG + 5, 30), 2, 0.08);
   root.add(new THREE.Mesh(mergeGeometries(towers), mats().black));
-  const scr = bigScreens(ctx, root, { w: 46, y: DECK + 1.6 + 46 / (16 / 9) / 2, z: 8.6, imagW: 22, imagX: 47.5, imagY: 22, imagZ: 29, imagYaw: 0.32, pitch: 0.0078 });
+  const scr = bigScreens(ctx, root, { w: 46, y: DECK + 1.6 + 46 / (16 / 9) / 2, z: 8.6, imagW: 17, imagX: 36.5, imagY: 22, imagZ: 31, imagYaw: 0.32, pitch: 0.0078 });
   // no one on stage: the backline and the microphone at the end of the runway
   const star = micStand({ height: 1.6 });
   star.position.set(0, DECK, 53); root.add(star);
@@ -190,7 +221,7 @@ export function buildStadium(ctx) {
   for (const side of [-1, 1]) {
     const main = lineArray({ boxes: 20, width: 1.5 }); main.position.set(side * 27, RIG + 3, 30); main.rotation.y = -side * 0.05; root.add(main);
     const out = lineArray({ boxes: 16, width: 1.4 }); out.position.set(side * 40, RIG + 2, 26); out.rotation.y = -side * 0.35; root.add(out);
-    for (const [dx, dz] of [[36, 60], [44, 104]]) {
+    for (const [dx, dz] of [[30, 62], [30, 100]]) {
       const mast = [];
       latticeInto(mast, V3(side * dx, 0, dz), V3(side * dx, 30, dz), 1.6, 0.07);
       root.add(new THREE.Mesh(mergeGeometries(mast), mats().black));

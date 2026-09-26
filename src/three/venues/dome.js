@@ -8,10 +8,11 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { APP, DEG, KELVIN, V3, clamp, floorPanelTex, glowMat, lerp, prng, smooth, std } from '../core.js';
+import { buildBowl, planBlocks, ribbonBoards } from '../bowl.js';
+import { APP, DEG, KELVIN, V3, clamp, floorPanelTex, glowMat, lerp, smooth, std } from '../core.js';
 import { lightPoints } from '../people.js';
-import { buildBowl, hoists, latticeInto, ledScreen, lineArray, mats, micStand, ribbonBoards, shadowSpot, stageDeck, stageSteps, subStack, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, fohPosition, runLasers, runShow, section, stageSet } from '../show.js';
+import { hoists, latticeInto, ledScreen, lineArray, mats, micStand, shadowSpot, stageDeck, stageSteps, subStack, truss, wedge } from '../rig.js';
+import { bigCrowd, bigScreens, blockGrid, floorBlocks, floorChairs, fohPosition, runLasers, runShow, section, stageSet } from '../show.js';
 
 export function membraneMaterial() {
   const m = std({ color: 0xd8d8d4, roughness: 0.95, side: THREE.BackSide });
@@ -113,7 +114,6 @@ export function buildDome(ctx) {
   // centre. Home plate is behind FOH; the stage stands in front of the
   // centre-field fence.
   const ZH = 114;                 // home plate
-  const ZC = 76;                  // centre of the roof and the building
   const park = ballparkPath({ zH: ZH });
   const phi = (x, z) => Math.abs(Math.atan2(x, ZH - z)) / DEG;   // 0 at centre field, 45 at the poles
 
@@ -132,16 +132,30 @@ export function buildDome(ctx) {
   // two where the outfield meets the infield at the poles. Balcony and 2nd
   // floor over the infield only.
   const ramp = (x, z) => { const a = phi(x, z); return a < 45.3 ? 3.0 : a > 48 ? 0 : 3.0 * (1 - smooth(45.3, 48, a)); };
+  const infield = (x, z) => phi(x, z) > 58;
+  const behindStage = (x, z) => z < 14;
+  // By the seating plan: the 1st floor all the way round, 44 rows with a
+  // walkway across it after row 25 that the numbered passages (tunnels from
+  // the concourse) open onto; the balcony, five rows over the infield; the
+  // 2nd floor over the infield, 28 rows with its walkway after row 10 and its
+  // passages opening there. Aisles every ten metres or so — twenty seats.
   const bowl = buildBowl(pipe, {
-    path: park, seatColor: 0x1d3c86, concreteTone: 0.28, stage: STAGE, seed: 400, block: 12, aisle: 1.2,
+    path: park, seatColor: 0x1d3c86, concreteTone: 0.28, stage: STAGE, seed: 400,
     // nobody behind or beside the set; the block straight behind it is tarped
     cover: (x, z) => z < 2 && Math.abs(x) < 36,
     occ: (x, z) => (z < 14 ? 0 : 1),
     occupancy: 1,
     tiers: [
-      { rows: 30, rise: 0.36, riseFar: 0.44, run: 0.82, yBase: 1.3, inset: 0.4, crowd: true, lift: ramp, backWall: 5 },
-      { rows: 2, rise: 0.5, run: 1.0, yBase: 17.2, inset: 27.4, crowd: true, face: 3.2, backWall: 2.8, where: (x, z) => phi(x, z) > 58 },
-      { rows: 24, rise: 0.62, riseFar: 0.74, run: 0.9, yBase: 21.2, inset: 31, crowd: true, face: 2.6, backWall: 4, where: (x, z) => phi(x, z) > 58 },
+      { rows: 44, rise: 0.28, riseFar: 0.4, run: 0.8, yBase: 1.3, inset: 0.4, crowd: true, lift: ramp, backWall: 4,
+        cross: [25], crossRun: 1.6, aisle: 1.1,
+        blocks: (O, D) => planBlocks(O, D, { step: 10.5, vom: { row: 25, w: 2.4 } }),
+        // steps up from the field where the stand starts above the fence
+        stairs: (O) => Array.from({ length: Math.floor(O.total / 40) }, (_, i) => (i + 0.5) * 40).filter((sv) => !behindStage(O.pt(sv, 0).x, O.pt(sv, 0).z)) },
+      { rows: 5, rise: 0.48, run: 0.95, yBase: 19.5, inset: 38.4, crowd: true, face: 3.0, backWall: 2.8, where: infield,
+        blocks: (O, D) => planBlocks(O, D, { step: 12, door: { w: 1.6 } }) },
+      { rows: 28, rise: 0.5, riseFar: 0.64, run: 0.85, yBase: 25.0, inset: 44.6, crowd: true, face: 2.8, backWall: 3.5, where: infield,
+        cross: [10], crossRun: 1.5,
+        blocks: (O, D) => planBlocks(O, D, { step: 11, vom: { row: 10, w: 2.2 } }) },
     ],
   });
   root.add(bowl.group);
@@ -183,22 +197,56 @@ export function buildDome(ctx) {
   ctx.addScreen({ userData: { face: ribbons } }, 1, 'ribbon');
 
   // ── the membrane ──
-  const RE = 116, YE = 42, APEX = 61.7;
+  // The roof in plan is a rounded square (a superellipse) drawn round the
+  // backs of the stands; the cushion rises from the ring beam on top of the
+  // outer wall to the crown.
+  const outer = [];
+  RP.forEach((p) => {
+    const a = park.at(p, 0);
+    const top = bowl.tiers.filter((D) => !D.T.where || D.T.where(a.x, a.z)).pop();
+    outer.push(park.at(p, top.back + 1));
+  });
+  const zMin = Math.min(...outer.map((p) => p.z)), zMax = Math.max(...outer.map((p) => p.z));
+  const ZC = (zMin + zMax) / 2;
+  const NE = 3.2;
+  const norm = (x, z, a, b) => (Math.abs(x / a) ** NE + Math.abs((z - ZC) / b) ** NE) ** (1 / NE);
+  let RA = Math.max(...outer.map((p) => Math.abs(p.x))) + 2, RB = (zMax - zMin) / 2 + 2;
+  const over = Math.max(...outer.map((p) => norm(p.x, p.z, RA, RB)));
+  if (over > 1) { RA *= over; RB *= over; }
+  const YE = 46, APEX = 64;
   const rise = APEX - YE;
-  const RS = (rise * rise + RE * RE) / (2 * rise);
-  const th = Math.asin(RE / RS);
+  const roofAt = (x, z) => YE + rise * (1 - Math.min(1, norm(x, z, RA, RB)) ** 2);
+  const edge = (t, rho = 1) => {
+    const c = Math.cos(t), sn = Math.sin(t);
+    return { x: rho * RA * Math.sign(c) * Math.abs(c) ** (2 / NE), z: ZC + rho * RB * Math.sign(sn) * Math.abs(sn) ** (2 / NE) };
+  };
   const membrane = membraneMaterial();
-  const cap = new THREE.Mesh(new THREE.SphereGeometry(RS, 96, 24, 0, Math.PI * 2, 0, th), membrane);
-  cap.position.set(0, APEX - RS, ZC); root.add(cap);
+  membrane.side = THREE.DoubleSide;
+  {
+    const I = 160, J = 28;
+    const pos = [], idx = [];
+    for (let j = 0; j <= J; j++) for (let i = 0; i <= I; i++) {
+      const e = edge(i / I * Math.PI * 2, j / J);
+      pos.push(e.x, roofAt(e.x, e.z), e.z);
+    }
+    for (let j = 0; j < J; j++) for (let i = 0; i < I; i++) {
+      const a = j * (I + 1) + i, b = a + 1, c = a + I + 1, d = c + 1;
+      idx.push(a, c, b, b, c, d);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    root.add(new THREE.Mesh(g, membrane));
+  }
   // the ring beam the membrane is anchored to
   // what hangs from the cable net (as at the real building): a gondola at the
   // crown with the centre speaker cluster and the TV camera, 21 speaker
   // clusters round the edge of the membrane, and 14 banks of field lights
-  const roofY = (r) => (APEX - RS) + Math.sqrt(RS * RS - r * r);
   const hang = [];
-  const cable = (x, z, y0) => { const top = roofY(Math.hypot(x, z - ZC)); const c = new THREE.CylinderGeometry(0.03, 0.03, top - y0, 4); c.translate(x, (top + y0) / 2, z); hang.push(c); };
+  const cable = (x, z, y0) => { const top = roofAt(x, z); const c = new THREE.CylinderGeometry(0.03, 0.03, top - y0, 4); c.translate(x, (top + y0) / 2, z); hang.push(c); };
   const gondola = new THREE.Group();
-  const gy = roofY(0) - 8;
+  const gy = APEX - 8;
   const pod = new THREE.Mesh(new THREE.CylinderGeometry(3.4, 2.8, 3.2, 24), std({ color: 0x1a1a1e, roughness: 0.6, metalness: 0.4 }));
   pod.position.set(0, gy, ZC); gondola.add(pod);
   for (let i = 0; i < 12; i++) {
@@ -211,9 +259,8 @@ export function buildDome(ctx) {
   root.add(gondola);
   for (const [dx, dz] of [[-2.4, -2.4], [2.4, -2.4], [-2.4, 2.4], [2.4, 2.4]]) cable(dx, ZC + dz, gy + 1.6);
   for (let i = 0; i < 21; i++) {
-    const a = (i / 21) * Math.PI * 2 + 0.1;
-    const r = 96, x = Math.sin(a) * r, z = ZC + Math.cos(a) * r;
-    const y = roofY(r) - 6;
+    const { x, z } = edge((i / 21) * Math.PI * 2 + 0.1, 0.8);
+    const y = roofAt(x, z) - 6;
     const sp = lineArray({ boxes: 6, width: 1.1, depth: 0.62, height: 0.36 });
     sp.position.set(x, y, z); sp.rotation.y = Math.atan2(-x, ZC - z); root.add(sp);
     cable(x, z, y + 0.2);
@@ -222,9 +269,8 @@ export function buildDome(ctx) {
   const bankM = new THREE.MeshBasicMaterial({ color: 0x000000, toneMapped: false });
   const bankFrames = [];
   for (let i = 0; i < 14; i++) {
-    const a = (i / 14) * Math.PI * 2 + 0.22;
-    const r = 70, x = Math.sin(a) * r, z = ZC + Math.cos(a) * r;
-    const y = roofY(r) - 5;
+    const { x, z } = edge((i / 14) * Math.PI * 2 + 0.22, 0.56);
+    const y = roofAt(x, z) - 5;
     const yaw = Math.atan2(-x, ZC - z);
     const fr = new THREE.BoxGeometry(8, 0.3, 2.4); fr.rotateX(0.5); fr.rotateY(yaw); fr.translate(x, y, z); bankFrames.push(fr);
     for (let u = 0; u < 7; u++) for (let v = 0; v < 2; v++) {
@@ -242,8 +288,20 @@ export function buildDome(ctx) {
   bankLamps.forEach((p, i) => { lm4.compose(p, lq, V3(1, 1, 1)); lampI.setMatrixAt(i, lm4); });
   root.add(lampI);
   root.add(new THREE.Mesh(mergeGeometries(hang), std({ color: 0x303036, roughness: 0.5, metalness: 0.6 })));
-  const drum = new THREE.Mesh(new THREE.CylinderGeometry(RE, RE, YE, 96, 1, true), std({ color: 0x0e0e12, roughness: 0.9, side: THREE.BackSide }));
-  drum.position.set(0, YE / 2, ZC); root.add(drum);
+  // the outer wall, up to the ring beam
+  {
+    const I = 160, pos = [], idx = [];
+    for (let i = 0; i <= I; i++) { const e = edge(i / I * Math.PI * 2); pos.push(e.x, 0, e.z, e.x, YE + 0.5, e.z); }
+    for (let i = 0; i < I; i++) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setIndex(idx); g.computeVertexNormals();
+    root.add(new THREE.Mesh(g, std({ color: 0x0e0e12, roughness: 0.9, side: THREE.DoubleSide })));
+    // and the floor out to it, under the stands
+    const sh = new THREE.Shape(Array.from({ length: 96 }, (_, i) => { const e = edge(i / 96 * Math.PI * 2); return new THREE.Vector2(e.x, -e.z); }));
+    const fg = new THREE.ShapeGeometry(sh, 1); fg.rotateX(-Math.PI / 2);
+    root.add(new THREE.Mesh(fg, std({ color: 0x0c0c0e, roughness: 1 })));
+  }
 
   // ── stage ──
   stageSet(root, { w: 38, h: 24, z: 3.6, deck: DECK, towerX: 20.4, backdropW: 50, backdropH: 23, wingX: 31, wingW: 12, wingH: 15 });
@@ -289,7 +347,8 @@ export function buildDome(ctx) {
   for (let i = 0; i < 12; i++) ups.push({ fx: rig.add({ kind: 'beam', pos: V3(-26 + i * (52 / 11), DECK + 0.3, 21.8), hang: 'up', length: 70 }), i, n: 12, group: 3 });
   // the ring: beams along the 2nd-floor front, pole to pole, pointing in
   {
-    const edge = park.pts.map((k) => park.at(k, 30.4)).filter((p) => phi(p.x, p.z) > 62);
+    const F2 = bowl.tiers[2];
+    const edge = park.pts.map((k) => park.at(k, F2.inner - 0.6)).filter((p) => phi(p.x, p.z) > 62);
     edge.sort((p, q2) => Math.atan2(p.x, p.z - ZH) - Math.atan2(q2.x, q2.z - ZH));
     const len = [0];
     for (let i = 1; i < edge.length; i++) len.push(len[i - 1] + Math.hypot(edge[i].x - edge[i - 1].x, edge[i].z - edge[i - 1].z));
@@ -298,7 +357,7 @@ export function buildDome(ctx) {
       const want = (i + 0.5) / N2 * len[len.length - 1];
       while (j < len.length - 2 && len[j + 1] < want) j++;
       const t = (want - len[j]) / (len[j + 1] - len[j]);
-      const pos = V3(lerp(edge[j].x, edge[j + 1].x, t), 18.9, lerp(edge[j].z, edge[j + 1].z, t));
+      const pos = V3(lerp(edge[j].x, edge[j + 1].x, t), F2.T.yBase - 1.6, lerp(edge[j].z, edge[j + 1].z, t));
       const a = Math.atan2(pos.x, pos.z - ZC);
       ring2.push({ fx: rig.add({ kind: 'beam', pos, hang: 'up', length: 110, beamGain: 0.9, flareGain: 0.6 }), i, n: N2, group: 4, a });
     }
@@ -322,8 +381,9 @@ export function buildDome(ctx) {
   for (let i = 0; i < 7; i++) {
     const a = (i / 7) * Math.PI * 2 + 0.22;
     const l = new THREE.SpotLight(KELVIN(5200), 0, 260, 1.05, 1, 2);
-    l.position.set(Math.sin(a) * 70, 42, ZC + Math.cos(a) * 70);
-    l.target.position.set(Math.sin(a) * 40, 0, ZC + Math.cos(a) * 40);
+    const e = edge(a, 0.56), e2 = edge(a, 0.32);
+    l.position.set(e.x, roofAt(e.x, e.z) - 8, e.z);
+    l.target.position.set(e2.x, 0, e2.z);
     root.add(l, l.target); house.push(l);
   }
   root.add(new THREE.HemisphereLight(0x181a24, 0x050508, 0.35));
@@ -340,19 +400,20 @@ export function buildDome(ctx) {
     return c;
   };
   const onField = inPoly(park.ring(-3));
-  const rnd = prng(55);
-  const fieldPeople = [];
-  for (let z = 25; z < ZH + 16; z += 0.82) {
-    for (let x = -80; x < 80; x += 0.54) {
-      if (!onField(x, z)) continue;
-      if (Math.abs(x) < 3.4 && z < 58) continue;                 // catwalk
-      if (Math.hypot(x, z - 51) < 7.4) continue;                  // B-stage
-      if (Math.abs(x - eye.x) < 5 && Math.abs(z - eye.z) < 4.5) continue;  // FOH
-      if (Math.abs(x) < 14 && z > 20 && z < 27) continue;         // subs and the barrier
-      if (((x + 60) % 9.5) < 1.1 || ((z - 25) % 11) < 1.2) continue;       // aisles
-      fieldPeople.push({ x: x + (rnd() - 0.5) * 0.18, y: 0, z: z + (rnd() - 0.5) * 0.2, h: 0.92 + rnd() * 0.14 });
-    }
-  }
+  // the arena: lettered blocks A (at the stage) to F (at home plate), numbered
+  // across, 13 seats wide and 15 rows deep, clipped to the field and cleared
+  // for the runway, the B-stage, the delay towers and the desk
+  const xs = [];
+  for (let i = 0; i < 8; i++) { const x0 = 1.0 + i * 8.2; xs.unshift([-x0 - 7, -x0]); xs.push([x0, x0 + 7]); }
+  const keep = (x, z) => onField(x, z)
+    && !(Math.abs(x) < 3.4 && z < 49)
+    && Math.hypot(x, z - 51) > 7.4
+    && !(Math.abs(x - eye.x) < 5 && Math.abs(z - eye.z) < 4.5)
+    && !(Math.abs(x) < 16 && z < 27)
+    && Math.hypot(Math.abs(x) - 34, z - 58) > 1.6;
+  const arena = floorBlocks(blockGrid([[25, 39], [41, 55], [57, 71], [73, 87], [89, 103], [105, 119]], xs), { keep, seed: 55 });
+  root.add(floorChairs(arena.chairs));
+  const fieldPeople = arena.people;
   bigCrowd(root, cu, q, fieldPeople.concat(bowl.people.map((p) => ({ ...p, h: 0.97 }))), { seed: 21 });
   const aisleField = lightPoints(bowl.aisleLights.map((a) => ({ ...a, white: true, size: 0.04 })), cu, { maxPx: 3 });
   aisleField.material.uniforms.uGain.value = 0.25;
