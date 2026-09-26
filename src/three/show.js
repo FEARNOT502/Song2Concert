@@ -210,7 +210,7 @@ export function blockGrid(zs, xs) {
 
 // The chairs themselves, instanced; they are not in the way of a walk.
 export function floorChairs(chairs, { color = 0x1a1c22 } = {}) {
-  return seatField(chairs, { style: 'folding', fabric: std({ color, roughness: 0.6 }), frame: std({ color: 0x3a3c40, roughness: 0.4, metalness: 0.7 }) });
+  return seatField(chairs, { style: 'folding', fabric: std({ color, roughness: 0.6, side: THREE.DoubleSide }), frame: std({ color: 0x3a3c40, roughness: 0.4, metalness: 0.7, side: THREE.DoubleSide }) });
 }
 
 // The crowd of a big room: silhouettes and their lights, thinned on Low.

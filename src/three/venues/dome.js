@@ -8,11 +8,12 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { buildBowl, planBlocks, ribbonBoards } from '../bowl.js';
-import { APP, DEG, KELVIN, V3, clamp, floorPanelTex, glowMat, lerp, smooth, std } from '../core.js';
+import { APP, DEG, KELVIN, V3, clamp, floorPanelTex, glowMat, lerp, std } from '../core.js';
 import { lightPoints } from '../people.js';
 import { hoists, latticeInto, ledScreen, lineArray, mats, micStand, shadowSpot, stageDeck, stageSteps, subStack, truss, wedge } from '../rig.js';
 import { bigCrowd, bigScreens, blockGrid, floorBlocks, floorChairs, fohPosition, runLasers, runShow, section, stageSet } from '../show.js';
+import { buildStands } from '../stands.js';
+import { TD_STANDS } from './td-data.js';
 
 export function membraneMaterial() {
   const m = std({ color: 0xd8d8d4, roughness: 0.95, side: THREE.BackSide });
@@ -40,85 +41,22 @@ export function membraneMaterial() {
   return m;
 }
 
-// The field outline: the outfield fence (100 m at the poles, 110 m to the
-// alleys, 122 m to centre), the stand walls along the foul lines, closing in
-// from 19 m of foul ground at home to nothing at the poles, and the backstop
-// round behind home. Same interface as ringPath: `at(p, d)` is the outline
-// pushed d metres outward. It runs the same way round as ringPath (up the +x
-// side towards +z) so every face the bowl builds from it faces the field.
-export function ballparkPath({ zH, lines = 100, centre = 122, alley = 110, backstop = 19 }) {
-  // from home: angle 0 points at centre field (-z), positive towards +x
-  const dir = (deg) => ({ x: Math.sin(deg * DEG), z: -Math.cos(deg * DEG) });
-  const at0 = (deg, r) => { const d = dir(deg); return { x: d.x * r, z: zH + d.z * r }; };
-  const k2 = 2 * (centre + lines) - 4 * alley, k1 = centre - lines + k2;   // r(u) = centre - k1 u + k2 u², through all three
-  const fence = (deg) => { const u = Math.abs(deg) / 45; return centre - k1 * u + k2 * u * u; };
-  const foul = (s) => backstop * (1 - s / lines);
-  const raw = [];
-  for (let a = 0; a <= 45; a += 0.25) raw.push(at0(a, fence(a)));
-  const L = dir(45), N = dir(135);
-  for (let s = lines; s >= 0; s -= 0.5) raw.push({ x: L.x * s + N.x * foul(s), z: zH + L.z * s + N.z * foul(s) });
-  for (let a = 136; a <= 224; a += 1) raw.push(at0(a, backstop));
-  const L2 = dir(-45), N2 = dir(-135);
-  for (let s = 0; s <= lines; s += 0.5) raw.push({ x: L2.x * s + N2.x * foul(s), z: zH + L2.z * s + N2.z * foul(s) });
-  for (let a = -45; a < 0; a += 0.25) raw.push(at0(a, fence(a)));
-  // resample evenly, then round the corners a little (the pole corners and the
-  // backstop joins are a few metres round, not knife edges)
-  const dense = [];
-  const STEP = 0.25;
-  let carry = 0;
-  for (let i = 0; i < raw.length; i++) {
-    const a = raw[i], b = raw[(i + 1) % raw.length];
-    const len = Math.hypot(b.x - a.x, b.z - a.z);
-    let t = carry;
-    while (t < len) { dense.push({ x: a.x + (b.x - a.x) * t / len, z: a.z + (b.z - a.z) * t / len }); t += STEP; }
-    carry = t - len;
-  }
-  const n = dense.length;
-  let cur = dense;
-  for (let pass = 0; pass < 3; pass++) {
-    const W = 10;
-    cur = cur.map((_, i) => {
-      let x = 0, z = 0;
-      for (let j = -W; j <= W; j++) { const p = cur[(i + j + n) % n]; x += p.x; z += p.z; }
-      return { x: x / (2 * W + 1), z: z / (2 * W + 1) };
-    });
-  }
-  const tangent = (i) => { const a = cur[(i - 2 + n) % n], b = cur[(i + 2) % n]; const l = Math.hypot(b.x - a.x, b.z - a.z); return { x: (b.x - a.x) / l, z: (b.z - a.z) / l }; };
-  // keep a sample every couple of metres, or every two degrees round a bend,
-  // so the outer rows stay smooth where the outline turns sharply
-  const keep = [0];
-  let arc = 0, t0 = tangent(0);
-  for (let i = 1; i < n; i++) {
-    arc += Math.hypot(cur[i].x - cur[i - 1].x, cur[i].z - cur[i - 1].z);
-    const t = tangent(i);
-    if (arc >= 2.2 || Math.acos(clamp(t.x * t0.x + t.z * t0.z, -1, 1)) >= 2 * DEG) { keep.push(i); arc = 0; t0 = t; }
-  }
-  const X = [], Z = [], NX = [], NZ = [];
-  for (const i of keep.concat([keep[0]])) {
-    const t = tangent(i);
-    X.push(cur[i].x); Z.push(cur[i].z); NX.push(t.z); NZ.push(-t.x);
-  }
-  const pts = X.map((_, i) => i);
-  const at = (i, d) => ({ x: X[i] + NX[i] * d, z: Z[i] + NZ[i] * d, nx: NX[i], nz: NZ[i] });
-  const ring = (d = 0) => pts.slice(0, -1).map((i) => at(i, d));
-  return { pts, at, ring };
-}
-
 export function buildDome(ctx) {
   const { pipe, q, cu } = ctx;
   const root = new THREE.Group();
   const DECK = 2.6, RIG = 32;
   const eye = V3(0, 1.6 + 1.0, 70);
   const STAGE = V3(0, DECK, 12);
-  // The ballpark, measured: 100 m down the lines, 110 m to the alleys, 122 m to
-  // centre. Home plate is behind FOH; the stage stands in front of the
-  // centre-field fence.
+  // The ballpark as the official seating map draws it: the field is the open
+  // ground inside the 1st floor's front rows; home plate is behind FOH, the
+  // stage stands in front of the centre-field fence.
   const ZH = 114;                 // home plate
-  const park = ballparkPath({ zH: ZH });
+  const OFF = V3(0, 0, ZH);
+  const fieldRing = TD_STANDS.field[0][0].map(([x, z]) => ({ x, z: z + ZH }));
   const phi = (x, z) => Math.abs(Math.atan2(x, ZH - z)) / DEG;   // 0 at centre field, 45 at the poles
 
   // ── field ──
-  const fieldShape = new THREE.Shape(park.ring(0.5).map((p) => new THREE.Vector2(p.x, -p.z)));
+  const fieldShape = new THREE.Shape(fieldRing.map((p) => new THREE.Vector2(p.x, -p.z)));
   const fieldGeo = new THREE.ShapeGeometry(fieldShape, 1);
   fieldGeo.rotateX(-Math.PI / 2);
   const fuv = fieldGeo.attributes.uv; const fpos = fieldGeo.attributes.position;
@@ -126,59 +64,35 @@ export function buildDome(ctx) {
   const field = new THREE.Mesh(fieldGeo, std({ ...floorPanelTex({ key: 'domefloor', tone: 0.1 }), roughness: 0.8 }));
   field.position.y = 0.02; field.receiveShadow = true; root.add(field);
 
-  // ── the stands ──
-  // 1st floor all the way round: above the 4.24 m fence in the outfield,
-  // just above the field along the lines and behind home, ramping between the
-  // two where the outfield meets the infield at the poles. Balcony and 2nd
-  // floor over the infield only.
-  const ramp = (x, z) => { const a = phi(x, z); return a < 45.3 ? 3.0 : a > 48 ? 0 : 3.0 * (1 - smooth(45.3, 48, a)); };
-  const infield = (x, z) => phi(x, z) > 58;
-  const behindStage = (x, z) => z < 14;
-  // By the seating plan: the 1st floor all the way round, 44 rows with a
-  // walkway across it after row 25 that the numbered passages (tunnels from
-  // the concourse) open onto; the balcony, five rows over the infield; the
-  // 2nd floor over the infield, 28 rows with its walkway after row 10 and its
-  // passages opening there. Aisles every ten metres or so — twenty seats.
-  const bowl = buildBowl(pipe, {
-    path: park, seatColor: 0x1d3c86, concreteTone: 0.28, stage: STAGE, seed: 400,
-    // nobody behind or beside the set; the block straight behind it is tarped
-    cover: (x, z) => z < 2 && Math.abs(x) < 36,
-    occ: (x, z) => (z < 14 ? 0 : 1),
-    occupancy: 1,
-    tiers: [
-      { rows: 44, rise: 0.28, riseFar: 0.4, run: 0.8, yBase: 1.3, inset: 0.4, crowd: true, lift: ramp, backWall: 4,
-        cross: [25], crossRun: 1.6, aisle: 1.1,
-        blocks: (O, D) => planBlocks(O, D, { step: 10.5, vom: { row: 25, w: 2.4 } }),
-        // steps up from the field where the stand starts above the fence
-        stairs: (O) => Array.from({ length: Math.floor(O.total / 40) }, (_, i) => (i + 0.5) * 40).filter((sv) => !behindStage(O.pt(sv, 0).x, O.pt(sv, 0).z)) },
-      { rows: 5, rise: 0.48, run: 0.95, yBase: 19.5, inset: 38.4, crowd: true, face: 3.0, backWall: 2.8, where: infield,
-        blocks: (O, D) => planBlocks(O, D, { step: 12, door: { w: 1.6 } }) },
-      { rows: 28, rise: 0.5, riseFar: 0.64, run: 0.85, yBase: 25.0, inset: 44.6, crowd: true, face: 2.8, backWall: 3.5, where: infield,
-        cross: [10], crossRun: 1.5,
-        blocks: (O, D) => planBlocks(O, D, { step: 11, vom: { row: 10, w: 2.2 } }) },
-    ],
+  // ── the stands, from the official seating map ──
+  // The 1st floor: blocks A (rows 1–26) and B (27–47) round the infield with
+  // the walkway between them, entered from the concourse behind by the
+  // numbered passages at the back; the outfield's F blocks above the fence.
+  // The balcony (C) behind the 1st floor, pole to pole round home. The 2nd
+  // floor: D (rows 1–10) and E (11 up to 33, deepest behind home) with the
+  // walkway between, the passages from its concourse opening onto it.
+  const stands = buildStands(TD_STANDS, {
+    offset: OFF, stage: STAGE, seed: 400, concreteTone: 0.28, roofY: 46.5,
+    seatColors: { A: 0x1d3c86, B: 0x1d3c86, F: 0x1d3c86, C: 0x7a1a20, D: 0x1d3c86, E: 0x1d3c86 },
+    crowd: !!q.crowd,
+    // nobody behind or beside the set
+    sold: (x, z) => z > 14,
   });
-  root.add(bowl.group);
+  root.add(stands.group);
   // the wall in front of the 1st floor: padded 4.0 m with 0.24 m of net and the
   // yellow line in the outfield, a low padded wall along the lines, and the
   // backstop net behind home plate
   const pad = [], line = [], net = [], back = [];
-  const RP = park.pts;
-  for (let k = 0; k < RP.length - 1; k++) {
-    const a = park.at(RP[k], 0.22), b = park.at(RP[k + 1], 0.22);
+  for (let k = 0; k < fieldRing.length; k++) {
+    const a = fieldRing[k], b = fieldRing[(k + 1) % fieldRing.length];
     const mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2;
     const len = Math.hypot(b.x - a.x, b.z - a.z);
+    if (len < 0.05) continue;
     const ang = -Math.atan2(b.z - a.z, b.x - a.x);
-    const hA = 1.3 + ramp(a.x, a.z), hB = 1.3 + ramp(b.x, b.z), h = (hA + hB) / 2;
-    const seg = (w, hh, y, list, d = 0.36) => { const g = new THREE.BoxGeometry(len + 0.04, hh, d); g.rotateY(ang); g.translate(mx, y, mz); list.push(g); };
-    if (h > 3.9) {
-      seg(0, 4.0, 2.0, pad);
-      seg(0, 0.12, 4.02, line, 0.4);
-      seg(0, 0.24, 4.16, net, 0.04);
-    } else {
-      seg(0, h - 0.1, (h - 0.1) / 2, pad);
-      if (phi(mx, mz) > 150) seg(0, 7.5, h + 3.75, back, 0.03);
-    }
+    const outfield = Math.hypot(mx, mz - ZH) > 92 && phi(mx, mz) < 46;
+    const seg = (hh, y, list, d = 0.36) => { const g = new THREE.BoxGeometry(len + 0.04, hh, d); g.rotateY(ang); g.translate(mx, y, mz); list.push(g); };
+    if (outfield) { seg(4.0, 2.0, pad); seg(0.12, 4.02, line, 0.4); seg(0.24, 4.16, net, 0.04); }
+    else { seg(1.2, 0.6, pad); if (phi(mx, mz) > 150) seg(7.5, 1.2 + 3.75, back, 0.03); }
   }
   root.add(new THREE.Mesh(mergeGeometries(pad), std({ color: 0x163a78, roughness: 0.8 })));
   root.add(new THREE.Mesh(mergeGeometries(line), glowMat(0xe8c830, 0.45)));
@@ -192,20 +106,12 @@ export function buildDome(ctx) {
     const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 20), new THREE.MeshBasicMaterial({ color: 0xf2d020, transparent: true, opacity: 0.22, side: THREE.DoubleSide }));
     flag.position.set(x - sd * 0.8, 14, z); flag.rotation.y = sd * Math.PI / 4; root.add(flag);
   }
-  const ribbons = ribbonBoards(bowl, { tiers: [1, 2], height: 1.2, bright: 1.5 });
-  root.add(ribbons);
-  ctx.addScreen({ userData: { face: ribbons } }, 1, 'ribbon');
 
   // ── the membrane ──
   // The roof in plan is a rounded square (a superellipse) drawn round the
   // backs of the stands; the cushion rises from the ring beam on top of the
   // outer wall to the crown.
-  const outer = [];
-  RP.forEach((p) => {
-    const a = park.at(p, 0);
-    const top = bowl.tiers.filter((D) => !D.T.where || D.T.where(a.x, a.z)).pop();
-    outer.push(park.at(p, top.back + 1));
-  });
+  const outer = TD_STANDS.outer[0][0].map(([x, z]) => ({ x, z: z + ZH }));
   const zMin = Math.min(...outer.map((p) => p.z)), zMax = Math.max(...outer.map((p) => p.z));
   const ZC = (zMin + zMax) / 2;
   const NE = 3.2;
@@ -347,8 +253,7 @@ export function buildDome(ctx) {
   for (let i = 0; i < 12; i++) ups.push({ fx: rig.add({ kind: 'beam', pos: V3(-26 + i * (52 / 11), DECK + 0.3, 21.8), hang: 'up', length: 70 }), i, n: 12, group: 3 });
   // the ring: beams along the 2nd-floor front, pole to pole, pointing in
   {
-    const F2 = bowl.tiers[2];
-    const edge = park.pts.map((k) => park.at(k, F2.inner - 0.6)).filter((p) => phi(p.x, p.z) > 62);
+    const edge = TD_STANDS.rim.map(([x, z]) => ({ x, z: z + ZH }));
     edge.sort((p, q2) => Math.atan2(p.x, p.z - ZH) - Math.atan2(q2.x, q2.z - ZH));
     const len = [0];
     for (let i = 1; i < edge.length; i++) len.push(len[i - 1] + Math.hypot(edge[i].x - edge[i - 1].x, edge[i].z - edge[i - 1].z));
@@ -357,7 +262,7 @@ export function buildDome(ctx) {
       const want = (i + 0.5) / N2 * len[len.length - 1];
       while (j < len.length - 2 && len[j + 1] < want) j++;
       const t = (want - len[j]) / (len[j + 1] - len[j]);
-      const pos = V3(lerp(edge[j].x, edge[j + 1].x, t), F2.T.yBase - 1.6, lerp(edge[j].z, edge[j + 1].z, t));
+      const pos = V3(lerp(edge[j].x, edge[j + 1].x, t), TD_STANDS.rimY - 1.6, lerp(edge[j].z, edge[j + 1].z, t));
       const a = Math.atan2(pos.x, pos.z - ZC);
       ring2.push({ fx: rig.add({ kind: 'beam', pos, hang: 'up', length: 110, beamGain: 0.9, flareGain: 0.6 }), i, n: N2, group: 4, a });
     }
@@ -399,7 +304,18 @@ export function buildDome(ctx) {
     }
     return c;
   };
-  const onField = inPoly(park.ring(-3));
+  const inField = inPoly(fieldRing);
+  const edgeDist = (x, z) => {
+    let m = Infinity;
+    for (let i = 0; i < fieldRing.length; i++) {
+      const a = fieldRing[i], b = fieldRing[(i + 1) % fieldRing.length];
+      const dx = b.x - a.x, dz = b.z - a.z, l2 = dx * dx + dz * dz || 1;
+      const t = clamp(((x - a.x) * dx + (z - a.z) * dz) / l2);
+      m = Math.min(m, Math.hypot(x - a.x - dx * t, z - a.z - dz * t));
+    }
+    return m;
+  };
+  const onField = (x, z) => inField(x, z) && edgeDist(x, z) > 3;
   // the arena: lettered blocks A (at the stage) to F (at home plate), numbered
   // across, 13 seats wide and 15 rows deep, clipped to the field and cleared
   // for the runway, the B-stage, the delay towers and the desk
@@ -414,8 +330,8 @@ export function buildDome(ctx) {
   const arena = floorBlocks(blockGrid([[25, 39], [41, 55], [57, 71], [73, 87], [89, 103], [105, 119]], xs), { keep, seed: 55 });
   root.add(floorChairs(arena.chairs));
   const fieldPeople = arena.people;
-  bigCrowd(root, cu, q, fieldPeople.concat(bowl.people.map((p) => ({ ...p, h: 0.97 }))), { seed: 21 });
-  const aisleField = lightPoints(bowl.aisleLights.map((a) => ({ ...a, white: true, size: 0.04 })), cu, { maxPx: 3 });
+  bigCrowd(root, cu, q, fieldPeople.concat(stands.people.map((p) => ({ ...p, h: 0.97 }))), { seed: 21 });
+  const aisleField = lightPoints(stands.aisleLights.map((a) => ({ ...a, white: true, size: 0.04 })), cu, { maxPx: 3 });
   aisleField.material.uniforms.uGain.value = 0.25;
   root.add(aisleField);
   root.add(lightPoints(fohPosition(pipe, root, eye, { riser: 1.0 }), cu, { maxPx: 4 }));

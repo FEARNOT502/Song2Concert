@@ -247,27 +247,6 @@ export function carpetTex({ key, S = 256, base = [0.2, 0.05, 0.06], seed = 41 })
   }, { normal: 1 });
 }
 
-// ── a row of stadium seat backs: u = metres along the row (2 seats per tile),
-// v = up the back ──
-export function seatStripTex(hexColor) {
-  const key = `strip${hexColor}`;
-  if (TEX.has(key)) return TEX.get(key);
-  const [R, G, B] = hex3(hexColor).map((x) => Math.pow(x, 1 / 2.2));
-  const n = valueNoise(77);
-  return pbrSet(key, 256, (u, v) => {
-    const s = (u * 2) % 1;               // one seat
-    const gap = s < 0.07 || s > 0.93;
-    const f = fbm(n, u * 16, v * 8, 16, 8, 2);
-    if (gap || v > 0.94) return [0.03, 0.03, 0.035, 0.1, 0.9];
-    // moulded back: lit top, shadowed bottom, rounded sides
-    const side = Math.min(s - 0.07, 0.93 - s) / 0.08;
-    const shade = (0.55 + 0.45 * smooth(0.0, 0.9, v)) * (0.6 + 0.4 * clamp(side));
-    const lip = v > 0.84 ? 1.25 : 1;
-    const t = shade * lip * (0.92 + 0.12 * f);
-    return [R * t, G * t, B * t, 0.5 + 0.4 * clamp(side), 0.55];
-  }, { normal: 2, H: 128 });
-}
-
 // ── speaker grille ──
 export function grilleTex() {
   return pbrSet('grille', 256, (u, v) => {

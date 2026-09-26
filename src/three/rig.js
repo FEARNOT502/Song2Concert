@@ -568,17 +568,29 @@ export function seatGeometry({ style = 'theatre' } = {}) {
     return { fabric, frame: mergeGeometries([shell, ...arms]) };
   }
   if (style === 'folding') {
-    // the arena floor's folding chair: a plastic shell on a steel frame
-    const pan = new THREE.BoxGeometry(0.42, 0.03, 0.38); pan.translate(0, 0.45, 0.02);
-    const back = new THREE.BoxGeometry(0.42, 0.26, 0.03); back.rotateX(-0.12); back.translate(0, 0.74, -0.2);
-    const fabric = mergeGeometries([pan, back]);
-    const legs = [];
-    for (const s of [-1, 1]) {
-      const f = new THREE.BoxGeometry(0.025, 0.46, 0.025); f.translate(s * 0.19, 0.23, 0.17); legs.push(f);
-      const r = new THREE.BoxGeometry(0.025, 0.88, 0.025); r.rotateX(-0.08); r.translate(s * 0.19, 0.44, -0.18); legs.push(r);
+    // the arena floor's stacking chair, as plates: seat, back, and the two
+    // side frames — a dozen triangles, for thousands of them
+    const P = [], N = [];
+    const quad = (a, b, c, d, n) => { for (const v of [a, b, c, a, c, d]) P.push(...v); for (let i = 0; i < 6; i++) N.push(...n); };
+    const w = 0.21;
+    quad([-w, 0.45, 0.2], [w, 0.45, 0.2], [w, 0.45, -0.18], [-w, 0.45, -0.18], [0, 1, 0]);
+    quad([-w, 0.58, -0.2], [w, 0.58, -0.2], [w, 0.86, -0.23], [-w, 0.86, -0.23], [0, 0.1, 1]);
+    const fabric = new THREE.BufferGeometry();
+    fabric.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+    fabric.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+    const Q = [], M = [];
+    const tri = (a, b, c, n) => { for (const v of [a, b, c]) Q.push(...v); for (let i = 0; i < 3; i++) M.push(...n); };
+    for (const x of [-w, w]) {
+      // a leg front and back and the back post, as one thin outline
+      tri([x, 0, 0.18], [x, 0.45, 0.18], [x, 0.45, 0.15], [1, 0, 0]);
+      tri([x, 0, 0.18], [x, 0.45, 0.15], [x, 0, 0.15], [1, 0, 0]);
+      tri([x, 0, -0.2], [x, 0.88, -0.24], [x, 0.88, -0.21], [1, 0, 0]);
+      tri([x, 0, -0.2], [x, 0.88, -0.21], [x, 0, -0.17], [1, 0, 0]);
     }
-    const bar = new THREE.BoxGeometry(0.4, 0.02, 0.02); bar.translate(0, 0.08, 0.17); legs.push(bar);
-    return { fabric, frame: mergeGeometries(legs) };
+    const frame = new THREE.BufferGeometry();
+    frame.setAttribute('position', new THREE.Float32BufferAttribute(Q, 3));
+    frame.setAttribute('normal', new THREE.Float32BufferAttribute(M, 3));
+    return { fabric, frame };
   }
   // bentwood club chair
   const seat = new THREE.CylinderGeometry(0.21, 0.21, 0.05, 16); seat.translate(0, 0.46, 0);

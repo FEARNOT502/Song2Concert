@@ -1,87 +1,19 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // CONCERT HALL — a vineyard after Lotte Concert Hall: pale timber, red seats,
-// terraces stepping round a rounded platform, choir seats behind the orchestra
-// and the organ over them, a rippled ceiling with a canopy over the stage.
-// The model's block is the listener's terrace (18 m wide): we sit 13 m out.
+// terraces stepping round the platform, choir seats behind the orchestra and
+// the organ over them, a rippled ceiling with a canopy over the stage. The
+// plan, the platform and every seat are the hall's own seating charts'.
+// We sit in the 10th row of C, 10 m from the platform's edge.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { KELVIN, V3, glowMat, plasterTex, prng, std, thin, velvet, withRepeat, woodTex } from '../core.js';
+import { KELVIN, V3, glowMat, plasterTex, std, thin, velvet, withRepeat, woodTex } from '../core.js';
 import { crowd3D } from '../people.js';
 import { ledScreen, mats, performer, seatField, shadowSpot } from '../rig.js';
+import { buildStands, decodeSeats } from '../stands.js';
+import { LOTTE_STANDS } from './lotte-data.js';
 import { orchestra } from './orchestra.js';
-
-// A terrace of seats in its own frame: rows run along local x, depth runs along
-// local +z away from the stage, and the front parapet is at z = 0. The block is
-// placed with `at` (front centre) and `yaw` (0 = facing -z, toward a stage at
-// smaller z).
-export function terrace(ctx, out, { at, yaw = 0, width, rows, rowD = 0.92, rise = 0.16, jump = [], parapet = 1.0, seat = 0.54, curve = 0.012, fill = 0.94, seed = 1, mats: M, stage, empty = null, grow = 0.3, gaps = [] }) {
-  const g = new THREE.Group();
-  g.position.copy(at); g.rotation.y = yaw;
-  const steps = [];
-  let y = 0.08;
-  const tops = [];
-  for (let r = 0; r < rows; r++) {
-    if (jump.includes(r)) y += 0.55;
-    y += r === 0 ? 0 : typeof rise === 'function' ? rise(r) : rise;
-    tops.push(y);
-    // solid down to the hall floor, so a raised block is a mass, not a shelf
-    const b = new THREE.BoxGeometry(width + r * grow, y + at.y, rowD);
-    b.translate(0, (y - at.y) / 2, 0.2 + r * rowD + rowD / 2);
-    steps.push(b);
-    // the side walls: a low timber wall up each edge of the block, stepping
-    // with the rake, so the ends are closed as the front is
-    for (const sd of [-1, 1]) {
-      const sw = new THREE.BoxGeometry(0.18, 1.0, rowD + 0.02);
-      sw.translate(sd * ((width + r * grow) / 2 + 0.09), y + 0.5, 0.2 + r * rowD + rowD / 2);
-      sw.applyMatrix4(new THREE.Matrix4().makeRotationY(yaw)); sw.translate(at.x, at.y, at.z);
-      out.parapets.push(sw);
-    }
-    // a step wall where a section jumps: the low wall the vineyard is for
-    if (jump.includes(r)) {
-      const w = new THREE.BoxGeometry(width + r * grow, 0.95, 0.14); w.translate(0, y - 0.1, 0.2 + r * rowD - 0.07);
-      out.parapets.push(w.applyMatrix4(new THREE.Matrix4().makeRotationY(yaw)).translate(at.x, at.y, at.z));
-    }
-  }
-  const stepGeo = mergeGeometries(steps);
-  stepGeo.applyMatrix4(new THREE.Matrix4().makeRotationY(yaw)); stepGeo.translate(at.x, at.y, at.z);
-  out.steps.push(stepGeo);
-  // front parapet, curved in plan
-  const segs = 8;
-  for (let i = 0; i < segs; i++) {
-    const x0 = -width / 2 + (i / segs) * width, x1 = x0 + width / segs;
-    const zc = (x) => x * x * curve;
-    const len = Math.hypot(x1 - x0, zc(x1) - zc(x0));
-    const w = new THREE.BoxGeometry(len + 0.02, parapet + at.y, 0.18);
-    w.rotateY(-Math.atan2(zc(x1) - zc(x0), x1 - x0));
-    w.translate((x0 + x1) / 2, (parapet - at.y) / 2, (zc(x0) + zc(x1)) / 2);
-    w.applyMatrix4(new THREE.Matrix4().makeRotationY(yaw)); w.translate(at.x, at.y, at.z);
-    out.parapets.push(w);
-    const c = new THREE.BoxGeometry(len + 0.02, 0.05, 0.26);
-    c.rotateY(-Math.atan2(zc(x1) - zc(x0), x1 - x0));
-    c.translate((x0 + x1) / 2, parapet + 0.025, (zc(x0) + zc(x1)) / 2);
-    c.applyMatrix4(new THREE.Matrix4().makeRotationY(yaw)); c.translate(at.x, at.y, at.z);
-    out.copings.push(c);
-  }
-  const rnd = prng(seed);
-  const m = new THREE.Matrix4().makeRotationY(yaw).setPosition(at);
-  for (let r = 0; r < rows; r++) {
-    const wr = width + r * grow - 0.8;
-    const n = Math.floor(wr / seat);
-    for (let i = 0; i < n; i++) {
-      const lx = -wr / 2 + (i + 0.5) * (wr / n);
-      if (gaps.some((a) => Math.abs(lx - a) < 0.55)) continue;
-      const lz = 0.2 + r * rowD + rowD * 0.5 + lx * lx * curve * 0.5;
-      const p = V3(lx, tops[r], lz).applyMatrix4(m);
-      const turn = Math.atan2(stage.x - p.x, stage.z - p.z);
-      out.seats.push({ x: p.x, y: p.y, z: p.z, turn });
-      if (empty && empty(p)) continue;
-      if (rnd() < fill) out.people.push({ x: p.x, y: p.y + 0.02, z: p.z, turn: turn + (rnd() - 0.5) * 0.15, h: 0.93 + rnd() * 0.12 });
-    }
-  }
-  return tops;
-}
 
 export function organ(M) {
   const g = new THREE.Group();
@@ -139,7 +71,10 @@ export function organ(M) {
 export function buildConcertHall(ctx) {
   const { pipe, q, cu } = ctx;
   const root = new THREE.Group();
-  const HW = 23, Z0 = -15, Z1 = 42, HH = 20;
+  // the hall's own plan, off its seating chart
+  const planXZ = LOTTE_STANDS.plan;
+  const HW = Math.max(...planXZ.map(([x]) => Math.abs(x)));
+  const Z0 = Math.min(...planXZ.map(([, z]) => z)), Z1 = Math.max(...planXZ.map(([, z]) => z)), HH = 20;
   const STAGE = V3(0, 1.0, 6);
   const DECK = 1.0;
   const hinoki = woodTex({ key: 'hinoki', planks: 7, joints: 2, base: [0.74, 0.57, 0.39], tone: 0.08, grain: 0.18, rough: 0.35, seed: 31 });
@@ -152,7 +87,7 @@ export function buildConcertHall(ctx) {
   const wallMat = std({ ...withRepeat(bumps, 1 / 2.4, 1 / 2.4), roughness: 1, normalScale: new THREE.Vector2(1.6, 1.6) });
 
   // ── shell: a rounded plan, walls of bumped timber ──
-  const plan = [[-HW, Z1], [HW, Z1], [HW, 6], [18, -9], [8, Z0], [-8, Z0], [-18, -9], [-HW, 6]];
+  const plan = planXZ;
   for (let i = 0; i < plan.length; i++) {
     const [x0, z0] = plan[i], [x1, z1] = plan[(i + 1) % plan.length];
     const len = Math.hypot(x1 - x0, z1 - z0);
@@ -202,56 +137,45 @@ export function buildConcertHall(ctx) {
     root.add(s);
   }
 
-  // ── the platform ──
+  // ── the platform, as the chart draws it ──
   const plat = new THREE.Group();
-  const s = new THREE.Shape();
-  s.moveTo(-10, -7); s.lineTo(10, -7); s.lineTo(10, 1.5);
-  s.bezierCurveTo(10, 4.8, 5.5, 6.3, 0, 6.3); s.bezierCurveTo(-5.5, 6.3, -10, 4.8, -10, 1.5); s.lineTo(-10, -7);
-  const pg = new THREE.ExtrudeGeometry(s, { depth: DECK, bevelEnabled: false, curveSegments: 32 });
+  const s = new THREE.Shape(LOTTE_STANDS.stage.map(([x, z]) => new THREE.Vector2(x, z)));
+  const pg = new THREE.ExtrudeGeometry(s, { depth: DECK, bevelEnabled: false, curveSegments: 1 });
   pg.rotateX(Math.PI / 2); pg.translate(0, DECK, 0);
   const stageTop = std({ ...withRepeat(hinoki, 1 / 1.3, 1 / 2.6), roughness: 1 });
-  // top faces carry UVs in extrude units; scale them to metres
   const platMesh = new THREE.Mesh(pg, [stageTop, std({ color: 0x3a2818, roughness: 0.6 })]);
-  platMesh.position.set(0, 0, 5.2); platMesh.receiveShadow = true;
+  platMesh.receiveShadow = true;
   plat.add(platMesh);
   root.add(plat);
 
   // ── seating, by the seating plan ──
-  // In front of the platform, the 1st floor's five blocks A to E across the
-  // hall, each 23 rows in three terraces: rows 1–8 nearly flat, a wall, rows
-  // 9–16, another wall, rows 17–23 climbing to the height of the 2nd floor.
-  // Beside the platform L and R, behind it on either side LP and RP, and the
-  // choir seats P behind the orchestra under the organ. On the 2nd floor, A to
-  // E across the back of the hall, and L and R above the platform's sides.
-  const out = { steps: [], parapets: [], copings: [], seats: [], people: [] };
-  const eyeZ = 19;
+  // Lotte's own charts, seat for seat, each block its own terrace. On the 1st
+  // floor, in front of the platform, B, C and D in three terraces — rows 1–8
+  // barely raked, a wall, rows 9–16, another wall, rows 17–23 — with A and E
+  // wedged in either side of them, each in two terraces (rows 1–8, 9–16),
+  // their rows turned toward the platform. Beside the platform L and R, the
+  // rows running out from it; round its back corners LP and RP, nine rows
+  // curving with it; behind it the choir P, three rows, a wall, three more,
+  // under the organ. On the 2nd floor, A to E across the back of the hall and
+  // two-row galleries L and R down the side walls.
   const stageC = V3(0, DECK, 5);
-  const notMine = (p) => Math.abs(p.z - eyeZ) < 0.55 && Math.abs(p.x) < 0.8;
-  const rake = (r) => (r < 8 ? 0.1 : r < 16 ? 0.2 : 0.36);
-  const front = { rows: 23, rowD: 0.9, rise: rake, jump: [8, 16], parapet: 0.95, stage: stageC };
-  const ours = terrace(ctx, out, { ...front, at: V3(0, 0, 12.6), width: 7.6, grow: 0.12, curve: 0.01, seed: 71, empty: notMine });         // C
-  for (const sd of [-1, 1]) {
-    terrace(ctx, out, { ...front, at: V3(sd * 8.9, 0, 12.3), yaw: sd * 0.08, width: 7.4, grow: 0.1, curve: 0.008, seed: 72 + sd });       // B, D
-    terrace(ctx, out, { ...front, at: V3(sd * 16.6, 0, 11.6), yaw: sd * 0.1, width: 5.8, grow: 0.06, curve: 0.006, seed: 75 + sd });      // A, E
-    terrace(ctx, out, { at: V3(sd * 14.2, 3.4, 2.0), yaw: sd * 1.22, width: 9, rows: 6, rise: 0.36, parapet: 1.1, curve: 0.02, seed: 91 + sd, stage: stageC });   // L, R
-    terrace(ctx, out, { at: V3(sd * 12.0, 3.2, -6.2), yaw: sd * 2.1, width: 7, rows: 5, rise: 0.4, parapet: 1.1, curve: 0.02, seed: 95 + sd, stage: stageC });   // LP, RP
-    terrace(ctx, out, { at: V3(sd * 15.6, 7.8, -3.5), yaw: sd * 1.9, width: 8, rows: 4, rise: 0.45, parapet: 1.05, curve: 0.01, seed: 103 + sd, stage: stageC }); // 2F L, R
-  }
-  terrace(ctx, out, { at: V3(0, 2.0, -2.8), yaw: Math.PI, width: 15, rows: 7, rise: 0.46, parapet: 1.0, curve: 0.01, seed: 111, stage: stageC });                // P
-  terrace(ctx, out, { at: V3(0, 7.6, 34.2), width: 38, rows: 6, rise: 0.4, parapet: 1.05, curve: 0.002, grow: 0.2, gaps: [-13, -5.2, 5.2, 13], seed: 121, stage: stageC }); // 2F A–E
-  const eyeRow = Math.floor((eyeZ - 12.8) / 0.9);
-  const eye = V3(0, ours[Math.min(ours.length - 1, eyeRow)] + 1.4, eyeZ);
-  const stepsMesh = new THREE.Mesh(mergeGeometries(out.steps), std({ color: 0x2a1a12, roughness: 0.95 }));
-  stepsMesh.receiveShadow = true;
-  root.add(stepsMesh);
-  root.add(new THREE.Mesh(mergeGeometries(out.parapets), M.parapet));
-  root.add(new THREE.Mesh(mergeGeometries(out.copings), std({ color: 0xc9a878, roughness: 0.35 })));
-  root.add(seatField(out.seats, { fabric: velvet(0x8e1018, 'lotteseat'), frame: std({ color: 0x5a3c22, roughness: 0.45 }) }));
-  if (q.crowd) root.add(crowd3D(thin(out.people, Math.round(out.people.length * Math.max(0.5, q.crowd))), cu, { kind: 'seated', detail: 1, seed: 17 }));
+  const stands = buildStands(LOTTE_STANDS, {
+    stage: stageC, seed: 71, occupancy: 0.94,
+    materials: { struct: std({ color: 0x7a5236, roughness: 0.85 }), rail: std({ color: 0xa8784c, roughness: 0.7, side: THREE.DoubleSide }), floor: std({ color: 0x7a5236, roughness: 0.85 }) },
+    seatMesh: (spots) => seatField(spots, { fabric: velvet(0x8e1018, 'lotteseat'), frame: std({ color: 0x5a3c22, roughness: 0.45 }) }),
+  });
+  root.add(stands.group);
+  // we sit in C, the 10th row, on the centre line
+  const C2 = LOTTE_STANDS.levels.find((l) => l.name === 'C2');
+  let mine = null;
+  { const S = decodeSeats(C2.seats); for (let i = 0; i < S.length; i += 4) { if (S[i + 2] !== 1) continue; const x = S[i] / 10, z = S[i + 1] / 10; if (!mine || Math.abs(x) < Math.abs(mine.x)) mine = { x, z, y: C2.hs[1] }; } }
+  const eye = V3(mine.x, mine.y + 1.2, mine.z - 0.1);
+  const people = stands.people.filter((p) => Math.hypot(p.x - mine.x, p.z - mine.z) > 0.4).map((p) => ({ ...p, h: 0.93 + ((p.x * 7.3 + p.z * 3.1) % 1 + 1) % 1 * 0.12 }));
+  if (q.crowd) root.add(crowd3D(thin(people, Math.round(people.length * Math.max(0.5, q.crowd))), cu, { kind: 'seated', detail: 1, seed: 17 }));
 
   // ── the organ ──
   const org = organ(M);
-  org.position.set(0, 7.0, Z0 + 1.6);
+  org.position.set(0, 7.0, Z0 + 2.2);
   root.add(org);
 
   // ── the orchestra: a four-wind orchestra in American seating ──
