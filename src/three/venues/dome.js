@@ -357,6 +357,7 @@ export function buildDome(ctx) {
     ] },
     envIntensity: 0.55,
     update(f) {
+      stands.update(f);
       const show = 1 - f.house;
       runShow(rig, spots, f, { house: V3(0, 1, 68), stage: STAGE, span: 60 });
       runShow(rig, beams, f, { house: V3(0, 22, 95), stage: STAGE, span: 80 });

@@ -15,6 +15,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { DEG, V3, concreteTex, glowMat, prng, std, withRepeat } from './core.js';
+import { mats } from './rig.js';
 
 // A stadium seat, folded up: the shell's back and its seat pan as thin plates
 // (seen from a stand away, that is all a seat is), eight triangles.
@@ -54,6 +55,57 @@ export function roomMaterials(materials) {
     mouthMat: std({ color: 0xa9a297, roughness: 0.9, emissive: 0x5a554c, emissiveIntensity: 0.4, side: THREE.DoubleSide }),
     mouthFloor: std({ color: 0x77726b, roughness: 0.75, emissive: 0x3e3a35, emissiveIntensity: 0.45 }),
     stairMat: materials.stair ?? std({ color: 0xa8a298, roughness: 0.85, emissive: 0x5e594f, emissiveIntensity: 0.5 }),
+    lampMat: glowMat(0xfff0da, 1.7, { side: THREE.DoubleSide }),
+  };
+}
+
+// The concourse lights are on for whoever is in there: seen from the bowl —
+// a seat, the floor, the stage — the doors and tunnel mouths stay dark, as
+// they read in a show; step into a concourse, a tunnel or onto its stairs and
+// they come up. `update(f)` follows the camera and fades between the two.
+export function roomLights(data, { ox, oz, lit }) {
+  const R = data.rooms;
+  const zones = [];
+  const add = (polys, y0, y1) => {
+    const rings = polys.map((r) => r.map(([x, z]) => [x + ox, z + oz]));
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (const [x, z] of rings[0]) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
+    zones.push({ rings, x0, x1, z0, z1, y0, y1 });
+  };
+  for (const f of R.lit) for (const polys of f.polys) add(polys, f.y + 0.2, f.y + 4.6);
+  for (const L of data.levels) for (const h of L.holes) add([h.ring], h.floor + 0.2, h.floor + 5.5);
+  for (const f of data.flights) {
+    const w = (f.w ?? 1.6) / 2 + 0.4, ux = f.dx, uz = f.dz, vx = -uz, vz = ux;
+    const c = [[-0.8, -w], [f.L + 0.8, -w], [f.L + 0.8, w], [-0.8, w]].map(([a, b]) => [f.x + ux * a + vx * b, f.z + uz * a + vz * b]);
+    add([c], f.y0 + 0.2, f.y1 + 2.4);
+  }
+  const inRing = (r, x, z) => {
+    let c = false;
+    for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+      const [xi, zi] = r[i], [xj, zj] = r[j];
+      if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) c = !c;
+    }
+    return c;
+  };
+  const inside = ({ x, y, z }) => zones.some((q) => y > q.y0 && y < q.y1 && x > q.x0 && x < q.x1 && z > q.z0 && z < q.z1
+    && inRing(q.rings[0], x, z) && !q.rings.slice(1).some((h) => inRing(h, x, z)));
+  const mats = ['inMat', 'ceilMat', 'floorLit', 'mouthMat', 'mouthFloor', 'stairMat'].map((k) => [lit[k], lit[k].emissiveIntensity]);
+  const lamp = lit.lampMat.color.clone();
+  let k = -1;
+  const set = (v) => {
+    k = v;
+    for (const [m, e] of mats) m.emissiveIntensity = e * v;
+    lit.lampMat.color.copy(lamp).multiplyScalar(v);
+  };
+  set(0);
+  return {
+    update(f) {
+      if (!f.cam) return;
+      const want = inside(f.cam) ? 1 : 0;
+      if (want === k) return;
+      const step = Math.min(1, (f.dt ?? 1 / 60) * 5);
+      set(Math.abs(want - k) < 0.02 ? want : k + (want - k) * step);
+    },
   };
 }
 
@@ -107,7 +159,7 @@ export function buildRooms(R, { ox, oz, shapeOf, structMat, wallMat, lit: M }) {
       const c = [[-a, -b], [a, -b], [a, b], [-a, b]].map(([s, t]) => [x + ox + ux * s + vx * t, z + oz + uz * s + vz * t]);
       for (const k of [0, 2, 1, 0, 3, 2]) { P.push(c[k][0], y, c[k][1]); N.push(0, -1, 0); }
     }
-    const m = new THREE.Mesh(mk(P, N), glowMat(0xfff0da, 1.7, { side: THREE.DoubleSide }));
+    const m = new THREE.Mesh(mk(P, N), M.lampMat);
     m.userData.noCollide = true;
     g.add(m);
   }
@@ -241,9 +293,11 @@ export function buildStands(data, {
   if (panels.mouth[0].length) g.add(new THREE.Mesh(mkPanels(panels.mouth), lit.mouthMat));
   if (data.rooms) g.add(buildRooms(data.rooms, { ox, oz, shapeOf, structMat, wallMat, lit }));
   // seats: instanced per colour, or handed to the venue's own seat
+  const lights = lit ? roomLights(data, { ox, oz, lit }) : null;
+  const update = (f) => lights?.update(f);
   if (seatMesh) {
     g.add(seatMesh(seatSpots.flatMap(({ spots }) => spots.map((sp) => ({ x: sp.x, y: sp.y, z: sp.z, turn: sp.yaw })))));
-    return { group: g, people, aisleLights };
+    return { group: g, people, aisleLights, update };
   }
   const seatGeo = stadiumSeatGeometry();
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion();
@@ -253,5 +307,5 @@ export function buildStands(data, {
     inst.receiveShadow = true;
     g.add(inst);
   }
-  return { group: g, people, aisleLights };
+  return { group: g, people, aisleLights, update };
 }

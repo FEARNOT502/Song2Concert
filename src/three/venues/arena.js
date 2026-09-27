@@ -155,6 +155,7 @@ export function buildArena(ctx) {
     ] },
     envIntensity: 0.6,
     update(f) {
+      stands.update(f);
       const show = 1 - f.house;
       runShow(rig, spots, f, { house: V3(0, 1, 42), stage: STAGE, span: 34 });
       runShow(rig, beams, f, { house: V3(0, 12, 60), stage: STAGE, span: 44 });

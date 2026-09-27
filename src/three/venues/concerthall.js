@@ -149,15 +149,15 @@ export function buildConcertHall(ctx) {
   root.add(plat);
 
   // ── seating, by the seating plan ──
-  // Lotte's own charts, seat for seat, each block its own terrace. On the 1st
-  // floor, in front of the platform, B, C and D in three terraces — rows 1–8
-  // barely raked, a wall, rows 9–16, another wall, rows 17–23 — with A and E
-  // wedged in either side of them, each in two terraces (rows 1–8, 9–16),
-  // their rows turned toward the platform. Beside the platform L and R, the
-  // rows running out from it; round its back corners LP and RP, nine rows
-  // curving with it; behind it the choir P, three rows, a wall, three more,
-  // under the organ. On the 2nd floor, A to E across the back of the hall and
-  // two-row galleries L and R down the side walls.
+  // Lotte's own charts, seat for seat. On the 1st floor, in front of the
+  // platform, the stalls — B, C and D, rows 1–23, with A and E either side of
+  // them, their rows turned toward the platform — on one raked floor, as in a
+  // theatre: no walls between the blocks, the aisles stepping with the rows.
+  // Beside the platform L and R, the rows running out from it; round its back
+  // corners LP and RP, nine rows curving with it; behind it the choir P, three
+  // rows, a wall, three more, under the organ: terraces of their own. On the
+  // 2nd floor, A to E across the back of the hall and two-row galleries L and
+  // R down the side walls.
   const stageC = V3(0, DECK, 5);
   const stands = buildStands(LOTTE_STANDS, {
     stage: stageC, seed: 71, occupancy: 0.94,
@@ -166,9 +166,9 @@ export function buildConcertHall(ctx) {
   });
   root.add(stands.group);
   // we sit in C, the 10th row, on the centre line
-  const C2 = LOTTE_STANDS.levels.find((l) => l.name === 'C2');
+  const stalls = LOTTE_STANDS.levels.find((l) => l.name === 'STALLS');
   let mine = null;
-  { const S = decodeSeats(C2.seats); for (let i = 0; i < S.length; i += 4) { if (S[i + 2] !== 1) continue; const x = S[i] / 10, z = S[i + 1] / 10; if (!mine || Math.abs(x) < Math.abs(mine.x)) mine = { x, z, y: C2.hs[1] }; } }
+  { const S = decodeSeats(stalls.seats); for (let i = 0; i < S.length; i += 4) { const x = S[i] / 10, z = S[i + 1] / 10, d = Math.hypot(x + 0.3, z - 22.2); if (!mine || d < mine.d) mine = { x, z, y: stalls.hs[S[i + 2]], d }; } }
   const eye = V3(mine.x, mine.y + 1.2, mine.z - 0.1);
   const people = stands.people.filter((p) => Math.hypot(p.x - mine.x, p.z - mine.z) > 0.4).map((p) => ({ ...p, h: 0.93 + ((p.x * 7.3 + p.z * 3.1) % 1 + 1) % 1 * 0.12 }));
   if (q.crowd) root.add(crowd3D(thin(people, Math.round(people.length * Math.max(0.5, q.crowd))), cu, { kind: 'seated', detail: 1, seed: 17 }));

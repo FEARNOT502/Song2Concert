@@ -288,6 +288,7 @@ export function buildStadium(ctx) {
     ] },
     envIntensity: 0.5,
     update(f) {
+      stands.update(f);
       const show = 1 - f.house;
       runShow(rig, spots, f, { house: V3(0, 1, 80), stage: STAGE, span: 80 });
       runShow(rig, beams, f, { house: V3(0, 40, 120), stage: STAGE, span: 110 });
