@@ -16,7 +16,7 @@
 // side, like everything else there.
 
 import * as THREE from 'three';
-import { DEG, clamp, regionColor } from './core.js';
+import { DEG, clamp, regionColor, dropDegenerateTriangles } from './core.js';
 import { Pipeline, QUALITY, buildEnvironment } from './render.js';
 import { crowdUniforms } from './people.js';
 import { Rig } from './rig.js';
@@ -137,6 +137,7 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
     const c = makeCtx();
     const v = buildVenue(id, c);
     for (const r of c.rigs) v.root.add(r.build());
+    dropDegenerateTriangles(v.root);
     pipe.scene.add(v.root);
     pipe.scene.add(pipe.flares.mesh);
     pipe.scene.background = v.background || new THREE.Color(0);

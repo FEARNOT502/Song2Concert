@@ -24,6 +24,10 @@ C=[o for o in lab if o['L']=='C']; D=[o for o in lab if o['L']=='D']; E=[o for o
 # container outlines (polygons holding many labels)
 def blocks(L,maxn=6): return [toR(o['poly']) for o in L if len(o['nums'])<=maxn]
 Ab,Bb,Fb=blocks(A),blocks(B),blocks(F)
+# The map's 3B-side B blocks (B31-B39) are traced only as far as their labels;
+# the building is symmetric, so that side is the 1B side mirrored
+_Bc=[P for P in Bb if abs(P[:,0].mean())<=2]; _Br=[P for P in Bb if P[:,0].mean()>2]
+Bb=_Br+_Bc+[P*np.array([-1.0,1.0]) for P in _Br]
 print('blocks A',len(Ab),'B',len(Bb),'F',len(Fb))
 # seats: rows parallel to each level's front, 0.5 m apart along the row, inside the blocks
 def synth(blockpolys, pitch, rows, first=0.42, spacing=0.5):
@@ -67,7 +71,16 @@ gxo,gzo=G.g(np.array([O[0]]),np.array([O[1]])); field=(labm==labm[int(gzo[0]),in
 solid1=(~field).astype(np.uint8)            # the 1st floor and everything outside it
 dOut=cv2.distanceTransform((1-hull1).astype(np.uint8),cv2.DIST_L2,5)*G.res
 dOut[field]=-1
+# The building above the 1st floor does not follow the ins and outs of its
+# blocks' backs: the balcony, the 2nd floor and the outer wall run straight
+# down the lines and in a curve behind home, round the 1st floor's convex hull
+cs_,_=cv2.findContours(hull1.astype(np.uint8),cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_NONE)
+hullC=np.zeros_like(hull1); cv2.fillPoly(hullC,[cv2.convexHull(np.vstack(cs_))],1)
+dOut1=dOut
+dOut=cv2.distanceTransform((1-hullC).astype(np.uint8),cv2.DIST_L2,5)*G.res
+dOut[field]=-1
 gy,gx=np.mgrid[0:G.H,0:G.W]; X,Z=G.m(gx,gy)
+RRO=np.maximum(np.hypot(X-O[0],Z-O[1]),1.0)     # distance from the dome's centre
 TH=np.degrees(np.arctan2(X-O[0],Z-O[1]))   # 0 towards home, + towards +x (1st base side)
 lab=json.load(open('td/td_labeled.json'))
 Hm=np.array([579.2,441.7]); s=2.996
@@ -90,7 +103,9 @@ def ring_seats(mask, dlo, pitch, rows, spacing=0.5, first=0.45):
     pts=[]
     for r in range(rows):
         dc=dlo+first+r*pitch
-        band=(np.abs(dOut-dc)<0.035)&mask
+        # half a cell either side: where the hull runs straight along the grid
+        # (behind home) the distance steps by whole cells
+        band=(np.abs(dOut-dc)<0.051)&mask
         ys,xs=np.nonzero(band)
         if not len(xs): continue
         P=np.c_[G.m(xs,ys)]
@@ -105,7 +120,10 @@ def shrink_sector(t0,t1,r):
     dt=np.degrees(AISLE/2/r); return t0+dt,t1-dt
 # balcony (C): four rows just behind the 1st floor, pole to pole round home
 C0,CP,CR=0.3,0.9,4
-Cmask=sector_mask(-130,130,C0,C0+CP*CR)
+SUITE_TH=33.7
+# (behind home, inside the lines from about D20 to D32, the balcony level is
+# the boxes, S101-110 and S301-310 either side of the VIP box)
+Cmask=sector_mask(-130,130,C0,C0+CP*CR)&(np.abs(TH)>=SUITE_TH)
 # aisles every 12 m round the ring
 cm=Cmask.copy()
 for t in np.arange(-130,131,7.0): cm&=~((np.abs(TH-t)<np.degrees(0.6/75)))
@@ -128,8 +146,8 @@ for t0,t1,n in Esp:
     a,b=shrink_sector(t0,t1,85)
     m=sector_mask(a,b,E0,E0+rows*DP)
     for tv in VOM:
-        m&=~((np.abs(TH-tv)<np.degrees(1.3/85))&(dOut<E0+5*DP))
+        m&=~((np.abs(TH-tv)<np.degrees(1.1/RRO))&(dOut<E0+5*DP))
     SEl.append(ring_seats(m,E0,DP,rows))
 SD=np.vstack(SDl); SE=np.vstack(SEl)
 print('seats C',len(SC),'D',len(SD),'E',len(SE),round(time.time()-T0,1))
-pickle.dump(dict(SA=SA,SB=SB,SF=SF,SC=SC,SD=SD,SE=SE,hull1=hull1,field=field,dOut=dOut,TH=TH,VOM=VOM,E0=E0),open('td_stage1.pkl','wb'))
+pickle.dump(dict(SA=SA,SB=SB,SF=SF,SC=SC,SD=SD,SE=SE,hull1=hull1,hullC=hullC,field=field,dOut=dOut,dOut1=dOut1,TH=TH,VOM=VOM,E0=E0,SUITE_TH=SUITE_TH),open('td_stage1.pkl','wb'))

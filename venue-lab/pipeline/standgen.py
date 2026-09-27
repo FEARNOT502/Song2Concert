@@ -100,8 +100,18 @@ class Level:
             rear=((s.band==r)&(s.d>=r*s.D+s.D*0.5)&(A>0)).astype(np.uint8)
             if not rear.any(): continue
             y=float(s.h(r)+rise/2)
-            for p in contours(s.G,rear,eps=getattr(s,'step_eps',0.02),minarea=0.15,sigma=0.7):
-                out.append({'y':round(y,3),'y0':round(float(s.h(r)),3),'polys':poly_out(p,2)})
+            # each half step a clean rectangle: the tightest one round the
+            # aisle's cells on this row (the seats either side leave its edges
+            # ragged by a cell or two)
+            n_,lab_=cv2.connectedComponents(rear,connectivity=8)
+            for k_ in range(1,n_):
+                ys_,xs_=np.nonzero(lab_==k_)
+                if len(xs_)*s.G.res**2<0.15: continue
+                (cx_,cy_),(w_,h_),a_=cv2.minAreaRect(np.c_[xs_,ys_].astype(np.float32))
+                if min(w_,h_)*s.G.res<0.3: continue
+                box=cv2.boxPoints(((cx_,cy_),(w_+1,h_+1),a_))
+                X_,Z_=s.G.m(box[:,0]-0.5+0.5,box[:,1]-0.5+0.5)
+                out.append({'y':round(y,3),'y0':round(float(s.h(r)),3),'polys':[[[round(float(u),2),round(float(v),2)] for u,v in zip(X_,Z_)]]})
         return out
     def holes_out(s, floor, open_upto=-1):
         # enclosed gaps in the stand (vomitory mouths), with the tread height round them
@@ -133,6 +143,103 @@ class Level:
             X,Z=s.G.m(ring[:,0],ring[:,1])
             out.append({'floor':floor,'ring':[[round(float(a),2),round(float(b),2)] for a,b in zip(X,Z)],'tops':[round(t,2) for t in tops],'open':opens})
         return out
+    def bot(s, r):
+        h=float(s.h(r))
+        if callable(s.bottom): return float(s.bottom(r,h))
+        if s.bottom=='ground': return 0.0
+        return h-(s.fascia if r==0 else s.bottom)
+    def make_voms(s, floor, head=1.95, minarea=3.0, wmin=1.4, wmax=4.2, cands=None, detect=True):
+        """Every enclosed gap in the treads (a tunnel mouth) made a straight
+        vomitory: a rectangle along the rake, the rows too low to walk under
+        cut away over it (the open pit, floor at `floor`), the rows above left
+        over it (the roof of the tunnel on to the concourse), and the rest of
+        the gap round the rectangle given back to the treads. `cands`: extra
+        masks to treat as gaps. Returns the vomitories for the renderer."""
+        G=s.G
+        inv=((1-s.R)&(s.hull>0)&s.behind).astype(np.uint8)
+        n,lab,st,_=cv2.connectedComponentsWithStats(inv,connectivity=4)
+        gz,gx=np.gradient(cv2.GaussianBlur(s.d.astype(np.float32),(0,0),6))
+        s.pits=getattr(s,'pits',np.zeros(s.R.shape,bool))
+        comps=[]
+        for i in range(1,n if detect else 1):
+            if st[i,4]*G.res**2<minarea: continue
+            x,y,w,h=st[i,:4]
+            if x<=1 or y<=1 or x+w>=G.W-1 or y+h>=G.H-1: continue
+            sub=(lab[y:y+h,x:x+w]==i)
+            m=np.zeros(s.R.shape,bool); m[y:y+h,x:x+w]=sub
+            edge=(cv2.dilate(m.astype(np.uint8),disk(3))>0)&~m
+            if (s.R[edge]>0).mean()<0.9: continue
+            comps.append(m)
+        for m in (cands or []): comps.append(m.astype(bool))
+        voms=[]
+        for m in comps:
+            ys,xs=np.nonzero(m)
+            edge=(cv2.dilate(m.astype(np.uint8),disk(3))>0)&~m
+            ey,ex=np.nonzero(edge)
+            u=np.array([gx[ey,ex].mean(),gz[ey,ex].mean()]); u/=np.linalg.norm(u)+1e-9
+            v=np.array([-u[1],u[0]])
+            X,Z=G.m(xs,ys); P=np.c_[X,Z]; a=P@u; b=P@v
+            a0,a1=float(a.min()),float(a.max())
+            bins=np.linspace(a0,a1,12); ws=[]
+            for k in range(2,10):
+                sel=(a>=bins[k])&(a<bins[k+1])
+                if sel.sum()>5: ws.append(b[sel].max()-b[sel].min()+G.res)
+            w=float(np.clip(round((np.median(ws) if ws else b.max()-b.min())*10)/10,wmin,wmax))
+            bc=float(np.median(b))
+            # the gap back to the treads, rows by depth
+            s.R[m]=1
+            s.band[m]=np.clip(np.floor(s.d[m]/s.D).astype(int),0,s.nrows-1)
+            # the rectangle, from the gap's front out to the back of the stand
+            y0_,y1_=max(0,ys.min()-400),min(G.H,ys.max()+400); x0_,x1_=max(0,xs.min()-400),min(G.W,xs.max()+400)
+            gyy,gxx=np.mgrid[y0_:y1_,x0_:x1_]; GX,GZ=G.m(gxx,gyy)
+            A=GX*u[0]+GZ*u[1]; B=GX*v[0]+GZ*v[1]
+            # as far out as the stand goes behind the gap, no further
+            pc=np.array([bc*v[0],bc*v[1]])
+            t=a1+0.1
+            while t<a1+60:
+                gx_,gz_=G.g(*(pc+u*t)); i_,j_=int(round(float(gz_))),int(round(float(gx_)))
+                if not (0<=i_<G.H and 0<=j_<G.W) or not s.R[i_,j_]: break
+                t+=0.1
+            rect=(np.abs(B-bc)<=w/2)&(A>=a0)&(A<=t)
+            band=s.band[y0_:y1_,x0_:x1_]
+            low=np.zeros_like(rect)
+            on=rect&(band>=0)
+            bots=np.array([s.bot(r) for r in range(s.nrows)])
+            low[on]=bots[band[on]]<floor+head
+            # the pit: the low rows over the rectangle, as far as they go
+            if not low.any(): continue
+            L=float(A[low].max()-a0+G.res)
+            pit=rect&(A<=a0+L)
+            sub=s.R[y0_:y1_,x0_:x1_]; subb=s.band[y0_:y1_,x0_:x1_]
+            sub[pit]=0; subb[pit]=-1
+            s.pits[y0_:y1_,x0_:x1_]|=pit
+            # the roof beyond it, to the back of the stand
+            p0=np.array([a0*u[0]+bc*v[0],a0*u[1]+bc*v[1]])
+            def band_at(pt):
+                gx_,gz_=G.g(pt[0],pt[1]); i_,j_=int(round(float(gz_))),int(round(float(gx_)))
+                if not (0<=i_<G.H and 0<=j_<G.W): return -1
+                return int(s.band[i_,j_]) if s.R[i_,j_] else -1
+            T=0.0; roof=None
+            t=L+0.15
+            while t<L+60:
+                r=band_at(p0+u*t)
+                if r<0: break
+                if roof is None: roof=round(s.bot(r),2)
+                T=t-L+0.1; t+=0.1
+            sides=[]
+            for sg in (-1,1):
+                cur=None
+                for t in np.arange(0.05,L,0.1):
+                    r=band_at(p0+u*t+v*sg*(w/2+0.25))
+                    top=round(float(s.h(r)),2) if r>=0 else None
+                    if cur and cur[3]==top: cur[2]=round(float(t+0.05),2)
+                    else:
+                        if cur and cur[3] is not None: sides.append(cur)
+                        cur=[sg,round(float(max(0,t-0.05)),2),round(float(t+0.05),2),top]
+                if cur and cur[3] is not None: sides.append(cur)
+            voms.append({'p':[round(float(p0[0]),2),round(float(p0[1]),2)],'u':[round(float(u[0]),4),round(float(u[1]),4)],
+                         'w':w,'L':round(L,2),'T':round(T,2),'y':round(float(floor),2),'roof':roof,'sides':sides,'label':''})
+        return voms
     def aisle_doors(s):
         # where an aisle meets the back of the stand, there is a door
         seatfoot=cv2.dilate(s.seatmask,disk(1))
@@ -169,11 +276,19 @@ def edge_walls(G, lvl, outside_level, doors=(), door_w=1.8, rail=1.0, doorwall=2
     def inR(p):
         x,y=int(round(p[0])),int(round(p[1]))
         return 0<=x<G.W and 0<=y<G.H and R[y,x]>0
-    for o,hs in rings_px(R,0.02/G.res,sigma=0.8,minarea_px=2/G.res**2):
-      for ring in [o]+list(hs):
+    pits=getattr(lvl,'pits',None)
+    def pieces(ring):
+        # each edge of the outline in pieces of at most half a metre, so a
+        # long straight run is judged all along its length (a rail here, a
+        # wall with doors there); the pieces are joined up again after
         n=len(ring)
         for i in range(n):
-            a=ring[i]; b=ring[(i+1)%n]
+            a=ring[i]; b=ring[(i+1)%n]; L=np.hypot(*(b-a))
+            k=max(1,int(np.ceil(L*G.res/0.5)))
+            for j in range(k): yield a+(b-a)*j/k, a+(b-a)*(j+1)/k
+    for o,hs in rings_px(R,0.02/G.res,sigma=0.8,minarea_px=2/G.res**2):
+      for ring in [o]+list(hs):
+        for a,b in pieces(ring):
             m=(a+b)/2
             t=b-a; L=np.hypot(*t)
             if L<1e-6: continue
@@ -184,6 +299,7 @@ def edge_walls(G, lvl, outside_level, doors=(), door_w=1.8, rail=1.0, doorwall=2
             if inR(out): continue
             ox,oy=int(round(out[0])),int(round(out[1]))
             ox=min(G.W-1,max(0,ox)); oy=min(G.H-1,max(0,oy))
+            if pits is not None and pits[oy,ox]: continue      # a vomitory's side: its own walls
             ix,iy=int(round((m-(out-m))[0])),int(round((m-(out-m))[1]))
             ix=min(G.W-1,max(0,ix)); iy=min(G.H-1,max(0,iy))
             r=int(bandd[iy,ix])-1
@@ -225,7 +341,22 @@ def edge_walls(G, lvl, outside_level, doors=(), door_w=1.8, rail=1.0, doorwall=2
                     if c0>s0: walls.append([float(v) for v in np.round(np.r_[P0+u*s0/Lm,P0+u*min(c0,Lm)/Lm],2)]+[round(h,2),round(h+doorwall,2)])
                     s0=max(s0,c1)
                 if s0<Lm: walls.append([float(v) for v in np.round(np.r_[P0+u*s0/Lm,P1],2)]+[round(h,2),round(h+doorwall,2)])
-    return rails, walls
+    return merge_runs(rails), merge_runs(walls)
+
+def merge_runs(segs, tol=0.02):
+    """Consecutive panels [x0,z0,x1,z1,y0,y1] that continue one another in a
+    straight line at the same heights, as one."""
+    out=[]
+    for s in segs:
+        if out:
+            m=out[-1]
+            d0=np.array([m[2]-m[0],m[3]-m[1]]); d1=np.array([s[2]-s[0],s[3]-s[1]])
+            l0,l1=np.hypot(*d0),np.hypot(*d1)
+            if (abs(m[2]-s[0])<tol and abs(m[3]-s[1])<tol and abs(m[4]-s[4])<0.01 and abs(m[5]-s[5])<0.01
+                    and l0>1e-6 and l1>1e-6 and abs(d0[0]*d1[1]-d0[1]*d1[0])/(l0*l1)<0.01 and (d0@d1)>0):
+                m[2],m[3]=s[2],s[3]; continue
+        out.append(list(s))
+    return out
 
 # ── concourses closed in: ceilings, walls, lights ─────────────────────────────
 def level_solid(l):
@@ -361,6 +492,17 @@ def enclose(G, rooms, levels, slabs, flights, lamp_step=6.0, door_w=1.8, door_h=
         ownrows=np.zeros_like(A)
         for l in R_.get('own',[]): ownrows|=(l.band>=0)
         openm=A&inbowl&~low&~shaft&~ownrows
+        # the vomitories' pits: open, with no wall across their mouths (they
+        # have their own walls)
+        if R_.get('open') is not None:
+            op=R_['open']&~(rise>y+0.3)
+            A|=op; openm|=op
+        # a walkway: open overhead, but closed off from the room by a wall with
+        # doors (unlike the open part, which the room opens onto)
+        walk=None
+        if R_.get('walk') is not None:
+            walk=R_['walk']&A&~low&~shaft&~openm
+            openm=openm|walk
         ceil=A&~low&~openm
         encl=A&~openm
         roomtop=np.where(low,over,Hk).astype(np.float32)
@@ -405,6 +547,7 @@ def enclose(G, rooms, levels, slabs, flights, lamp_step=6.0, door_w=1.8, door_h=
             x,y_=int(round(px)),int(round(py))
             if not (0<=x<G.W and 0<=y_<G.H): return 'out'
             if encl[y_,x]: return 'in'
+            if walk is not None and walk[y_,x]: return 'walk'
             if openm[y_,x]: return 'open'
             return 'out'
         chains_wall=[]; chains_step=[]
@@ -443,7 +586,7 @@ def enclose(G, rooms, levels, slabs, flights, lamp_step=6.0, door_w=1.8, door_h=
                     if land[i]: seg=None
                     elif kind=='open':
                         if ceil[ai]: seg=(y+door_h+0.2,Hk+0.3)       # a lintel over the way out to the bowl
-                    elif kind=='out':
+                    elif kind in ('out','walk'):
                         lo=max(y,float(rise[bo])) if np.isfinite(rise[bo]) else y
                         hi=top_a+(0.3 if ceil[ai] else 0.0)
                         ob=float(over[bo])
@@ -508,6 +651,20 @@ def enclose(G, rooms, levels, slabs, flights, lamp_step=6.0, door_w=1.8, door_h=
                 yaw=float(np.arctan2(gxx[ii,jj],gzz[ii,jj])) if (gxx[ii,jj]**2+gzz[ii,jj]**2)>1e-8 else 0.0
                 res['lamps'].append([round(float(X),2),round(h_,2),round(float(Z),2),round(yaw,3)])
     return res, roomtop_all
+
+def trim_tunnels(G, voms, room):
+    """A vomitory's tunnel runs on under the roof rows only until it reaches
+    the concourse (`room`), where it opens into it."""
+    for v in voms:
+        if not v['T']: continue
+        p=np.array(v['p']); u=np.array(v['u'])
+        t=v['L']+0.2
+        while t<v['L']+v['T']:
+            gx_,gz_=G.g(*(p+u*t)); i_,j_=int(round(float(gz_))),int(round(float(gx_)))
+            if 0<=i_<G.H and 0<=j_<G.W and room[i_,j_]: break
+            t+=0.1
+        v['T']=round(max(0.0,t-v['L']),2)
+    return voms
 
 def grow_under(c, y, levels, px=3):
     """A concourse floor reaching a little under the stands it meets, so there

@@ -74,11 +74,19 @@ def _smooth_chain(p, sig=5.0, k=6, corner=40.0):
         sm=np.c_[np.convolve(ext[:,0],ww,'valid'),np.convolve(ext[:,1],ww,'valid')]
         out[seg_i[1:-1]]=sm[1:-1]
     return out.astype(np.float32)
+# Straight mode: stands, walls and rails are built of straight runs meeting at
+# corners, so outlines are traced without the blur and the along-the-chain
+# smoothing (which round every corner and turn a raster's staircase into a
+# wave) and simplified to a tolerance a little over the raster's step, which
+# leaves each straight run one segment and a real curve a chain of chords.
+STRAIGHT={'on':False,'eps':0.12,'res':0.1}
 def rings_px(mask, eps_px=0.2, sigma=1.0, minarea_px=4, sig_chain=5.0):
     """The outline of a mask as smooth rings, in pixel coordinates (x right,
     y down, cell centres at integers): the mask blurred a little and cut at
     half height to sub-pixel precision, the chain smoothed along its length
     (corners kept), then Douglas-Peucker to `eps_px`. [(outer, [holes])]."""
+    if STRAIGHT['on']:
+        sigma=min(sigma,0.5); sig_chain=0; eps_px=max(eps_px,STRAIGHT['eps']/STRAIGHT['res'])
     m=(np.asarray(mask)>0)
     ys,xs=np.nonzero(m)
     if not len(xs): return []

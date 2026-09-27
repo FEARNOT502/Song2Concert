@@ -11,7 +11,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { APP, KELVIN, V3, concreteTex, std, withRepeat } from '../core.js';
 import { lightPoints } from '../people.js';
 import { ampStack, drumKit, guitar, hoists, keyboardRig, latticeInto, lineArray, micStand, shadowSpot, stageDeck, stageSteps, subStack, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, blockGrid, floorBlocks, floorChairs, fohPosition, runLasers, runShow, stageSet } from '../show.js';
+import { bigCrowd, bigScreens, blockGrid, floorBlocks, floorChairs, fohPosition, maskingDrapes, runLasers, runShow, stageSet } from '../show.js';
 import { buildStands } from '../stands.js';
 import { SSA_STANDS } from './ssa-data.js';
 
@@ -38,8 +38,8 @@ export function buildArena(ctx) {
     offset: V3(0, 0, OZ), stage: STAGE, seed: 200, concreteTone: 0.2, roofY: H,
     seatColors: { 200: 0x1c1d22, 300: 0x9a1c16, 400: 0x1c1d22, 500: 0x1c1d22 },
     crowd: !!q.crowd,
-    // nobody behind the stage
-    sold: (x, z, lv) => (lv === '200' ? z > 6 : z > 12),
+    // nobody behind the masking
+    sold: (x, z) => z > 3,
   });
   root.add(stands.group);
 
@@ -61,6 +61,11 @@ export function buildArena(ctx) {
   }
   // the set stands on the deck; the building's stands carry on round it
   stageSet(root, { w: 24, h: 17, z: 1.8, deck: DECK, towerX: 13.6, backdropW: 32, backdropH: 16, wingX: 18.5, wingW: 6, wingH: 11 });
+  // masking across the building behind the stage, wall to wall and floor to
+  // the roof steel, over the set's own backdrop in the middle: the end stands
+  // and the corners behind it are out of sight
+  maskingDrapes(root, { a: [-76, 2.2], b: [76, 2.2], top: H - 2.4,
+    bottomAt: (x, z) => (Math.abs(x) < 16 ? DECK + 16 : stands.topAt(x, z)) });
 
   // ── stage ──
   const deck = stageDeck({ w: 34, d: 15, h: DECK, z: 8.5 });

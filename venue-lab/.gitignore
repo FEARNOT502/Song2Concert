@@ -4,3 +4,5 @@ reach-*.json
 reach-*.png
 pipeline/__pycache__/
 pipeline/*.pkl
+shots/
+gen-out/

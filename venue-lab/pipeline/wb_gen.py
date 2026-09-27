@@ -2,12 +2,13 @@
 # stand data. World frame: x north, z east, about the pitch centre.
 import sys, json, time, pickle, numpy as np, cv2
 sys.path.insert(0, '.')
-from standlib import Grid, disk, contours
-from standgen import Level, poly_out, mask_polys, edge_walls, enclose, grow_under
+from standlib import Grid, disk, contours, STRAIGHT
+from standgen import Level, poly_out, mask_polys, edge_walls, enclose, grow_under, trim_tunnels
 T0 = time.time()
 o = pickle.load(open('wb/wb_seats.pkl', 'rb'))
 def tr(P): return np.c_[-P[:, 1], P[:, 0]]      # (east, south) -> (north, east)
 G = Grid(-150, 150, -162, 162, 0.1)
+STRAIGHT.update(on=True, res=G.res)
 gy, gx = np.mgrid[0:G.H, 0:G.W]
 GX, GZ = G.m(gx, gy)
 TH = np.arctan2(GX, GZ); RR = np.hypot(GX, GZ)
@@ -108,13 +109,13 @@ def cut_tunnel(n_, l, P, bw, ro, width):
     q = l.seats - P; al = q @ nv; la = np.abs(q @ np.array([-nv[1], nv[0]]))
     keep &= ~((la < width / 2 + 0.2) & (l.row > bw) & (l.row < ro) & (al > -4) & (al < 12))
     return m, keep, nv
-flights = []; holes_mask = {'L1': np.zeros_like(inside1), 'L5': np.zeros_like(inside1)}
+flights = []; holes_mask = {'L1': np.zeros_like(inside1), 'L5': np.zeros_like(inside1)}; vom_masks = {'L1': [], 'L5': []}
 extra_walls = {'L1': [], 'L5': []}
 def add_vom(n_, l, P, bw, V, width):
     nsteps, ro, C = V
     m, keep, nv = cut_tunnel(n_, l, P, bw, ro, width)
     l.seats, l.row, l.yaw = l.seats[keep], l.row[keep], l.yaw[keep]
-    holes_mask[n_] |= m
+    holes_mask[n_] |= m; vom_masks[n_].append(m)
     # the steps: from the concourse at the back of the mouth up to the walkway
     Pf = P + nv * ((bw + 1 - (bw + 0.55)) * l.D)          # the walkway's back edge
     L_ = nsteps * RUN
@@ -140,6 +141,10 @@ for i, (c, L_, a, b) in enumerate(runs5):
     if i % 2: continue
     add_vom('L5', L5, c, 12, V5, 2.2); n5 += 1
 print('vomitories L1', n1, 'L5', n5, round(time.time() - T0, 1))
+# made straight: a rectangle each, the rows too low to walk under cut away
+# over it, the ones above left as the tunnel's roof
+VOMS = {'L1': L1.make_voms(C1, head=2.2, cands=vom_masks['L1'], detect=False), 'L5': L5.make_voms(C5, head=2.2, cands=vom_masks['L5'], detect=False)}
+print('voms', {k: len(v) for k, v in VOMS.items()})
 
 # ── concourses ──
 foot = cv2.morphologyEx(((L1.R | L2.R | L5.R) > 0).astype(np.uint8) | inside1.astype(np.uint8), cv2.MORPH_CLOSE, disk(60))
@@ -237,9 +242,14 @@ grow = lambda c: cv2.dilate(c.astype(np.uint8), np.ones((3, 3), np.uint8), itera
 slabs = [(grow_under(c, y, [L1, L2, L5]), y0, y) for c, y0, y in ((c1, 0.0, C1), (c2, C2 - 0.35, C2), (c5, C5 - 0.35, C5))]
 # ── the concourses closed in ──
 t_ = time.time()
-rooms = [{'name': 'L1', 'mask': c1, 'y': C1, 'cl': 4.0, 'own': [L1], 'doors': []},
+rooms = [{'name': 'L1', 'mask': c1, 'y': C1, 'cl': 4.0, 'own': [L1], 'doors': [], 'open': L1.pits},
          {'name': 'L2', 'mask': c2, 'y': C2, 'cl': 4.0, 'own': [L2], 'doors': L2.aisle_doors()},
-         {'name': 'L5', 'mask': c5, 'y': C5, 'cl': 4.0, 'own': [L5], 'doors': []}]
+         {'name': 'L5', 'mask': c5, 'y': C5, 'cl': 4.0, 'own': [L5], 'doors': [], 'open': L5.pits}]
+trim_tunnels(G, VOMS['L1'], c1); trim_tunnels(G, VOMS['L5'], c5)
+# numbered round each level from the north, as Wembley's blocks are
+for name, vs in VOMS.items():
+    vs.sort(key=lambda v: np.arctan2(v['p'][1], v['p'][0]) % (2 * np.pi))
+    for i, v in enumerate(vs): v['label'] = f"{name[1]}{i + 1:02d}"
 encl, roomtop = enclose(G, rooms, [L1, L2, L5], slabs, flights)
 print('enclose', round(time.time() - t_, 1), {k: len(v) for k, v in encl.items()})
 skip = lambda ox, oy, h: roomtop[oy, ox] >= h + 1.0
@@ -250,10 +260,8 @@ flushmode = {'L1': 'open', 'L2': 'doors', 'L5': 'open'}
 for name, l in LV.items():
     rails, walls = edge_walls(G, l, outside_fn(spec[name]), l.aisle_doors() if name == 'L2' else (), flush=flushmode[name], skip=skip, front=fronts.get(name))
     holes = []
-    if name == 'L1': holes = l.holes_out(C1, open_upto=29)
-    if name == 'L5': holes = l.holes_out(C5, open_upto=12)
     levels.append({'name': name, 'D': l.D, 'h0': float(l.h(0)), 'rise': 0, 'hs': [round(float(v), 3) for v in l.hs],
-                   'rows': l.rows_out(), 'steps': l.aisles_out(), 'holes': holes,
+                   'rows': l.rows_out(), 'steps': l.aisles_out(), 'holes': holes, 'voms': VOMS.get(name, []),
                    'seats': l.seats_out(), 'rails': rails, 'walls': walls + extra_walls.get(name, [])})
     print(name, 'rows', len(levels[-1]['rows']), 'steps', len(levels[-1]['steps']), 'holes', len(holes), 'rails', len(rails), 'walls', len(walls), 'seats', len(l.seats))
 floors = [{'y': y, 'y0': y0, 'polys': mask_polys(G, m)} for m, y0, y in slabs]
