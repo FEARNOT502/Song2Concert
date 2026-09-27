@@ -169,7 +169,7 @@ export function buildRooms(R, { ox, oz, shapeOf, structMat, wallMat, lit: M }) {
 export function buildStands(data, {
   offset = V3(0, 0, 0), stage = V3(0, 2, 0), seatColors = {}, seatColor = 0x22262e,
   concreteTone = 0.22, sold = () => true, occupancy = 0.97, seed = 5, roofY = 36, crowd = true,
-  materials = {}, seatMesh = null,
+  materials = {}, seatMesh = null, seatColorAt = null,
 }) {
   const g = new THREE.Group();
   const ox = offset.x, oz = offset.z;
@@ -242,17 +242,21 @@ export function buildStands(data, {
     g.add(mesh);
     // the seats, and the crowd in the sold ones
     const col = seatColors[L.name] ?? seatColor;
-    const spots = [];
+    const spots = [], odd = new Map();
     const S = decodeSeats(L.seats);
     for (let i = 0; i < S.length; i += 4) {
       const x = S[i] / 10 + ox, z = S[i + 1] / 10 + oz, yaw = S[i + 3] * DEG;
       const y = L.hs ? L.hs[Math.min(S[i + 2], L.hs.length - 1)] : L.h0 + L.rise * S[i + 2];
-      spots.push({ x, y, z, yaw });
+      // a venue can pick out a row in another colour
+      const c = seatColorAt ? seatColorAt(L.name, x - ox, z - oz, S[i + 2]) : null;
+      if (c != null && c !== col) { if (!odd.has(c)) odd.set(c, []); odd.get(c).push({ x, y, z, yaw }); }
+      else spots.push({ x, y, z, yaw });
       if (crowd && sold(x, z, L.name) && rnd() < occupancy) {
         people.push({ x: x - Math.sin(yaw) * 0.12, y, z: z - Math.cos(yaw) * 0.12, turn: Math.atan2(stage.x - x, stage.z - z) });
       }
     }
     seatSpots.push({ spots, col });
+    for (const [c, sp] of odd) seatSpots.push({ spots: sp, col: c });
   }
   // concourses
   for (const f of data.floors) for (const polys of f.polys) {
