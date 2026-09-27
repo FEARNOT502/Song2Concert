@@ -7,12 +7,14 @@
 // the building has them — and every seat on them. Round that: the half steps
 // up each aisle, the mouths of the tunnels the crowd comes in by, the walls
 // with the doors (扉) in them, the rails where a stand drops away, the
-// concourse floors behind and under the stands, and the stairs between them.
+// concourse floors behind and under the stands, and the stairs between them;
+// and the concourses closed in — ceilings, walls with the doors in them, and
+// lights — so that inside them it is a lit corridor, not a gap onto the night.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { DEG, V3, concreteTex, prng, std, withRepeat } from './core.js';
+import { DEG, V3, concreteTex, glowMat, prng, std, withRepeat } from './core.js';
 
 // A stadium seat, folded up: the shell's back and its seat pan as thin plates
 // (seen from a stand away, that is all a seat is), eight triangles.
@@ -41,6 +43,77 @@ export function decodeSeats(b64) {
   return new Int16Array(bytes.buffer);
 }
 
+// The finishes inside: pale walls and ceilings and a floor that read as lit
+// under the concourse lights whatever the show is doing out in the bowl.
+export function roomMaterials(materials) {
+  return {
+    inMat: materials.interior ?? std({ color: 0xc9c2b4, roughness: 0.92, emissive: 0x7a7366, emissiveIntensity: 0.5 }),
+    ceilMat: materials.ceiling ?? std({ color: 0xd8d4cc, roughness: 0.9, emissive: 0x8a857c, emissiveIntensity: 0.55 }),
+    floorLit: std({ color: 0x86817a, roughness: 0.7, emissive: 0x5b564e, emissiveIntensity: 0.5, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }),
+    // the sides of a tunnel mouth: lit from the concourse behind, less so out in the bowl
+    mouthMat: std({ color: 0xa9a297, roughness: 0.9, emissive: 0x5a554c, emissiveIntensity: 0.4, side: THREE.DoubleSide }),
+    mouthFloor: std({ color: 0x77726b, roughness: 0.75, emissive: 0x3e3a35, emissiveIntensity: 0.45 }),
+    stairMat: materials.stair ?? std({ color: 0xa8a298, roughness: 0.85, emissive: 0x5e594f, emissiveIntensity: 0.5 }),
+  };
+}
+
+// The concourses and the tunnels to them, closed in and lit: the walls round
+// them (pale and lit on the inside, the building's own on the outside), the
+// ceilings, the underside of the stands over them lined, the floors under the
+// lights, and the lights themselves in lines along the way.
+export function buildRooms(R, { ox, oz, shapeOf, structMat, wallMat, lit: M }) {
+  const g = new THREE.Group();
+  const { inMat, ceilMat, floorLit } = M;
+  const outMat = wallMat.clone(); outMat.side = THREE.FrontSide;
+  // walls: the front of each faces the room
+  const inP = [], inN = [], outP = [], outN = [];
+  const quad = (P, N, x0, z0, x1, z1, y0, y1) => {
+    const dx = x1 - x0, dz = z1 - z0, l = Math.hypot(dx, dz) || 1;
+    const nx = -dz / l, nz = dx / l;
+    for (const [x, y, z] of [[x0, y0, z0], [x1, y0, z1], [x1, y1, z1], [x0, y0, z0], [x1, y1, z1], [x0, y1, z0]]) { P.push(x + ox, y, z + oz); N.push(nx, 0, nz); }
+  };
+  for (const [x0, z0, x1, z1, y0, y1] of R.walls) {
+    quad(inP, inN, x0, z0, x1, z1, y0, y1);
+    quad(outP, outN, x1, z1, x0, z0, y0, y1);
+  }
+  const mk = (P, N) => { const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3)); return geo; };
+  if (inP.length) { g.add(new THREE.Mesh(mk(inP, inN), inMat)); g.add(new THREE.Mesh(mk(outP, outN), outMat)); }
+  // horizontal sheets, facing up or down
+  const sheet = (polys, y, down) => {
+    const geo = new THREE.ShapeGeometry(shapeOf(polys), 1);
+    geo.rotateX(-Math.PI / 2); geo.translate(0, y, 0);
+    const f = geo.index ? geo.toNonIndexed() : geo;
+    if (down) {
+      const p = f.attributes.position.array, n = f.attributes.normal.array;
+      for (let i = 0; i < p.length; i += 9) for (let k = 0; k < 3; k++) { const t = p[i + 3 + k]; p[i + 3 + k] = p[i + 6 + k]; p[i + 6 + k] = t; }
+      for (let i = 1; i < n.length; i += 3) n[i] = -1;
+    }
+    return f;
+  };
+  const under = [], over = [], litF = [];
+  for (const c of R.ceils) for (const polys of c.polys) { under.push(sheet(polys, c.y, true)); over.push(sheet(polys, c.y + 0.02, false)); }
+  for (const s of R.soffits) for (const polys of s.polys) under.push(sheet(polys, s.y, true));
+  for (const f of R.lit) for (const polys of f.polys) litF.push(sheet(polys, f.y + 0.012, false));
+  if (under.length) { const m = new THREE.Mesh(mergeGeometries(under), ceilMat); m.userData.noCollide = true; g.add(m); }
+  if (over.length) { const m = new THREE.Mesh(mergeGeometries(over), structMat); m.userData.noCollide = true; g.add(m); }
+  if (litF.length) { const m = new THREE.Mesh(mergeGeometries(litF), floorLit); m.receiveShadow = true; g.add(m); }
+  // the lights: long fittings, along the way
+  if (R.lamps.length) {
+    const P = [], N = [];
+    for (const [x, y, z, yaw] of R.lamps) {
+      const ux = Math.cos(yaw), uz = -Math.sin(yaw);       // along the corridor
+      const vx = Math.sin(yaw), vz = Math.cos(yaw);        // across it
+      const a = 0.9, b = 0.14;
+      const c = [[-a, -b], [a, -b], [a, b], [-a, b]].map(([s, t]) => [x + ox + ux * s + vx * t, z + oz + uz * s + vz * t]);
+      for (const k of [0, 2, 1, 0, 3, 2]) { P.push(c[k][0], y, c[k][1]); N.push(0, -1, 0); }
+    }
+    const m = new THREE.Mesh(mk(P, N), glowMat(0xfff0da, 1.7, { side: THREE.DoubleSide }));
+    m.userData.noCollide = true;
+    g.add(m);
+  }
+  return g;
+}
+
 export function buildStands(data, {
   offset = V3(0, 0, 0), stage = V3(0, 2, 0), seatColors = {}, seatColor = 0x22262e,
   concreteTone = 0.22, sold = () => true, occupancy = 0.97, seed = 5, roofY = 36, crowd = true,
@@ -55,6 +128,8 @@ export function buildStands(data, {
   const floorMat = materials.floor ?? std({ color: 0x3a3b3e, roughness: 0.9 });
   const wallMat = materials.wall ?? std({ color: 0x2a2b30, roughness: 0.85, side: THREE.DoubleSide });
   const railMat = materials.rail ?? std({ color: 0x15161a, roughness: 0.6, metalness: 0.3, side: THREE.DoubleSide });
+  // where the concourses are closed in, they and the ways to them are lit
+  const lit = data.rooms ? roomMaterials(materials) : null;
 
   // a prism: an outline (with holes) standing from y0 to y1
   const shapeOf = (polys) => {
@@ -75,7 +150,7 @@ export function buildStands(data, {
     out.push(geo.index ? geo.toNonIndexed() : geo);
   };
   // thin vertical panels, merged: rails, walls, tunnel sides
-  const panels = { rail: [[], []], wall: [[], []] };
+  const panels = { rail: [[], []], wall: [[], []], mouth: [[], []] };
   const panel = (kind, x0, z0, x1, z1, y0, y1) => {
     const [p, n] = panels[kind];
     const dx = x1 - x0, dz = z1 - z0, l = Math.hypot(dx, dz) || 1;
@@ -86,7 +161,7 @@ export function buildStands(data, {
   const mkPanels = ([p, n]) => { const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(p, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(n, 3)); return geo; };
 
   const people = [], aisleLights = [], seatSpots = [];
-  const solid = [], floors = [];
+  const solid = [], floors = [], stairs = [], mouthFloors = [];
   for (const L of data.levels) {
     const levelGeo = [];
     for (const row of L.rows) for (const polys of row.polys) prism(polys, row.y0, row.y, levelGeo);
@@ -99,13 +174,13 @@ export function buildStands(data, {
     // tunnel mouths: a floor, and walls up past the treads round them, left
     // open where the rows above leave headroom (the way through to the concourse)
     for (const h of L.holes) {
-      flat([h.ring], h.floor, floors);
+      flat([h.ring], h.floor, lit ? mouthFloors : floors);
       const n = h.ring.length;
       for (let i = 0; i < n; i++) {
         const j = (i + 1) % n;
         if (h.open[i] && h.open[j]) continue;
         const [x0, z0] = h.ring[i], [x1, z1] = h.ring[j];
-        panel('wall', x0, z0, x1, z1, h.floor, Math.max(h.tops[i], h.tops[j]) + 0.95);
+        panel(lit ? 'mouth' : 'wall', x0, z0, x1, z1, h.floor, Math.max(h.tops[i], h.tops[j]) + 0.95);
       }
     }
     for (const [x0, z0, x1, z1, y0, y1] of L.rails) panel('rail', x0, z0, x1, z1, y0, y1);
@@ -141,7 +216,7 @@ export function buildStands(data, {
       b.rotateY(Math.atan2(dx, dz));
       const cx = x + dx * run * (i + 0.5), cz = z + dz * run * (i + 0.5);
       b.translate(cx + ox, (y0 + (y0 + (y1 - y0) * (i + 1) / n)) / 2, cz + oz);
-      solid.push(b.toNonIndexed());
+      stairs.push(b.toNonIndexed());
     }
     for (const s of [-1, 1]) {
       const px = -dz * s * (w / 2 + 0.02), pz = dx * s * (w / 2 + 0.02);
@@ -149,6 +224,9 @@ export function buildStands(data, {
     }
   }
   if (solid.length) { const m = new THREE.Mesh(mergeGeometries(solid), structMat); m.receiveShadow = true; g.add(m); }
+  // the stairs stand in the lit concourses: lit with them
+  if (stairs.length) { const m = new THREE.Mesh(mergeGeometries(stairs), lit ? lit.stairMat : structMat); m.receiveShadow = true; g.add(m); }
+  if (mouthFloors.length) g.add(new THREE.Mesh(mergeGeometries(mouthFloors), lit.mouthFloor));
   if (floors.length) g.add(new THREE.Mesh(mergeGeometries(floors), floorMat));
   // the building's outer wall, up to the roof
   for (const polys of data.outer) {
@@ -160,6 +238,8 @@ export function buildStands(data, {
   }
   if (panels.wall[0].length) g.add(new THREE.Mesh(mkPanels(panels.wall), wallMat));
   if (panels.rail[0].length) g.add(new THREE.Mesh(mkPanels(panels.rail), railMat));
+  if (panels.mouth[0].length) g.add(new THREE.Mesh(mkPanels(panels.mouth), lit.mouthMat));
+  if (data.rooms) g.add(buildRooms(data.rooms, { ox, oz, shapeOf, structMat, wallMat, lit }));
   // seats: instanced per colour, or handed to the venue's own seat
   if (seatMesh) {
     g.add(seatMesh(seatSpots.flatMap(({ spots }) => spots.map((sp) => ({ x: sp.x, y: sp.y, z: sp.z, turn: sp.yaw })))));
