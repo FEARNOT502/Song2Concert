@@ -1,21 +1,14 @@
 // Flood the room on foot from a start point with the walker's own movement,
 // then report how many seats of each level are within reach.
 //   node reachtest.mjs <venue> <x,z> [step]
-import { chromium } from 'playwright-core';
 import fs from 'node:fs';
-import path from 'node:path';
+import { launch, routeCdn, fileUrl } from './browser.mjs';
 const [,, venue, start = '0,50', step = '1.0'] = process.argv;
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 200, height: 120 } });
 page.on('pageerror', (e) => console.log('[pageerror]', e.message));
-for (const [pkg, ver] of [['three', '0.185.1'], ['three-mesh-bvh', '0.9.15']]) {
-  await page.route(`https://cdn.jsdelivr.net/npm/${pkg}@${ver}/**`, (route) => {
-    const rel = route.request().url().split(`${pkg}@${ver}/`)[1];
-    route.fulfill({ status: 200, contentType: 'application/javascript', body: fs.readFileSync(path.join(path.resolve('node_modules/' + pkg), rel)) });
-  });
-}
-await page.route('https://fonts.googleapis.com/**', (r) => r.fulfill({ status: 200, contentType: 'text/css', body: '' }));
-await page.goto('file://' + path.resolve('out/test.html') + `?${venue}#${venue}`);
+await routeCdn(page);
+await page.goto(fileUrl('out/test.html') + `?${venue}#${venue}`);
 await page.waitForFunction('window.__ready === true', null, { timeout: 300000 });
 const out = await page.evaluate(([start, step]) => {
   const A = window.__app; A.paused = true;

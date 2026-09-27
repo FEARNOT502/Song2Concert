@@ -67,7 +67,16 @@ gxo,gzo=G.g(np.array([O[0]]),np.array([O[1]])); field=(labm==labm[int(gzo[0]),in
 solid1=(~field).astype(np.uint8)            # the 1st floor and everything outside it
 dOut=cv2.distanceTransform((1-hull1).astype(np.uint8),cv2.DIST_L2,5)*G.res
 dOut[field]=-1
+# The building above the 1st floor does not follow the ins and outs of its
+# blocks' backs: the balcony, the 2nd floor and the outer wall run straight
+# down the lines and in a curve behind home, round the 1st floor's convex hull
+cs_,_=cv2.findContours(hull1.astype(np.uint8),cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_NONE)
+hullC=np.zeros_like(hull1); cv2.fillPoly(hullC,[cv2.convexHull(np.vstack(cs_))],1)
+dOut1=dOut
+dOut=cv2.distanceTransform((1-hullC).astype(np.uint8),cv2.DIST_L2,5)*G.res
+dOut[field]=-1
 gy,gx=np.mgrid[0:G.H,0:G.W]; X,Z=G.m(gx,gy)
+RRO=np.maximum(np.hypot(X-O[0],Z-O[1]),1.0)     # distance from the dome's centre
 TH=np.degrees(np.arctan2(X-O[0],Z-O[1]))   # 0 towards home, + towards +x (1st base side)
 lab=json.load(open('td/td_labeled.json'))
 Hm=np.array([579.2,441.7]); s=2.996
@@ -128,8 +137,8 @@ for t0,t1,n in Esp:
     a,b=shrink_sector(t0,t1,85)
     m=sector_mask(a,b,E0,E0+rows*DP)
     for tv in VOM:
-        m&=~((np.abs(TH-tv)<np.degrees(1.3/85))&(dOut<E0+5*DP))
+        m&=~((np.abs(TH-tv)<np.degrees(1.1/RRO))&(dOut<E0+5*DP))
     SEl.append(ring_seats(m,E0,DP,rows))
 SD=np.vstack(SDl); SE=np.vstack(SEl)
 print('seats C',len(SC),'D',len(SD),'E',len(SE),round(time.time()-T0,1))
-pickle.dump(dict(SA=SA,SB=SB,SF=SF,SC=SC,SD=SD,SE=SE,hull1=hull1,field=field,dOut=dOut,TH=TH,VOM=VOM,E0=E0),open('td_stage1.pkl','wb'))
+pickle.dump(dict(SA=SA,SB=SB,SF=SF,SC=SC,SD=SD,SE=SE,hull1=hull1,hullC=hullC,field=field,dOut=dOut,dOut1=dOut1,TH=TH,VOM=VOM,E0=E0),open('td_stage1.pkl','wb'))

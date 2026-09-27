@@ -1,13 +1,16 @@
 import sys, json, time, pickle, numpy as np, cv2
 sys.path.insert(0,'.')
-from standlib import Grid, disk, contours
-from standgen import Level, poly_out, mask_polys, edge_walls, enclose, grow_under, redepth
+from standlib import Grid, disk, contours, STRAIGHT
+from standgen import Level, poly_out, mask_polys, edge_walls, enclose, grow_under, redepth, trim_tunnels
 T0=time.time()
 st=pickle.load(open('td_stage1.pkl','rb'))
 G=Grid(-140,140,-200,110,0.1)
+STRAIGHT.update(on=True,res=G.res)
 O=(0.0,-60.0)
 dOut,TH,hull1,field=st['dOut'],st['TH'],st['hull1'],st['field']
+dOut1=st['dOut1']
 E0=st['E0']; D0,DP=4.0,0.8
+_gy,_gx=np.mgrid[0:G.H,0:G.W]; _X,_Z=G.m(_gx,_gy); RRO=np.maximum(np.hypot(_X-O[0],_Z-O[1]),1.0); del _gy,_gx,_X,_Z
 H_A,R_A=1.3,0.28; H_B,R_B=8.6,0.28; H_F,R_F=4.6,0.46
 H_C,R_C=17.8,0.4; H_D,R_D=23.0,0.5; H_E,R_E=28.0,0.55
 C1F,CBAL,C2F=14.2,19.0,27.5
@@ -28,6 +31,20 @@ LV['E']=Level(G,'E',st['SE'],0.8,H_E,R_E,0.5,0.6,centre=O,rmax=180,open_w=2.2,hu
 # row is level with it, and the doors at the backs of their aisles open onto it
 LV['F'].rise=(C1F-H_F)/(LV['F'].nrows-1)
 print('levels',round(time.time()-T0,1),{k:(l.nrows,len(l.seats)) for k,l in LV.items()},'F rise',round(LV['F'].rise,3))
+# the tunnels from the 2nd-floor concourse through E's first rows, made straight
+VOMS={'E':LV['E'].make_voms(C2F,detect=False,cands=[(np.abs(TH-tv)<np.degrees(1.1/RRO))&(dOut>=E0-0.3)&(dOut<E0+5*DP) for tv in st['VOM']])}
+# each named for the E block it runs under, as the signs over them are
+_lab=json.load(open('td/td_labeled.json')); _Hm=np.array([579.2,441.7]); _s=2.996
+_Esp=[]
+for o in _lab:
+    if o['L']!='E' or len(o['nums'])>6: continue
+    a_=np.array(o['poly']); a_=np.c_[(a_[:,0]-_Hm[0])/_s,(a_[:,1]-_Hm[1])/_s]-np.array(O)
+    t_=np.degrees(np.arctan2(a_[:,0],a_[:,1])); _Esp.append((t_.min(),t_.max(),o['nums'][0]))
+for v in VOMS['E']:
+    th=np.degrees(np.arctan2(v['p'][0]-O[0],v['p'][1]-O[1]))
+    best=min(_Esp,key=lambda e: 0 if e[0]<=th<=e[1] else min(abs(th-e[0]),abs(th-e[1])))
+    v['label']=f"E{best[2]}"
+print('voms E',len(VOMS['E']),[v['label'] for v in VOMS['E']])
 def dil(m,r): return cv2.dilate(m.astype(np.uint8),disk(r/G.res))>0
 A,B,F,Cl,D,E=[LV[k] for k in 'ABFCDE']
 # at the poles the infield runs on into the outfield: the aisles between them
@@ -51,7 +68,7 @@ cross=(cv2.morphologyEx(((A.R>0)|(B.R>0)).astype(np.uint8),cv2.MORPH_CLOSE,disk(
 cross&=dil(A.R,2.5)&dil(B.R,2.5)
 # 1st-floor concourse: everything behind the 1st floor's stands, 9 m deep
 stand1=(A.R|B.R|F.R|cross.astype(np.uint8))>0
-c1=(dOut>0)&(dOut<=9.0)&~stand1&~field
+c1=(dOut1>0)&(dOut<=9.0)&~stand1&~field
 # balcony concourse behind the balcony
 cb=(dOut>3.9)&(dOut<=E0+6)&(np.abs(TH)<=130)&(Cl.R==0)
 # 2nd-floor concourse: the D/E walkway, the hall under E behind its first
@@ -60,9 +77,12 @@ Eback=E0+23*DP
 c2=(dOut>=D0+8*DP)&(dOut<=Eback+6)&(np.abs(TH)<=106)&(D.R==0)&~((E.R>0)&(dOut<E0+4.0))
 # the building's outer wall
 allm=(stand1|c1|cb|c2|(Cl.R>0)|(D.R>0)|(E.R>0))
-hull=cv2.morphologyEx(allm.astype(np.uint8),cv2.MORPH_CLOSE,disk(40))&(~field)
+# the outer wall: straight runs round it all
+cs_,_=cv2.findContours(allm.astype(np.uint8),cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_NONE)
+hull=np.zeros(allm.shape,np.uint8); cv2.fillPoly(hull,[cv2.convexHull(np.vstack(cs_))],1)
+hull=(hull>0)&(~field)
 outer=dil(hull,0.4)&~field
-c1|=(outer&~stand1&~field&(dOut>0)&(dOut<=9.5))
+c1|=(outer&~stand1&~field&(dOut1>0)&(dOut<=9.5))
 print('masks',round(time.time()-T0,1))
 # ── stairs ──
 RISE,RUN,WID=0.19,0.28,1.6
@@ -141,6 +161,8 @@ t_=time.time()
 rooms=[{'name':'1F','mask':c1,'y':C1F,'cl':4.0,'own':[A,B,F],'doors':B.aisle_doors()+F.aisle_doors()},
        {'name':'BAL','mask':cb,'y':CBAL,'cl':3.8,'own':[Cl],'doors':Cl.aisle_doors()},
        {'name':'2F','mask':c2,'y':C2F,'cl':4.0,'own':[D,E],'doors':D.aisle_doors()+E.aisle_doors()}]
+rooms[2]['open']=E.pits
+trim_tunnels(G,VOMS['E'],c2)
 encl,roomtop=enclose(G,rooms,list(LV.values()),slabs,flights)
 print('enclose',round(time.time()-t_,1),{k:len(v) for k,v in encl.items()})
 # no rail or wall where one stand of the 1st floor meets another near level
@@ -152,7 +174,7 @@ flushmode={'A':'open','B':'doors','F':'doors','C':'doors','D':'open','E':'doors'
 voms={'E':C2F}
 for name,l in LV.items():
     rails,walls=edge_walls(G,l,outside_fn(spec[name]),l.aisle_doors(),flush=flushmode[name],skip=skip,front=fronts.get(name))
-    levels.append({'name':name,'D':l.D,'h0':l.h0,'rise':l.rise,'rows':l.rows_out(),'steps':l.aisles_out(),'holes':l.holes_out(voms.get(name,C2F)) if name=='E' else [],
+    levels.append({'name':name,'D':l.D,'h0':l.h0,'rise':l.rise,'rows':l.rows_out(),'steps':l.aisles_out(),'holes':[],'voms':VOMS.get(name,[]),
                    'seats':l.seats_out(),'rails':rails,'walls':walls})
     print(name,'rows',len(levels[-1]['rows']),'steps',len(levels[-1]['steps']),'holes',len(levels[-1]['holes']),'rails',len(rails),'walls',len(walls))
 floors=[{'y':y,'y0':y0,'polys':mask_polys(G,m)} for m,y0,y in slabs]

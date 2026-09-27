@@ -54,6 +54,65 @@ function roomMaterials(materials) {
   };
 }
 
+// The name over a vomitory's mouth: white on a dark plate, lit.
+function vomSignTexture(label, bg = '#15181f', fg = '#f2f2ee') {
+  const key = `vomsign:${label}:${bg}:${fg}`;
+  if (TEX.has(key)) return TEX.get(key);
+  const c = document.createElement('canvas'); c.width = 256; c.height = 96;
+  const g = c.getContext('2d');
+  g.fillStyle = bg; g.fillRect(0, 0, 256, 96);
+  g.fillStyle = fg; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.font = `600 ${label.length > 4 ? 44 : 58}px "Inter Tight", Arial, sans-serif`;
+  g.fillText(label, 128, 50);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; t.userData.shared = true;
+  TEX.set(key, t);
+  return t;
+}
+
+// A vomitory as its own solid: a straight pit through the rows too low to
+// walk under, walled either side up past the treads beside it (the walls sit
+// inside the pit, so the treads' own sides are behind them, never in the same
+// plane), a tunnel on under the rows above to the concourse, walled, ceiled
+// and lit from within, and the section's name over the mouth.
+function vomParts(v, ox, oz) {
+  const [ux, uz] = v.u, vx = -uz, vz = ux;
+  const yaw = Math.atan2(ux, uz);
+  const at = (t, s) => [v.p[0] + ox + ux * t + vx * s, v.p[1] + oz + uz * t + vz * s];
+  const box = (t0, t1, s0, s1, y0, y1) => {
+    if (t1 - t0 < 0.01 || y1 - y0 < 0.01) return null;
+    const g = new THREE.BoxGeometry(Math.abs(s1 - s0), y1 - y0, t1 - t0);
+    g.rotateY(yaw);
+    const [x, z] = at((t0 + t1) / 2, (s0 + s1) / 2);
+    g.translate(x, (y0 + y1) / 2, z);
+    return g.toNonIndexed();
+  };
+  const T = 0.22, hw = v.w / 2, PAR = 1.0;
+  const pit = [], cap = [], tunnel = [], floor = [], ceil = [], lamps = [], signs = [];
+  for (const [sg, t0, t1, top] of v.sides) {
+    const s0 = sg * (hw - T), s1 = sg * hw;
+    pit.push(box(t0, t1, s0, s1, v.y, top + PAR));
+    cap.push(box(t0, t1, s0 - sg * 0.03, s1 + sg * 0.03, top + PAR, top + PAR + 0.06));
+  }
+  // a guard across the front where the rows in front fall away
+  if (v.front != null && v.front < v.y - 0.3) pit.push(box(-T, 0, -hw, hw, v.front, v.y + PAR));
+  floor.push(box(0, v.L + v.T, -hw, hw, v.y - 0.12, v.y + 0.005));
+  if (v.T > 0 && v.roof != null) {
+    for (const sg of [-1, 1]) tunnel.push(box(v.L, v.L + v.T, sg * (hw - T), sg * hw, v.y, v.roof));
+    ceil.push(box(v.L, v.L + v.T, -hw + T, hw - T, v.roof - 0.05, v.roof - 0.01));
+    for (let t = v.L + 1.2; t < v.L + v.T - 0.6; t += 3) {
+      const [x, z] = at(t, 0);
+      lamps.push([x, v.roof - 0.06, z, yaw]);
+    }
+    if (v.label) {
+      const [x, z] = at(v.L - 0.03, 0);
+      signs.push({ x, y: v.roof + 0.32, z, yaw: yaw + Math.PI, w: Math.min(1.6, v.w - 0.3), label: v.label });
+    }
+  }
+  const clean = (a) => a.filter(Boolean);
+  return { pit: clean(pit), cap: clean(cap), tunnel: clean(tunnel), floor: clean(floor), ceil: clean(ceil), lamps, signs };
+}
+
 // The concourse lights are on for whoever is in there: seen from the bowl —
 // a seat, the floor, the stage — the doors and tunnel mouths stay dark, as
 // they read in a show; step into a concourse, a tunnel or onto its stairs and
@@ -69,6 +128,10 @@ function roomLights(data, { ox, oz, lit }) {
   };
   for (const f of R.lit) for (const polys of f.polys) add(polys, f.y + 0.2, f.y + 4.6);
   for (const L of data.levels) for (const h of L.holes) add([h.ring], h.floor + 0.2, h.floor + 5.5);
+  for (const L of data.levels) for (const v of L.voms || []) {
+    const [ux, uz] = v.u, vx = -uz, vz = ux, hw = v.w / 2, t1 = v.L + v.T + 0.5;
+    add([[[0, -hw], [t1, -hw], [t1, hw], [0, hw]].map(([t, s]) => [v.p[0] + ux * t + vx * s, v.p[1] + uz * t + vz * s])], v.y - 0.3, v.y + 3.2);
+  }
   for (const f of data.flights) {
     const w = (f.w ?? 1.6) / 2 + 0.4, ux = f.dx, uz = f.dz, vx = -uz, vz = ux;
     const c = [[-0.8, -w], [f.L + 0.8, -w], [f.L + 0.8, w], [-0.8, w]].map(([a, b]) => [f.x + ux * a + vx * b, f.z + uz * a + vz * b]);
@@ -209,6 +272,7 @@ function buildStands(data, {
 
   const people = [], aisleLights = [], seatSpots = [];
   const solid = [], floors = [], stairs = [], mouthFloors = [];
+  const voms = { pit: [], cap: [], tunnel: [], floor: [], ceil: [], lamps: [], signs: [] };
   for (const L of data.levels) {
     const levelGeo = [];
     for (const row of L.rows) for (const polys of row.polys) prism(polys, row.y0, row.y, levelGeo);
@@ -229,6 +293,11 @@ function buildStands(data, {
         const [x0, z0] = h.ring[i], [x1, z1] = h.ring[j];
         panel(lit ? 'mouth' : 'wall', x0, z0, x1, z1, h.floor, Math.max(h.tops[i], h.tops[j]) + 0.95);
       }
+    }
+    for (const v of L.voms || []) {
+      const p = vomParts(v, ox, oz);
+      voms.pit.push(...p.pit); voms.cap.push(...p.cap); voms.tunnel.push(...p.tunnel);
+      voms.floor.push(...p.floor); voms.ceil.push(...p.ceil); voms.lamps.push(...p.lamps); voms.signs.push(...p.signs);
     }
     for (const [x0, z0, x1, z1, y0, y1] of L.rails) panel('rail', x0, z0, x1, z1, y0, y1);
     for (const [x0, z0, x1, z1, y0, y1] of L.walls) panel('wall', x0, z0, x1, z1, y0, y1);
@@ -291,12 +360,68 @@ function buildStands(data, {
   if (panels.rail[0].length) g.add(new THREE.Mesh(mkPanels(panels.rail), railMat));
   if (panels.mouth[0].length) g.add(new THREE.Mesh(mkPanels(panels.mouth), lit.mouthMat));
   if (data.rooms) g.add(buildRooms(data.rooms, { ox, oz, shapeOf, structMat, wallMat, lit }));
+  // the vomitories
+  const addMerged = (list, mat, collide = true) => {
+    if (!list.length) return;
+    const m = new THREE.Mesh(mergeGeometries(list), mat);
+    m.receiveShadow = true; if (!collide) m.userData.noCollide = true;
+    g.add(m);
+  };
+  addMerged(voms.pit, materials.vom ?? structMat);
+  addMerged(voms.cap, railMat);
+  addMerged(voms.tunnel, lit ? lit.mouthMat : wallMat);
+  addMerged(voms.floor, lit ? lit.mouthFloor : floorMat);
+  addMerged(voms.ceil, lit ? lit.ceilMat : structMat, false);
+  if (voms.lamps.length && lit) {
+    const P = [], N = [];
+    for (const [x, y, z, yaw] of voms.lamps) {
+      const ux = Math.sin(yaw), uz = Math.cos(yaw), vx = -uz, vz = ux;
+      const c = [[-0.8, -0.1], [0.8, -0.1], [0.8, 0.1], [-0.8, 0.1]].map(([s, t]) => [x + ux * s + vx * t, z + uz * s + vz * t]);
+      for (const k of [0, 2, 1, 0, 3, 2]) { P.push(c[k][0], y, c[k][1]); N.push(0, -1, 0); }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+    const m = new THREE.Mesh(geo, lit.lampMat); m.userData.noCollide = true; g.add(m);
+  }
+  for (const s of voms.signs) {
+    const geo = new THREE.PlaneGeometry(s.w, 0.42);
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: vomSignTexture(s.label, materials.signBg, materials.signFg), color: 0xd8d8d8 }));
+    m.position.set(s.x, s.y, s.z); m.rotation.y = s.yaw; m.userData.noCollide = true;
+    g.add(m);
+  }
   // seats: instanced per colour, or handed to the venue's own seat
   const lights = lit ? roomLights(data, { ox, oz, lit }) : null;
   const update = (f) => lights?.update(f);
+  // the top of whatever stands at (x, z): a row's tread or a concourse floor
+  const tops = [];
+  const addTop = (polys, y) => {
+    const ring = polys[0].map(([x, z]) => [x + ox, z + oz]);
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (const [x, z] of ring) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
+    tops.push({ ring, holes: polys.slice(1).map((h) => h.map(([x, z]) => [x + ox, z + oz])), y, x0, x1, z0, z1 });
+  };
+  for (const L of data.levels) for (const row of L.rows) for (const polys of row.polys) addTop(polys, row.y);
+  for (const f of data.floors) for (const polys of f.polys) addTop(polys, f.y);
+  const inRing = (r, x, z) => {
+    let c = false;
+    for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+      const [xi, zi] = r[i], [xj, zj] = r[j];
+      if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) c = !c;
+    }
+    return c;
+  };
+  const topAt = (x, z) => {
+    let y = 0;
+    for (const t of tops) {
+      if (t.y <= y || x < t.x0 || x > t.x1 || z < t.z0 || z > t.z1) continue;
+      if (inRing(t.ring, x, z) && !t.holes.some((h) => inRing(h, x, z))) y = t.y;
+    }
+    return y;
+  };
   if (seatMesh) {
     g.add(seatMesh(seatSpots.flatMap(({ spots }) => spots.map((sp) => ({ x: sp.x, y: sp.y, z: sp.z, turn: sp.yaw })))));
-    return { group: g, people, aisleLights, update };
+    return { group: g, people, aisleLights, update, topAt };
   }
   const seatGeo = stadiumSeatGeometry();
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion();
@@ -306,5 +431,5 @@ function buildStands(data, {
     inst.receiveShadow = true;
     g.add(inst);
   }
-  return { group: g, people, aisleLights, update };
+  return { group: g, people, aisleLights, update, topAt };
 }

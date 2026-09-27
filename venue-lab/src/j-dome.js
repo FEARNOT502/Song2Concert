@@ -71,9 +71,9 @@ function buildDome(ctx) {
   });
   root.add(stands.group);
   // the wall in front of the 1st floor: padded 4.0 m with 0.24 m of net and the
-  // yellow line in the outfield, a low padded wall along the lines, and the
-  // backstop net behind home plate
-  const pad = [], line = [], net = [], back = [];
+  // yellow line in the outfield, a low padded wall along the lines (for a
+  // concert the backstop net behind home plate is taken down)
+  const pad = [], line = [], net = [];
   for (let k = 0; k < fieldRing.length; k++) {
     const a = fieldRing[k], b = fieldRing[(k + 1) % fieldRing.length];
     const mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2;
@@ -83,12 +83,11 @@ function buildDome(ctx) {
     const outfield = Math.hypot(mx, mz - ZH) > 92 && phi(mx, mz) < 46;
     const seg = (hh, y, list, d = 0.36) => { const g = new THREE.BoxGeometry(len + 0.04, hh, d); g.rotateY(ang); g.translate(mx, y, mz); list.push(g); };
     if (outfield) { seg(4.0, 2.0, pad); seg(0.12, 4.02, line, 0.4); seg(0.24, 4.16, net, 0.04); }
-    else { seg(1.2, 0.6, pad); if (phi(mx, mz) > 150) seg(7.5, 1.2 + 3.75, back, 0.03); }
+    else seg(1.2, 0.6, pad);
   }
   root.add(new THREE.Mesh(mergeGeometries(pad), std({ color: 0x163a78, roughness: 0.8 })));
   root.add(new THREE.Mesh(mergeGeometries(line), glowMat(0xe8c830, 0.45)));
   root.add(new THREE.Mesh(mergeGeometries(net), std({ color: 0x151515, roughness: 1, transparent: true, opacity: 0.6 })));
-  if (back.length) root.add(new THREE.Mesh(mergeGeometries(back), std({ color: 0x202024, roughness: 1, transparent: true, opacity: 0.35, side: THREE.DoubleSide })));
   // the foul poles, where the lines meet the fence
   for (const sd of [-1, 1]) {
     const r = 100, x = sd * r * Math.SQRT1_2, z = ZH - r * Math.SQRT1_2;

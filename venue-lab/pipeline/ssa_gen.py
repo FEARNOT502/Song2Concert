@@ -1,7 +1,7 @@
 import sys, json, time, re, pickle, numpy as np, cv2
 sys.path.insert(0,'.')
-from standlib import Grid, disk, contours, sample
-from standgen import Level, poly_out, mask_polys, edge_walls, enclose, grow_under
+from standlib import Grid, disk, contours, sample, STRAIGHT
+from standgen import Level, poly_out, mask_polys, edge_walls, enclose, grow_under, trim_tunnels
 from scipy.spatial import cKDTree
 S=np.load('ssa_real.npy',allow_pickle=True)
 def clean(s,eps=1.5,minn=12):
@@ -13,6 +13,7 @@ def clean(s,eps=1.5,minn=12):
     cnt=np.bincount(lab); return s[cnt[lab]>=minn]
 S=[clean(s) for s in S]
 G=Grid(-74,74,-68,68,0.1)
+STRAIGHT.update(on=True,res=G.res)
 C200,C300,C400,C500=6.2,11.44,18.7,25.5
 t=time.time()
 LV={}
@@ -21,6 +22,10 @@ LV['300']=Level(G,'300',S[1],1.0,10.6,0.42,0.5,2.2,close=0.9,keep_hole=6,open_w=
 LV['400']=Level(G,'400',S[2],0.85,17.0,0.42,0.5,2.8,close=1.3)
 LV['500']=Level(G,'500',S[3],0.87,24.5,0.5,0.5,2.4,close=0.9,keep_hole=6,open_w=4.5,hull_close=5.0)
 print('levels',round(time.time()-t,1), {k:(l.nrows,len(l.seats)) for k,l in LV.items()})
+# the tunnels in from the concourses, made straight: through the 200 level's
+# sides at rows 18-27, through the 400 level's
+VOMS={'200':LV['200'].make_voms(C200,head=1.9,wmax=3.0),'400':LV['400'].make_voms(C400,head=1.9,wmax=3.0)}
+print('voms',{k:len(v) for k,v in VOMS.items()})
 
 # ── concourses ──
 def dil(m,r): return cv2.dilate(m.astype(np.uint8),disk(r/G.res))>0
@@ -40,9 +45,10 @@ c500|=(L5.hull>0)&(L5.R==0)&L5.behind&(L5.d>0.8)
 # never under the arena floor
 arena=(np.abs(X)<25)&(np.abs(Z)<40)
 for c in (c200,c300,c400,c500): c&=~arena
-# the building's outer wall: round everything
+# the building's outer wall: straight runs round everything
 allm=(L2.R|L3.R|L4.R|L5.R|c200|c300|c400|c500).astype(np.uint8)
-hull=cv2.morphologyEx(allm,cv2.MORPH_CLOSE,disk(40))
+cs_,_=cv2.findContours(allm,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_NONE)
+hull=np.zeros_like(allm); cv2.fillPoly(hull,[cv2.convexHull(np.vstack(cs_))],1)
 outer=dil(hull,0.4)
 # trim concourses to the building
 for c in (c200,c300,c400,c500): c&=hull>0
@@ -105,7 +111,8 @@ for f in flights:
         if y==f['y1']: 
             m=np.zeros_like(c); m[gz_,gx_]=True; c&=~m
 # ── doors (扉) from the official map, per level scale ──
-svg=open('map_end01.svg',encoding='utf-8').read()
+import os
+svg=open('map_end01.svg',encoding='utf-8').read() if os.path.exists('map_end01.svg') else ''
 gates=[(int(g),float(x),float(y)) for g,x,y in re.findall(r'<g id="gate_(\d+)">\s*<path class="gate_back" d="M([\d.]+),([\d.]+)',svg)]
 Cpx=np.array([1980.0,1907.0]); K={2:20.0,3:24.6,4:28.8,5:33.8}
 def gate_xy(g,x,y):
@@ -121,8 +128,14 @@ slabs=[(grow_under(c,y,[L2,L3,L4,L5]),(0.0 if y==C200 else y-0.35),y) for c,y in
 # ── the concourses closed in: ceilings 4 m up (or the stand over them), walls
 # with the doors in them, lights ──
 t=time.time()
-rooms=[{'name':name,'mask':cm,'y':cy,'cl':4.0,'own':[l],'doors':doors[name]+l.aisle_doors()}
+rooms=[{'name':name,'mask':cm,'y':cy,'cl':4.0,'own':[l],'doors':doors[name]+l.aisle_doors(),'open':getattr(l,'pits',None)}
        for name,l,cm,cy in (('200',L2,c200,C200),('300',L3,c300,C300),('400',L4,c400,C400),('500',L5,c500,C500))]
+for name,cm in (('200',c200),('400',c400)): trim_tunnels(G,VOMS[name],cm)
+# numbered round each level as the building numbers its doors (扉), the level
+# first: 201, 202, … clockwise from the north-east
+for name,vs in VOMS.items():
+    vs.sort(key=lambda v: (np.arctan2(v['p'][0],-v['p'][1])+2*np.pi-0.3)%(2*np.pi))
+    for i,v in enumerate(vs): v['label']=f"{name[0]}{i+1:02d}"
 encl,roomtop=enclose(G,rooms,[L2,L3,L4,L5],slabs,flights)
 print('enclose',round(time.time()-t,1),{k:len(v) for k,v in encl.items()})
 skip=lambda ox,oy,h: roomtop[oy,ox]>=h+1.0
@@ -130,7 +143,7 @@ fronts={'200':(0.0,0.75),'300':('tread',0.8),'400':('tread',0.8),'500':('tread',
 levels=[]
 for name,l,cm,cy in (('200',L2,c200,C200),('300',L3,c300,C300),('400',L4,c400,C400),('500',L5,c500,C500)):
     rails,walls=edge_walls(G,l,outside_fn(cm,cy),doors[name]+l.aisle_doors(),skip=skip,front=fronts[name])
-    levels.append({'name':name,'D':l.D,'h0':l.h0,'rise':l.rise,'rows':l.rows_out(),'steps':l.aisles_out(),'holes':l.holes_out(cy),
+    levels.append({'name':name,'D':l.D,'h0':l.h0,'rise':l.rise,'rows':l.rows_out(),'steps':l.aisles_out(),'holes':[],'voms':VOMS.get(name,[]),
                    'seats':l.seats_out(),'rails':rails,'walls':walls})
     print(name,'rows',len(levels[-1]['rows']),'steps',len(levels[-1]['steps']),'holes',len(levels[-1]['holes']),'rails',len(rails),'walls',len(walls))
 # concourse floors reach a little under the stands they meet, so there is no crack

@@ -158,6 +158,35 @@ function stageSet(root, { w, h, z, deck, towerX, backdropW, backdropH, wingX, wi
   root.add(new THREE.Mesh(mergeGeometries(cases), std({ color: 0x141416, roughness: 0.5, metalness: 0.3 })));
 }
 
+// Black masking, as a production hangs it: velour from the roof steel down to
+// whatever is under it — the floor, or the treads of the stands it crosses —
+// in a line from `a` to `b` ([x, z]), so the seats behind it (not sold) are
+// out of sight. `skip(x, z)` leaves a gap (the stage and its set).
+function maskingDrapes(root, { a, b, top, bottomAt = () => 0, skip = null, panel = 2.4 }) {
+  const dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz), ux = dx / L, uz = dz / L;
+  const yaw = Math.atan2(-uz, ux);
+  const parts = [], pipes = [];
+  const n = Math.ceil(L / panel), w = L / n;
+  for (let i = 0; i < n; i++) {
+    const t = (i + 0.5) * w, x = a[0] + ux * t, z = a[1] + uz * t;
+    if (skip && skip(x, z)) continue;
+    let bot = 0;
+    for (const k of [-0.5, -0.25, 0, 0.25, 0.5]) bot = Math.max(bot, bottomAt(x + ux * w * k, z + uz * w * k));
+    const h = top - bot;
+    if (h < 0.5) continue;
+    const g = drapeGeometry(w + 0.08, h, Math.max(2, Math.round(w / 0.5)), 0.16);
+    g.rotateY(yaw); g.translate(x, bot + h / 2, z);
+    parts.push(g);
+    const p = new THREE.CylinderGeometry(0.03, 0.03, w, 6); p.rotateZ(Math.PI / 2); p.rotateY(yaw); p.translate(x, top + 0.05, z);
+    pipes.push(p);
+  }
+  if (!parts.length) return;
+  const m = new THREE.Mesh(mergeGeometries(parts), velvet(0x020202, 'maskvel', { sheenColor: new THREE.Color(0x060606), sheenRoughness: 0.6, side: THREE.DoubleSide }));
+  m.receiveShadow = true;
+  root.add(m);
+  root.add(new THREE.Mesh(mergeGeometries(pipes), std({ color: 0x111113, roughness: 0.6, metalness: 0.5 })));
+}
+
 // A standing floor packed the way a sold-out floor is: a jittered grid, about
 // 2.5 people a square metre, nobody inside `avoid`.
 function packFloor({ x0, x1, z0, z1, spacing = 0.62, avoid = null, seed = 3, inside = null }) {

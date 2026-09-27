@@ -198,6 +198,7 @@ const App = {
     const ctx = this.ctxFor();
     const v = BUILDERS[id](ctx);
     for (const r of ctx.rigs) v.root.add(r.build());
+    dropDegenerateTriangles(v.root);
     pipe.scene.add(v.root);
     pipe.scene.add(pipe.flares.mesh);
     pipe.scene.background = v.background || new THREE.Color(0);
@@ -560,7 +561,8 @@ window.__set = async (o = {}) => {
   if (o.nomask) App.pipe.mask.clear();
   if (o.nobloom) App.pipe.bloom.enabled = false;
   for (let i = 0; i < (o.frames ?? 2); i++) await new Promise((r) => requestAnimationFrame(r));
-  if (o.pause) App.paused = true;
+  App.pipe.final.material.uniforms.uFade.value = 1;
+  if (o.pause) { App.frame(0.016, performance.now() / 1000); App.paused = true; }
   return window.__info();
 };
 
@@ -571,11 +573,12 @@ App.init().then(() => {
 }).catch((e) => { console.error(e); document.getElementById('loading-name').textContent = `오류: ${e.message}`; });
 
 // debug: what a ray from `o` along `d` runs into first, and what it is
-window.__rayHits = (root, o, d) => {
-  const rc = new THREE.Raycaster(V3(...o), V3(...d).normalize(), 0, 60);
+window.__rayHits = (root, o, d, far = 60) => {
+  const rc = new THREE.Raycaster(V3(...o), V3(...d).normalize(), 0, far);
   const hits = rc.intersectObject(root, true).filter((h) => h.object.isMesh && !h.object.isInstancedMesh);
   return hits.slice(0, 3).map((h) => {
     const names = []; let p = h.object; while (p && names.length < 3) { names.push(p.type + (p.name ? ':' + p.name : '') + (p.geometry ? '/' + p.geometry.type : '')); p = p.parent; }
-    return { d: +h.distance.toFixed(2), p: h.point.toArray().map((v) => +v.toFixed(2)), obj: names.join(' < '), mat: h.object.material?.type || (Array.isArray(h.object.material) ? 'multi' : '') };
+    const m = Array.isArray(h.object.material) ? h.object.material[0] : h.object.material;
+    return { d: +h.distance.toFixed(2), p: h.point.toArray().map((v) => +v.toFixed(2)), obj: names.join(' < '), mat: m?.type, col: m?.color?.getHexString(), em: m?.emissive?.getHexString(), n: h.face?.normal?.toArray().map((v) => +v.toFixed(2)), verts: h.object.geometry?.attributes?.position?.count };
   });
 };
