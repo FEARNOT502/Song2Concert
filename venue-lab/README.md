@@ -19,15 +19,16 @@ Open `out/test.html` in a browser (it loads three.js from jsDelivr), e.g.
 
 - `src/` — the prototype, concatenated in file-name order by `build.mjs`.
   `*-data.js` are the generated stands (`i0` SSA, `j0` Tokyo Dome, `k0` Wembley,
-  `g0` Lotte hall, `n0` Inspire).
+  `g0` Lotte hall, `n0` Inspire, `o0` KSPO DOME).
 - `pipeline/` — the Python that generates the stands (numpy, scipy, opencv,
   scikit-image). Run the generators from inside `pipeline/`, then
   `python3 pipeline/mkdata.py insp` (from `venue-lab/`) rewrites the data file.
-  `insp_seats.py` → `insp_gen.py` regenerate Inspire from the inputs here.
+  `insp_build.py` (Inspire) and `kspo_build.py` (KSPO DOME) regenerate those two
+  from the inputs here; `python3 pipeline/mkdata.py insp kspo`.
   The Tokyo Dome, SSA and Wembley generators also read large intermediate
   files (`*.pkl`, plan images) that are not in the repo.
 - `gen.mjs` — ports `src/` to ES modules: `node gen.mjs gen-out`, then copy the
-  changed files into `../src/three/` (Inspire is lab-only and not ported).
+  changed files into `../src/three/` (Inspire and KSPO DOME are lab-only and not ported).
 
 ## Checks
 
@@ -39,3 +40,5 @@ Uses Chromium through `playwright-core`; set the browser path in each script
 - `node reachtest.mjs inspire 12,60,0.5 1.0` then
   `python3 reachcheck.py inspire pipeline/insp_stands.json 36` — every seat reachable on foot.
 - `node uitest.mjs` — Inspire tab and the 100s retract toggle.
+- `node tour.mjs <venue> <outdir> '[{"name":"v","q":"house=1&cam=x,y,z,tx,ty,tz"}]'` — several
+  views in one load; `node probe.mjs <venue> <cam> <px,py;…>` — what a pixel shows.

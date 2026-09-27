@@ -24,6 +24,8 @@ const BUILDERS = {
   dome: typeof buildDome === 'function' ? buildDome : null,
   stadium: typeof buildStadium === 'function' ? buildStadium : null,
 };
+// the venues this build has the sources for, in order
+const VENUES = ORDER.filter((id) => BUILDERS[id]);
 
 // ── the beat: a simulated track with a real song's shape, or a real file ──
 class Beat {
@@ -156,7 +158,7 @@ const App = {
     this.pal = appPalette(); this.palTarget = appPalette();
     UI.init(this);
     const id = (location.hash || '').slice(1);
-    await this.setVenue(ORDER.includes(id) ? id : 'club');
+    await this.setVenue(VENUES.includes(id) ? id : 'club');
     let last = performance.now();
     const loop = (now) => {
       requestAnimationFrame(loop);
@@ -357,7 +359,7 @@ const UI = {
     const $ = (s) => document.querySelector(s);
     this.$ = $;
     const tabs = $('#tabs');
-    ORDER.forEach((id) => {
+    VENUES.forEach((id) => {
       const b = document.createElement('button');
       b.type = 'button'; b.id = `tab-${id}`; b.dataset.id = id; b.textContent = INFO[id].name;
       b.disabled = !BUILDERS[id];
@@ -448,9 +450,9 @@ const UI = {
     $('#tone-toggle').addEventListener('click', () => { document.body.classList.toggle('tone-open'); });
     window.addEventListener('keydown', (e) => {
       if (e.target.closest?.('input')) return;
-      const i = ORDER.indexOf(app.venueId);
-      if (e.key === 'ArrowRight' && !app.building) app.setVenue(ORDER[(i + 1) % ORDER.length]);
-      if (e.key === 'ArrowLeft' && !app.building) app.setVenue(ORDER[(i + ORDER.length - 1) % ORDER.length]);
+      const i = VENUES.indexOf(app.venueId);
+      if (e.key === 'ArrowRight' && !app.building) app.setVenue(VENUES[(i + 1) % VENUES.length]);
+      if (e.key === 'ArrowLeft' && !app.building) app.setVenue(VENUES[(i + VENUES.length - 1) % VENUES.length]);
       if (e.key === 'h' || e.key === 'H') { app.houseTarget = app.houseTarget ? 0 : 1; this.pressed('#seg-lights', app.houseTarget ? 'house' : 'show'); }
       if (e.key === ' ') { e.preventDefault(); $('#beat-toggle').click(); }
     });

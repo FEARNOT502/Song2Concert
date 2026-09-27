@@ -79,10 +79,40 @@ export function buildDome(ctx) {
     sold: (x, z) => z > 14,
   });
   root.add(stands.group);
+  // the boxes behind home at the balcony's level (S101–110 and S301–310
+  // either side of the VIP box): glass fronts between mullions, lit within,
+  // under the 2nd floor's front
+  if (TD_STANDS.suites) {
+    const { line, y, h, depth } = TD_STANDS.suites;
+    const P = line.map(([x, z]) => ({ x, z: z + ZH }));
+    const out = (p) => { const dx = p.x, dz = p.z - (ZH - 60), l = Math.hypot(dx, dz) || 1; return [dx / l, dz / l]; };
+    const glass = [], frame = [], lit = [];
+    let run = 0;
+    for (let i = 0; i + 1 < P.length; i++) {
+      const a = P[i], b = P[i + 1], len = Math.hypot(b.x - a.x, b.z - a.z);
+      if (len < 0.05) continue;
+      const mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2, ang = -Math.atan2(b.z - a.z, b.x - a.x), [ux, uz] = out({ x: mx, z: mz });
+      const g = new THREE.PlaneGeometry(len + 0.02, h - 0.9); g.rotateY(ang); g.translate(mx, y + 0.1 + (h - 0.9) / 2, mz); glass.push(g);
+      const sill = new THREE.BoxGeometry(len + 0.04, 1.0, 0.25); sill.rotateY(ang); sill.translate(mx, y + 0.1 + h - 0.9 + 0.4, mz); frame.push(sill);
+      const top = new THREE.BoxGeometry(len + 0.04, 0.4, depth); top.rotateY(ang); top.translate(mx + ux * depth / 2, y + h + 0.2, mz + uz * depth / 2); frame.push(top);
+      const back = new THREE.PlaneGeometry(len + 0.02, h - 0.4); back.rotateY(ang); back.translate(mx + ux * (depth - 0.2), y + 0.1 + (h - 0.4) / 2, mz + uz * (depth - 0.2)); lit.push(back);
+      run += len;
+      if (run > 3.8) {
+        run = 0;
+        const m = new THREE.BoxGeometry(0.18, h, 0.2); m.translate(b.x, y + h / 2, b.z); frame.push(m);
+        const wall = new THREE.BoxGeometry(0.12, h, depth); wall.rotateY(ang + Math.PI / 2); wall.translate(b.x + ux * depth / 2, y + h / 2, b.z + uz * depth / 2); frame.push(wall);
+      }
+    }
+    if (frame.length) {
+      root.add(new THREE.Mesh(mergeGeometries(frame.map((g) => (g.index ? g.toNonIndexed() : g))), std({ color: 0x2c2d31, roughness: 0.6 })));
+      root.add(new THREE.Mesh(mergeGeometries(glass), std({ color: 0x0c0e12, roughness: 0.08, metalness: 0.6, transparent: true, opacity: 0.5, side: THREE.DoubleSide })));
+      root.add(new THREE.Mesh(mergeGeometries(lit), std({ color: 0x1a1612, roughness: 0.8, emissive: 0x6a4a2a, emissiveIntensity: 0.3, side: THREE.DoubleSide })));
+    }
+  }
   // the wall in front of the 1st floor: padded 4.0 m with 0.24 m of net and the
-  // yellow line in the outfield, a low padded wall along the lines, and the
-  // backstop net behind home plate
-  const pad = [], line = [], net = [], back = [];
+  // yellow line in the outfield, a low padded wall along the lines (for a
+  // concert the backstop net behind home plate is taken down)
+  const pad = [], line = [], net = [];
   for (let k = 0; k < fieldRing.length; k++) {
     const a = fieldRing[k], b = fieldRing[(k + 1) % fieldRing.length];
     const mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2;
@@ -91,13 +121,16 @@ export function buildDome(ctx) {
     const ang = -Math.atan2(b.z - a.z, b.x - a.x);
     const outfield = Math.hypot(mx, mz - ZH) > 92 && phi(mx, mz) < 46;
     const seg = (hh, y, list, d = 0.36) => { const g = new THREE.BoxGeometry(len + 0.04, hh, d); g.rotateY(ang); g.translate(mx, y, mz); list.push(g); };
-    if (outfield) { seg(4.0, 2.0, pad); seg(0.12, 4.02, line, 0.4); seg(0.24, 4.16, net, 0.04); }
-    else { seg(1.2, 0.6, pad); if (phi(mx, mz) > 150) seg(7.5, 1.2 + 3.75, back, 0.03); }
+    // up to the front of the stand behind it (towards the poles the front
+    // rows stand high, the fence having cut off the ones below)
+    const nx = -(b.z - a.z) / len, nz = (b.x - a.x) / len, sd = nx * (mx - 0) + nz * (mz - (ZH - 60)) > 0 ? 1 : -1;
+    const top = stands.topAt(mx + nx * sd * 0.6, mz + nz * sd * 0.6);
+    if (outfield) { const hh = Math.max(4.0, top); seg(hh, hh / 2, pad); if (hh < 4.9) { seg(0.12, hh + 0.02, line, 0.4); seg(0.24, hh + 0.16, net, 0.04); } }
+    else { const hh = Math.max(1.2, top); seg(hh, hh / 2, pad); }
   }
   root.add(new THREE.Mesh(mergeGeometries(pad), std({ color: 0x163a78, roughness: 0.8 })));
   root.add(new THREE.Mesh(mergeGeometries(line), glowMat(0xe8c830, 0.45)));
   root.add(new THREE.Mesh(mergeGeometries(net), std({ color: 0x151515, roughness: 1, transparent: true, opacity: 0.6 })));
-  if (back.length) root.add(new THREE.Mesh(mergeGeometries(back), std({ color: 0x202024, roughness: 1, transparent: true, opacity: 0.35, side: THREE.DoubleSide })));
   // the foul poles, where the lines meet the fence
   for (const sd of [-1, 1]) {
     const r = 100, x = sd * r * Math.SQRT1_2, z = ZH - r * Math.SQRT1_2;

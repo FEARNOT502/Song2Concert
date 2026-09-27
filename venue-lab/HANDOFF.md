@@ -1,16 +1,32 @@
-# Round 11 — work in progress (handoff)
+# Venue lab — status after round 11
 
-Branch `wip/venue-lab-round11`. Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
+Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
-## Done
-- Black flickering blocks: zero-area triangles (collinear decimetre-rounded points) → zero normals → NaN → bloom. Fixed by `dropDegenerateTriangles` (a-core, called in z-app and src/three/stage.js) + NaN/Inf/negative clamp in the composite shader (b-render).
-- Pipeline: `STRAIGHT` mode in standlib (no blur/chain smoothing, DP 0.12 m); edge_walls judged in 0.5 m pieces then merged (`merge_runs`); `Level.make_voms` builds rectangular vomitories (pit + roofed tunnel), `trim_tunnels`, rooms accept `open` masks.
-- Renderer: `vomParts` in d3-stands (walls inside the pit, parapet, tunnel, lit ceiling, section sign); `topAt` returned by buildStands; `maskingDrapes` in h-show (used in i-arena).
-- TD: upper tiers/outer wall from the 1F convex hull; E tunnels labelled by block; backstop net removed. SSA/WB inputs recovered (ssa_prep.py, wb_prep.py) and regenerated with the new pipeline (WB gen may need a rerun).
+## Round 11 (done)
+- Tokyo Dome: the 3B side's B blocks are the 1B side mirrored (the official map traces
+  only their labels there); open walkway between the 1st floor's back and the balcony
+  (rooms take a `walk` mask); balcony and 2nd-floor seats behind home restored (row
+  extraction tolerance in td_gen.py) with the boxes behind home (`suites`); field wall
+  up to the stands' front at the poles; the outfield's back wall up to the roof.
+- SSA, Wembley regenerated with the straight-line pipeline; aisle half-steps are
+  rectangles (standgen `aisles_out`).
+- Inspire (lab only) rebuilt from exact section polygons: `pipeline/insp_build.py`
+  (replaces insp_seats.py/insp_gen.py). Skybox terraces on the east, red 300s tunnels
+  onto a 1.3 m front walkway, ribbon along the 300s' fronts and the boxes' front,
+  drapes beside the stage, stage 5 m further out, steel temporary stairs when the
+  100s fold away.
+- KSPO DOME (lab only): `pipeline/kspo_build.py`, `src/o-kspo.js`; references in
+  `refs/kspo` (official chart, Offmate plan, KCISA Sketchfab models). End stage with a
+  T thrust, drapes, the 1st floor's telescopic rows (B, D) as the toggle; A's are
+  folded under the stage.
+- `pipeline/bowlkit.py`: stairs finder shared by the exact-plane bowls.
 
-## To do
-- TD: the 3B side still shows something sticking out — real TD has nothing there, same as 1B (user, 2026-09-27). Re-check against pipeline/td/td_labeled.json and make it symmetric. The gap between the 1F back and the balcony shows the 1F concourse roof: make it an open walkway (room `open`). Pole junction still awkward.
-- Run `python pipeline/mkdata.py ssa wb td`, render-check vomitories and drapes, tune SSA vom width (wmax=3.0 set, not yet rerun).
-- Inspire: rebuild from scratch as an exact angular plan. References in refs/insp (chart_boundee = 2F 201-220, 3F 308-320, skyboxes on the 201-205 side; offmate_seats.json rows/seat counts; froma_5 official interior; tw/ seat views). Keep T-stage + 100s toggle; drapes beside stage.
-- KSPO DOME: new venue, lab only, end stage + T runway, drapes.
-- Re-check all venues vs reality; port non-lab changes via gen.mjs; commit/push to branch + main (Inspire/KSPO lab-only are allowed on this WIP branch per user); republish the artifact.
+## Branches
+- `claude/elegant-knuth-r81twm`: everything, lab-only venues included.
+- `main`: the app and the lab without the Inspire/KSPO sources (the lab builds and
+  hides their tabs when their files are absent).
+
+## Next ideas
+- KSPO: the 2nd floor's back corridor doors, 1st-floor wheelchair platform details.
+- Re-run reach tests after any pipeline change: `node reachtest.mjs <venue> <x,z>`,
+  then `python3 reachcheck.py <venue> pipeline/<x>_stands.json <offset z>`.

@@ -369,6 +369,48 @@ export function noise3D() {
   return t;
 }
 
+// Outlines whose points were rounded to the decimetre can put three of them
+// on one line; a cap or a side triangulated through them has no area and no
+// normal, and when projection rounding lets it cover a pixel the lighting
+// normalises a zero vector: a NaN pixel, which the bloom spreads into a black
+// block. Take every such triangle out of a built room's non-indexed meshes.
+export function dropDegenerateTriangles(root) {
+  const seen = new Set();
+  root.traverse((o) => {
+    const g = o.isMesh && !o.isInstancedMesh ? o.geometry : null;
+    if (!g || seen.has(g) || g.index || g.isInstancedBufferGeometry || !g.attributes.position) return;
+    seen.add(g);
+    const P = g.attributes.position.array, N = g.attributes.normal?.array, n = g.attributes.position.count / 3;
+    const keep = new Uint8Array(n);
+    let kept = 0;
+    for (let t = 0; t < n; t++) {
+      const i = t * 9;
+      const ax = P[i + 3] - P[i], ay = P[i + 4] - P[i + 1], az = P[i + 5] - P[i + 2];
+      const bx = P[i + 6] - P[i], by = P[i + 7] - P[i + 1], bz = P[i + 8] - P[i + 2];
+      const cx = ay * bz - az * by, cy = az * bx - ax * bz, cz = ax * by - ay * bx;
+      let ok = cx * cx + cy * cy + cz * cz > 1e-12;
+      if (ok && N) for (let k = 0; k < 9; k += 3) if (N[i + k] * N[i + k] + N[i + k + 1] * N[i + k + 1] + N[i + k + 2] * N[i + k + 2] < 1e-8) ok = false;
+      keep[t] = ok ? 1 : 0; kept += keep[t];
+    }
+    if (kept === n) return;
+    for (const name of Object.keys(g.attributes)) {
+      const a = g.attributes[name], sz = a.itemSize, src = a.array;
+      const dst = new src.constructor(kept * 3 * sz);
+      for (let t = 0, j = 0; t < n; t++) if (keep[t]) { dst.set(src.subarray(t * 3 * sz, (t + 1) * 3 * sz), j * 3 * sz); j++; }
+      g.setAttribute(name, new THREE.BufferAttribute(dst, sz, a.normalized));
+    }
+    if (g.groups.length) {
+      const before = new Uint32Array(n + 1);
+      for (let t = 0; t < n; t++) before[t + 1] = before[t] + keep[t];
+      for (const grp of g.groups) {
+        const t0 = Math.min(n, grp.start / 3), t1 = Math.min(n, (grp.start + grp.count) / 3);
+        grp.start = before[t0] * 3; grp.count = (before[t1] - before[t0]) * 3;
+      }
+    }
+    g.computeBoundingSphere(); g.computeBoundingBox();
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // materials
 // ─────────────────────────────────────────────────────────────────────────────
