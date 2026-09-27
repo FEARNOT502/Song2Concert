@@ -17,6 +17,9 @@ function section(bar) {
 
 // fixtures: [{ fx, i, n, group }]. `house` is a point out in the room the rig
 // throws toward (the crowd centre); `stage` the performer area.
+// an index round a list that holds for a negative count too (the clock can
+// start a little before zero)
+const wrap = (k, n) => ((k % n) + n) % n;
 function runShow(rig, list, f, { house, stage, span = 30, up = false, strobe = true, lift = 1 }) {
   const sec = f.sec || section(f.bar);
   const show = 1 - f.house;
@@ -34,7 +37,7 @@ function runShow(rig, list, f, { house, stage, span = 30, up = false, strobe = t
       const sway = Math.sin(t * (sec === 'chorus' ? 1.6 : 0.5) + ph) * swing;
       fx.dir.set(u * 1.2 + sway, 1, (sec === 'break' ? 0.1 : 0.35) + 0.2 * Math.cos(t * 0.7 + ph)).normalize();
       lvl = sec === 'break' ? 0.1 : sec === 'verse' ? 0.35 : 0.6 + 0.4 * f.kick;
-      col = cols[(i + (sec === 'chorus' ? Math.floor(f.beat / 2) : 0)) % 2];
+      col = cols[wrap(i + (sec === 'chorus' ? Math.floor(f.beat / 2) : 0), 2)];
     } else if (sec === 'verse') {
       tgt.set(stage.x + u * span * 0.5 + Math.sin(t * 0.35 + ph) * 3, 0, stage.z + 6 + Math.cos(t * 0.3 + ph) * 4);
       lvl = 0.5 + 0.15 * f.energy;
@@ -42,14 +45,14 @@ function runShow(rig, list, f, { house, stage, span = 30, up = false, strobe = t
     } else if (sec === 'pre') {
       const k = Math.sin(t * 0.9 + ph);
       tgt.set(house.x + u * span * 1.4 + k * 4, house.y, house.z - 10 + Math.cos(t * 0.6 + ph) * 12);
-      lvl = 0.55 + 0.35 * ((f.beat % 2) === (i % 2) ? f.kick : 0.2);
+      lvl = 0.55 + 0.35 * (wrap(f.beat, 2) === (i % 2) ? f.kick : 0.2);
       col = cols[(i % 2) ? 1 : 0];
     } else if (sec === 'chorus') {
       const a = t * 1.25 + ph;
       tgt.set(house.x + u * span * 1.2 + Math.sin(a) * span * 0.45, house.y + Math.abs(Math.cos(a * 0.7)) * 4, house.z + Math.cos(a) * span * 0.6);
       lvl = 0.75 + 0.35 * f.kick;
-      col = cols[(i + Math.floor(f.beat / 4)) % 3];
-      if (strobe && f.kick > 0.85 && (i + f.beat) % 3 === 0) { lvl = 1.6; }
+      col = cols[wrap(i + Math.floor(f.beat / 4), 3)];
+      if (strobe && f.kick > 0.85 && wrap(i + f.beat, 3) === 0) { lvl = 1.6; }
     } else {
       tgt.set(stage.x + u * span * 0.3, 0, stage.z + 2);
       lvl = i % 3 === 0 ? 0.3 : 0;

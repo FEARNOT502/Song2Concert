@@ -10,10 +10,11 @@ O=(0.0,-60.0)
 dOut,TH,hull1,field=st['dOut'],st['TH'],st['hull1'],st['field']
 dOut1=st['dOut1']
 E0=st['E0']; D0,DP=4.0,0.8
-_gy,_gx=np.mgrid[0:G.H,0:G.W]; _X,_Z=G.m(_gx,_gy); RRO=np.maximum(np.hypot(_X-O[0],_Z-O[1]),1.0); del _gy,_gx,_X,_Z
+_gy,_gx=np.mgrid[0:G.H,0:G.W]; _Xg,_Zg=G.m(_gx,_gy); RRO=np.maximum(np.hypot(_Xg-O[0],_Zg-O[1]),1.0); del _gy,_gx
 H_A,R_A=1.3,0.28; H_B,R_B=8.6,0.28; H_F,R_F=4.6,0.46
 H_C,R_C=17.8,0.4; H_D,R_D=23.0,0.5; H_E,R_E=28.0,0.55
 C1F,CBAL,C2F=14.2,19.0,27.5
+C0W=0.3            # the balcony's front, out from the 1st floor's hull
 LV={}
 # the A seats as the building rows them (td_rowsA.py): each block's rows
 # parallel to its back, numbered back from the walkway behind row 26, the
@@ -59,6 +60,20 @@ for k,l in enumerate((A,B,F)):
     l.R[add]=1
     l.band=np.where(l.R>0,np.clip(np.floor(l.d/l.D).astype(int),0,l.nrows-1),-1)
 print('pole aisles filled', int(gap.sum()*G.res**2), 'm2')
+# the front: the 1st floor's stands run right up to the field's edge, so the
+# wall in front of them follows the field's line. Where the fence cuts the
+# rows off (towards the poles) the front row's tread runs on level to it.
+R1=(A.R>0)|(B.R>0)|(F.R>0)
+frontgap=~field&dil(field,3.0)&~R1&dil(A.R|F.R,3.0)
+for l in (A,F):
+    seed=np.where(l.band>=0,0,1).astype(np.uint8)
+    _,labp=cv2.distanceTransformWithLabels(seed,cv2.DIST_L2,5,labelType=cv2.DIST_LABEL_PIXEL)
+    zy,zx=np.nonzero(seed==0); bl=np.r_[-1,l.band[zy,zx]]; dl=np.r_[0,l.d[zy,zx]]
+    other=[m for m in (A,F) if m is not l][0]
+    mine=frontgap&(cv2.distanceTransform(seed,cv2.DIST_L2,5)<=cv2.distanceTransform(np.where(other.band>=0,0,1).astype(np.uint8),cv2.DIST_L2,5))
+    l.R[mine]=1; l.band[mine]=bl[labp[mine]]; l.d[mine]=dl[labp[mine]]
+    frontgap&=~mine
+print('front filled to the field')
 # the treads' tops, for the edges between the 1st floor's stands
 TOP1=np.zeros(A.R.shape,np.float32)
 for l in (A,B,F):
@@ -155,18 +170,25 @@ def outside_fn(pairs):
     return f
 grow=lambda c: cv2.dilate(c.astype(np.uint8),np.ones((3,3),np.uint8),iterations=3)>0
 gu=lambda c,y: grow_under(c,y,list(LV.values()))
-slabs=[(gu(cross,H_A+R_A*25),0.0,H_A+R_A*25),(gu(c1,C1F),0.0,C1F),(gu(cb,CBAL),CBAL-0.35,CBAL),(gu(c2,C2F),C2F-0.35,C2F)]
+SUITE_TH=st.get('SUITE_TH',33.7)
+suitem=(dOut>=C0W)&(dOut<=3.9)&(np.abs(TH)<SUITE_TH)&~field
+slabs=[(gu(cross,H_A+R_A*25),0.0,H_A+R_A*25),(gu(c1,C1F),0.0,C1F),(gu(cb,CBAL),CBAL-0.35,CBAL),(gu(c2,C2F),C2F-0.35,C2F),(suitem,H_C-0.4-0.4,H_C-0.4)]
 # ── the concourses closed in ──
 t_=time.time()
 rooms=[{'name':'1F','mask':c1,'y':C1F,'cl':4.0,'own':[A,B,F],'doors':B.aisle_doors()+F.aisle_doors()},
        {'name':'BAL','mask':cb,'y':CBAL,'cl':3.8,'own':[Cl],'doors':Cl.aisle_doors()},
        {'name':'2F','mask':c2,'y':C2F,'cl':4.0,'own':[D,E],'doors':D.aisle_doors()+E.aisle_doors()}]
 rooms[2]['open']=E.pits
+# the walkway along the back of the 1st floor, out from under the balcony:
+# open to the dome, the concourse's wall (with its doors) behind it
+overhead=(Cl.R>0)|(D.R>0)|(E.R>0)|cb|c2|suitem
+WALK=c1&~overhead&dil(A.R|B.R|F.R,4.0)&(np.abs(TH)<125)
+rooms[0]['walk']=WALK
 trim_tunnels(G,VOMS['E'],c2)
 encl,roomtop=enclose(G,rooms,list(LV.values()),slabs,flights)
 print('enclose',round(time.time()-t_,1),{k:len(v) for k,v in encl.items()})
 # no rail or wall where one stand of the 1st floor meets another near level
-skip=lambda ox,oy,h: roomtop[oy,ox]>=h+1.0 or (TOP1[oy,ox]>0 and abs(h-TOP1[oy,ox])<=0.6)
+skip=lambda ox,oy,h: roomtop[oy,ox]>=h+1.0 or (TOP1[oy,ox]>0 and abs(h-TOP1[oy,ox])<=0.6) or (WALK[oy,ox] and abs(h-C1F)<=0.6)
 fronts={'C':('tread',0.8),'D':('tread',0.8)}
 levels=[]
 spec={'A':((cross,H_A+R_A*25),),'B':((c1,C1F),),'F':((c1,C1F),),'C':((cb,CBAL),),'D':((c2,C2F),),'E':((c2,C2F),)}
@@ -177,13 +199,32 @@ for name,l in LV.items():
     levels.append({'name':name,'D':l.D,'h0':l.h0,'rise':l.rise,'rows':l.rows_out(),'steps':l.aisles_out(),'holes':[],'voms':VOMS.get(name,[]),
                    'seats':l.seats_out(),'rails':rails,'walls':walls})
     print(name,'rows',len(levels[-1]['rows']),'steps',len(levels[-1]['steps']),'holes',len(levels[-1]['holes']),'rails',len(rails),'walls',len(walls))
+# Behind the outfield there is no upper tier: the wall behind its top rows
+# runs on up to the roof, over the concourse behind them
+TH_O=np.degrees(np.arctan2(_Xg-O[0],_Zg-O[1]))
+nearF=dil(F.R,1.5)
+back=[]
+for w in encl['walls']:
+    if w[4]>C1F+3.0 or w[5]<C1F+3.5: continue
+    mx,mz=(w[0]+w[2])/2,(w[1]+w[3])/2
+    gx_,gz_=G.g(mx,mz); i_,j_=int(round(float(gz_))),int(round(float(gx_)))
+    if not (0<=i_<G.H and 0<=j_<G.W) or not nearF[i_,j_] or abs(TH_O[i_,j_])<125: continue
+    back.append([w[0],w[1],w[2],w[3],round(w[5]-0.05,2),60.0])   # up into the membrane
+print('outfield back wall',len(back))
+# the boxes behind home (S101-110, S301-310 and the VIP box): a glass front
+# along the balcony's line, the rooms behind it
+sm=(np.abs(dOut-(C0W+0.2))<0.06)&(np.abs(TH)<SUITE_TH-0.5)
+ys_,xs_=np.nonzero(sm); SX,SZ=G.m(xs_,ys_); oo=np.argsort(TH[ys_,xs_])
+suite_line=[[round(float(SX[i]),2),round(float(SZ[i]),2)] for i in oo[::15]]
 floors=[{'y':y,'y0':y0,'polys':mask_polys(G,m)} for m,y0,y in slabs]
 ow=contours(G,outer.astype(np.uint8),eps=0.03,minarea=100)
 fw=contours(G,field.astype(np.uint8),eps=0.03,minarea=100)
 # the 2nd floor's front edge, for the lights along it
 fy,fx=np.nonzero(D.F); FX,FZ=G.m(fx,fy); ang=np.arctan2(FX-O[0],FZ-O[1]); o=np.argsort(ang)
 rim=[[round(float(FX[i]),1),round(float(FZ[i]),1)] for i in o[::40]]
-data={'levels':levels,'floors':floors,'flights':flights,'outer':[poly_out(p) for p in ow],'field':[poly_out(p) for p in fw],'rim':rim,'rimY':H_D,'rooms':encl}
+for L_ in levels:
+    if L_['name']=='F': L_['walls']=L_['walls']+back
+data={'suites':{'line':suite_line,'y':H_C-0.4,'h':3.6,'depth':3.4},'levels':levels,'floors':floors,'flights':flights,'outer':[poly_out(p) for p in ow],'field':[poly_out(p) for p in fw],'rim':rim,'rimY':H_D,'rooms':encl}
 json.dump(data,open('td_stands.json','w'),separators=(',',':'))
 import os; print('json KB',os.path.getsize('td_stands.json')//1024, round(time.time()-T0,1))
 

@@ -8,16 +8,19 @@ const INFO = {
   concerthall: { name: 'Concert Hall', type: 'VINEYARD', ref: '롯데콘서트홀 기반', seats: '2,036', seat: 'Terrace block', dist: '13 m', rt: '2.02', vol: '22,000', warm: '1.20', refl: '+12' },
   arena: { name: 'Arena', type: 'ARENA · END STAGE', ref: '사이타마 슈퍼 아레나 기반', seats: '22,500', seat: 'FOH, floor', dist: '36 m', rt: '2.64', vol: '400,000', warm: '1.14', refl: '+44' },
   inspire: { name: 'Inspire', type: 'ARENA · T-STAGE', ref: '인스파이어 아레나 기반', seats: '15,000', seat: 'FOH, floor', dist: '44 m', rt: '2.30', vol: '310,000', warm: '1.10', refl: '+38' },
+  kspo: { name: 'KSPO DOME', type: 'ARENA · T-STAGE', ref: 'KSPO DOME 기반', seats: '14,594', seat: 'FOH, floor', dist: '34 m', rt: '2.20', vol: '260,000', warm: '1.08', refl: '+34' },
   dome: { name: 'Dome', type: 'DOMED STADIUM', ref: '도쿄 돔 기반', seats: '45,000', seat: 'FOH, field', dist: '56 m', rt: '3.63', vol: '1,240,000', warm: '1.50', refl: '+84' },
   stadium: { name: 'Stadium', type: 'OPEN STADIUM', ref: '웸블리 스타디움 기반', seats: '90,000', seat: 'FOH, pitch', dist: '66 m', rt: '2.15', vol: '1,139,100', warm: '1.18', refl: '+112' },
 };
-const ORDER = ['club', 'theater', 'concerthall', 'arena', 'inspire', 'dome', 'stadium'];
+const ORDER = ['club', 'theater', 'concerthall', 'arena', 'inspire', 'kspo', 'dome', 'stadium'];
+const RETRACT = { inspire: '100번대 가변석', kspo: '1층 가변석' };
 const BUILDERS = {
   club: typeof buildClub === 'function' ? buildClub : null,
   theater: typeof buildTheater === 'function' ? buildTheater : null,
   concerthall: typeof buildConcertHall === 'function' ? buildConcertHall : null,
   arena: typeof buildArena === 'function' ? buildArena : null,
   inspire: typeof buildInspire === 'function' ? buildInspire : null,
+  kspo: typeof buildKspo === 'function' ? buildKspo : null,
   dome: typeof buildDome === 'function' ? buildDome : null,
   stadium: typeof buildStadium === 'function' ? buildStadium : null,
 };
@@ -483,8 +486,10 @@ const UI = {
     $('#v-vol').textContent = I.vol;
     $('#v-warm').textContent = I.warm;
     $('#v-refl').textContent = I.refl;
-    $('#crowd-row').hidden = !['arena', 'inspire', 'dome', 'stadium'].includes(id);
-    $('#retract-row').hidden = id !== 'inspire';
+    $('#crowd-row').hidden = !['arena', 'inspire', 'kspo', 'dome', 'stadium'].includes(id);
+    // the telescopic seats: Inspire's 100s, KSPO DOME's 1st floor
+    $('#retract-row').hidden = !RETRACT[id];
+    if (RETRACT[id]) { $('#retract-label').textContent = RETRACT[id]; $('#seg-retract').setAttribute('aria-label', RETRACT[id]); }
   },
   tone(app) {
     this.pressed('#seg-tone', app.mode);

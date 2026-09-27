@@ -4,7 +4,8 @@ MAP = {'ssa': ('pipeline/ssa_stands.json', 'src/i0-ssa-data.js', 'SSA_STANDS'),
        'td': ('pipeline/td_stands.json', 'src/j0-td-data.js', 'TD_STANDS'),
        'wb': ('pipeline/wb_stands.json', 'src/k0-wb-data.js', 'WB_STANDS'),
        'lotte': ('pipeline/lotte_stands.json', 'src/g0-lotte-data.js', 'LOTTE_STANDS'),
-       'insp': ('pipeline/insp_stands.json', 'src/n0-insp-data.js', 'INSP_STANDS')}
+       'insp': ('pipeline/insp_stands.json', 'src/n0-insp-data.js', 'INSP_STANDS'),
+       'kspo': ('pipeline/kspo_stands.json', 'src/o0-kspo-data.js', 'KSPO_STANDS')}
 for k in sys.argv[1:]:
     src, dst, name = MAP[k]
     head = []

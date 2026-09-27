@@ -24,6 +24,10 @@ C=[o for o in lab if o['L']=='C']; D=[o for o in lab if o['L']=='D']; E=[o for o
 # container outlines (polygons holding many labels)
 def blocks(L,maxn=6): return [toR(o['poly']) for o in L if len(o['nums'])<=maxn]
 Ab,Bb,Fb=blocks(A),blocks(B),blocks(F)
+# The map's 3B-side B blocks (B31-B39) are traced only as far as their labels;
+# the building is symmetric, so that side is the 1B side mirrored
+_Bc=[P for P in Bb if abs(P[:,0].mean())<=2]; _Br=[P for P in Bb if P[:,0].mean()>2]
+Bb=_Br+_Bc+[P*np.array([-1.0,1.0]) for P in _Br]
 print('blocks A',len(Ab),'B',len(Bb),'F',len(Fb))
 # seats: rows parallel to each level's front, 0.5 m apart along the row, inside the blocks
 def synth(blockpolys, pitch, rows, first=0.42, spacing=0.5):
@@ -99,7 +103,9 @@ def ring_seats(mask, dlo, pitch, rows, spacing=0.5, first=0.45):
     pts=[]
     for r in range(rows):
         dc=dlo+first+r*pitch
-        band=(np.abs(dOut-dc)<0.035)&mask
+        # half a cell either side: where the hull runs straight along the grid
+        # (behind home) the distance steps by whole cells
+        band=(np.abs(dOut-dc)<0.051)&mask
         ys,xs=np.nonzero(band)
         if not len(xs): continue
         P=np.c_[G.m(xs,ys)]
@@ -114,7 +120,10 @@ def shrink_sector(t0,t1,r):
     dt=np.degrees(AISLE/2/r); return t0+dt,t1-dt
 # balcony (C): four rows just behind the 1st floor, pole to pole round home
 C0,CP,CR=0.3,0.9,4
-Cmask=sector_mask(-130,130,C0,C0+CP*CR)
+SUITE_TH=33.7
+# (behind home, inside the lines from about D20 to D32, the balcony level is
+# the boxes, S101-110 and S301-310 either side of the VIP box)
+Cmask=sector_mask(-130,130,C0,C0+CP*CR)&(np.abs(TH)>=SUITE_TH)
 # aisles every 12 m round the ring
 cm=Cmask.copy()
 for t in np.arange(-130,131,7.0): cm&=~((np.abs(TH-t)<np.degrees(0.6/75)))
@@ -141,4 +150,4 @@ for t0,t1,n in Esp:
     SEl.append(ring_seats(m,E0,DP,rows))
 SD=np.vstack(SDl); SE=np.vstack(SEl)
 print('seats C',len(SC),'D',len(SD),'E',len(SE),round(time.time()-T0,1))
-pickle.dump(dict(SA=SA,SB=SB,SF=SF,SC=SC,SD=SD,SE=SE,hull1=hull1,hullC=hullC,field=field,dOut=dOut,dOut1=dOut1,TH=TH,VOM=VOM,E0=E0),open('td_stage1.pkl','wb'))
+pickle.dump(dict(SA=SA,SB=SB,SF=SF,SC=SC,SD=SD,SE=SE,hull1=hull1,hullC=hullC,field=field,dOut=dOut,dOut1=dOut1,TH=TH,VOM=VOM,E0=E0,SUITE_TH=SUITE_TH),open('td_stage1.pkl','wb'))

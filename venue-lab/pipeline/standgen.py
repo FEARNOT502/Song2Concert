@@ -100,8 +100,18 @@ class Level:
             rear=((s.band==r)&(s.d>=r*s.D+s.D*0.5)&(A>0)).astype(np.uint8)
             if not rear.any(): continue
             y=float(s.h(r)+rise/2)
-            for p in contours(s.G,rear,eps=getattr(s,'step_eps',0.02),minarea=0.15,sigma=0.7):
-                out.append({'y':round(y,3),'y0':round(float(s.h(r)),3),'polys':poly_out(p,2)})
+            # each half step a clean rectangle: the tightest one round the
+            # aisle's cells on this row (the seats either side leave its edges
+            # ragged by a cell or two)
+            n_,lab_=cv2.connectedComponents(rear,connectivity=8)
+            for k_ in range(1,n_):
+                ys_,xs_=np.nonzero(lab_==k_)
+                if len(xs_)*s.G.res**2<0.15: continue
+                (cx_,cy_),(w_,h_),a_=cv2.minAreaRect(np.c_[xs_,ys_].astype(np.float32))
+                if min(w_,h_)*s.G.res<0.3: continue
+                box=cv2.boxPoints(((cx_,cy_),(w_+1,h_+1),a_))
+                X_,Z_=s.G.m(box[:,0]-0.5+0.5,box[:,1]-0.5+0.5)
+                out.append({'y':round(y,3),'y0':round(float(s.h(r)),3),'polys':[[[round(float(u),2),round(float(v),2)] for u,v in zip(X_,Z_)]]})
         return out
     def holes_out(s, floor, open_upto=-1):
         # enclosed gaps in the stand (vomitory mouths), with the tread height round them
@@ -487,6 +497,12 @@ def enclose(G, rooms, levels, slabs, flights, lamp_step=6.0, door_w=1.8, door_h=
         if R_.get('open') is not None:
             op=R_['open']&~(rise>y+0.3)
             A|=op; openm|=op
+        # a walkway: open overhead, but closed off from the room by a wall with
+        # doors (unlike the open part, which the room opens onto)
+        walk=None
+        if R_.get('walk') is not None:
+            walk=R_['walk']&A&~low&~shaft&~openm
+            openm=openm|walk
         ceil=A&~low&~openm
         encl=A&~openm
         roomtop=np.where(low,over,Hk).astype(np.float32)
@@ -531,6 +547,7 @@ def enclose(G, rooms, levels, slabs, flights, lamp_step=6.0, door_w=1.8, door_h=
             x,y_=int(round(px)),int(round(py))
             if not (0<=x<G.W and 0<=y_<G.H): return 'out'
             if encl[y_,x]: return 'in'
+            if walk is not None and walk[y_,x]: return 'walk'
             if openm[y_,x]: return 'open'
             return 'out'
         chains_wall=[]; chains_step=[]
@@ -569,7 +586,7 @@ def enclose(G, rooms, levels, slabs, flights, lamp_step=6.0, door_w=1.8, door_h=
                     if land[i]: seg=None
                     elif kind=='open':
                         if ceil[ai]: seg=(y+door_h+0.2,Hk+0.3)       # a lintel over the way out to the bowl
-                    elif kind=='out':
+                    elif kind in ('out','walk'):
                         lo=max(y,float(rise[bo])) if np.isfinite(rise[bo]) else y
                         hi=top_a+(0.3 if ceil[ai] else 0.0)
                         ob=float(over[bo])

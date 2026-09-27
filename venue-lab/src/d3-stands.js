@@ -328,6 +328,7 @@ function buildStands(data, {
     else { prism(polys, f.y0, f.y, solid); }
   }
   // stairs between them: a solid flight with a rail each side
+  const openRails = [];
   for (const f of data.flights) {
     const { x, z, dx, dz, n, L, y0, y1 } = f;
     const run = L / n, w = f.w ?? 1.6;
@@ -336,13 +337,18 @@ function buildStands(data, {
       b.rotateY(Math.atan2(dx, dz));
       const cx = x + dx * run * (i + 0.5), cz = z + dz * run * (i + 0.5);
       b.translate(cx + ox, (y0 + (y0 + (y1 - y0) * (i + 1) / n)) / 2, cz + oz);
-      stairs.push(b.toNonIndexed());
+      (f.open ? solid : stairs).push(b.toNonIndexed());
     }
     for (const s of [-1, 1]) {
       const px = -dz * s * (w / 2 + 0.02), pz = dx * s * (w / 2 + 0.02);
-      panel('rail', x + px, z + pz, x + dx * L + px, z + dz * L + pz, y0, y1 + 1.0);
+      if (!f.open) { panel('rail', x + px, z + pz, x + dx * L + px, z + dz * L + pz, y0, y1 + 1.0); continue; }
+      // out in the open (not in a concourse): a handrail up the slope
+      const len = Math.hypot(L, y1 - y0), g = new THREE.BoxGeometry(0.05, 0.05, len);
+      g.rotateX(-Math.atan2(y1 - y0, L)); g.rotateY(Math.atan2(dx, dz));
+      g.translate(x + dx * L / 2 + px + ox, (y0 + y1) / 2 + 0.95, z + dz * L / 2 + pz + oz); openRails.push(g);
     }
   }
+  if (openRails.length) g.add(new THREE.Mesh(mergeGeometries(openRails), std({ color: 0xa8acb2, roughness: 0.4, metalness: 0.7 })));
   if (solid.length) { const m = new THREE.Mesh(mergeGeometries(solid), structMat); m.receiveShadow = true; g.add(m); }
   // the stairs stand in the lit concourses: lit with them
   if (stairs.length) { const m = new THREE.Mesh(mergeGeometries(stairs), lit ? lit.stairMat : structMat); m.receiveShadow = true; g.add(m); }
