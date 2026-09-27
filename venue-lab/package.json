@@ -1,0 +1,17 @@
+{
+  "name": "song2concert-venue-lab",
+  "version": "1.0.0",
+  "description": "Song2Concert venue lab prototype (single-file artifact)",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "playwright-core": "^1.56.0",
+    "three": "^0.185.1",
+    "three-mesh-bvh": "^0.9.15"
+  }
+}

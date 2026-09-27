@@ -1,0 +1,135 @@
+# Tokyo Dome: stands from the official seating map (dome_seating-map.pdf).
+import sys, json, re, time, pickle, numpy as np, cv2
+sys.path.insert(0,'.')
+from standlib import Grid, disk, contours, sample, front_from, depth
+from standgen import Level, poly_out, mask_polys, edge_walls
+T0=time.time()
+lab=json.load(open('td/td_labeled.json'))
+Hm=np.array([579.2,441.7]); s=2.996
+def toR(poly): a=np.array(poly); return np.c_[(a[:,0]-Hm[0])/s,(a[:,1]-Hm[1])/s]   # metres: home at 0, CF at -z
+G=Grid(-140,140,-200,110,0.1)
+O=(0.0,-60.0)   # the dome's centre, near second base
+def fill(polys, shrink=0.0):
+    M=G.empty()
+    for p in polys:
+        gx,gz=G.g(p[:,0],p[:,1]); cv2.fillPoly(M,[np.c_[gx,gz].round().astype(np.int32)],1)
+    if shrink>0: M=cv2.erode(M,disk(shrink/G.res))
+    return M
+def rows_of(o):
+    n=[v for v in o['nums'] if v<60]
+    return n
+A=[o for o in lab if o['L']=='A']; B=[o for o in lab if o['L']=='B']; F=[o for o in lab if o['L']=='F']
+C=[o for o in lab if o['L']=='C']; D=[o for o in lab if o['L']=='D']; E=[o for o in lab if o['L']=='E']
+# block polygons in metres (1F drawn at the field's scale); leave out the
+# container outlines (polygons holding many labels)
+def blocks(L,maxn=6): return [toR(o['poly']) for o in L if len(o['nums'])<=maxn]
+Ab,Bb,Fb=blocks(A),blocks(B),blocks(F)
+print('blocks A',len(Ab),'B',len(Bb),'F',len(Fb))
+# seats: rows parallel to each level's front, 0.5 m apart along the row, inside the blocks
+def synth(blockpolys, pitch, rows, first=0.42, spacing=0.5):
+    M=fill(blockpolys, shrink=0.2)
+    hull=cv2.morphologyEx(M,cv2.MORPH_CLOSE,disk(30))
+    Fm=front_from(G,hull,O,rmax=200)
+    d=depth(G,Fm)
+    pts=[]
+    for r in range(rows):
+        dc=first+r*pitch
+        band=(np.abs(d-dc)<0.035)&(M>0)
+        ys,xs=np.nonzero(band)
+        if not len(xs): continue
+        X,Z=G.m(xs,ys)
+        P=np.c_[X,Z]
+        # greedy thinning along the curve
+        order=np.lexsort((P[:,1],P[:,0]))
+        from scipy.spatial import cKDTree
+        keep=[]; T=None
+        taken=np.zeros(len(P),bool)
+        tree=cKDTree(P)
+        for i in np.argsort(np.arctan2(P[:,1]-O[1],P[:,0]-O[0])):
+            if taken[i]: continue
+            keep.append(i)
+            for j in tree.query_ball_point(P[i],spacing*0.95): taken[j]=True
+        pts.append(P[keep])
+    return np.vstack(pts)
+SA=synth(Ab,0.74,26); SB=synth(Bb,0.748,21); SF=synth(Fb,0.74,21)
+print('seats A',len(SA),'B',len(SB),'F',len(SF), round(time.time()-T0,1))
+np.save('td_seats1F.npy',np.array([SA,SB,SF],dtype=object),allow_pickle=True)
+
+# ── the upper levels, in the building: rings round the 1st floor's back ──
+M1=fill(Ab+Bb+Fb)
+hull1=cv2.morphologyEx(M1,cv2.MORPH_CLOSE,disk(40))
+k=int(2.0/G.res)*2+1
+hull1=(cv2.GaussianBlur(hull1.astype(np.float32),(k,k),0)>0.5).astype(np.uint8)
+# the field: the open ground inside the 1st floor
+inv=(1-hull1).astype(np.uint8)
+n,labm,st,_=cv2.connectedComponentsWithStats(inv,connectivity=4)
+gxo,gzo=G.g(np.array([O[0]]),np.array([O[1]])); field=(labm==labm[int(gzo[0]),int(gxo[0])])
+solid1=(~field).astype(np.uint8)            # the 1st floor and everything outside it
+dOut=cv2.distanceTransform((1-hull1).astype(np.uint8),cv2.DIST_L2,5)*G.res
+dOut[field]=-1
+gy,gx=np.mgrid[0:G.H,0:G.W]; X,Z=G.m(gx,gy)
+TH=np.degrees(np.arctan2(X-O[0],Z-O[1]))   # 0 towards home, + towards +x (1st base side)
+lab=json.load(open('td/td_labeled.json'))
+Hm=np.array([579.2,441.7]); s=2.996
+def spans(L):
+    out=[]
+    for o in lab:
+        if o['L']!=L or len(o['nums'])>6: continue
+        a=np.array(o['poly']); a=np.c_[(a[:,0]-Hm[0])/s,(a[:,1]-Hm[1])/s]-np.array(O)
+        t=np.degrees(np.arctan2(a[:,0],a[:,1]))
+        n=[v for v in o['nums'] if v<60]
+        out.append((t.min(),t.max(),n))
+    return sorted(out)
+Dsp=[x for x in spans('D') if len(x[2])>=3]; Esp=spans('E')
+AISLE=1.2
+def sector_mask(t0,t1,dlo,dhi):
+    m=(dOut>=dlo)&(dOut<dhi)&(TH>=t0)&(TH<=t1)
+    return m
+def ring_seats(mask, dlo, pitch, rows, spacing=0.5, first=0.45):
+    from scipy.spatial import cKDTree
+    pts=[]
+    for r in range(rows):
+        dc=dlo+first+r*pitch
+        band=(np.abs(dOut-dc)<0.035)&mask
+        ys,xs=np.nonzero(band)
+        if not len(xs): continue
+        P=np.c_[G.m(xs,ys)]
+        tree=cKDTree(P); taken=np.zeros(len(P),bool); keep=[]
+        for i in np.argsort(TH[ys,xs]):
+            if taken[i]: continue
+            keep.append(i)
+            for j in tree.query_ball_point(P[i],spacing*0.95): taken[j]=True
+        pts.append(P[keep])
+    return np.vstack(pts) if pts else np.zeros((0,2))
+def shrink_sector(t0,t1,r):
+    dt=np.degrees(AISLE/2/r); return t0+dt,t1-dt
+# balcony (C): four rows just behind the 1st floor, pole to pole round home
+C0,CP,CR=0.3,0.9,4
+Cmask=sector_mask(-130,130,C0,C0+CP*CR)
+# aisles every 12 m round the ring
+cm=Cmask.copy()
+for t in np.arange(-130,131,7.0): cm&=~((np.abs(TH-t)<np.degrees(0.6/75)))
+SC=ring_seats(cm,C0,CP,CR)
+# 2nd floor: D rows 1–10 from 4 m out, a walkway, E rows 11–33
+D0,DP=4.0,0.8
+E0=D0+10*DP+1.2
+SDl=[]; SEl=[]
+for t0,t1,n in Dsp:
+    rows=max(v for v in n if v<=10) if any(v<=10 for v in n) else 10
+    a,b=shrink_sector(t0,t1,70)
+    SDl.append(ring_seats(sector_mask(a,b,D0,D0+rows*DP),D0,DP,rows))
+VOM=[]   # tunnel mouths through the first rows of E, at every other gap between D blocks
+for i in range(len(Dsp)-1):
+    if i%2: continue
+    VOM.append((Dsp[i][1]+Dsp[i+1][0])/2)
+for t0,t1,n in Esp:
+    top=max(n[1:]) if len(n)>1 else 27      # n[0] is the block's own number
+    rows=top-10
+    a,b=shrink_sector(t0,t1,85)
+    m=sector_mask(a,b,E0,E0+rows*DP)
+    for tv in VOM:
+        m&=~((np.abs(TH-tv)<np.degrees(1.3/85))&(dOut<E0+5*DP))
+    SEl.append(ring_seats(m,E0,DP,rows))
+SD=np.vstack(SDl); SE=np.vstack(SEl)
+print('seats C',len(SC),'D',len(SD),'E',len(SE),round(time.time()-T0,1))
+pickle.dump(dict(SA=SA,SB=SB,SF=SF,SC=SC,SD=SD,SE=SE,hull1=hull1,field=field,dOut=dOut,TH=TH,VOM=VOM,E0=E0),open('td_stage1.pkl','wb'))
