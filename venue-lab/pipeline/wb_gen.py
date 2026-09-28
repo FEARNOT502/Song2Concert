@@ -3,7 +3,7 @@
 import sys, json, time, pickle, numpy as np, cv2
 sys.path.insert(0, '.')
 from standlib import Grid, disk, contours, STRAIGHT
-from standgen import Level, poly_out, mask_polys, edge_walls, enclose, grow_under, trim_tunnels
+from standgen import Level, poly_out, mask_polys, edge_walls, enclose, grow_under, trim_tunnels, front_parapet
 T0 = time.time()
 o = pickle.load(open('wb/wb_seats.pkl', 'rb'))
 def tr(P): return np.c_[-P[:, 1], P[:, 0]]      # (east, south) -> (north, east)
@@ -67,6 +67,195 @@ L1, L2, L5 = LV['L1'], LV['L2'], LV['L5']
 inside1 = np.zeros_like(L1.R); fr = tr(o['L1']['front']); gx_, gz_ = G.g(fr[:, 0], fr[:, 1])
 cv2.fillPoly(inside1, [np.c_[gx_, gz_].round().astype(np.int32)], 1); inside1 = inside1 > 0
 
+# ── Level 5 laid out as its blocks are ──
+# Its front has bays (the two big screens at the ends, the media box on the
+# south side) and, on the north side, is set 7 m further back between two
+# steps at the corners. The rows run on straight behind a bay, as the plan's
+# seats do, rather than wrapping round it; and the north side's rows are its
+# own, parallel to its own front, meeting the corner blocks' at an aisle.
+from scipy.spatial import cKDTree
+def resample(P, step=0.5, closed=True):
+    Q = np.r_[P, P[:1]] if closed else P
+    L = np.r_[0, np.cumsum(np.hypot(*np.diff(Q, axis=0).T))]
+    s = np.arange(0, L[-1] - (step * 0.5 if closed else -1e-6), step)
+    return np.c_[np.interp(s, L, Q[:, 0]), np.interp(s, L, Q[:, 1])]
+def corners(Q, k=4, thr=20.0, closed=True):
+    n = len(Q); idx = np.arange(n)
+    a = Q - Q[(idx - k) % n]; b = Q[(idx + k) % n] - Q
+    ang = np.degrees(np.arctan2(a[:, 0] * b[:, 1] - a[:, 1] * b[:, 0], (a * b).sum(1)))
+    if not closed: ang[:k] = 0; ang[-k:] = 0
+    return [(i, float(ang[i])) for i in range(n) if abs(ang[i]) > thr and abs(ang[i]) >= np.abs(ang[(idx[i] + np.arange(-k, k + 1)) % n]).max()]
+def unit(v): return v / (np.linalg.norm(v) + 1e-12)
+def hermite(p0, t0, p1, t1, step=0.5):
+    c = np.linalg.norm(p1 - p0); s = np.linspace(0, 1, max(3, int(c / step) + 1))[:, None]
+    h00, h10, h01, h11 = 2 * s**3 - 3 * s**2 + 1, s**3 - 2 * s**2 + s, -2 * s**3 + 3 * s**2, s**3 - s**2
+    return h00 * p0 + h10 * c * t0 + h01 * p1 + h11 * c * t1
+def bridge_bays(Q):
+    # a bay: the front turning out, back, and in again (-,+,+,-) within 60 m
+    cs = corners(Q, closed=False); bays = []; out = []; last = 0
+    i = 0
+    while i + 3 < len(cs):
+        sg = [np.sign(c[1]) for c in cs[i:i + 4]]
+        if sg == [-1, 1, 1, -1] and cs[i + 3][0] - cs[i][0] < 120:
+            i0, i1 = cs[i][0], cs[i + 3][0]
+            t0 = unit(Q[i0] - Q[i0 - 8]); t1 = unit(Q[i1 + 8] - Q[i1])
+            H = hermite(Q[i0], t0, Q[i1], t1)
+            out += [Q[last:i0], H]; last = i1 + 1
+            bays.append({'actual': Q[i0:i1 + 1], 'bridge': H})
+            i += 4
+        else: i += 1
+    out.append(Q[last:])
+    return np.concatenate(out), bays
+def smooth_line(Q, sig=3.0):
+    # gently, along its length, the ends fixed (the plan's trace wobbles)
+    s = sig / 0.5; h = int(3 * s); w = np.exp(-0.5 * (np.arange(-h, h + 1) / s) ** 2); w /= w.sum()
+    ext = np.r_[2 * Q[0] - Q[h:0:-1], Q, 2 * Q[-1] - Q[-2:-h - 2:-1]]
+    return np.c_[np.convolve(ext[:, 0], w, 'valid'), np.convolve(ext[:, 1], w, 'valid')]
+def extend(Q, L=45.0):
+    t0 = unit(Q[0] - Q[10]); t1 = unit(Q[-1] - Q[-11]); s = np.arange(L, 0, -0.5)[:, None]
+    return np.r_[Q[0] + t0 * s, Q, Q[-1] + t1 * s[::-1]]
+def signed_dist(Q, pts):
+    # distance to the polyline, positive on the stand's side (Q runs with
+    # the pitch on its left)
+    D = resample(Q, 0.1, closed=False); T = np.gradient(D, axis=0); T /= np.linalg.norm(T, axis=1)[:, None] + 1e-12
+    dist, j = cKDTree(D).query(pts, k=1)
+    q = pts - D[j]; cr = T[j, 0] * q[:, 1] - T[j, 1] * q[:, 0]
+    return np.where(cr > 0, -dist, dist)
+def section_depth(l, P):
+    Q = resample(P)
+    if np.sum(Q[:, 0] * np.roll(Q[:, 1], -1) - Q[:, 1] * np.roll(Q[:, 0], -1)) < 0: Q = Q[::-1].copy()
+    cs = corners(Q)
+    # the steps: a turn out and straight on again (-,+) within 15 m, not part of a bay
+    steps = [(cs[i][0], cs[(i + 1) % len(cs)][0]) for i in range(len(cs))
+             if np.sign(cs[i][1]) != np.sign(cs[(i + 1) % len(cs)][1]) and (cs[(i + 1) % len(cs)][0] - cs[i][0]) % len(Q) < 30
+             and abs(cs[i][1]) < 45 and abs(cs[(i + 1) % len(cs)][1]) < 45]
+    region = cv2.dilate(((l.R > 0) | (l.hull > 0)).astype(np.uint8), disk(4.0 / G.res)) > 0
+    ry, rx = np.nonzero(region); pts = np.c_[G.m(rx, ry)]
+    polys = []
+    if len(steps) == 2:
+        (a1, a2), (b1, b2) = sorted(steps)
+        N = Q[a2:b1 + 1]; Rr = np.r_[Q[b2:], Q[:a1 + 1]]
+        polys = [('N', N), ('R', Rr)]
+    else: polys = [('R', np.r_[Q, Q[:1]])]
+    fields, bays = {}, []
+    for name, P_ in polys:
+        P_, b = bridge_bays(P_); bays += b
+        P_ = extend(smooth_line(P_))
+        fields[name] = signed_dist(P_, pts)
+    d = l.d.copy(); sec = np.zeros(l.d.shape, bool)
+    if 'N' in fields:
+        # the aisles at the steps: square to the front, from the step's middle
+        def side(i0, i1):
+            M = (Q[i0] + Q[i1]) / 2; t = unit(Q[(i1 + 6) % len(Q)] - Q[i0 - 6]); return M, t
+        (Ma, ta), (Mb, tb) = side(*sorted(steps)[0]), side(*sorted(steps)[1])
+        inN = ((pts - Ma) @ ta > 0) & ((pts - Mb) @ tb < 0) & (pts[:, 0] > 20)
+        dv = np.where(inN, fields['N'], fields['R']); sec[ry, rx] = inN
+        # the seats' facing: each section's own smooth field
+        fa = np.full(l.d.shape, np.nan, np.float32); fb = fa.copy()
+        fa[ry, rx] = fields['N']; fb[ry, rx] = fields['R']
+        fa = np.where(np.isnan(fa), l.d, fa); fb = np.where(np.isnan(fb), l.d, fb)
+        ga = np.gradient(cv2.GaussianBlur(fa.astype(np.float32), (9, 9), 0)); gb = np.gradient(cv2.GaussianBlur(fb.astype(np.float32), (9, 9), 0))
+        grad = (np.where(sec, ga[0], gb[0]), np.where(sec, ga[1], gb[1]))
+        aisles = [(Ma, ta), (Mb, tb)]
+    else:
+        dv = fields['R']; grad = None; aisles = []
+    d[ry, rx] = dv
+    l.set_depth(d, grad); l._grad = grad
+    if aisles: l.secmap = sec.astype(np.int32)
+    return bays, aisles, sec
+BAYS5, AISLES5, SEC5 = section_depth(L5, tr(o['L5']['front']))
+print('L5 bays', [round(float(np.linalg.norm(b['bridge'][-1] - b['bridge'][0])), 1) for b in BAYS5], 'aisles', len(AISLES5), 'rows', L5.nrows)
+
+# ── the gaps in the plan's seats ──
+# The seats were read off an image of the plan. Where it leaves a patch of
+# tread unseated (1.8 m or more across every way: aisles and gangways are
+# narrower) it is one of three things: a vomitory's mouth (behind Level 1's
+# walkway, a third of the way up Level 2 and Level 5, one every 12-14 m round
+# the bowl), a tunnel's mouth at pitch level, or a block's number printed
+# over its seats. The mouths are where the vomitories go; the numbers' patches
+# are seated, 0.5 m apart along their rows.
+from standlib import seat_mask
+def plan_blobs(l):
+    from scipy.ndimage import distance_transform_edt as edt
+    occ = cv2.dilate(seat_mask(G, l.raw), disk(0.25 / G.res)) > 0
+    empty = (l.R > 0) & (l.band >= 0) & ~occ
+    core = edt(empty) * G.res > 0.9
+    blob = (edt(~core) * G.res <= 0.9) & empty
+    n_, lab_, st_, _ = cv2.connectedComponentsWithStats(blob.astype(np.uint8), connectivity=8)
+    out = []
+    for k in range(1, n_):
+        area = st_[k, 4] * G.res ** 2
+        if area < 2.0: continue
+        m = lab_ == k; ys, xs = np.nonzero(m); P = np.c_[G.m(xs, ys)]; b = l.band[m]
+        out.append({'m': m, 'area': area, 'rmin': int(b.min()), 'c': P.mean(0), 'P': P, 'len': float(np.ptp(P, axis=0).max())})
+    return out
+def near_tunnel_pts(c):
+    for q in ([-37.0, -62.1], [-36.7, 62.5], [38.1, -64.0], [38.0, 64.1], [52.0, 0.0]):
+        if np.hypot(c[0] - q[0], c[1] - q[1]) < 9.0: return True
+    return False
+MOUTH_ROWS = {'L1': (27, 30), 'L2': (3, 6), 'L5': (11, 14)}
+MOUTHS = {}
+for name_, l_ in LV.items():
+    blobs = plan_blobs(l_); lo, hi = MOUTH_ROWS[name_]
+    small = [b for b in blobs if b['area'] <= 40 and b['len'] <= 9.6 and not near_tunnel_pts(b['c'])]
+    MOUTHS[name_] = [b for b in small if lo <= b['rmin'] <= hi and b['area'] >= 3.0]
+    tree = cKDTree(l_.raw); new = []
+    for b in small:
+        if lo <= b['rmin'] <= hi and b['area'] >= 3.0: continue
+        for r in np.unique(l_.band[b['m']]):
+            if r < 0: continue
+            line = b['m'] & (l_.band == r) & (np.abs(l_.d - (r + 0.55) * l_.D) < 0.05)
+            yy, xx = np.nonzero(line)
+            if not len(xx): continue
+            Q = np.c_[G.m(xx, yy)]; Q = Q[np.argsort(np.arctan2(Q[:, 0], Q[:, 1]))]
+            last = None
+            for q in Q:
+                if tree.query(q)[0] < 0.45: continue
+                if last is None or np.hypot(*(q - last)) >= 0.5: new.append(q); last = q
+    if new:
+        l_.raw = np.r_[l_.raw, np.array(new)]
+        l_.seatmask = seat_mask(G, l_.raw)
+        l_.set_depth(l_.d, getattr(l_, '_grad', None))
+    print('plan gaps', name_, 'mouths', len(MOUTHS[name_]), 'seated', len(new), 'seats ->', len(l_.raw))
+
+# ── the four corner tunnels ──
+# At each corner of the pitch the Level 1 front is cut square across, and
+# from there a tunnel runs straight out under the stand and the concourse to
+# the service road round the building: 7 m wide, 4.5 m clear, flat-roofed.
+# The lowest rows over its mouth are a deck; the rows above roof it.
+TUN_W, TUN_H, DECK_T = 7.0, 4.5, 0.6
+def chamfers(P):
+    Q = resample(P); T = np.roll(Q, -3, 0) - np.roll(Q, 3, 0)
+    if np.sum(Q[:, 0] * np.roll(Q[:, 1], -1) - Q[:, 1] * np.roll(Q[:, 0], -1)) < 0: Q = Q[::-1].copy(); T = -T[::-1]
+    ang = np.degrees(np.arctan2(T[:, 1], T[:, 0])) % 90
+    cand = (np.abs(ang - 45) < 14) & (np.abs(Q[:, 0]) > 25) & (np.abs(Q[:, 1]) > 45)
+    out = []
+    for sx in (-1, 1):
+        for sz in (-1, 1):
+            idx = np.nonzero(cand & (np.sign(Q[:, 0]) == sx) & (np.sign(Q[:, 1]) == sz))[0]
+            runs, cur = [], [idx[0]]
+            for i in idx[1:]:
+                if i == cur[-1] + 1: cur.append(i)
+                else: runs.append(cur); cur = [i]
+            runs.append(cur); r = max(runs, key=len)
+            a, b = Q[r[0]], Q[r[-1]]; t = unit(b - a)
+            u = np.array([t[1], -t[0]])            # the right of the way round: out, into the stand
+            if u @ (a + b) < 0: u = -u
+            out.append({'p': (a + b) / 2, 'u': u})
+    return out
+TUNNELS = chamfers(tr(o['L1']['front']))
+for t in TUNNELS: t.update(w=TUN_W, h=TUN_H, Lmax=90.0, closed=False)
+# the players' tunnel: out of the north stand on to the halfway line, from
+# the dressing rooms under it (the plan leaves its mouth unseated)
+from shapely.geometry import Polygon as _Poly, LineString as _Line
+PT = np.array([max(c[0] for c in _Poly(tr(o['L1']['front'])).exterior.intersection(_Line([(0, 0), (120, 0)])).coords), 0.0]) \
+    if _Poly(tr(o['L1']['front'])).exterior.intersection(_Line([(0, 0), (120, 0)])).geom_type == 'Point' else \
+    np.array([max(g.x for g in _Poly(tr(o['L1']['front'])).exterior.intersection(_Line([(0, 0), (120, 0)])).geoms), 0.0])
+TUNNELS.append({'p': PT, 'u': np.array([1.0, 0.0]), 'w': 4.2, 'h': 3.0, 'Lmax': 24.0, 'closed': True})
+def near_tunnel(P, pad):
+    return any(abs(float((P - t['p']) @ np.array([-t['u'][1], t['u'][0]]))) < t['w'] / 2 + pad and (P - t['p']) @ t['u'] > -2 for t in TUNNELS)
+print('corner tunnels', [(t['p'].round(1).tolist(), t['u'].round(2).tolist()) for t in TUNNELS])
+
 # ── vomitories ──
 def band_line(l, b, frac=0.55):
     # points along the middle of band b, with the outward direction there
@@ -109,9 +298,10 @@ def cut_tunnel(n_, l, P, bw, ro, width):
     q = l.seats - P; al = q @ nv; la = np.abs(q @ np.array([-nv[1], nv[0]]))
     keep &= ~((la < width / 2 + 0.2) & (l.row > bw) & (l.row < ro) & (al > -4) & (al < 12))
     return m, keep, nv
-flights = []; holes_mask = {'L1': np.zeros_like(inside1), 'L5': np.zeros_like(inside1)}; vom_masks = {'L1': [], 'L5': []}
-extra_walls = {'L1': [], 'L5': []}
-def add_vom(n_, l, P, bw, V, width):
+flights = []; holes_mask = {k: np.zeros_like(inside1) for k in ('L1', 'L2', 'L5')}; vom_masks = {'L1': [], 'L2': [], 'L5': []}
+extra_walls = {'L1': [], 'L2': [], 'L5': []}
+FL2 = []          # Level 2's vomitories' steps: kept out of the concourses' reckoning
+def add_vom(n_, l, P, bw, V, width, fl=None):
     nsteps, ro, C = V
     m, keep, nv = cut_tunnel(n_, l, P, bw, ro, width)
     l.seats, l.row, l.yaw = l.seats[keep], l.row[keep], l.yaw[keep]
@@ -120,31 +310,79 @@ def add_vom(n_, l, P, bw, V, width):
     Pf = P + nv * ((bw + 1 - (bw + 0.55)) * l.D)          # the walkway's back edge
     L_ = nsteps * RUN
     x0, z0 = Pf + nv * L_
-    flights.append(dict(x=round(float(x0), 2), z=round(float(z0), 2), dx=round(float(-nv[0]), 4), dz=round(float(-nv[1]), 4), n=nsteps, L=round(L_, 3), y0=C, y1=float(l.h(bw)), w=min(1.8, width - 0.4)))
+    (flights if fl is None else fl).append(dict(x=round(float(x0), 2), z=round(float(z0), 2), dx=round(float(-nv[0]), 4), dz=round(float(-nv[1]), 4), n=nsteps, L=round(L_, 3), y0=C, y1=float(l.h(bw)), w=min(1.8, width - 0.4)))
     # under a slab walkway, close the face below it
     if l.bottom(bw, float(l.h(bw))) > C + 0.05:
         t = np.array([-nv[1], nv[0]]) * width / 2
         a, b = Pf + t, Pf - t
         extra_walls[n_].append([round(float(a[0]), 2), round(float(a[1]), 2), round(float(b[0]), 2), round(float(b[1]), 2), round(C, 2), round(float(l.bottom(bw, float(l.h(bw)))), 2)])
-# L1: a tunnel into each stretch of the walkway behind row 28 (every 14 m of it)
-runs1 = seat_free_runs(L1, 29, 3.5, 60)
-n1 = 0
-for c, L_, a, b in runs1:
-    k = max(1, int(round(L_ / 14)))
-    for i in range(k):
-        P = a + (b - a) * (i + 0.5) / k
-        add_vom('L1', L1, P, 29, V1, 2.4); n1 += 1
-# L5: in every other aisle, a third of the way up
-runs5 = seat_free_runs(L5, 12, 1.0, 3.0)
-n5 = 0
-for i, (c, L_, a, b) in enumerate(runs5):
-    if i % 2: continue
-    add_vom('L5', L5, c, 12, V5, 2.2); n5 += 1
-print('vomitories L1', n1, 'L5', n5, round(time.time() - T0, 1))
+# each at its mouth in the plan: on the row in front of it (Level 1's walkway
+# behind row 28; a third of the way up Level 2 and Level 5), square to the rows
+def mouth_at(n_, l, b, bw):
+    Pl, _ = band_line(l, bw); c = b['c']
+    nv = outward(n_, *c); t = np.array([-nv[1], nv[0]])
+    near = Pl[np.linalg.norm(Pl - c, axis=1) < 25]
+    P = near[np.argmin(np.abs((near - c) @ t))]
+    lat = (b['P'] - c) @ t
+    return P, float(np.clip(np.percentile(lat, 95) - np.percentile(lat, 5), 1.8, 3.2))
+H2v = np.r_[H2]
+V2 = vom_plan(H2v, 4, 0.9)
+print('vom L2 (steps, open row, concourse)', V2)
+n1 = n5 = n2 = 0
+for b in MOUTHS['L1']:
+    P, w = mouth_at('L1', L1, b, 29)
+    if near_tunnel(P, 3.0): continue
+    add_vom('L1', L1, P, 29, V1, max(2.4, w)); n1 += 1
+for b in MOUTHS['L5']:
+    P, w = mouth_at('L5', L5, b, 12)
+    add_vom('L5', L5, P, 12, V5, max(2.2, w)); n5 += 1
+for b in MOUTHS['L2']:
+    P, w = mouth_at('L2', L2, b, 4)
+    add_vom('L2', L2, P, 4, V2, max(2.2, w), fl=FL2); n2 += 1
+print('vomitories L1', n1, 'L2', n2, 'L5', n5, round(time.time() - T0, 1))
+
 # made straight: a rectangle each, the rows too low to walk under cut away
 # over it, the ones above left as the tunnel's roof
-VOMS = {'L1': L1.make_voms(C1, head=2.2, cands=vom_masks['L1'], detect=False), 'L5': L5.make_voms(C5, head=2.2, cands=vom_masks['L5'], detect=False)}
+VOMS = {'L1': L1.make_voms(C1, head=2.2, cands=vom_masks['L1'], detect=False), 'L5': L5.make_voms(C5, head=2.2, cands=vom_masks['L5'], detect=False),
+        'L2': L2.make_voms(V2[2], head=2.2, cands=vom_masks['L2'], detect=False)}
+for v in VOMS['L2']: v['end'] = True           # to the club concourse under the tier, through doors
 print('voms', {k: len(v) for k, v in VOMS.items()})
+
+# ── the press box ──
+# On Level 1 in the north stand, behind the walkway either side of the middle
+# (Wembley's media guide: 186 places, a desk and a screen between every two):
+# the plan leaves it unseated. Desks on every other row, seats behind them.
+PRESS_Z = (14.0, 47.0); PRESS_ROWS = (31, 33, 35, 37, 39, 41)
+def press_box(l):
+    inreg = lambda P: (P[:, 0] > 40) & (np.abs(P[:, 1]) > PRESS_Z[0]) & (np.abs(P[:, 1]) < PRESS_Z[1])
+    drop = inreg(l.seats) & (l.row >= PRESS_ROWS[0] - 1) & (l.row <= PRESS_ROWS[-1] + 1)
+    l.seats, l.row, l.yaw = l.seats[~drop], l.row[~drop], l.yaw[~drop]
+    gz, gx = np.gradient(cv2.GaussianBlur(l.d, (9, 9), 0))
+    X_, Z_ = GX, GZ
+    reg = (X_ > 40) & (np.abs(Z_) > PRESS_Z[0]) & (np.abs(Z_) < PRESS_Z[1])
+    add, desks = [], []
+    for r in PRESS_ROWS:
+        m = (l.band == r) & reg & (np.abs(l.d - (r + 0.55) * l.D) < 0.05)
+        ys, xs = np.nonzero(m)
+        if not len(xs): continue
+        P = np.c_[G.m(xs, ys)]
+        for side in (-1, 1):
+            Q = P[np.sign(P[:, 1]) == side]; Q = Q[np.argsort(Q[:, 1])]
+            last = None
+            for q in Q:
+                if last is None or np.hypot(*(q - last)) >= 0.6:
+                    # not over a gap in the tread (a vomitory's pit)
+                    add.append((q[0], q[1], r)); last = q
+        dm = ((l.band == r - 1) & reg & (l.d >= (r - 1) * l.D + 0.3)).astype(np.uint8)
+        for poly in mask_polys(G, dm, eps=0.03, minarea=0.5):
+            desks.append({'y0': round(float(l.h(r - 1)), 3), 'y': round(float(l.h(r)) + 0.72, 3), 'polys': poly})
+    A_ = np.array(add); P_ = A_[:, :2]; R_ = A_[:, 2].astype(int)
+    ii = np.clip(np.round(G.g(P_[:, 0], P_[:, 1])).astype(int), 0, [[G.W - 1], [G.H - 1]])
+    g = np.c_[gx[ii[1], ii[0]], gz[ii[1], ii[0]]]; g /= np.linalg.norm(g, axis=1)[:, None] + 1e-9
+    l.seats = np.r_[l.seats, P_]; l.row = np.r_[l.row, R_]; l.yaw = np.r_[l.yaw, np.arctan2(-g[:, 0], -g[:, 1])]
+    return len(P_), desks
+n_press, DESKS = press_box(L1)
+print('press box seats', n_press, 'desks', len(DESKS))
 
 # ── concourses ──
 foot = cv2.morphologyEx(((L1.R | L2.R | L5.R) > 0).astype(np.uint8) | inside1.astype(np.uint8), cv2.MORPH_CLOSE, disk(60))
@@ -163,6 +401,31 @@ c2 = outer & (RR > rback(L2) + 0.05) & ~(L2.R > 0)
 c5 = outer & (L5.d >= V5[1] * L5.D) & L5.behind
 c5 |= holes_mask['L5']
 print('masks', round(time.time() - T0, 1))
+
+# the corner tunnels cut: the deck over each mouth, and how far each runs
+TUNM = np.zeros_like(inside1)
+body1 = (L1.hull > 0) | (L1.R > 0) | cv2.dilate(c1.astype(np.uint8), np.ones((3, 3), np.uint8), iterations=3) > 0
+for t in TUNNELS:
+    p, u = t['p'], t['u']; v = np.array([-u[1], u[0]])
+    L_ = 2.0
+    while L_ < t['Lmax']:
+        q = p + u * L_; i_, j_ = [int(round(float(c))) for c in G.g(q[0], q[1])]
+        if not body1[j_, i_]: break
+        L_ += 0.2
+    t['L'] = round(float(L_ + (0.0 if t['closed'] else 1.5)), 2)
+    Q_ = np.c_[GX.ravel() - p[0], GZ.ravel() - p[1]]
+    al = (Q_ @ u).reshape(G.H, G.W); la = np.abs(Q_ @ v).reshape(G.H, G.W)
+    m = (la < t['w'] / 2) & (al > -3.0) & (al < t['L'])
+    TUNM |= m; t['mask'] = m
+    # the deck: the rows over the mouth too low to roof it
+    on = m & (L1.band >= 0)
+    low = on & (L1.h(np.maximum(L1.band, 0)) < t['h'] + DECK_T + 0.01)
+    t['deck'] = round(float(al[low].max()) + 0.05, 2) if low.any() else 0.0
+    L1.R[low] = 0; L1.band[low] = -1
+    q = L1.seats - p; keep = ~((np.abs(q @ v) < t['w'] / 2 + 0.3) & (q @ u > -3) & (q @ u < t['deck'] + 0.3))
+    L1.seats, L1.row, L1.yaw = L1.seats[keep], L1.row[keep], L1.yaw[keep]
+    t['rect'] = [(p + u * a + v * b).round(3).tolist() for a, b in ((-3.0, -t['w'] / 2), (t['L'], -t['w'] / 2), (t['L'], t['w'] / 2), (-3.0, t['w'] / 2))]
+print('tunnels', [(t['L'], t['deck']) for t in TUNNELS])
 
 # ── stairs between the concourses, out in the ring behind the stands ──
 WID = 1.6
@@ -240,10 +503,28 @@ def outside_fn(pairs):
     return f
 grow = lambda c: cv2.dilate(c.astype(np.uint8), np.ones((3, 3), np.uint8), iterations=3) > 0
 slabs = [(grow_under(c, y, [L1, L2, L5]), y0, y) for c, y0, y in ((c1, 0.0, C1), (c2, C2 - 0.35, C2), (c5, C5 - 0.35, C5))]
+# the corner tunnels on under the concourse: its floor over them is a slab
+# from the tunnel's roof up
+s1_ = slabs[0][0]; slabs[0] = (s1_ & ~TUNM, 0.0, C1)
+for t in TUNNELS:
+    if (s1_ & t['mask']).any(): slabs.insert(1, (s1_ & t['mask'], t['h'], C1))
 # ── the concourses closed in ──
 t_ = time.time()
+# the club tier's rear walkway: between the back of Level 2 and the front of
+# Level 5 above (which stands 1.6-7 m further out), open to the bowl, with the
+# boxes' and the concourse's wall and doors behind it under Level 5's front
+WALK2 = c2 & (L5.d < 0.4) & dil(L2.R > 0, 9.0)
+def door_out(p):
+    q = np.array(p, float); u = q / (np.linalg.norm(q) + 1e-9)
+    for _ in range(120):
+        i_, j_ = [int(round(float(c))) for c in G.g(q[0], q[1])]
+        if not WALK2[j_, i_] and not (L2.R[j_, i_] > 0): break
+        q = q + u * 0.1
+    return [round(float(q[0]), 2), round(float(q[1]), 2)]
+doors2 = [door_out(p) for p in L2.aisle_doors()]
+print('walkway L2', int(WALK2.sum() * G.res ** 2), 'm2; doors', len(doors2))
 rooms = [{'name': 'L1', 'mask': c1, 'y': C1, 'cl': 4.0, 'own': [L1], 'doors': [], 'open': L1.pits},
-         {'name': 'L2', 'mask': c2, 'y': C2, 'cl': 4.0, 'own': [L2], 'doors': L2.aisle_doors()},
+         {'name': 'L2', 'mask': c2, 'y': C2, 'cl': 4.0, 'own': [L2], 'doors': doors2, 'walk': WALK2},
          {'name': 'L5', 'mask': c5, 'y': C5, 'cl': 4.0, 'own': [L5], 'doors': [], 'open': L5.pits}]
 trim_tunnels(G, VOMS['L1'], c1); trim_tunnels(G, VOMS['L5'], c5)
 # numbered round each level from the north, as Wembley's blocks are
@@ -251,19 +532,90 @@ for name, vs in VOMS.items():
     vs.sort(key=lambda v: np.arctan2(v['p'][1], v['p'][0]) % (2 * np.pi))
     for i, v in enumerate(vs): v['label'] = f"{name[1]}{i + 1:02d}"
 encl, roomtop = enclose(G, rooms, [L1, L2, L5], slabs, flights)
+flights += FL2
 print('enclose', round(time.time() - t_, 1), {k: len(v) for k, v in encl.items()})
-skip = lambda ox, oy, h: roomtop[oy, ox] >= h + 1.0
+skip = lambda ox, oy, h: roomtop[oy, ox] >= h + 1.0 or (WALK2[oy, ox] and abs(h - C2) <= 0.6)
 fronts = {'L2': ('tread', 0.8), 'L5': ('tread', 0.8)}
+from shapely.geometry import Polygon, MultiPolygon
+def tunnel_rows(rows):
+    # over a corner tunnel the rows stand on its flat roof, not the ground
+    rects = [(Polygon(t['rect']), t['h']) for t in TUNNELS]
+    out = []
+    for r in rows:
+        if r['y0'] >= TUN_H: out.append(r); continue
+        keep, over = [], {}
+        for polys in r['polys']:
+            g = Polygon(polys[0], polys[1:]).buffer(0)
+            for rc, th in rects:
+                if r['y'] < th + DECK_T or r['y0'] >= th: continue
+                i_ = g.intersection(rc)
+                if not i_.is_empty: over.setdefault(th, []).append(i_)
+                g = g.difference(rc)
+            keep.append(g)
+        def emit(geoms):
+            ps = []
+            for g in geoms:
+                for q in (g.geoms if hasattr(g, 'geoms') else [g]):
+                    if q.geom_type != 'Polygon' or q.area < 0.05: continue
+                    ps.append([[[round(float(x), 2), round(float(z), 2)] for x, z in list(q.exterior.coords)[:-1]]] +
+                              [[[round(float(x), 2), round(float(z), 2)] for x, z in list(h.coords)[:-1]] for h in q.interiors])
+            return ps
+        out.append({**r, 'polys': emit(keep)})
+        for th, gs in over.items():
+            ov = emit(gs)
+            if ov: out.append({**r, 'y0': th, 'polys': ov})
+    return out
 levels = []
 spec = {'L1': ((inside1, 0.0), (c1, C1)), 'L2': ((c2, C2),), 'L5': ((c5, C5),)}
 flushmode = {'L1': 'open', 'L2': 'doors', 'L5': 'open'}
 for name, l in LV.items():
     rails, walls = edge_walls(G, l, outside_fn(spec[name]), l.aisle_doors() if name == 'L2' else (), flush=flushmode[name], skip=skip, front=fronts.get(name))
+    if fronts.get(name): rails += front_parapet(G, l, fronts[name])
     holes = []
+    rows_ = l.rows_out()
+    if name == 'L1': rows_ = tunnel_rows(rows_)
     levels.append({'name': name, 'D': l.D, 'h0': float(l.h(0)), 'rise': 0, 'hs': [round(float(v), 3) for v in l.hs],
-                   'rows': l.rows_out(), 'steps': l.aisles_out(), 'holes': holes, 'voms': VOMS.get(name, []),
+                   'rows': rows_, 'steps': l.aisles_out(), 'holes': holes, 'voms': VOMS.get(name, []),
                    'seats': l.seats_out(), 'rails': rails, 'walls': walls + extra_walls.get(name, [])})
     print(name, 'rows', len(levels[-1]['rows']), 'steps', len(levels[-1]['steps']), 'holes', len(holes), 'rails', len(rails), 'walls', len(walls), 'seats', len(l.seats))
+# Level 5's aisles at the north side's steps: where the corner blocks' rows
+# and the north side's meet at different heights, a wall with a rail on it
+def aisle_walls(l, aisles):
+    out = []
+    bots = np.array([l.bot(r) for r in range(l.nrows)])
+    def at(q):
+        i_, j_ = [int(round(float(c))) for c in G.g(q[0], q[1])]
+        b = l.band[j_, i_]
+        return (float(l.h(b)), float(bots[b])) if b >= 0 else None
+    for M, t in aisles:
+        n = np.array([t[1], -t[0]]); cur = None
+        for u in np.arange(0.0, 60.0, 0.25):
+            q = M + n * u; a, b = at(q - t * 0.35), at(q + t * 0.35)
+            seg = None
+            if a and b and abs(a[0] - b[0]) > 0.05:
+                seg = (round(min(a[1], b[1]), 2), round(max(a[0], b[0]) + 1.0, 2))
+            if cur and seg and abs(seg[0] - cur[2][0]) < 0.02 and abs(seg[1] - cur[2][1]) < 0.02: cur[1] = u + 0.25; continue
+            if cur: out.append(cur)
+            cur = [u, u + 0.25, seg] if seg else None
+        if cur: out.append(cur)
+        out = [c for c in out if c]
+        yield from ([*(M + n * c[0]).round(2).tolist(), *(M + n * c[1]).round(2).tolist(), c[2][0], c[2][1]] for c in out)
+        out = []
+for lv in levels:
+    if lv['name'] == 'L5': lv['walls'] += list(aisle_walls(L5, AISLES5))
+# the bays in Level 5's front: the big screens' housings at the ends, the
+# media box on the south side, filling each up to the rows behind it
+bays_out = []
+for b in BAYS5:
+    A, B = b['actual'], b['bridge']
+    dep = float(cKDTree(resample(B, 0.1, closed=False)).query(A)[0].max())
+    top = float(L5.h(int(np.ceil(dep / L5.D))))
+    mid = (A[0] + A[-1]) / 2
+    bays_out.append({'ring': poly_out([np.r_[A, B[::-1][1:-1]]], 2)[0], 'mouth': [B[0].round(2).tolist(), B[-1].round(2).tolist()],
+                     'front': poly_out([B], 2)[0], 'depth': round(dep, 2), 'y1': round(top, 2), 'y0': round(float(L5.h(0)) - 1.5, 2),
+                     'kind': 'screen' if abs(mid[1]) > 90 else 'box'})
+print('bays', [(b['kind'], b['depth'], b['y1']) for b in bays_out])
+tunnels_out = [{'p': t['p'].round(3).tolist(), 'u': t['u'].round(4).tolist(), 'w': t['w'], 'h': t['h'], 'L': t['L'], 'deck': t['deck'], 'deckY': t['h'] + DECK_T, 'closed': t['closed']} for t in TUNNELS]
 floors = [{'y': y, 'y0': y0, 'polys': mask_polys(G, m)} for m, y0, y in slabs]
 ow = contours(G, outer.astype(np.uint8), eps=0.03, minarea=100)
 fw = contours(G, inside1.astype(np.uint8), eps=0.03, minarea=100)
@@ -271,7 +623,7 @@ fw = contours(G, inside1.astype(np.uint8), eps=0.03, minarea=100)
 roof_in = contours(G, dil(inside1, 5.0).astype(np.uint8), eps=0.04, minarea=100)
 data = {'levels': levels, 'floors': floors, 'flights': flights, 'outer': [poly_out(p) for p in ow],
         'field': [poly_out(p) for p in fw], 'roofIn': [poly_out(p) for p in roof_in],
-        'concourse': {'L1': C1, 'L2': C2, 'L5': C5}, 'rooms': encl}
+        'concourse': {'L1': C1, 'L2': C2, 'L5': C5}, 'rooms': encl, 'bays': bays_out, 'tunnels': tunnels_out, 'desks': DESKS}
 json.dump(data, open('wb_stands.json', 'w'), separators=(',', ':'))
 import os; print('json KB', os.path.getsize('wb_stands.json') // 1024, round(time.time() - T0, 1))
 pickle.dump({'c1': c1, 'c2': c2, 'c5': c5, 'inside1': inside1, 'outer': outer}, open('wb_masks.pkl', 'wb'))

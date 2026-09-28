@@ -7,7 +7,7 @@ import { findVenue } from './data.js';
 import Scene from './components/Scene.jsx';
 import TopBar from './components/TopBar.jsx';
 import BottomTransport from './components/BottomTransport.jsx';
-import { LeftDataPanel, RightDataPanel, SeatChip } from './components/Panels.jsx';
+import { LeftDataPanel, RightDataPanel } from './components/Panels.jsx';
 import { FilePicker, VenuePicker } from './components/Modals.jsx';
 import QueuePanel from './components/QueuePanel.jsx';
 import MobileLayout from './components/MobileLayout.jsx';
@@ -512,8 +512,7 @@ export default function App() {
         onCrowdLightChange={setCrowdLight}
       />
       <LeftDataPanel venue={venue} />
-      <RightDataPanel venue={venue} file={displayFile} />
-      <SeatChip venue={venue} />
+      <RightDataPanel file={displayFile} />
       <QueuePanel queue={queue} onJump={jumpTo} onRemove={removeFromQueue} playing={playing} />
 
       {/* call-to-action before any file is loaded — sits BELOW the album art so

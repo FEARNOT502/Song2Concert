@@ -11,7 +11,8 @@ function buildArena(ctx) {
   const root = new THREE.Group();
   const H = 38;
   const DECK = 2.2, RIG = 20;
-  const eye = V3(0, 1.6 + 0.9, 52);
+  // FOH, and the listener there: at the back of the floor's seats
+  const eye = V3(0, 1.6 + 0.9, 81.4);
   const STAGE = V3(0, DECK, 8);
 
   // ── the stands, from the official seat map ──
@@ -27,7 +28,9 @@ function buildArena(ctx) {
   const OZ = 45;                       // the floor's centre, in this room's coordinates
   const stands = buildStands(SSA_STANDS, {
     offset: V3(0, 0, OZ), stage: STAGE, seed: 200, concreteTone: 0.2, roofY: H,
-    seatColors: { 200: 0x1c1d22, 300: 0x9a1c16, 400: 0x1c1d22, 500: 0x1c1d22 },
+    seatColors: { 200: 0x1c1d22, 300: 0xc8341e, 400: 0x1c1d22, 500: 0x1c1d22 },
+    // the 300 level, the VIP balcony: red seats in boxes behind a dark mesh front
+    materials: { levelRail: { 300: std({ color: 0x141518, roughness: 0.55, metalness: 0.4, side: THREE.DoubleSide }) } },
     crowd: !!q.crowd,
     // nobody behind the masking
     sold: (x, z) => z > 3,

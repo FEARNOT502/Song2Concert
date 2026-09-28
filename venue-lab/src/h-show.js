@@ -134,7 +134,7 @@ function bigScreens(ctx, root, { w, y, z, imagW, imagX, imagY, imagZ, imagYaw, p
 // truss that holds the LED wall, a black backdrop only as wide as the set, wings
 // either side to hide backstage, and the road cases that live back there. The
 // building's own stands stay visible round it.
-function stageSet(root, { w, h, z, deck, towerX, backdropW, backdropH, wingX, wingW = 10, wingH = 12 }) {
+function stageSet(root, { w, h, z, deck, towerX, backdropW, backdropH, wingX, wingW = 10, wingH = 12, drapes = true }) {
   const M = mats();
   const parts = [];
   for (const x of [-towerX, towerX]) latticeInto(parts, V3(x, deck, z - 0.6), V3(x, deck + h, z - 0.6), 1.0, 0.05);
@@ -142,12 +142,16 @@ function stageSet(root, { w, h, z, deck, towerX, backdropW, backdropH, wingX, wi
   // raked braces back to the deck
   for (const x of [-towerX, towerX]) latticeInto(parts, V3(x, deck, z - 4.5), V3(x, deck + h * 0.6, z - 0.9), 0.5, 0.03);
   root.add(new THREE.Mesh(mergeGeometries(parts), M.black));
-  const bv = velvet(0x040404, 'blackvel', { sheenColor: new THREE.Color(0x121212) });
-  const drop = new THREE.Mesh(drapeGeometry(backdropW, backdropH, Math.round(backdropW / 1.6), 0.18), bv);
-  drop.position.set(0, deck + backdropH / 2, z - 1.4); root.add(drop);
-  for (const s of [-1, 1]) {
-    const wing = new THREE.Mesh(drapeGeometry(wingW, wingH, Math.round(wingW / 1.4), 0.16), bv);
-    wing.position.set(s * wingX, deck + wingH / 2, z + 0.6); wing.rotation.y = -s * 0.25; root.add(wing);
+  // the black drop behind the set and the wings either side (a stage out in
+  // the open of a ballpark has none)
+  if (drapes) {
+    const bv = velvet(0x040404, 'blackvel', { sheenColor: new THREE.Color(0x121212) });
+    const drop = new THREE.Mesh(drapeGeometry(backdropW, backdropH, Math.round(backdropW / 1.6), 0.18), bv);
+    drop.position.set(0, deck + backdropH / 2, z - 1.4); root.add(drop);
+    for (const s of [-1, 1]) {
+      const wing = new THREE.Mesh(drapeGeometry(wingW, wingH, Math.round(wingW / 1.4), 0.16), bv);
+      wing.position.set(s * wingX, deck + wingH / 2, z + 0.6); wing.rotation.y = -s * 0.25; root.add(wing);
+    }
   }
   // road cases stacked backstage, just visible past the wings
   const rnd = prng(17);
@@ -165,6 +169,46 @@ function stageSet(root, { w, h, z, deck, towerX, backdropW, backdropH, wingX, wi
 // whatever is under it — the floor, or the treads of the stands it crosses —
 // in a line from `a` to `b` ([x, z]), so the seats behind it (not sold) are
 // out of sight. `skip(x, z)` leaves a gap (the stage and its set).
+// A wall along a line as one continuous piece: its face, its back and its
+// top a single strip each, the height given per point and eased along the
+// line, so a curve is a curve and a change of height a slope — no seams, no
+// steps where one segment's box would end and the next begin.
+//   pts [{x, z}], hs [top per point], { y0 = 0 (or a list), thick, closed }
+function wallStrip(pts, hs, { y0 = 0, thick = 0.3, closed = false, ease = 2 } = {}) {
+  const n = pts.length;
+  if (n < 2) return null;
+  // ease the heights: a moving average over `ease` points either side
+  const H = hs.map((_, i) => {
+    let s = 0, w = 0;
+    for (let k = -ease; k <= ease; k++) {
+      const j = closed ? (i + k + n) % n : Math.min(n - 1, Math.max(0, i + k));
+      const wk = 1 + ease - Math.abs(k); s += hs[j] * wk; w += wk;
+    }
+    return s / w;
+  });
+  const B = Array.isArray(y0) ? y0 : pts.map(() => y0);
+  // the offset either side: the mitred normal at each point
+  const nrm = pts.map((p, i) => {
+    const a = pts[closed ? (i - 1 + n) % n : Math.max(0, i - 1)], b = pts[closed ? (i + 1) % n : Math.min(n - 1, i + 1)];
+    const dx = b.x - a.x, dz = b.z - a.z, l = Math.hypot(dx, dz) || 1;
+    return [-dz / l * thick / 2, dx / l * thick / 2];
+  });
+  const P = [];
+  const quad = (a, b, c, d) => P.push(...a, ...b, ...c, ...a, ...c, ...d);
+  const m = closed ? n : n - 1;
+  for (let i = 0; i < m; i++) {
+    const j = (i + 1) % n, a = pts[i], b = pts[j], na = nrm[i], nb = nrm[j];
+    const fa = [a.x + na[0], a.z + na[1]], fb = [b.x + nb[0], b.z + nb[1]], ba = [a.x - na[0], a.z - na[1]], bb = [b.x - nb[0], b.z - nb[1]];
+    quad([fa[0], B[i], fa[1]], [fb[0], B[j], fb[1]], [fb[0], H[j], fb[1]], [fa[0], H[i], fa[1]]);
+    quad([bb[0], B[j], bb[1]], [ba[0], B[i], ba[1]], [ba[0], H[i], ba[1]], [bb[0], H[j], bb[1]]);
+    quad([fa[0], H[i], fa[1]], [fb[0], H[j], fb[1]], [bb[0], H[j], bb[1]], [ba[0], H[i], ba[1]]);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.computeVertexNormals();
+  return g;
+}
+
 function maskingDrapes(root, { a, b, top, bottomAt = () => 0, skip = null, panel = 2.4 }) {
   const dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz), ux = dx / L, uz = dz / L;
   const yaw = Math.atan2(-uz, ux);
@@ -200,7 +244,7 @@ function packFloor({ x0, x1, z0, z1, spacing = 0.62, avoid = null, seed = 3, ins
       const px = x + (rnd() - 0.5) * spacing * 0.8, pz = z + (rnd() - 0.5) * spacing * 0.7;
       if (avoid && avoid(px, pz)) continue;
       if (inside && !inside(px, pz)) continue;
-      out.push({ x: px, y: 0, z: pz, h: 0.92 + rnd() * 0.14 });
+      out.push({ x: px, y: 0, z: pz, h: 0.92 + rnd() * 0.14, full: true });
     }
   }
   return out;
@@ -220,7 +264,7 @@ function floorBlocks(blocks, { seat = 0.5, pitch = 0.9, seed = 5, occupancy = 0.
       const x = ox + i * seat, z = b.z0 + (j + 0.5) * pitch;
       if (keep && !keep(x, z)) continue;
       chairs.push({ x, y: 0, z: z + 0.16, turn: Math.PI });
-      if (rnd() < occupancy) people.push({ x: x + (rnd() - 0.5) * 0.08, y: 0, z: z - 0.16 + (rnd() - 0.5) * 0.06, h: 0.92 + rnd() * 0.14 });
+      if (rnd() < occupancy) people.push({ x: x + (rnd() - 0.5) * 0.08, y: 0, z: z - 0.16 + (rnd() - 0.5) * 0.06, h: 0.92 + rnd() * 0.14, full: true });
     }
   }
   return { people, chairs };

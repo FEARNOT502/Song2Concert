@@ -2,7 +2,8 @@
 // DOME — Tokyo Dome: an air-supported membrane over a round bowl, 1.24 million
 // m³, from FOH 55 m out on the field. Blue seats in the 1st-floor stand, the
 // balcony band, the steep 2nd-floor stand under the roof; arena seats in
-// blocks on the field; a catwalk to a B-stage; a sea of lightsticks under
+// blocks on the field; a short runway to a long stage across the field; a
+// sea of lightsticks under
 // central control.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -11,33 +12,46 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { APP, DEG, KELVIN, V3, clamp, floorPanelTex, glowMat, lerp, std } from '../core.js';
 import { lightPoints } from '../people.js';
 import { hoists, latticeInto, ledScreen, lineArray, mats, micStand, shadowSpot, stageDeck, stageSteps, subStack, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, blockGrid, floorBlocks, floorChairs, fohPosition, runLasers, runShow, section, stageSet } from '../show.js';
+import { bigCrowd, bigScreens, blockGrid, floorBlocks, floorChairs, fohPosition, runLasers, runShow, section, stageSet, wallStrip } from '../show.js';
 import { buildStands } from '../stands.js';
 import { TD_STANDS } from './td-data.js';
 
 export function membraneMaterial() {
-  const m = std({ color: 0xd8d8d4, roughness: 0.95, side: THREE.BackSide });
+  // The roof from inside, as it looks: a cable net in two families on the
+  // diagonal, 8.5 m apart, the membrane between them held up by the air in
+  // shallow pillows — each a soft bulge, lighter in its middle, a darker
+  // crease along the cables — the whole a warm off-white, lit through by the
+  // daylight outside (it lets about a twentieth of it through).
+  const m = std({ color: 0xe9dcc4, roughness: 0.92, side: THREE.BackSide });
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uBounce = { value: new THREE.Color(0) };
     m.userData.shader = sh;
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWP;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vWP; uniform vec3 uBounce;')
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        {
+          // the pillow's bulge tilts the normal away from its middle
+          vec2 p = vec2(vWP.x + vWP.z, vWP.x - vWP.z) / (8.5 * 1.4142);
+          vec2 d = fract(p) - 0.5;
+          vec3 tx = normalize(vec3(1.0, 0.0, 1.0)), tz = normalize(vec3(1.0, 0.0, -1.0));
+          normal = normalize(normal + (tx * d.x + tz * d.y) * 0.9);
+        }`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         {
-          // the cable net: two families at 45 degrees, eight and a half metres apart
           vec2 p = vec2(vWP.x + vWP.z, vWP.x - vWP.z) / (8.5 * 1.4142);
           vec2 d = abs(fract(p) - 0.5);
-          vec2 w = fwidth(p) * 1.2;
-          float cable = 1.0 - min(smoothstep(0.0, w.x + 0.004, 0.5 - d.x), smoothstep(0.0, w.y + 0.004, 0.5 - d.y));
-          diffuseColor.rgb *= 1.0 - 0.55 * cable;
-          // panel seams and a soft sag between cables
-          float sag = 0.9 + 0.1 * (d.x + d.y);
-          diffuseColor.rgb *= sag;
-          totalEmissiveRadiance += uBounce * (1.0 - 0.6 * cable) * sag;
+          vec2 w = fwidth(p);
+          // the crease along each cable, soft either side
+          float crease = 1.0 - min(smoothstep(0.0, 0.07 + w.x, 0.5 - d.x), smoothstep(0.0, 0.07 + w.y, 0.5 - d.y));
+          float cable = 1.0 - min(smoothstep(0.0, w.x * 1.2 + 0.004, 0.5 - d.x), smoothstep(0.0, w.y * 1.2 + 0.004, 0.5 - d.y));
+          // the bulge: lighter in the middle of each pillow
+          float bulge = 1.0 - 0.9 * dot(d, d);
+          diffuseColor.rgb *= bulge * (1.0 - 0.35 * crease) * (1.0 - 0.5 * cable);
+          totalEmissiveRadiance += uBounce * bulge * (1.0 - 0.4 * crease);
         }`);
   };
-  m.customProgramCacheKey = () => 'membrane';
+  m.customProgramCacheKey = () => 'membrane2';
   return m;
 }
 
@@ -45,7 +59,8 @@ export function buildDome(ctx) {
   const { pipe, q, cu } = ctx;
   const root = new THREE.Group();
   const DECK = 2.6, RIG = 32;
-  const eye = V3(0, 1.6 + 1.0, 70);
+  // FOH, and the listener there: at the back of the field's seats
+  const eye = V3(0, 1.6 + 1.0, 104);
   const STAGE = V3(0, DECK, 12);
   // The ballpark as the official seating map draws it: the field is the open
   // ground inside the 1st floor's front rows; home plate is behind FOH, the
@@ -73,10 +88,11 @@ export function buildDome(ctx) {
   // walkway between, the passages from its concourse opening onto it.
   const stands = buildStands(TD_STANDS, {
     offset: OFF, stage: STAGE, seed: 400, concreteTone: 0.28, roofY: 46.5,
-    seatColors: { A: 0x1d3c86, B: 0x1d3c86, F: 0x1d3c86, C: 0x7a1a20, D: 0x1d3c86, E: 0x1d3c86 },
+    seatColors: { A: 0x1d3c86, B: 0x1d3c86, F: 0x141417, G: 0x1d3c86, C: 0x7a1a20, D: 0x1d3c86, E: 0x1d3c86 },
     crowd: !!q.crowd,
     // nobody behind or beside the set
-    sold: (x, z) => z > 14,
+    // nobody behind or beside the set, nor out in the outfield stands
+    sold: (x, z, name) => z > 14 && name !== 'F',
   });
   root.add(stands.group);
   // the boxes behind home at the balcony's level (S101–110 and S301–310
@@ -112,25 +128,44 @@ export function buildDome(ctx) {
   // the wall in front of the 1st floor: padded 4.0 m with 0.24 m of net and the
   // yellow line in the outfield, a low padded wall along the lines (for a
   // concert the backstop net behind home plate is taken down)
-  const pad = [], line = [], net = [];
-  for (let k = 0; k < fieldRing.length; k++) {
-    const a = fieldRing[k], b = fieldRing[(k + 1) % fieldRing.length];
-    const mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2;
-    const len = Math.hypot(b.x - a.x, b.z - a.z);
-    if (len < 0.05) continue;
-    const ang = -Math.atan2(b.z - a.z, b.x - a.x);
-    const outfield = Math.hypot(mx, mz - ZH) > 92 && phi(mx, mz) < 46;
-    const seg = (hh, y, list, d = 0.36) => { const g = new THREE.BoxGeometry(len + 0.04, hh, d); g.rotateY(ang); g.translate(mx, y, mz); list.push(g); };
-    // up to the front of the stand behind it (towards the poles the front
-    // rows stand high, the fence having cut off the ones below)
-    const nx = -(b.z - a.z) / len, nz = (b.x - a.x) / len, sd = nx * (mx - 0) + nz * (mz - (ZH - 60)) > 0 ? 1 : -1;
-    const top = stands.topAt(mx + nx * sd * 0.6, mz + nz * sd * 0.6);
-    if (outfield) { const hh = Math.max(4.0, top); seg(hh, hh / 2, pad); if (hh < 4.9) { seg(0.12, hh + 0.02, line, 0.4); seg(0.24, hh + 0.16, net, 0.04); } }
-    else { const hh = Math.max(1.2, top); seg(hh, hh / 2, pad); }
+  // one continuous wall round the field, its height eased along it
+  const ringPts = [], ringH = [], ringOut = [];
+  {
+    // the traced ring resampled evenly, every half metre
+    const src = fieldRing.concat([fieldRing[0]]);
+    let acc = 0;
+    for (let k = 0; k + 1 < src.length; k++) {
+      const a = src[k], b = src[k + 1], len = Math.hypot(b.x - a.x, b.z - a.z);
+      for (let t = acc; t < len; t += 0.5) ringPts.push({ x: a.x + (b.x - a.x) * t / len, z: a.z + (b.z - a.z) * t / len });
+      acc = Math.max(0, (Math.ceil((len - acc) / 0.5) * 0.5 + acc) - len);
+    }
+    const n = ringPts.length;
+    for (let i = 0; i < n; i++) {
+      const a = ringPts[(i - 1 + n) % n], b = ringPts[(i + 1) % n], p = ringPts[i];
+      const len = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+      const nx = -(b.z - a.z) / len, nz = (b.x - a.x) / len, sd = nx * p.x + nz * (p.z - (ZH - 60)) > 0 ? 1 : -1;
+      // up to the front of the stand behind it (towards the poles the front
+      // rows stand high, the fence having cut off the ones below)
+      const top = stands.topAt(p.x + nx * sd * 0.6, p.z + nz * sd * 0.6);
+      const outfield = Math.hypot(p.x, p.z - ZH) > 92 && phi(p.x, p.z) < 46;
+      ringOut.push(outfield);
+      ringH.push(outfield ? Math.max(4.0, top) : Math.max(1.2, top));
+    }
   }
-  root.add(new THREE.Mesh(mergeGeometries(pad), std({ color: 0x163a78, roughness: 0.8 })));
-  root.add(new THREE.Mesh(mergeGeometries(line), glowMat(0xe8c830, 0.45)));
-  root.add(new THREE.Mesh(mergeGeometries(net), std({ color: 0x151515, roughness: 1, transparent: true, opacity: 0.6 })));
+  const padGeo = wallStrip(ringPts, ringH, { thick: 0.36, closed: true, ease: 6 });
+  root.add(new THREE.Mesh(padGeo, std({ color: 0x0f3a24, roughness: 0.8 })));
+  // the yellow line along the top of the outfield fence, and its net
+  {
+    const n = ringPts.length, eased = ringH.map((_, i) => { let s = 0, w = 0; for (let k = -6; k <= 6; k++) { const wk = 7 - Math.abs(k); s += ringH[(i + k + n) % n] * wk; w += wk; } return s / w; });
+    let i0 = ringOut.findIndex((o, i) => o && !ringOut[(i - 1 + n) % n]);
+    if (i0 >= 0) {
+      const run = [];
+      for (let k = 0; k < n && ringOut[(i0 + k) % n]; k++) run.push((i0 + k) % n);
+      const pts = run.map((i) => ringPts[i]), top = run.map((i) => eased[i]);
+      const lineGeo = wallStrip(pts, top.map((h) => h + 0.12), { y0: top.map((h) => h + 0.005), thick: 0.4, ease: 0 });
+      if (lineGeo) root.add(new THREE.Mesh(lineGeo, glowMat(0xe8c830, 0.45)));
+    }
+  }
   // the foul poles, where the lines meet the fence
   for (const sd of [-1, 1]) {
     const r = 100, x = sd * r * Math.SQRT1_2, z = ZH - r * Math.SQRT1_2;
@@ -178,55 +213,34 @@ export function buildDome(ctx) {
     g.computeVertexNormals();
     root.add(new THREE.Mesh(g, membrane));
   }
-  // the ring beam the membrane is anchored to
-  // what hangs from the cable net (as at the real building): a gondola at the
-  // crown with the centre speaker cluster and the TV camera, 21 speaker
-  // clusters round the edge of the membrane, and 14 banks of field lights
-  const hang = [];
-  const cable = (x, z, y0) => { const top = roofAt(x, z); const c = new THREE.CylinderGeometry(0.03, 0.03, top - y0, 4); c.translate(x, (top + y0) / 2, z); hang.push(c); };
-  const gondola = new THREE.Group();
-  const gy = APEX - 8;
-  const pod = new THREE.Mesh(new THREE.CylinderGeometry(3.4, 2.8, 3.2, 24), std({ color: 0x1a1a1e, roughness: 0.6, metalness: 0.4 }));
-  pod.position.set(0, gy, ZC); gondola.add(pod);
-  for (let i = 0; i < 12; i++) {
-    const a = (i / 12) * Math.PI * 2;
-    const la = lineArray({ boxes: 4, width: 1.0, depth: 0.6, height: 0.36 });
-    la.position.set(Math.sin(a) * 3.0, gy - 1.6, ZC + Math.cos(a) * 3.0); la.rotation.y = a; gondola.add(la);
-  }
-  const cam = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.6, 1.2), std({ color: 0x2a2a2e, roughness: 0.4, metalness: 0.5 }));
-  cam.position.set(0, gy - 3.4, ZC); gondola.add(cam);
-  root.add(gondola);
-  for (const [dx, dz] of [[-2.4, -2.4], [2.4, -2.4], [-2.4, 2.4], [2.4, 2.4]]) cable(dx, ZC + dz, gy + 1.6);
-  for (let i = 0; i < 21; i++) {
-    const { x, z } = edge((i / 21) * Math.PI * 2 + 0.1, 0.8);
-    const y = roofAt(x, z) - 6;
-    const sp = lineArray({ boxes: 6, width: 1.1, depth: 0.62, height: 0.36 });
-    sp.position.set(x, y, z); sp.rotation.y = Math.atan2(-x, ZC - z); root.add(sp);
-    cable(x, z, y + 0.2);
-  }
+  // Nothing hangs from the roof: the light by day is the membrane's own,
+  // daylight through it. The dome's lights are banks along the top of the
+  // stands, round from the 1st-base pole behind home to the 3rd-base pole,
+  // under the membrane's edge, aimed down at the field.
+  // (the ring angle a: 0 and 2π along +x; home plate is at +z of the centre)
+  const onArc = (a) => { const e = edge(a, 1); return Math.abs(Math.atan2(e.x, e.z - ZC)) < 2.25; };
+  const bankAngles = [];
+  for (let i = 0; i < 40; i++) { const a = (i / 40) * Math.PI * 2; if (onArc(a)) bankAngles.push(a); }
   const bankLamps = [];
   const bankM = new THREE.MeshBasicMaterial({ color: 0x000000, toneMapped: false });
   const bankFrames = [];
-  for (let i = 0; i < 14; i++) {
-    const { x, z } = edge((i / 14) * Math.PI * 2 + 0.22, 0.56);
-    const y = roofAt(x, z) - 5;
+  for (const a of bankAngles) {
+    const { x, z } = edge(a, 0.985);
+    const y = YE - 1.2;
     const yaw = Math.atan2(-x, ZC - z);
-    const fr = new THREE.BoxGeometry(8, 0.3, 2.4); fr.rotateX(0.5); fr.rotateY(yaw); fr.translate(x, y, z); bankFrames.push(fr);
-    for (let u = 0; u < 7; u++) for (let v = 0; v < 2; v++) {
-      const lx = -3.3 + u * 1.1, lz = -0.55 + v * 1.1;
-      const p = V3(lx, -0.2, lz).applyAxisAngle(V3(1, 0, 0), 0.5).applyAxisAngle(V3(0, 1, 0), yaw).add(V3(x, y, z));
+    const fr = new THREE.BoxGeometry(7, 0.3, 1.6); fr.rotateX(0.7); fr.rotateY(yaw); fr.translate(x, y, z); bankFrames.push(fr);
+    for (let u = 0; u < 6; u++) for (let v = 0; v < 2; v++) {
+      const lx = -2.75 + u * 1.1, lz = -0.4 + v * 0.8;
+      const p = V3(lx, -0.2, lz).applyAxisAngle(V3(1, 0, 0), 0.7).applyAxisAngle(V3(0, 1, 0), yaw).add(V3(x, y, z));
       bankLamps.push(p);
     }
-    cable(x - Math.cos(yaw) * 3, z + Math.sin(yaw) * 3, y);
-    cable(x + Math.cos(yaw) * 3, z - Math.sin(yaw) * 3, y);
   }
   root.add(new THREE.Mesh(mergeGeometries(bankFrames), std({ color: 0x202024, roughness: 0.6, metalness: 0.4 })));
-  const lampG = new THREE.CircleGeometry(0.4, 12);
+  const lampG = new THREE.CircleGeometry(0.35, 12);
   const lampI = new THREE.InstancedMesh(lampG, bankM, bankLamps.length);
   const lm4 = new THREE.Matrix4(), lq = new THREE.Quaternion().setFromUnitVectors(V3(0, 0, 1), V3(0, -1, 0));
   bankLamps.forEach((p, i) => { lm4.compose(p, lq, V3(1, 1, 1)); lampI.setMatrixAt(i, lm4); });
   root.add(lampI);
-  root.add(new THREE.Mesh(mergeGeometries(hang), std({ color: 0x303036, roughness: 0.5, metalness: 0.6 })));
   // the outer wall, up to the ring beam
   {
     const I = 160, pos = [], idx = [];
@@ -243,17 +257,23 @@ export function buildDome(ctx) {
   }
 
   // ── stage ──
-  stageSet(root, { w: 38, h: 24, z: 3.6, deck: DECK, towerX: 20.4, backdropW: 50, backdropH: 23, wingX: 31, wingW: 12, wingH: 15 });
+  stageSet(root, { w: 38, h: 24, z: 3.6, deck: DECK, towerX: 20.4, backdropW: 50, backdropH: 23, wingX: 31, wingW: 12, wingH: 15, drapes: false });
   const deck = stageDeck({ w: 62, d: 20, h: DECK, z: 12 });
   root.add(deck);
-  const catwalk = stageDeck({ w: 4.4, d: 26, h: DECK - 0.8, z: 35, lip: false });
+  // (as the photographs from the 2nd floor show it) a short runway out from
+  // the stage's middle to a long stage across the field, parallel to the
+  // main stage and symmetric about the middle
+  const RW0 = 22, RW1 = 47, XW = 30, XD = 5.2, XH = DECK - 0.8;
+  const catwalk = stageDeck({ w: 4.4, d: RW1 - RW0, h: XH, z: (RW0 + RW1) / 2, lip: false });
   for (const s of [-1, 1]) root.add(stageSteps({ x: s * 31.75, z: 22, h: DECK, dir: [0, -1] }));
   root.add(catwalk);
-  const bstage = new THREE.Mesh(new THREE.CylinderGeometry(6, 6.2, DECK - 0.8, 40), std({ color: 0x0a0a0c, roughness: 0.6 }));
-  bstage.position.set(0, (DECK - 0.8) / 2, 51); root.add(bstage);
+  const crossDeck = stageDeck({ w: XW * 2, d: XD, h: XH, z: RW1 + XD / 2 });
+  root.add(crossDeck);
   const bRimM = glowMat(APP.accent, 1);
-  const bRim = new THREE.Mesh(new THREE.TorusGeometry(6.05, 0.04, 6, 64), bRimM);
-  bRim.rotation.x = Math.PI / 2; bRim.position.set(0, DECK - 0.8, 51); root.add(bRim);
+  {
+    const g = new THREE.BoxGeometry(XW * 2 + 0.1, 0.05, 0.05); g.translate(0, XH, RW1 + XD + 0.02);
+    const bRim = new THREE.Mesh(g, bRimM); root.add(bRim);
+  }
   const scr = bigScreens(ctx, root, { w: 38, y: DECK + 1.6 + 38 / (16 / 9) / 2, z: 3.6, imagW: 17, imagX: 36, imagY: 19, imagZ: 7, imagYaw: 0.34, pitch: 0.0059 });
   // LED columns either side of the main wall
   for (const side of [-1, 1]) {
@@ -261,9 +281,9 @@ export function buildDome(ctx) {
     col.position.set(side * 22.5, DECK + 9, 5); root.add(col);
     ctx.addScreen(col, 1, 'ribbon');
   }
-  // an empty B-stage with its microphone, waiting
+  // a microphone waiting at the front of the long stage
   const star = micStand({ height: 1.6 });
-  star.position.set(0, DECK - 0.8, 51); root.add(star);
+  star.position.set(0, XH, RW1 + XD - 0.8); root.add(star);
   for (let i = 0; i < 10; i++) { const w = wedge({ w: 0.8 }); w.position.set(-18 + i * 4, DECK, 21.6); w.rotation.y = Math.PI; root.add(w); }
   for (const side of [-1, 1]) for (const dz of [-2, 2]) { const sub = subStack({ count: 3, cols: 3, w: 1.4 }); sub.position.set(side * 14, 0, 24 + dz); root.add(sub); }
 
@@ -306,7 +326,7 @@ export function buildDome(ctx) {
   const front1 = shadowSpot(KELVIN(5600), 0, { angle: 0.14, penumbra: 0.7, size: q.shadowSize, far: 140, cast: q.shadows });
   front1.position.set(-8, 30, 72); front1.target.position.set(0, DECK + 1, 15);
   const follow = shadowSpot(KELVIN(5600), 0, { angle: 0.035, penumbra: 0.5, cast: false });
-  follow.position.set(0, 36, 100); follow.target.position.set(0, DECK, 50);
+  follow.position.set(0, 36, 100); follow.target.position.set(0, XH, RW1 + XD / 2);
   const stageWash = shadowSpot(0xffffff, 0, { angle: 0.8, penumbra: 1, cast: false });
   stageWash.position.set(0, RIG - 1, 4); stageWash.target.position.set(0, DECK, 16);
   for (const l of [front1, follow, stageWash]) root.add(l, l.target);
@@ -316,11 +336,11 @@ export function buildDome(ctx) {
   const house = [];
   // the house lights are the field banks: aimed down at the field and the
   // stands, so the membrane above them only gets what bounces back up
-  for (let i = 0; i < 7; i++) {
-    const a = (i / 7) * Math.PI * 2 + 0.22;
-    const l = new THREE.SpotLight(KELVIN(5200), 0, 260, 1.05, 1, 2);
-    const e = edge(a, 0.56), e2 = edge(a, 0.32);
-    l.position.set(e.x, roofAt(e.x, e.z) - 8, e.z);
+  for (let i = 0; i < 9; i++) {
+    const a = bankAngles[Math.round(i / 8 * (bankAngles.length - 1))];
+    const l = new THREE.SpotLight(KELVIN(5200), 0, 300, 1.2, 1, 2);
+    const e = edge(a, 0.97), e2 = edge(a, 0.05);
+    l.position.set(e.x, YE - 1.5, e.z);
     l.target.position.set(e2.x, 0, e2.z);
     root.add(l, l.target); house.push(l);
   }
@@ -355,10 +375,11 @@ export function buildDome(ctx) {
   const xs = [];
   for (let i = 0; i < 8; i++) { const x0 = 1.0 + i * 8.2; xs.unshift([-x0 - 7, -x0]); xs.push([x0, x0 + 7]); }
   const keep = (x, z) => onField(x, z)
-    && !(Math.abs(x) < 3.4 && z < 49)
-    && Math.hypot(x, z - 51) > 7.4
-    && !(Math.abs(x - eye.x) < 5 && Math.abs(z - eye.z) < 4.5)
-    && !(Math.abs(x) < 16 && z < 27)
+    && z > RW0 + 2.4                                                     // the pit in front of the stage
+    && !(Math.abs(x) < 3.6 && z < RW1)                                   // the runway
+    && !(Math.abs(x) < XW + 1.6 && z > RW1 - 1.8 && z < RW1 + XD + 1.8)  // the long stage, seats either side of it
+    && !(Math.abs(x - eye.x) < 5.5 && Math.abs(z - eye.z) < 4.5)         // the desk
+    && z < eye.z + 3.0                                                   // nobody behind the desk
     && Math.hypot(Math.abs(x) - 34, z - 58) > 1.6;
   const arena = floorBlocks(blockGrid([[25, 39], [41, 55], [57, 71], [73, 87], [89, 103], [105, 119]], xs), { keep, seed: 55 });
   root.add(floorChairs(arena.chairs));
@@ -374,7 +395,7 @@ export function buildDome(ctx) {
   const offs = [[-0.6, 0.35], [0.6, 0.35], [-0.6, -0.35], [0.6, -0.35], [0, 0]];
   ctx.screenHaze(scr.main, offs.map(([dx, dy]) => hz.add(V3(dx * 19, scr.main.position.y + dy * scr.h * 0.5, 4.5), 0xffffff, 0)), offs);
   scr.main.userData.hazePower = 320;
-  const hzWash = [hz.add(V3(-16, RIG - 1, 14), 0xffffff, 0), hz.add(V3(16, RIG - 1, 14), 0xffffff, 0), hz.add(V3(0, 22, 51), 0xffffff, 0)];
+  const hzWash = [hz.add(V3(-16, RIG - 1, 14), 0xffffff, 0), hz.add(V3(16, RIG - 1, 14), 0xffffff, 0), hz.add(V3(0, 22, RW1 + XD / 2), 0xffffff, 0)];
 
   return {
     root, eye,
@@ -397,10 +418,10 @@ export function buildDome(ctx) {
       runShow(rig, washes, f, { house: V3(0, 0, 26), stage: STAGE, span: 30, strobe: false });
       runShow(rig, ups, f, { house: V3(0, 40, 50), stage: STAGE, up: true });
       washes.forEach(({ fx }) => { fx.angle = 0.3; });
-      // the ring converges on the B-stage in the chorus, spreads to the roof otherwise
+      // the ring converges on the long stage in the chorus, spreads to the roof otherwise
       const sec = f.sec || section(f.bar);
       ring2.forEach(({ fx, i, a }) => {
-        const tgt = sec === 'chorus' ? V3(Math.sin(f.t * 0.8 + i) * 6, 26, 51 + Math.cos(f.t * 0.8 + i) * 6) : V3(Math.sin(a) * 30, 56, ZC + Math.cos(a) * 30);
+        const tgt = sec === 'chorus' ? V3(Math.sin(f.t * 0.8 + i) * 22, 26, RW1 + XD / 2 + Math.cos(f.t * 0.8 + i) * 3) : V3(Math.sin(a) * 30, 56, ZC + Math.cos(a) * 30);
         fx.dir.lerp(tgt.sub(fx.pos).normalize(), Math.min(1, f.dt * 2)).normalize();
         fx.color.copy(i % 2 ? f.pal.a : f.pal.c);
         fx.intensity = (sec === 'chorus' ? 0.9 + 0.4 * f.kick : sec === 'pre' ? 0.5 : 0.18) * show;
@@ -412,13 +433,16 @@ export function buildDome(ctx) {
       follow.intensity = 50000 * show;
       stageWash.color.copy(f.pal.a); stageWash.intensity = (12000 + 14000 * f.energy + 6000 * f.kick) * show;
       fill.forEach((l, i) => { l.color.copy(i ? f.pal.b : f.pal.a); l.intensity = (200 + 500 * f.energy) * show; });
-      house.forEach((l) => { l.intensity = 12000 * f.house; });
+      house.forEach((l) => { l.intensity = 30000 * f.house; });
       hzWash[0].color.copy(f.pal.a); hzWash[1].color.copy(f.pal.b); hzWash[2].color.copy(f.pal.d);
       hzWash.forEach((h) => { h.power = 600 * (0.4 + 0.6 * f.energy + 0.3 * f.kick) * show; });
       bRimM.color.setHex(APP.accent).multiplyScalar((0.6 + 0.9 * f.kick) * show + 0.2);
       deck.userData.lip.color.setHex(APP.accent).multiplyScalar((0.6 + 0.8 * f.kick) * show + 0.2);
       const sh = membrane.userData.shader;
-      if (sh) sh.uniforms.uBounce.value.copy(f.pal.a).lerp(f.pal.b, 0.5 + 0.5 * Math.sin(f.t * 0.3)).multiplyScalar((0.012 + 0.02 * f.energy + 0.015 * f.kick) * show).add(new THREE.Color(0.03, 0.03, 0.032).multiplyScalar(0.4 + 1.6 * f.house));
+      if (sh) {
+        // the house lights wash the membrane warm; in the show it takes the stage's colour back
+        sh.uniforms.uBounce.value.copy(f.pal.a).lerp(f.pal.b, 0.5 + 0.5 * Math.sin(f.t * 0.3)).multiplyScalar((0.012 + 0.02 * f.energy + 0.015 * f.kick) * show).add(new THREE.Color(0.2, 0.16, 0.11).multiplyScalar(0.02 + 0.98 * f.house));
+      }
       cu.uRimColor.value.copy(f.pal.a).lerp(new THREE.Color(1, 1, 1), 0.3).multiplyScalar((0.2 + 0.25 * f.kick) * show);
       cu.uStage.value.set(0, 14, 10);
       cu.uWash.value.copy(f.pal.b).multiplyScalar(0.012 * show + 0.25 * f.house);
