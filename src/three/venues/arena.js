@@ -128,10 +128,15 @@ export function buildArena(ctx) {
   // the floor seated in lettered blocks — A at the front to F at the back,
   // 1 to 4 across — with the runway and the desk left clear; every sold seat
   // in the stands taken
-  const keep = (x, z) => Math.abs(x) < 24.2 && z < OZ + 39.5 && !(Math.abs(x) < 2.4 && z < 25.6) && !(Math.abs(x - eye.x) < 4.6 && Math.abs(z - eye.z) < 4.2);
+  // The 200s' telescopic front rows are put away along the sides, so the
+  // floor's outer blocks run on out to 1.4 m short of the fixed stand (and
+  // clear of the corners' fans)
+  const clear = (x, z) => [[0, 0], [1.4, 0], [-1.4, 0], [0, 1.4], [0, -1.4], [1, 1], [1, -1], [-1, 1], [-1, -1]]
+    .every(([dx, dz]) => stands.topAt(x + dx, z + dz) < 0.05);
+  const keep = (x, z) => Math.abs(x) < 29.2 && z < OZ + 39.5 && !(Math.abs(x) < 2.4 && z < 25.6) && !(Math.abs(x - eye.x) < 4.6 && Math.abs(z - eye.z) < 4.2) && clear(x, z);
   const floorSeats = floorBlocks(blockGrid(
     [[19.5, 29.4], [31.0, 41.8], [43.4, 54.2], [55.8, 66.6], [68.2, 79.0], [80.6, 84.8]],
-    [[-24.0, -12.8], [-11.4, -1.0], [1.0, 11.4], [12.8, 24.0]],
+    [[-29.2, -14.9], [-13.5, -1.0], [1.0, 13.5], [14.9, 29.2]],
   ), { keep, seed: 3 });
   root.add(floorChairs(floorSeats.chairs));
   bigCrowd(root, cu, q, floorSeats.people.concat(stands.people.map((p) => ({ ...p, h: 0.97 }))), { seed: 21 });

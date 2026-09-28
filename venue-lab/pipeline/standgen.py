@@ -347,7 +347,7 @@ class Level:
 def mask_polys(G, m, eps=0.025, minarea=1.0):
     return [poly_out(p) for p in contours(G, m.astype(np.uint8), eps=eps, minarea=minarea)]
 
-def edge_walls(G, lvl, outside_level, doors=(), door_w=1.8, rail=1.0, doorwall=2.6, flush='doors', skip=None, front=None, parapet=True):
+def edge_walls(G, lvl, outside_level, doors=(), door_w=1.8, rail=1.0, doorwall=2.6, flush='doors', skip=None, front=None, parapet=True, cheek=False):
     """Walls along a level's outline: a rail where it drops away, a wall with
     door openings where it meets a concourse at its own height. `skip(ox, oy,
     h)` leaves an edge to the concourse's own walls; `front` = (y0, above) puts
@@ -411,7 +411,18 @@ def edge_walls(G, lvl, outside_level, doors=(), door_w=1.8, rail=1.0, doorwall=2
             if notch:
                 if below is None or h-below>0.3: rails.append(seg+[round(h,2),round(h+rail,2)])
                 continue
-            if below is None or h-below>0.6: rails.append(seg+[round(h,2),round(h+rail,2)])
+            end_=False
+            if below is None and cheek and getattr(lvl,'_blk',None) is not None:
+                # a balcony's end (an edge running back from its front, square
+                # to it): closed down to its underside, a flat cheek rather
+                # than a rail on a slab cut off in the air
+                sb=int(lvl._blk['sec'][min(G.H-1,max(0,int(round(m[1])))),min(G.W-1,max(0,int(round(m[0]))))])
+                fv=lvl._blk['fin'][sb]; tv=(np.array(B)-np.array(A)); tv=tv/(np.linalg.norm(tv)+1e-9)
+                end_=abs(float(tv@fv))>0.8
+            if end_:
+                yb=float(lvl.bot(r))
+                rails.append(seg+[round(min(yb,h-0.02),2),round(h+rail,2)])
+            elif below is None or h-below>0.6: rails.append(seg+[round(h,2),round(h+rail,2)])
             elif flush=='open': continue
             else:
                 # split round any door on this edge
@@ -795,7 +806,7 @@ def redepth(l, G, sec, fvecs, K, rows=None):
     l.yaw = np.arctan2(f[:, 0], f[:, 1])
     l.secmap = cs
 
-def straight_blocks(l, corner, wedges=4, pitch=0.5, aisle=0.4, extra_rows=1):
+def straight_blocks(l, corner, wedges=4, pitch=0.5, aisle=0.4, extra_rows=1, retract=(), fill=False):
     """A bowl laid out in blocks, each with straight rows, as a building with
     a polygonal plan has them: each side and each end one block across, every
     corner a fan of `wedges` blocks converging on the corner's centre
@@ -818,29 +829,83 @@ def straight_blocks(l, corner, wedges=4, pitch=0.5, aisle=0.4, extra_rows=1):
     qi = (sx > 0).astype(int) + 2 * (sz > 0).astype(int)          # corner 0..3
     sec = np.where(az_ <= 0, np.where(sx > 0, 0, 1), np.where(ax_ <= 0, np.where(sz > 0, 2, 3), 4 + qi * wedges + k))
     nsec = 4 + 4 * wedges
-    ang = [0.0, 180.0, 90.0, -90.0]
-    for q_ in range(4):
-        s_x = 1 if q_ & 1 else -1; s_z = 1 if q_ & 2 else -1
-        for kk in range(wedges):
-            m_ = np.radians((kk + 0.5) * 90.0 / wedges)
-            ang.append(np.degrees(np.arctan2(s_z * np.sin(m_), s_x * np.cos(m_))))
-    ang = np.array(ang)
-    fin = -np.c_[np.cos(np.radians(ang)), np.sin(np.radians(ang))]   # facing the field
     R0 = l.R > 0
     near = cv2.dilate(R0.astype(np.uint8), disk(2.0 / G.res)) > 0
-    d = np.full(l.d.shape, -1e3, np.float32); K = np.zeros(nsec)
     front = R0 & (l.d < 0.35)
+    # The front as one polygon: each side and end a straight line, each
+    # corner's blocks chords between vertices on the rays that part them,
+    # each vertex where the old front crosses its ray — so neighbouring
+    # blocks' fronts meet at a point, and the fascia and the parapet run on
+    # round the corner unbroken.
+    def side_line(axis_sel, coord, sgn):
+        m = front & axis_sel
+        return float(np.median(sgn * coord[m])) if m.any() else None
+    xs_ = {1: side_line((sec == 0), X, 1), -1: side_line((sec == 1), X, -1)}
+    zs_ = {1: side_line((sec == 2), Z, 1), -1: side_line((sec == 3), Z, -1)}
+    # `retract`: the sides (+1, -1 in x) whose front rows are movable seats
+    # standing in front of the fixed stand across a walkway (a telescopic
+    # block, lettered A-H on the map): they are put away, the fixed stand's
+    # front row becomes the front, and the rows are counted from it
+    # (the walkway shows clearest in the plan's seats across the middle of a
+    # side; the building is symmetric, so the depth found on one side is put
+    # away on both)
+    l.retracted = {}
+    dr = None
+    for sgn in (1, -1):
+        v_ = xs_.get(sgn)
+        if v_ is None or not retract: continue
+        S_ = l.raw[(np.sign(l.raw[:, 0]) == sgn) & (np.abs(l.raw[:, 1]) < 6.0)]
+        a_ = np.sort(np.abs(S_[:, 0])); a_ = a_[a_ < v_ + 10]
+        g_ = np.nonzero(np.diff(a_) > 1.2)[0]
+        if len(g_): dr = float(a_[g_[0] + 1]) - 0.55 * D - v_; break
+    if dr is not None:
+        for sgn in retract:
+            if xs_.get(sgn) is not None: xs_[sgn] += dr; l.retracted[sgn] = round(dr, 2)
+    def ray_hit(c0, u):
+        t = np.arange(0.0, 60.0, 0.05); P = c0[None, :] + t[:, None] * u[None, :]
+        i_ = np.clip(np.round((P[:, 0] - G.x0) / G.res).astype(int), 0, G.W - 1)
+        j_ = np.clip(np.round((P[:, 1] - G.z0) / G.res).astype(int), 0, G.H - 1)
+        hit = np.nonzero(R0[j_, i_])[0]
+        return float(t[hit[0]]) if len(hit) else None
+    fin = np.zeros((nsec, 2)); K = np.zeros(nsec)
+    fin[0], fin[1], fin[2], fin[3] = (-1, 0), (1, 0), (0, -1), (0, 1)
+    # K = V·f for a point V on the line: +x side, V = (x_side, *), f = (-1, 0)
+    if xs_[1] is not None: K[0] = -xs_[1]
+    if xs_[-1] is not None: K[1] = -xs_[-1]
+    if zs_[1] is not None: K[2] = -zs_[1]
+    if zs_[-1] is not None: K[3] = -zs_[-1]
+    for q_ in range(4):
+        s_x = 1 if q_ & 1 else -1; s_z = 1 if q_ & 2 else -1
+        C0 = np.array([s_x * cx, s_z * (czp if s_z > 0 else czn)])
+        rho = []
+        for kk in range(wedges + 1):
+            th_ = np.radians(kk * 90.0 / wedges)
+            if kk == 0 and xs_[s_x] is not None: rho.append(xs_[s_x] - cx); continue
+            if kk == wedges and zs_[s_z] is not None: rho.append(zs_[s_z] - abs(C0[1])); continue
+            hs_ = [ray_hit(C0, np.array([s_x * np.cos(th_ + e), s_z * np.sin(th_ + e)])) for e in np.radians([-1.5, -0.75, 0, 0.75, 1.5])]
+            hs_ = [h_ for h_ in hs_ if h_ is not None]
+            rho.append(float(np.median(hs_)) if hs_ else None)
+        # a ray that meets nothing (a corner running out to the backstage):
+        # carry on the neighbour's
+        for kk in range(wedges + 1):
+            if rho[kk] is None:
+                nb = [rho[j] for j in (kk - 1, kk + 1) if 0 <= j <= wedges and rho[j] is not None]
+                rho[kk] = nb[0] if nb else 10.0
+        V = [C0 + rho[kk] * np.array([s_x * np.cos(np.radians(kk * 90.0 / wedges)), s_z * np.sin(np.radians(kk * 90.0 / wedges))]) for kk in range(wedges + 1)]
+        for kk in range(wedges):
+            s_ = 4 + q_ * wedges + kk
+            t_ = V[kk + 1] - V[kk]; n_ = np.array([-t_[1], t_[0]]) / (np.linalg.norm(t_) + 1e-9)
+            if n_ @ (C0 - V[kk]) < 0: n_ = -n_
+            fin[s_] = n_; K[s_] = float(V[kk] @ n_)
+    d = np.full(l.d.shape, -1e3, np.float32)
+    # the depth laid out well beyond the treads, so anything added behind or
+    # beside them later (a pocket filled, a gap bridged) is counted from the
+    # same straight fronts
+    near_d = cv2.dilate(R0.astype(np.uint8), disk(12.0 / G.res)) > 0
     for s_ in range(nsec):
-        m = near & (sec == s_)
+        m = near_d & (sec == s_)
         if not m.any(): continue
         f = fin[s_]
-        fm = front & m
-        if fm.any():
-            c = X[fm] * f[0] + Z[fm] * f[1] + l.d[fm]
-            K[s_] = np.percentile(c, 99.0)
-        else:
-            c = X[m & R0] * f[0] + Z[m & R0] * f[1] + l.d[m & R0]
-            K[s_] = np.percentile(c, 99.0) if c.size else 0
         d[m] = K[s_] - (X[m] * f[0] + Z[m] * f[1])
     # the treads: the old ones, run forward to each block's straight front
     # where the stand lies just behind (a sliver in front of a curved front)
@@ -855,6 +920,21 @@ def straight_blocks(l, corner, wedges=4, pitch=0.5, aisle=0.4, extra_rows=1):
     R = cv2.morphologyEx(R.astype(np.uint8), cv2.MORPH_OPEN, disk(0.3 / G.res)) > 0
     nrows = int(min(np.floor(d[R].max() / D) + 1, l.nrows + extra_rows))
     R &= d < nrows * D
+    if fill:
+        # a balcony: each block's treads the whole band from its straight
+        # front to its last row, across the block as far as the plan's seats
+        # go (its aisles bridged), its ends cut square to its front
+        nrows = l.nrows
+        R = np.zeros_like(R0); E = np.zeros_like(R0)
+        for s_ in range(nsec):
+            f = fin[s_]; u = np.array([-f[1], f[0]])
+            m0 = R0 & (sec == s_) & (d > -1.0)
+            if m0.sum() * G.res ** 2 < 2.0: continue
+            U = X * u[0] + Z * u[1]
+            lo_, hi_ = np.percentile(U[m0], [0.3, 99.7])
+            R |= (sec == s_) & (U >= lo_) & (U <= hi_) & (d >= 0) & (d < nrows * D)
+            E |= (sec == s_) & (U >= lo_) & (U <= hi_)
+        l.extent = E
     # where the plan had seats: its seats' footprints closed over the gaps
     # between rows and seats, not over its aisles; a sliver takes the cover
     # of the stand just behind it
@@ -862,6 +942,22 @@ def straight_blocks(l, corner, wedges=4, pitch=0.5, aisle=0.4, extra_rows=1):
     ix = np.clip(np.round(gx - fx * 1.2 / G.res).astype(int), 0, G.W - 1)
     iy = np.clip(np.round(gy - fz * 1.2 / G.res).astype(int), 0, G.H - 1)
     cover = np.where(sliver, cover[iy, ix], cover) & R
+    if fill:
+        # a balcony's rows seated all the way along wherever the plan has a
+        # seat in any of them (its aisles, seatless in every row, kept)
+        cover = np.zeros_like(R)
+        for s_ in range(nsec):
+            f = fin[s_]; u = np.array([-f[1], f[0]])
+            m = R & (sec == s_)
+            if not m.any(): continue
+            Ss = l.raw[sample(G, sec, l.raw) == s_] if len(l.raw) else l.raw
+            if not len(Ss): continue
+            us_ = np.sort(Ss @ u)
+            U = X * u[0] + Z * u[1]
+            idx = np.clip(np.searchsorted(us_, U[m]), 1, len(us_) - 1)
+            dmin = np.minimum(np.abs(U[m] - us_[idx - 1]), np.abs(U[m] - us_[idx]))
+            cm = np.zeros_like(R); cm[m] = dmin < 0.45
+            cover |= cm
     # the aisles between the blocks
     secR = np.where(R, sec, -1)
     edge = np.zeros_like(R)
@@ -902,6 +998,7 @@ def straight_blocks(l, corner, wedges=4, pitch=0.5, aisle=0.4, extra_rows=1):
     l.band = np.where(R, np.clip(np.floor(l.d / D).astype(int), 0, nrows - 1), -1)
     l.seatmask = seat_mask(G, l.seats)
     l.secmap = np.where(R, sec, 0).astype(np.int32)
+    l._blk = {'fin': fin, 'K': K, 'sec': sec, 'aisles': aisles, 'pitch': pitch}
     return {'sections': nsec, 'seats': len(S), 'rows': nrows, 'sliver_m2': float(sliver.sum() * G.res ** 2)}
 
 def cut_tunnels(G, l, tunnels, body, deck_t=0.6, back=3.0):
@@ -1023,3 +1120,35 @@ def front_parapet(G, l, front, eps=0.05, minlen=1.0):
             j = (i + 1) % len(q)
             out.append([round(float(X[i]), 2), round(float(Z[i]), 2), round(float(X[j]), 2), round(float(Z[j]), 2), round(yb, 2), round(yt, 2)])
     return out
+
+def lay_seats(l, mask):
+    """Seats along the straight rows of a level laid out by straight_blocks,
+    over `mask` (treads added after it: a pocket filled), 0.5 m apart, its
+    aisles kept clear. Returns how many."""
+    from standlib import seat_mask
+    G = l.G; D = l.D; b = l._blk; fin, K, sec = b['fin'], b['K'], b['sec']
+    gy, gx = np.mgrid[0:G.H, 0:G.W]; X, Z = G.m(gx, gy)
+    ok_m = mask & (l.band >= 0) & ~b['aisles']
+    S, rows, yaws = [], [], []
+    for s_ in np.unique(sec[ok_m]):
+        f = fin[s_]; u = np.array([-f[1], f[0]])
+        m = ok_m & (sec == s_)
+        ys, xs = np.nonzero(m); P = np.c_[X[ys, xs], Z[ys, xs]]
+        us = np.arange((P @ u).min(), (P @ u).max(), 0.05)
+        for r in np.unique(l.band[m]):
+            cc = K[s_] - (r + 0.55) * D
+            C = u[None, :] * us[:, None] + f[None, :] * cc
+            i_ = np.clip(np.round((C[:, 0] - G.x0) / G.res).astype(int), 0, G.W - 1)
+            j_ = np.clip(np.round((C[:, 1] - G.z0) / G.res).astype(int), 0, G.H - 1)
+            idx = np.nonzero(m[j_, i_] & (l.band[j_, i_] == r))[0]
+            if not len(idx): continue
+            for run in np.split(idx, np.nonzero(np.diff(idx) > 1)[0] + 1):
+                L_ = us[run[-1]] - us[run[0]] + 0.05; n = int(np.floor(L_ / b['pitch'] + 1e-6))
+                if n < 1: continue
+                t0 = us[run[0]] - 0.025 + (L_ - n * b['pitch']) / 2 + b['pitch'] / 2
+                for kk in range(n):
+                    S.append(u * (t0 + kk * b['pitch']) + f * cc); rows.append(r); yaws.append(np.arctan2(f[0], f[1]))
+    if S:
+        l.seats = np.r_[l.seats, np.array(S)]; l.row = np.r_[l.row, np.array(rows)]; l.yaw = np.r_[l.yaw, np.array(yaws)]
+        l.seatmask = seat_mask(G, l.seats)
+    return len(S)

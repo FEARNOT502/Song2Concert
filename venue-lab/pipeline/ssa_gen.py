@@ -25,8 +25,12 @@ print('levels',round(time.time()-t,1), {k:(l.nrows,len(l.seats)) for k,l in LV.i
 # the 200s and the 400s in blocks with straight rows, as the map draws them:
 # the sides and ends straight across, each corner a fan of wedges
 from standgen import straight_blocks
-for k_,c_ in (('200',(15.0,33.0,33.0)),('400',(20.0,33.0,33.0))):
-    print('blocks',k_,straight_blocks(LV[k_],c_))
+# the 200s' telescopic front rows along the sides (A-H on the map) put
+# away: the arena floor runs to the fixed stand
+# the 300 and 500 balconies the same way, each block's treads the whole band
+for k_,c_,rt_,fl_ in (('200',(15.0,33.0,33.0),(1,-1),False),('400',(20.0,33.0,33.0),(),False),
+                      ('300',(20.0,33.0,33.0),(),True),('500',(20.0,33.0,33.0),(),True)):
+    print('blocks',k_,straight_blocks(LV[k_],c_,retract=rt_,fill=fl_),'retracted',LV[k_].retracted)
 # the tunnels in from the concourses, made straight: through the 200 level's
 # sides at rows 18-27, through the 400 level's
 VOMS={'200':LV['200'].make_voms(C200,head=1.9,wmax=3.0),'400':LV['400'].make_voms(C400,head=1.9,wmax=3.0)}
@@ -69,6 +73,11 @@ def tidy(c,w=1.0,minarea=50):
     keep=np.zeros(n,bool); keep[1:]=st[1:,4]*G.res**2>=minarea
     return keep[lab]
 c200=tidy(c200); c300=tidy(c300,0.8,10); c400=tidy(c400,0.8,10); c500=tidy(c500,0.8,10)
+# the balconies' concourses only behind them, ending square with their ends
+# (no box of concourse standing on past a balcony's end, nor its floor
+# reaching out over a corner)
+c300&=L3.extent; c500&=L5.extent
+c300=tidy(c300,0.8,10); c500=tidy(c500,0.8,10)
 
 # ── stairs between the concourses: straight flights along the ends ──
 RISE,RUN,WID=0.19,0.28,1.6
@@ -144,6 +153,8 @@ if fill_.any():
     L2.nrows=max(L2.nrows,int(np.floor(L2.d[fill_].max()/L2.D))+1)
     L2.R[fill_]=1; L2.band[fill_]=np.clip(np.floor(L2.d[fill_]/L2.D).astype(int),0,L2.nrows-1)
 c200&=~pk_
+from standgen import lay_seats
+print('pocket seats',lay_seats(L2,fill_))
 print('pockets filled',round(float(fill_.sum()*G.res**2),1),'m2; cleared',round(float((pk_&~fill_).sum()*G.res**2),1))
 # ── the floor's corner tunnels ──
 # At each corner of the arena floor a passage runs out under the 200s, along
@@ -221,7 +232,7 @@ PART300=partitions(L3)
 print('300 partitions',len(PART300))
 levels=[]
 for name,l,cm,cy in (('200',L2,c200,C200),('300',L3,c300,C300),('400',L4,c400,C400),('500',L5,c500,C500)):
-    rails,walls=edge_walls(G,l,outside_fn(cm,cy),doors[name]+l.aisle_doors(),skip=skip,front=fronts[name])
+    rails,walls=edge_walls(G,l,outside_fn(cm,cy),doors[name]+l.aisle_doors(),skip=skip,front=fronts[name],cheek=name in ('300','500'))
     rails+=front_parapet(G,l,fronts[name])
     rows_=l.rows_out()
     if name=='200': rows_=tunnel_rows(rows_,TUN)

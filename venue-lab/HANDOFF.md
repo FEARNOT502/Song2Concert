@@ -21,6 +21,15 @@ Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
   concourse wall standing above a shallow corner); a passage at each corner of the
   floor out under the 200s (`standgen.cut_tunnels`, open as far as 10 m in, then
   roofed under the concourse's storey, side walls sloping with the rows).
+- SSA follow-up: the 200s' telescopic front rows along the sides (A-H on the map,
+  a walkway between them and the fixed stand) put away (`straight_blocks(retract=)`),
+  the floor's outer blocks widened to 1.4 m short of the stand; corner fronts as one
+  polygon (neighbouring blocks' fronts meet at a vertex); the corners' backs seated
+  (`lay_seats`); the 300 and 500 balconies as whole bands per block (`fill=True`),
+  their concourses only behind them (`l.extent`), their ends closed by flat cheeks
+  (`edge_walls(cheek=True)`). The official map draws each level apart (no overlap);
+  the model scales each level on its own, so the 400s overhang the 200s' back by
+  ~8 m along the sides, the 300/400 by ~7 m at the ends.
 - All venues: each tier's front parapet traced whole along the front line
   (`standgen.front_parapet`) at one height, not piece by piece off the raster; rails
   and walls joined into runs and redrawn without the raster's jogs
