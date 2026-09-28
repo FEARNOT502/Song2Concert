@@ -1,7 +1,7 @@
 import sys, json, time, re, pickle, numpy as np, cv2
 sys.path.insert(0,'.')
 from standlib import Grid, disk, contours, sample, STRAIGHT
-from standgen import Level, poly_out, mask_polys, edge_walls, enclose, grow_under, trim_tunnels
+from standgen import Level, poly_out, mask_polys, edge_walls, enclose, grow_under, trim_tunnels, front_parapet
 from scipy.spatial import cKDTree
 S=np.load('ssa_real.npy',allow_pickle=True)
 def clean(s,eps=1.5,minn=12):
@@ -17,11 +17,16 @@ STRAIGHT.update(on=True,res=G.res)
 C200,C300,C400,C500=6.2,11.44,18.7,25.5
 t=time.time()
 LV={}
-LV['200']=Level(G,'200',S[0],0.865,0.45,0.33,bottom=lambda r,h: 0.0 if r<=24 else h-0.6,keep_hole=6)
-LV['300']=Level(G,'300',S[1],1.0,10.6,0.42,0.5,2.2,close=0.9,keep_hole=6,open_w=4.5,hull_close=5.0)
-LV['400']=Level(G,'400',S[2],0.85,17.0,0.42,0.5,2.8,close=1.3)
-LV['500']=Level(G,'500',S[3],0.87,24.5,0.5,0.5,2.4,close=0.9,keep_hole=6,open_w=4.5,hull_close=5.0)
+LV['200']=Level(G,'200',S[0],0.865,0.45,0.33,bottom=lambda r,h: 0.0 if r<=24 else h-0.6,keep_hole=6,front_sig=3.0,max_rows=32)
+LV['300']=Level(G,'300',S[1],1.0,10.6,0.42,0.5,2.2,close=0.9,keep_hole=6,open_w=4.5,hull_close=5.0,front_sig=5.0,max_rows=3)
+LV['400']=Level(G,'400',S[2],0.85,17.0,0.42,0.5,2.8,close=1.3,front_sig=3.0,max_rows=24)
+LV['500']=Level(G,'500',S[3],0.87,24.5,0.5,0.5,2.4,close=0.9,keep_hole=6,open_w=4.5,hull_close=5.0,front_sig=5.0,max_rows=3)
 print('levels',round(time.time()-t,1), {k:(l.nrows,len(l.seats)) for k,l in LV.items()})
+# the 200s and the 400s in blocks with straight rows, as the map draws them:
+# the sides and ends straight across, each corner a fan of wedges
+from standgen import straight_blocks
+for k_,c_ in (('200',(15.0,33.0,33.0)),('400',(20.0,33.0,33.0))):
+    print('blocks',k_,straight_blocks(LV[k_],c_))
 # the tunnels in from the concourses, made straight: through the 200 level's
 # sides at rows 18-27, through the 400 level's
 VOMS={'200':LV['200'].make_voms(C200,head=1.9,wmax=3.0),'400':LV['400'].make_voms(C400,head=1.9,wmax=3.0)}
@@ -124,11 +129,60 @@ def outside_fn(cmask,y):
     return f
 # concourse floors reach a little under the stands they meet, so there is no crack
 grow=lambda c: cv2.dilate(c.astype(np.uint8),np.ones((3,3),np.uint8),iterations=3)>0
+# where the 200s are shallow (the far corners), narrow pockets of the
+# concourse's storey would stand up behind their last rows as blocks: the
+# stand's treads carry on up into them instead, to meet the concourse
+op_=cv2.morphologyEx(c200.astype(np.uint8),cv2.MORPH_OPEN,disk(2.0/G.res))>0
+pk_=c200&~op_&(np.abs(Z)>28)
+# and where the 200s stop short of the concourse's floor, their rows carry
+# on up to it (so its front wall stands behind their top row, as along the
+# sides, not bare above a shallow corner)
+low_=c200&(np.abs(Z)>28)&(L2.d>=0)&((L2.h0+L2.rise*np.floor(np.maximum(L2.d,0)/L2.D))<C200+0.2)&(cv2.dilate((L2.R>0).astype(np.uint8),disk(8.0/G.res))>0)
+pk_|=low_
+fill_=pk_&(L2.d>=0)&(L2.d<(L2.nrows+8)*L2.D)&(cv2.dilate((L2.R>0).astype(np.uint8),disk(8.0/G.res))>0)
+if fill_.any():
+    L2.nrows=max(L2.nrows,int(np.floor(L2.d[fill_].max()/L2.D))+1)
+    L2.R[fill_]=1; L2.band[fill_]=np.clip(np.floor(L2.d[fill_]/L2.D).astype(int),0,L2.nrows-1)
+c200&=~pk_
+print('pockets filled',round(float(fill_.sum()*G.res**2),1),'m2; cleared',round(float((pk_&~fill_).sum()*G.res**2),1))
+# ── the floor's corner tunnels ──
+# At each corner of the arena floor a passage runs out under the 200s, along
+# the aisle in the middle of the corner's fan of blocks (the X the floor's
+# gangways make in the map), to the service ways inside the building.
+from standgen import cut_tunnels, tunnel_rows, tunnels_out
+TUN=[]
+# each from the floor's corner along the middle of the corner's fan (where
+# the plan leaves the passage unseated), from the stand's front: an open cut
+# as far as the stand is low, then roofed, on under the concourse's storey
+near2=(L2.hull>0)|(L2.R>0)
+body_=((L2.R>0)|(L2.hull>0)|c200)&(hull>0)       # what they run under, before the cuts
+# the passages the plan leaves unseated at the front of the 200s (where they
+# meet at the corners) stay open at the floor's level: no concourse storey
+# standing in them as a block
+c200&=~(near2&(L2.R==0)&(L2.d<12.0)&(np.abs(Z)>28))
+for sx_ in (-1,1):
+    for sz_ in (-1,1):
+        C_=np.array([sx_*15.0,sz_*33.0]); u_=np.array([sx_,sz_])/np.sqrt(2)
+        q_=C_.copy()
+        for _ in range(400):
+            i_,j_=[int(round(float(c))) for c in G.g(q_[0],q_[1])]
+            if near2[j_,i_]: break
+            q_=q_+u_*0.1
+        # open as far as 10 m into the stand; the concourse's storey not over that
+        al_=(X-q_[0])*u_[0]+(Z-q_[1])*u_[1]; la_=np.abs(-(X-q_[0])*u_[1]+(Z-q_[1])*u_[0])
+        c200&=~((la_<2.5+0.3)&(al_>-3)&(al_<10.0))
+        TUN.append({'p':q_,'u':u_,'w':5.0,'h':4.0,'closed':True,'Lmax':30.0,'open':10.0})
+# on under the stand and the 200 concourse's storey, to the building's wall
+TUNM=cut_tunnels(G,LV['200'],TUN,body_)
+print('tunnels',[(t['p'].round(1).tolist(),t['L'],t['deck']) for t in TUN])
 slabs=[(grow_under(c,y,[L2,L3,L4,L5]),(0.0 if y==C200 else y-0.35),y) for c,y in ((c200,C200),(c300,C300),(c400,C400),(c500,C500))]
+# under the 200 concourse the tunnels run on hollow
+s0_=slabs[0][0]; slabs[0]=(s0_&~TUNM,0.0,C200)
+if (s0_&TUNM).any(): slabs.insert(1,(s0_&TUNM,4.0,C200))
 # ── the concourses closed in: ceilings 4 m up (or the stand over them), walls
 # with the doors in them, lights ──
 t=time.time()
-rooms=[{'name':name,'mask':cm,'y':cy,'cl':4.0,'own':[l],'doors':doors[name]+l.aisle_doors(),'open':getattr(l,'pits',None)}
+rooms=[{'name':name,'mask':cm,'y':cy,'cl':4.0,'own':[l],'doors':doors[name]+l.aisle_doors(),'open':getattr(l,'pits',None),'toroof':name in ('400','500')}
        for name,l,cm,cy in (('200',L2,c200,C200),('300',L3,c300,C300),('400',L4,c400,C400),('500',L5,c500,C500))]
 for name,cm in (('200',c200),('400',c400)): trim_tunnels(G,VOMS[name],cm)
 # numbered round each level as the building numbers its doors (扉), the level
@@ -140,17 +194,45 @@ encl,roomtop=enclose(G,rooms,[L2,L3,L4,L5],slabs,flights)
 print('enclose',round(time.time()-t,1),{k:len(v) for k,v in encl.items()})
 skip=lambda ox,oy,h: roomtop[oy,ox]>=h+1.0
 fronts={'200':(0.0,0.75),'300':('tread',0.8),'400':('tread',0.8),'500':('tread',0.8)}
+# the 300 level: the VIP balcony between the 200s and the 400s, its rows
+# boxed off every eight seats by low partitions stepping up with the rows
+def partitions(l, every=8):
+    out=[]
+    gz_,gx_=np.gradient(cv2.GaussianBlur(l.d.astype(np.float32),(0,0),6))
+    S=l.seats; r0=np.nonzero(l.row==0)[0]
+    if not len(r0): return out
+    P=S[r0]; th=np.arctan2(P[:,1],P[:,0]); o=np.argsort(th); P=P[o]
+    gaps=np.r_[np.hypot(*np.diff(P,axis=0).T),9.0]
+    run=[]
+    def flush(run):
+        for k in range(every,len(run)-2,every):
+            m=(run[k-1]+run[k])/2
+            g=np.array([sample(G,gx_,m[None])[0],sample(G,gz_,m[None])[0]]); g/=np.linalg.norm(g)+1e-9
+            dm=float(sample(G,l.d,m[None])[0]); p0=m-g*dm
+            for r in range(l.nrows):
+                a_=p0+g*(r*l.D+0.05); b_=p0+g*((r+1)*l.D)
+                h=float(l.h(r))
+                out.append([round(float(a_[0]),2),round(float(a_[1]),2),round(float(b_[0]),2),round(float(b_[1]),2),round(h,2),round(h+1.05,2)])
+    for i,p_ in enumerate(P):
+        run.append(p_)
+        if gaps[i]>0.9: flush(run); run=[]
+    return out
+PART300=partitions(L3)
+print('300 partitions',len(PART300))
 levels=[]
 for name,l,cm,cy in (('200',L2,c200,C200),('300',L3,c300,C300),('400',L4,c400,C400),('500',L5,c500,C500)):
     rails,walls=edge_walls(G,l,outside_fn(cm,cy),doors[name]+l.aisle_doors(),skip=skip,front=fronts[name])
-    levels.append({'name':name,'D':l.D,'h0':l.h0,'rise':l.rise,'rows':l.rows_out(),'steps':l.aisles_out(),'holes':[],'voms':VOMS.get(name,[]),
+    rails+=front_parapet(G,l,fronts[name])
+    rows_=l.rows_out()
+    if name=='200': rows_=tunnel_rows(rows_,TUN)
+    levels.append({'name':name,'D':l.D,'h0':l.h0,'rise':l.rise,'rows':rows_,'steps':l.aisles_out(),'holes':[],'voms':VOMS.get(name,[]),'partitions':PART300 if name=='300' else [],
                    'seats':l.seats_out(),'rails':rails,'walls':walls})
     print(name,'rows',len(levels[-1]['rows']),'steps',len(levels[-1]['steps']),'holes',len(levels[-1]['holes']),'rails',len(rails),'walls',len(walls))
 # concourse floors reach a little under the stands they meet, so there is no crack
-floors=[{'y':y,'y0':(0.0 if y==C200 else y-0.35),'polys':mask_polys(G,grow_under(c,y,[L2,L3,L4,L5]))} for c,y in ((c200,C200),(c300,C300),(c400,C400),(c500,C500))]
+floors=[{'y':y,'y0':y0,'polys':mask_polys(G,m)} for m,y0,y in slabs]
 ow=contours(G,outer.astype(np.uint8),eps=0.03,minarea=100)
 data={'levels':levels,'floors':floors,'flights':[{k:(round(float(v),3) if not isinstance(v,int) else v) for k,v in f.items()} for f in flights],
-      'outer':[poly_out(p) for p in ow],'rooms':encl}
+      'outer':[poly_out(p) for p in ow],'rooms':encl,'tunnels':tunnels_out(TUN)}
 json.dump(data,open('ssa_stands.json','w'),separators=(',',':'))
 import os; print('json KB',os.path.getsize('ssa_stands.json')//1024)
 pickle.dump((c200,c300,c400,c500),open('ssa_conc.pkl','wb'))

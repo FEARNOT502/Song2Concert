@@ -48,7 +48,7 @@ export function decodeSeats(b64) {
 // under the concourse lights whatever the show is doing out in the bowl.
 export function roomMaterials(materials) {
   return {
-    inMat: materials.interior ?? std({ color: 0xc9c2b4, roughness: 0.92, emissive: 0x7a7366, emissiveIntensity: 0.5 }),
+    inMat: materials.interior ?? std({ color: 0x8f8a80, roughness: 0.92, emissive: 0x8a8376, emissiveIntensity: 0.6 }),
     ceilMat: materials.ceiling ?? std({ color: 0xd8d4cc, roughness: 0.9, emissive: 0x8a857c, emissiveIntensity: 0.55 }),
     floorLit: std({ color: 0x86817a, roughness: 0.7, emissive: 0x5b564e, emissiveIntensity: 0.5, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }),
     // the sides of a tunnel mouth: lit from the concourse behind, less so out in the bowl
@@ -104,6 +104,8 @@ export function vomParts(v, ox, oz) {
   floor.push(box(0, v.L + v.T, -hw, hw, v.y - 0.12, v.y + 0.005));
   if (v.T > 0 && v.roof != null) {
     for (const sg of [-1, 1]) tunnel.push(box(v.L, v.L + v.T, sg * (hw - T), sg * hw, v.y, v.roof));
+    // a tunnel to a concourse not drawn here ends at its doors
+    if (v.end) tunnel.push(box(v.L + v.T - T, v.L + v.T, -hw, hw, v.y, v.roof));
     ceil.push(box(v.L, v.L + v.T, -hw + T, hw - T, v.roof - 0.05, v.roof - 0.01));
     for (let t = v.L + 1.2; t < v.L + v.T - 0.6; t += 3) {
       const [x, z] = at(t, 0);
@@ -176,6 +178,68 @@ export function roomLights(data, { ox, oz, lit }) {
 // them (pale and lit on the inside, the building's own on the outside), the
 // ceilings, the underside of the stands over them lined, the floors under the
 // lights, and the lights themselves in lines along the way.
+// Rails and walls come from a raster's outline: along a slanted or curved
+// edge they run as a staircase, long runs joined by jogs a cell long, each
+// jog a panel of its own facing another way. Join the segments that meet end
+// to end at the same heights into runs, and draw each run again within
+// `tol` of it (Douglas-Peucker), so a straight edge is one panel and a
+// curve a chain of chords, with no jog left in it.
+export function smoothRuns(segs, tol = 0.14) {
+  const key = (x, z) => `${Math.round(x * 50)},${Math.round(z * 50)}`;
+  const hk = (s) => `${Math.round(s[4] * 50)},${Math.round(s[5] * 50)}`;
+  const from = new Map(), to = new Map();
+  segs.forEach((s, i) => { from.set(`${hk(s)}|${key(s[0], s[1])}`, i); to.set(`${hk(s)}|${key(s[2], s[3])}`, i); });
+  const used = new Uint8Array(segs.length), out = [];
+  const dp = (P) => {
+    if (P.length < 3) return P;
+    const keep = new Uint8Array(P.length); keep[0] = keep[P.length - 1] = 1;
+    const st = [[0, P.length - 1]];
+    while (st.length) {
+      const [a, b] = st.pop(); const [ax, az] = P[a], [bx, bz] = P[b];
+      const dx = bx - ax, dz = bz - az, l = Math.hypot(dx, dz) || 1e-9;
+      let m = -1, md = tol;
+      for (let i = a + 1; i < b; i++) { const d = Math.abs((P[i][0] - ax) * dz - (P[i][1] - az) * dx) / l; if (d > md) { md = d; m = i; } }
+      if (m >= 0) { keep[m] = 1; st.push([a, m], [m, b]); }
+    }
+    return P.filter((_, i) => keep[i]);
+  };
+  for (let i = 0; i < segs.length; i++) {
+    if (used[i]) continue;
+    // walk back to the start of this run, then forward along it
+    let s0 = i, guard = 0;
+    while (guard++ < segs.length) { const j = to.get(`${hk(segs[s0])}|${key(segs[s0][0], segs[s0][1])}`); if (j === undefined || used[j] || j === i) break; s0 = j; if (s0 === i) break; }
+    const P = [[segs[s0][0], segs[s0][1]]]; let c = s0; const h = [segs[s0][4], segs[s0][5]];
+    while (c !== undefined && !used[c]) {
+      used[c] = 1; P.push([segs[c][2], segs[c][3]]);
+      c = from.get(`${hk(segs[c])}|${key(segs[c][2], segs[c][3])}`);
+    }
+    const Q = dp(P);
+    for (let k = 0; k + 1 < Q.length; k++) out.push([Q[k][0], Q[k][1], Q[k + 1][0], Q[k + 1][1], h[0], h[1]]);
+  }
+  return out;
+}
+
+// Thin vertical panels laid end to end (a rail, a wall round a curve) each
+// carry their own facing; where two meet at a gentle bend they share one, so
+// the run shades as one smooth surface rather than a row of facets.
+export function weldNormals(P, N, crease = 35) {
+  const c = Math.cos(crease * DEG), groups = new Map();
+  for (let i = 0; i < P.length; i += 3) {
+    const k = `${Math.round(P[i] * 50)},${Math.round(P[i + 1] * 50)},${Math.round(P[i + 2] * 50)}`;
+    let g = groups.get(k); if (!g) groups.set(k, (g = [])); g.push(i);
+  }
+  const out = N.slice();
+  for (const idx of groups.values()) {
+    if (idx.length < 2) continue;
+    for (const i of idx) {
+      let x = 0, z = 0;
+      for (const j of idx) if (N[i] * N[j] + N[i + 2] * N[j + 2] > c) { x += N[j]; z += N[j + 2]; }
+      const l = Math.hypot(x, z) || 1; out[i] = x / l; out[i + 2] = z / l;
+    }
+  }
+  return out;
+}
+
 export function buildRooms(R, { ox, oz, shapeOf, structMat, wallMat, lit: M }) {
   const g = new THREE.Group();
   const { inMat, ceilMat, floorLit } = M;
@@ -187,11 +251,11 @@ export function buildRooms(R, { ox, oz, shapeOf, structMat, wallMat, lit: M }) {
     const nx = -dz / l, nz = dx / l;
     for (const [x, y, z] of [[x0, y0, z0], [x1, y0, z1], [x1, y1, z1], [x0, y0, z0], [x1, y1, z1], [x0, y1, z0]]) { P.push(x + ox, y, z + oz); N.push(nx, 0, nz); }
   };
-  for (const [x0, z0, x1, z1, y0, y1] of R.walls) {
+  for (const [x0, z0, x1, z1, y0, y1] of smoothRuns(R.walls, 0.1)) {
     quad(inP, inN, x0, z0, x1, z1, y0, y1);
     quad(outP, outN, x1, z1, x0, z0, y0, y1);
   }
-  const mk = (P, N) => { const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3)); return geo; };
+  const mk = (P, N) => { const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(N.length === P.length && N !== P ? weldNormals(P, N) : N, 3)); return geo; };
   if (inP.length) { g.add(new THREE.Mesh(mk(inP, inN), inMat)); g.add(new THREE.Mesh(mk(outP, outN), outMat)); }
   // horizontal sheets, facing up or down
   const sheet = (polys, y, down) => {
@@ -229,6 +293,47 @@ export function buildRooms(R, { ox, oz, shapeOf, structMat, wallMat, lit: M }) {
   return g;
 }
 
+// Tunnels at floor level out under a stand (a stadium's corner tunnels, an
+// arena floor's corner passages): an open cut through the rows too low to
+// pass under, walled either side a rail's height above the rows beside it,
+// then on under the rows above, walled, roofed and lit; closed at its end
+// by doors when it leads to rooms not drawn here.
+export function buildTunnels(data, ox, oz) {
+  const g = new THREE.Group();
+  const tunnelGeo = { wall: [], floor: [], lamp: [] };
+  const h1 = data.levels[0].h0;
+  for (const t of data.tunnels || []) {
+    const [ux, uz] = t.u, vx = -uz, vz = ux, yaw = Math.atan2(ux, uz);
+    const at = (a, b) => [t.p[0] + ox + ux * a + vx * b, t.p[1] + oz + uz * a + vz * b];
+    const box = (out, a0, a1, b0, b1, y0, y1) => {
+      const bx = new THREE.BoxGeometry(Math.abs(b1 - b0), y1 - y0, a1 - a0);
+      bx.rotateY(yaw); const [x, z] = at((a0 + a1) / 2, (b0 + b1) / 2); bx.translate(x, (y0 + y1) / 2, z); out.push(bx.toNonIndexed());
+    };
+    // a wall along the cut, its top raked with the rows: (a, y) extruded across
+    const raked = (s0, s1, pts) => {
+      const ex = new THREE.ExtrudeGeometry(new THREE.Shape(pts.map(([a_, y]) => new THREE.Vector2(a_, y))), { depth: s1 - s0, bevelEnabled: false });
+      const [ox_, oz_] = at(0, s0);
+      ex.applyMatrix4(new THREE.Matrix4().makeBasis(V3(ux, 0, uz), V3(0, 1, 0), V3(vx, 0, vz)).setPosition(ox_, 0, oz_));
+      tunnelGeo.wall.push(ex.toNonIndexed());
+    };
+    const hw = t.w / 2, T = 0.3;
+    // the cut's side walls: a rail's height over the rows beside them
+    const cut = (prof) => (prof?.length > 1
+      ? [[prof[0][0], 0], [prof[prof.length - 1][0], 0], ...prof.slice().reverse()]
+      : [[-0.4, 0], [t.deck, 0], [t.deck, t.deckY + 1.0], [-0.4, h1 + 1.0]]);
+    raked(hw - T, hw + 0.12, cut(t.sides?.[1])); raked(-hw - 0.12, -hw + T, cut(t.sides?.[0]));
+    for (const sg of [-1, 1]) box(tunnelGeo.wall, t.deck, t.L, sg > 0 ? hw - T : -hw - 0.12, sg > 0 ? hw + 0.12 : -hw + T, 0, t.h + 0.02);
+    box(tunnelGeo.wall, t.deck - 0.05, t.L, -hw, hw, t.h - 0.02, t.h + 0.12);      // the roof on under the rows
+    box(tunnelGeo.floor, -0.4, t.L + (t.closed ? 0 : 12), -hw - 0.3, hw + 0.3, -0.02, 0.04);
+    if (t.closed) box(tunnelGeo.wall, t.L - 0.3, t.L, -hw, hw, 0, t.h);      // its doors, shut
+    for (let a = t.deck + 1.5; a < t.L; a += 6) box(tunnelGeo.lamp, a, a + 1.4, -0.12, 0.12, t.h - 0.08, t.h - 0.02);
+  }
+  if (tunnelGeo.wall.length) g.add(new THREE.Mesh(mergeGeometries(tunnelGeo.wall), std({ color: 0x4c4a47, roughness: 0.92 })));
+  if (tunnelGeo.floor.length) g.add(new THREE.Mesh(mergeGeometries(tunnelGeo.floor), std({ color: 0x2c2c2e, roughness: 0.95 })));
+  if (tunnelGeo.lamp.length) g.add(new THREE.Mesh(mergeGeometries(tunnelGeo.lamp), new THREE.MeshBasicMaterial({ color: 0xfff2dc })));
+  return g;
+}
+
 export function buildStands(data, {
   offset = V3(0, 0, 0), stage = V3(0, 2, 0), seatColors = {}, seatColor = 0x22262e,
   concreteTone = 0.22, sold = () => true, occupancy = 0.97, seed = 5, roofY = 36, crowd = true,
@@ -252,12 +357,82 @@ export function buildStands(data, {
     for (const h of polys.slice(1)) s.holes.push(new THREE.Path(h.map(([x, z]) => new THREE.Vector2(x + ox, -(z + oz)))));
     return s;
   };
+  // Its top and underside are the outline's triangulation; its sides a strip
+  // round each ring, shaded smooth along a curve and sharp at a corner, the
+  // texture running on unbroken along it (faces shaded one by one, the
+  // texture starting afresh on each, show a curved front as a row of facets).
   const prism = (polys, y0, y1, out) => {
     if (y1 - y0 < 0.01) return;
-    const geo = new THREE.ExtrudeGeometry(shapeOf(polys), { depth: y1 - y0, bevelEnabled: false, curveSegments: 1 });
-    geo.rotateX(-Math.PI / 2);
-    geo.translate(0, y0, 0);
-    out.push(geo.index ? geo.toNonIndexed() : geo);
+    const cap = new THREE.ShapeGeometry(shapeOf(polys), 1);
+    cap.rotateX(-Math.PI / 2);
+    const top = cap.toNonIndexed(); top.translate(0, y1, 0);
+    const bot = cap.toNonIndexed(); bot.translate(0, y0, 0);
+    {
+      const p = bot.attributes.position.array, n = bot.attributes.normal.array, u = bot.attributes.uv.array;
+      for (let i = 0; i < p.length; i += 9) for (let k = 0; k < 3; k++) { const t = p[i + 3 + k]; p[i + 3 + k] = p[i + 6 + k]; p[i + 6 + k] = t; }
+      for (let i = 0; i < u.length; i += 6) for (let k = 0; k < 2; k++) { const t = u[i + 2 + k]; u[i + 2 + k] = u[i + 4 + k]; u[i + 4 + k] = t; }
+      for (let i = 1; i < n.length; i += 3) n[i] = -1;
+    }
+    out.push(top, bot);
+    const P = [], N = [], U = [];
+    const cosCrease = Math.cos(35 * DEG);
+    polys.forEach((ring0, ri) => {
+      let ring = ring0.map(([x, z]) => [x + ox, z + oz]);
+      if (ring.length > 2 && Math.hypot(ring[0][0] - ring[ring.length - 1][0], ring[0][1] - ring[ring.length - 1][1]) < 1e-6) ring = ring.slice(0, -1);
+      const n = ring.length;
+      if (n < 3) return;
+      let A = 0;
+      for (let i = 0; i < n; i++) { const [x0, z0] = ring[i], [x1, z1] = ring[(i + 1) % n]; A += x0 * z1 - x1 * z0; }
+      // the side of each edge away from the solid: out of the outline, into a hole
+      const sg = (ri === 0 ? 1 : -1) * (A > 0 ? 1 : -1);
+      const en = [], el = [];
+      for (let i = 0; i < n; i++) {
+        const [x0, z0] = ring[i], [x1, z1] = ring[(i + 1) % n];
+        const dx = x1 - x0, dz = z1 - z0, l = Math.hypot(dx, dz) || 1e-9;
+        en.push([sg * dz / l, -sg * dx / l]); el.push(l);
+      }
+      // each corner's normal from the ring's direction over a metre either
+      // side of it (the traced outline wobbles by a few centimetres, which
+      // shaded edge by edge shows as stripes); where the ring turns within
+      // that metre, a corner, each face keeps its own side's direction
+      const cum = [0]; for (let i = 0; i < n; i++) cum.push(cum[i] + el[i]);
+      const per = cum[n];
+      const at = (t) => {
+        t = ((t % per) + per) % per;
+        let lo = 0, hi = n; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (cum[m] <= t) lo = m; else hi = m; }
+        const f = el[lo] > 0 ? (t - cum[lo]) / el[lo] : 0, [x0, z0] = ring[lo], [x1, z1] = ring[(lo + 1) % n];
+        return [x0 + (x1 - x0) * f, z0 + (z1 - z0) * f];
+      };
+      const W = Math.min(1.0, per / 8);
+      const nrm = (dx, dz) => { const l = Math.hypot(dx, dz) || 1e-9; return [sg * dz / l, -sg * dx / l]; };
+      const vnB = [], vnA = [];
+      for (let i = 0; i < n; i++) {
+        const p = ring[i], a = at(cum[i] - W), b = at(cum[i] + W);
+        const ta = [p[0] - a[0], p[1] - a[1]], tb = [b[0] - p[0], b[1] - p[1]];
+        const la = Math.hypot(...ta) || 1e-9, lb = Math.hypot(...tb) || 1e-9;
+        if ((ta[0] * tb[0] + ta[1] * tb[1]) / (la * lb) < cosCrease) { vnB.push(nrm(...ta)); vnA.push(nrm(...tb)); }
+        else { const q = nrm(b[0] - a[0], b[1] - a[1]); vnB.push(q); vnA.push(q); }
+      }
+      // the face after corner i takes vnA[i]; the face before corner j, vnB[j]
+      const vn = (i, e) => (e === i ? vnA[i] : vnB[i]);
+      let s0 = 0;
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        const [ax, az] = ring[i], [bx, bz] = ring[j];
+        const na = vn(i, i), nb = vn(j, i), s1 = s0 + el[i];
+        const a0 = [ax, y0, az, na, s0], a1 = [ax, y1, az, na, s0], b0 = [bx, y0, bz, nb, s1], b1 = [bx, y1, bz, nb, s1];
+        const tri = sg > 0 ? [a0, b1, b0, a0, a1, b1] : [a0, b0, b1, a0, b1, a1];
+        for (const [x, y, z, nn, uu] of tri) { P.push(x, y, z); N.push(nn[0], 0, nn[1]); U.push(uu, y); }
+        s0 = s1;
+      }
+    });
+    if (P.length) {
+      const side = new THREE.BufferGeometry();
+      side.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+      side.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+      side.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2));
+      out.push(side);
+    }
   };
   const flat = (polys, y, out) => {
     const geo = new THREE.ShapeGeometry(shapeOf(polys), 1);
@@ -265,7 +440,7 @@ export function buildStands(data, {
     out.push(geo.index ? geo.toNonIndexed() : geo);
   };
   // thin vertical panels, merged: rails, walls, tunnel sides
-  const panels = { rail: [[], []], wall: [[], []], mouth: [[], []] };
+  const panels = { rail: [[], []], wall: [[], []], mouth: [[], []], own: [[], []] };
   const panel = (kind, x0, z0, x1, z1, y0, y1) => {
     const [p, n] = panels[kind];
     const dx = x1 - x0, dz = z1 - z0, l = Math.hypot(dx, dz) || 1;
@@ -273,7 +448,7 @@ export function buildStands(data, {
     const a = [x0 + ox, z0 + oz], b = [x1 + ox, z1 + oz];
     for (const [x, y, z] of [[a[0], y0, a[1]], [b[0], y0, b[1]], [b[0], y1, b[1]], [a[0], y0, a[1]], [b[0], y1, b[1]], [a[0], y1, a[1]]]) { p.push(x, y, z); n.push(nx, 0, nz); }
   };
-  const mkPanels = ([p, n]) => { const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(p, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(n, 3)); return geo; };
+  const mkPanels = ([p, n]) => { const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(p, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(weldNormals(p, n), 3)); return geo; };
 
   const people = [], aisleLights = [], seatSpots = [];
   const solid = [], floors = [], stairs = [], mouthFloors = [];
@@ -304,8 +479,20 @@ export function buildStands(data, {
       voms.pit.push(...p.pit); voms.cap.push(...p.cap); voms.tunnel.push(...p.tunnel);
       voms.floor.push(...p.floor); voms.ceil.push(...p.ceil); voms.lamps.push(...p.lamps); voms.signs.push(...p.signs);
     }
-    for (const [x0, z0, x1, z1, y0, y1] of L.rails) panel('rail', x0, z0, x1, z1, y0, y1);
-    for (const [x0, z0, x1, z1, y0, y1] of L.walls) panel('wall', x0, z0, x1, z1, y0, y1);
+    // a level can have its own front (a VIP balcony's dark mesh), and the
+    // low partitions between its boxes
+    const own = materials.levelRail?.[L.name];
+    for (const [x0, z0, x1, z1, y0, y1] of smoothRuns(L.rails)) panel(own ? 'own' : 'rail', x0, z0, x1, z1, y0, y1);
+    if (own && panels.own[0].length) { g.add(new THREE.Mesh(mkPanels(panels.own), own)); panels.own = [[], []]; }
+    if (L.partitions?.length) {
+      const pp = [];
+      for (const [x0, z0, x1, z1, y0, y1] of L.partitions) {
+        const len = Math.hypot(x1 - x0, z1 - z0), b = new THREE.BoxGeometry(0.06, y1 - y0, len);
+        b.rotateY(Math.atan2(x1 - x0, z1 - z0)); b.translate((x0 + x1) / 2 + ox, (y0 + y1) / 2, (z0 + z1) / 2 + oz); pp.push(b.toNonIndexed());
+      }
+      g.add(new THREE.Mesh(mergeGeometries(pp), materials.partition ?? std({ color: 0x1a1b1f, roughness: 0.6, metalness: 0.3 })));
+    }
+    for (const [x0, z0, x1, z1, y0, y1] of smoothRuns(L.walls)) panel('wall', x0, z0, x1, z1, y0, y1);
     const mesh = new THREE.Mesh(mergeGeometries(levelGeo), structMat);
     mesh.receiveShadow = true;
     g.add(mesh);
@@ -371,6 +558,7 @@ export function buildStands(data, {
   if (panels.rail[0].length) g.add(new THREE.Mesh(mkPanels(panels.rail), railMat));
   if (panels.mouth[0].length) g.add(new THREE.Mesh(mkPanels(panels.mouth), lit.mouthMat));
   if (data.rooms) g.add(buildRooms(data.rooms, { ox, oz, shapeOf, structMat, wallMat, lit }));
+  if (data.tunnels?.length) g.add(buildTunnels(data, ox, oz));
   // the vomitories
   const addMerged = (list, mat, collide = true) => {
     if (!list.length) return;

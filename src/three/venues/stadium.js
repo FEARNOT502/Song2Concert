@@ -44,13 +44,17 @@ export function nightSky(u) {
 // A lattice tube, floodlit white. Its feet stand on their own bases outside
 // the building, past each end, 50 m north of the centre spot; from there it
 // climbs steeply enough to clear the roof everywhere it passes over it.
-export function wembleyArch({ x0 = 50, zc = 64, span = 315, height = 133, lean = 22 * DEG, leg = 0.45 }) {
-  const pts = [];
-  for (let i = 0; i <= 120; i++) {
-    const s = i / 120;
+export function archCurve({ x0 = 50, zc = 64, span = 315, height = 133, lean = 22 * DEG, leg = 0.45 } = {}) {
+  // a point on the arch's axis at s (0..1, foot to foot)
+  return (s) => {
     const h = height * Math.sin(Math.PI * s) ** leg;
-    pts.push(V3(x0 + h * Math.sin(lean), h * Math.cos(lean) - 6, zc + (s - 0.5) * span));
-  }
+    return V3(x0 + h * Math.sin(lean), h * Math.cos(lean) - 6, zc + (s - 0.5) * span);
+  };
+}
+export function wembleyArch({ x0 = 50, zc = 64, span = 315 } = {}) {
+  const at = archCurve({ x0, zc, span });
+  const pts = [];
+  for (let i = 0; i <= 120; i++) pts.push(at(i / 120));
   const curve = new THREE.CatmullRomCurve3(pts);
   const geo = new THREE.TubeGeometry(curve, 240, 3.7, 16, false);
   const m = std({ color: 0xe8e8ea, roughness: 0.5, metalness: 0.2, emissive: 0x9aa0aa, emissiveIntensity: 0.55, side: THREE.DoubleSide });
@@ -77,11 +81,38 @@ export function wembleyArch({ x0 = 50, zc = 64, span = 315, height = 133, lean =
   return g;
 }
 
+// A straight member from a to b: a tube, tapering from r0 to r1.
+export function rodInto(out, a, b, r0, r1 = r0, seg = 6) {
+  const d = b.clone().sub(a), len = d.length();
+  if (len < 0.01) return;
+  const c = new THREE.CylinderGeometry(r1, r0, len, seg, 1, true);
+  c.applyMatrix4(new THREE.Matrix4().compose(a.clone().addScaledVector(d, 0.5), new THREE.Quaternion().setFromUnitVectors(V3(0, 1, 0), d.normalize()), V3(1, 1, 1)));
+  out.push(c.toNonIndexed());
+}
+// A prismatic truss from a to b: two top chords, one under them, and the
+// diagonals zigzagging down both faces between.
+export function prismInto(out, a, b, w, h, r) {
+  const d = b.clone().sub(a), len = d.length();
+  if (len < 0.01) return;
+  const t = d.clone().normalize(), side = V3(-t.z, 0, t.x).normalize().multiplyScalar(w / 2), down = V3(0, -h, 0);
+  const A = [a.clone().add(side), a.clone().sub(side), a.clone().add(down)];
+  const B = [b.clone().add(side), b.clone().sub(side), b.clone().add(down)];
+  for (let k = 0; k < 3; k++) rodInto(out, A[k], B[k], r, r, 5);
+  const n = Math.max(1, Math.round(len / Math.max(w, h)));
+  for (let i = 0; i < n; i++) {
+    const p0 = a.clone().addScaledVector(d, i / n), p1 = a.clone().addScaledVector(d, (i + 1) / n);
+    const top = (i % 2 ? p1 : p0), bot = (i % 2 ? p0 : p1);
+    for (const sd of [side, side.clone().negate()]) rodInto(out, top.clone().add(sd), bot.clone().add(down), r * 0.7, r * 0.7, 4);
+    rodInto(out, p0.clone().add(side), p0.clone().sub(side), r * 0.6, r * 0.6, 4);
+  }
+}
+
 export function buildStadium(ctx) {
   const { pipe, q, cu } = ctx;
   const root = new THREE.Group();
   const DECK = 3.2, ROOF = 52, RIG = 36;
-  const eye = V3(0, 1.6 + 1.2, 85);
+  // FOH, and the listener there: at the back of the pitch's crowd
+  const eye = V3(0, 1.6 + 1.2, 126);
   const STAGE = V3(0, DECK, 20);
   // the centre spot, on the long axis; the stage end is west (-z), north is +x
   const ZC = 64;
@@ -126,43 +157,235 @@ export function buildStadium(ctx) {
   ground.rotation.x = -Math.PI / 2; ground.position.set(0, -0.02, ZC); ground.userData.noCollide = true;
   root.add(ground);
 
-  // the two big screens, in the bays at the front of Level 5 at either end
-  for (const e of [-1, 1]) {
-    const scr = ledScreen({ w: 30, h: 9.4, tex: ctx.art.texture(16 / 9), pitch: 0.012, bright: 1.1, kind: 'main', frame: 0.3, light: false });
-    scr.position.set(0, 28.8, ZC + e * 126.4); scr.rotation.y = e > 0 ? Math.PI : 0;
-    root.add(scr); ctx.addScreen(scr, 16 / 9, 'main');
+  // ── the bays in Level 5's front ──
+  // At either end a bay holds a big screen (Daktronics, 23.88 m by 8.15 m,
+  // 2013) in a housing that fills it up to the rows behind and hangs below
+  // the tier's front. On the south side a bay holds the TV gantry (Level 4):
+  // an open platform level with the tier's front row, a glass balustrade
+  // along its front, the cameras along it, the commentary desks along its
+  // back, under a light canopy.
+  const housingMat = std({ color: 0x2a2c30, roughness: 0.7, metalness: 0.3 });
+  const glassMat = new THREE.MeshPhysicalMaterial({ color: 0x9fb2bf, roughness: 0.08, metalness: 0, transmission: 0.0, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false });
+  const steelDark = std({ color: 0x1a1b1e, roughness: 0.5, metalness: 0.5 });
+  const L5h0 = WB_STANDS.levels.find((l) => l.name === 'L5').h0;
+  const extrude = (ring, y0, y1, mat) => {
+    const sh = new THREE.Shape(ring.map(([x, z]) => new THREE.Vector2(x, z + ZC)));
+    const geo = new THREE.ExtrudeGeometry(sh, { depth: y1 - y0, bevelEnabled: false, curveSegments: 1 });
+    geo.rotateX(Math.PI / 2);
+    const m = new THREE.Mesh(geo, mat); m.position.y = y1; root.add(m); return m;
+  };
+  // a wall along a polyline (x, z), from y0 to y1
+  const strip = (P, y0, y1, out, off = 0) => {
+    for (let i = 0; i + 1 < P.length; i++) {
+      const [ax, az] = P[i], [bx, bz] = P[i + 1], l = Math.hypot(bx - ax, bz - az);
+      if (l < 1e-3) continue;
+      const g = new THREE.PlaneGeometry(l, y1 - y0);
+      g.rotateY(Math.atan2(-(bz - az), bx - ax)); g.translate((ax + bx) / 2, (y0 + y1) / 2, (az + bz) / 2 + ZC); out.push(g);
+    }
+  };
+  for (const b of WB_STANDS.bays) {
+    const screen = b.kind === 'screen';
+    const f = b.front, mid = f[Math.floor(f.length / 2)];
+    const [a0, a1] = b.mouth;
+    const tx = a1[0] - a0[0], tz = a1[1] - a0[1], tl = Math.hypot(tx, tz);
+    let nx = -tz / tl, nz = tx / tl;
+    if (nx * (0 - mid[0]) + nz * (0 - mid[1]) < 0) { nx = -nx; nz = -nz; }
+    const yaw = Math.atan2(nx, nz);
+    if (screen) {
+      extrude(b.ring, 25.9, b.y1 + 0.05, housingMat);
+      const scr = ledScreen({ w: 23.88, h: 8.15, tex: ctx.art.texture(23.88 / 8.15), pitch: 0.012, bright: 1.3, kind: 'main', frame: 0.35, light: false });
+      scr.position.set(mid[0] + nx * 0.25, 25.9 + 0.5 + 8.15 / 2, mid[1] + ZC + nz * 0.25); scr.rotation.y = yaw;
+      root.add(scr); ctx.addScreen(scr, 23.88 / 8.15, 'main');
+      continue;
+    }
+    // the gantry
+    const deckY = L5h0, top = b.y1 + 0.05;
+    const nA = b.ring.length - f.length + 2, A = b.ring.slice(0, nA);
+    extrude(b.ring, b.y0, deckY, housingMat);                     // under it, the tier's front carried across
+    extrude(b.ring, top - 0.3, top, housingMat);                  // the canopy
+    const back = [], rail = [], glassG = [];
+    strip(A, deckY, top - 0.3, back);
+    strip(f, deckY, deckY + 1.1, glassG);
+    for (let i = 0; i + 1 < f.length; i++) {
+      const [ax, az] = f[i], [bx, bz] = f[i + 1];
+      const d = V3(bx - ax, 0, bz - az), l = d.length();
+      const h = new THREE.BoxGeometry(0.08, 0.08, l); h.rotateY(Math.atan2(d.x, d.z)); h.translate((ax + bx) / 2, deckY + 1.12, (az + bz) / 2 + ZC); rail.push(h.toNonIndexed());
+    }
+    root.add(new THREE.Mesh(mergeGeometries(back.map((g) => g.toNonIndexed())), std({ color: 0x2a2b30, roughness: 0.8, emissive: 0x3a3226, emissiveIntensity: 1, side: THREE.DoubleSide })));   // lit by the gantry's own lights
+    root.add(new THREE.Mesh(mergeGeometries(glassG.map((g) => g.toNonIndexed())), glassMat));
+    root.add(new THREE.Mesh(mergeGeometries(rail), steelDark));
+    // lights under the canopy
+    const lamps = [];
+    for (let i = 0; i < f.length; i += 3) {
+      const [x, z] = f[i], r = Math.hypot(x, z) || 1, off = 2.2;
+      const lg = new THREE.BoxGeometry(2.4, 0.04, 0.3); lg.rotateY(Math.atan2(x, z)); lg.translate(x + (x / r) * off, top - 0.33, z + ZC + (z / r) * off); lamps.push(lg.toNonIndexed());
+    }
+    root.add(new THREE.Mesh(mergeGeometries(lamps), new THREE.MeshBasicMaterial({ color: 0xfff1d8 })));
+    // the commentary desks along the back, and the cameras along the front
+    const desks = [], cams = [], legs = [];
+    for (let i = 0; i + 1 < A.length; i++) {
+      const [ax, az] = A[i], [bx, bz] = A[i + 1], l = Math.hypot(bx - ax, bz - az);
+      if (l < 0.2) continue;
+      const cx = (ax + bx) / 2, cz = (az + bz) / 2, r = Math.hypot(cx, cz) || 1;
+      const dg = new THREE.BoxGeometry(0.7, 0.06, l); dg.rotateY(Math.atan2(bx - ax, bz - az));
+      dg.translate(cx - (cx / r) * 0.5, deckY + 0.74, cz + ZC - (cz / r) * 0.5); desks.push(dg.toNonIndexed());
+    }
+    let run = 0;
+    for (let i = 0; i + 1 < f.length; i++) {
+      const [ax, az] = f[i], [bx, bz] = f[i + 1], l = Math.hypot(bx - ax, bz - az);
+      run += l;
+      if (run < 3.5) continue;
+      run = 0;
+      const r = Math.hypot(bx, bz) || 1, x = bx + (bx / r) * 1.3, z = bz + (bz / r) * 1.3;
+      const body = new THREE.BoxGeometry(0.34, 0.36, 0.7); body.rotateY(Math.atan2(-bx, -bz)); body.translate(x, deckY + 1.55, z + ZC); cams.push(body.toNonIndexed());
+      const lens = new THREE.CylinderGeometry(0.1, 0.12, 0.5, 10); lens.rotateX(Math.PI / 2); lens.rotateY(Math.atan2(-bx, -bz));
+      lens.translate(x - (bx / r) * 0.55, deckY + 1.58, z + ZC - (bz / r) * 0.55); cams.push(lens.toNonIndexed());
+      const post = new THREE.CylinderGeometry(0.06, 0.1, 1.35, 8); post.translate(x, deckY + 0.68, z + ZC); legs.push(post.toNonIndexed());
+    }
+    root.add(new THREE.Mesh(mergeGeometries(desks), std({ color: 0x2e3036, roughness: 0.6, emissive: 0x1c2430, emissiveIntensity: 1 })));
+    if (cams.length) root.add(new THREE.Mesh(mergeGeometries(cams), std({ color: 0x0c0d10, roughness: 0.4, metalness: 0.4 })));
+    if (legs.length) root.add(new THREE.Mesh(mergeGeometries(legs), steelDark));
   }
 
-  // ── roof: a plate over every seat with the pitch left open, and its steel ──
+  // ── the roof, as it is built ──
+  // Over every seat, open over the pitch. Its steel is white: parallel
+  // rafters running north-south every 15.5 m, each an underslung beam (a
+  // top chord under the roof, V-shaped legs down to a cable), a prismatic
+  // truss round its perimeter above the back of the top tier, a box girder
+  // along the north roof's leading edge hung from the arch by forestay
+  // cables on pyramid struts, backstays from the arch to the perimeter
+  // truss behind it, and the floodlight gantry round the opening.
   const plate = new THREE.Shape(outerRing.map((p) => new THREE.Vector2(p.x, p.z)));
   plate.holes.push(new THREE.Path(roofIn.map((p) => new THREE.Vector2(p.x, p.z))));
   const roofGeo = new THREE.ExtrudeGeometry(plate, { depth: 2.5, bevelEnabled: false, curveSegments: 1 });
   roofGeo.rotateX(Math.PI / 2);
-  const roof = new THREE.Mesh(roofGeo, std({ color: 0x9aa0a8, roughness: 0.7, metalness: 0.3, emissive: 0x0a0c10, side: THREE.DoubleSide }));
+  const roof = new THREE.Mesh(roofGeo, std({ color: 0x5e6268, roughness: 0.8, metalness: 0.3, side: THREE.DoubleSide }));
   roof.position.y = ROOF + 2.5;
   root.add(roof);
-  // cantilever trusses under the plate, radiating in to the opening, and a
-  // ring truss round its edge
-  const steel = [];
-  const outerAt = (a) => {
-    // where the outer wall is, in the direction a from the centre spot
-    let best = outerRing[0], bd = Infinity;
-    for (const p of outerRing) { const d = Math.abs(Math.atan2(Math.sin(Math.atan2(p.x, p.z - ZC) - a), Math.cos(Math.atan2(p.x, p.z - ZC) - a))); if (d < bd) { bd = d; best = p; } }
-    return best;
+  const inRing = (poly) => (x, z) => {
+    let c = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const a = poly[i], b = poly[j];
+      if ((a.z > z) !== (b.z > z) && x < (b.x - a.x) * (z - a.z) / (b.z - a.z) + a.x) c = !c;
+    }
+    return c;
   };
+  const inOuter = inRing(outerRing), inOpen = inRing(roofIn);
+  const steel = [], cables = [];
+  const TOP = ROOF - 0.05;
+  // the rafters, and the purlins' lines across them
+  for (let k = -11; k <= 11; k++) {
+    const z = ZC + k * 15.5;
+    const runs = []; let a = null;
+    for (let x = -170; x <= 170; x += 0.25) {
+      const on = inOuter(x, z) && !inOpen(x, z);
+      if (on && a === null) a = x;
+      if (!on && a !== null) { runs.push([a, x - 0.25]); a = null; }
+    }
+    if (a !== null) runs.push([a, 170]);
+    for (const [xa0, xb0] of runs) {
+      const xa = xa0 + 0.6, xb = xb0 - 0.6, L = xb - xa;
+      if (L < 8) continue;
+      // the top chord: a fabricated beam just under the cladding
+      const beam = new THREE.BoxGeometry(L, 0.9, 0.45); beam.translate((xa + xb) / 2, TOP - 0.45, z); steel.push(beam.toNonIndexed());
+      const spans = Math.max(1, Math.round(L / 48));
+      for (let sp = 0; sp < spans; sp++) {
+        const s0 = xa + (L * sp) / spans, s1 = xa + (L * (sp + 1)) / spans, l = s1 - s0;
+        const depth = Math.min(5.5, 1.4 + l * 0.085);
+        const nv = Math.max(2, Math.round(l / 7));
+        const node = (j) => { const t = (j + 0.5) / nv; return V3(s0 + t * l, TOP - 0.9 - depth * Math.sin(Math.PI * t) ** 0.8, z); };
+        let prev = V3(s0, TOP - 0.9, z);
+        for (let j = 0; j < nv; j++) {
+          const n = node(j), half = Math.min(1.6, l / nv * 0.3);
+          // the vee: two legs from the top chord to a node on the cable
+          rodInto(steel, V3(n.x - half, TOP - 0.9, z), n, 0.2, 0.09);
+          rodInto(steel, V3(n.x + half, TOP - 0.9, z), n, 0.2, 0.09);
+          rodInto(cables, prev, n, 0.07);
+          prev = n;
+        }
+        rodInto(cables, prev, V3(s1, TOP - 0.9, z), 0.07);
+      }
+    }
+  }
+  // the perimeter truss, over the back of the top tier
+  const back = [];
+  for (let k = 0; k < outerRing.length; k += Math.max(1, Math.round(outerRing.length / 110))) back.push(outerRing[k]);
+  const inward = (p, d) => { const r = Math.hypot(p.x, p.z - ZC) || 1; return V3(p.x - (p.x / r) * d, 0, p.z - ((p.z - ZC) / r) * d); };
+  for (let k = 0; k < back.length; k++) {
+    const a = inward(back[k], 3.5), b = inward(back[(k + 1) % back.length], 3.5);
+    prismInto(steel, V3(a.x, TOP - 0.2, a.z), V3(b.x, TOP - 0.2, b.z), 3.2, 4.2, 0.16);
+  }
+  // round the opening: the leading edge — a box girder on the north side,
+  // a truss elsewhere — with the floodlight gantry under it
   const edge = [];
-  for (let k = 0; k < roofIn.length; k += Math.max(1, Math.round(roofIn.length / 96))) edge.push(roofIn[k]);
+  for (let k = 0; k < roofIn.length; k += Math.max(1, Math.round(roofIn.length / 140))) edge.push(roofIn[k]);
+  const leb = [];
   for (let k = 0; k < edge.length; k++) {
     const a = edge[k], b = edge[(k + 1) % edge.length];
-    const o = outerAt(Math.atan2(a.x, a.z - ZC));
-    if (k % 2 === 0) latticeInto(steel, V3(o.x, ROOF - 2, o.z), V3(a.x, ROOF - 0.3, a.z), 2.2, 0.09);
-    latticeInto(steel, V3(a.x, ROOF - 0.6, a.z), V3(b.x, ROOF - 0.6, b.z), 1.4, 0.07);
+    const north = a.x > 44 && b.x > 44;
+    if (north) {
+      const d = Math.hypot(b.x - a.x, b.z - a.z), g = new THREE.BoxGeometry(2.6, 3.0, d + 0.05);
+      g.rotateY(Math.atan2(b.x - a.x, b.z - a.z)); g.translate((a.x + b.x) / 2, TOP - 1.5, (a.z + b.z) / 2); steel.push(g.toNonIndexed());
+      leb.push(a);
+    } else prismInto(steel, V3(a.x, TOP - 0.3, a.z), V3(b.x, TOP - 0.3, b.z), 2.4, 2.6, 0.12);
   }
-  root.add(new THREE.Mesh(mergeGeometries(steel), std({ color: 0xc4c8cc, metalness: 0.7, roughness: 0.45, emissive: 0x101216 })));
+  // the pyramid struts on the north roof's leading edge, and the forestays
+  // from them up to the arch, crossing as a Warren truss
+  const arch = archCurve({ zc: ZC });
+  const archAtZ = (z) => { let s0 = 0, s1 = 1; for (let i = 0; i < 30; i++) { const m = (s0 + s1) / 2; if (arch(m).z < z) s0 = m; else s1 = m; } return arch((s0 + s1) / 2); };
+  leb.sort((p, q) => p.z - q.z);
+  const apexes = [];
+  if (leb.length > 2) {
+    const z0 = leb[0].z, z1 = leb[leb.length - 1].z, n = Math.max(2, Math.round((z1 - z0) / 21));
+    for (let i = 0; i <= n; i++) {
+      const z = z0 + ((z1 - z0) * i) / n;
+      let p = leb[0]; for (const q of leb) if (Math.abs(q.z - z) < Math.abs(p.z - z)) p = q;
+      const apex = V3(p.x + 2.5, ROOF + 2.5 + 7.5, p.z);
+      for (const [dx, dz] of [[-0.8, -3.5], [-0.8, 3.5], [5.5, -3.5], [5.5, 3.5]]) rodInto(steel, V3(p.x + dx, ROOF + 2.5, p.z + dz), apex, 0.28, 0.18);
+      apexes.push(apex);
+    }
+    for (const ap of apexes) for (const dz of [-24, 24]) {
+      const q = archAtZ(ap.z + dz);
+      if (q.y > ap.y + 10) rodInto(cables, ap, q, 0.09, 0.09, 4);
+    }
+  }
+  // the backstays, from the arch down to the perimeter truss behind it
+  const northBack = back.filter((p) => p.x > 60);
+  for (let i = 0; i <= 16; i++) {
+    const q = arch(0.2 + (0.6 * i) / 16);
+    for (const dz of [-18, 18]) {
+      let p = null, bd = Infinity;
+      for (const c of northBack) { const d = Math.abs(c.z - (q.z + dz)); if (d < bd) { bd = d; p = c; } }
+      if (p && bd < 8) { const b = inward(p, 3.5); rodInto(cables, q, V3(b.x, TOP + 0.3, b.z), 0.09, 0.09, 4); }
+    }
+  }
+  const steelMat = std({ color: 0xe6e7e8, roughness: 0.5, metalness: 0.35, emissive: 0x2c2e32, emissiveIntensity: 0.2 });
+  root.add(new THREE.Mesh(mergeGeometries(steel), steelMat));
+  root.add(new THREE.Mesh(mergeGeometries(cables), std({ color: 0xb8bcc2, roughness: 0.4, metalness: 0.7, emissive: 0x202226, emissiveIntensity: 0.2 })));
   // the gantry lights along the roof's inner edge
   const flood = [];
-  for (let k = 0; k < edge.length; k++) flood.push(pipe.flares.add(V3(edge[k].x, ROOF - 1.2, edge[k].z), KELVIN(5600), 1.8, 0));
+  for (let k = 0; k < edge.length; k += 1) flood.push(pipe.flares.add(V3(edge[k].x, ROOF - 3.4, edge[k].z), KELVIN(5600), 1.8, 0));
   root.add(wembleyArch({ zc: ZC }));
+
+  // the press box: desks in front of every other row, a screen between
+  // every two places
+  const deskGeo = [], deskScr = [];
+  for (const dk of WB_STANDS.desks || []) {
+    const sh = new THREE.Shape(dk.polys[0].map(([x, z]) => new THREE.Vector2(x, z + ZC)));
+    for (const hole of dk.polys.slice(1)) sh.holes.push(new THREE.Path(hole.map(([x, z]) => new THREE.Vector2(x, z + ZC))));
+    const g = new THREE.ExtrudeGeometry(sh, { depth: dk.y - dk.y0, bevelEnabled: false, curveSegments: 1 });
+    g.rotateX(Math.PI / 2); g.translate(0, dk.y, 0); deskGeo.push(g.toNonIndexed());
+    const ring = dk.polys[0];
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (const [x, z] of ring) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
+    for (let z = z0 + 0.6; z < z1 - 0.4; z += 1.2) {
+      const m = new THREE.BoxGeometry(0.04, 0.3, 0.5); m.rotateZ(0.25); m.translate((x0 + x1) / 2, dk.y + 0.17, z + ZC); deskScr.push(m.toNonIndexed());
+    }
+  }
+  if (deskGeo.length) {
+    root.add(new THREE.Mesh(mergeGeometries(deskGeo), std({ color: 0x33353a, roughness: 0.6 })));
+    root.add(new THREE.Mesh(mergeGeometries(deskScr), std({ color: 0x0a0b0d, roughness: 0.3, emissive: 0x28364a, emissiveIntensity: 1 })));
+  }
 
   // ── stage: a steel roof on four towers, a wall of LED under it ──
   // a backdrop under the stage roof, only as wide as the set, and wings
@@ -235,7 +458,10 @@ export function buildStadium(ctx) {
     l.position.set(x, ROOF - 2, z); l.target.position.set(x * 0.7, 0, ZC + (z - ZC) * 0.7);
     root.add(l, l.target); house.push(l);
   }
-  root.add(new THREE.HemisphereLight(0x10131e, 0x040406, 0.25));
+  // the bowl's own light: the sky over the opening, and in house light the
+  // floodlit pitch and stands throwing it back up under the roof
+  const hemi = new THREE.HemisphereLight(0x10131e, 0x040406, 0.25);
+  root.add(hemi);
 
   // ── people ──
   // the pitch packed from the pit barrier to the far goal, every sold seat taken
@@ -303,6 +529,9 @@ export function buildStadium(ctx) {
       fill.forEach((l, i) => { l.color.copy(i ? f.pal.b : f.pal.a); l.intensity = (600 + 1600 * f.energy) * show; });
       house.forEach((l) => { l.intensity = 38000 * f.house; });
       flood.forEach((h) => { h.intensity = 0.05 + 0.7 * f.house; });
+      hemi.intensity = 0.25 + 1.4 * f.house;
+      hemi.groundColor.setRGB(0.016 + 0.1 * f.house, 0.016 + 0.09 * f.house, 0.024 + 0.08 * f.house);
+      steelMat.emissiveIntensity = 0.12 + 0.5 * f.house;
       hzWash[0].color.copy(f.pal.a); hzWash[1].color.copy(f.pal.b); hzWash[2].color.copy(f.pal.d);
       hzWash.forEach((h) => { h.power = 260 * (0.4 + 0.6 * f.energy + 0.3 * f.kick) * show; });
       deck.userData.lip.color.setHex(APP.accent).multiplyScalar((0.6 + 0.8 * f.kick) * show + 0.2);

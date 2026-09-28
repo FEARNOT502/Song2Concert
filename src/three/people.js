@@ -290,12 +290,34 @@ export function crowd3D(people, cu, { kind = 'floor', pose = kind === 'seated' ?
 
 export function personAtlas() {
   if (TEX.has('atlas')) return TEX.get('atlas');
-  // five cells: relaxed, one arm up, both up, phone up, and standing to
-  // attention (arms straight down at the sides). R alpha, G rim, B skin.
-  const CW = 96, CH = 256, N = 5;
+  // six cells: relaxed, one arm up, both up, phone up, and standing to
+  // attention (arms straight down at the sides) — all from the waist up, for
+  // the seated stands — and the sixth the whole figure standing at attention,
+  // legs and all, for a floor on its feet. R alpha, G rim, B skin.
+  const CW = 96, CH = 256, N = 6;
   const c = document.createElement('canvas'); c.width = CW * N; c.height = CH;
   const g = c.getContext('2d');
+  // (the same scale in every cell: 256 px to 1.72 m)
+  const whole = (ctx, i, fill) => {
+    ctx.save(); ctx.translate(i * CW + CW / 2, 0); ctx.fillStyle = fill; ctx.strokeStyle = fill;
+    const sh = CH - 207, hip = CH - 141;
+    ctx.beginPath(); ctx.ellipse(0, CH - 232, 14, 17, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillRect(-6, CH - 219, 12, 14);
+    ctx.beginPath();
+    ctx.moveTo(-22, hip); ctx.lineTo(-27, sh + 14); ctx.quadraticCurveTo(-27, sh, -13, sh - 3);
+    ctx.lineTo(13, sh - 3); ctx.quadraticCurveTo(27, sh, 27, sh + 14); ctx.lineTo(22, hip); ctx.closePath(); ctx.fill();
+    // the legs, a little apart, tapering to the feet
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(s * 21, hip - 4); ctx.lineTo(s * 1.5, hip - 4); ctx.lineTo(s * 4, CH - 6); ctx.lineTo(s * 14, CH - 6); ctx.closePath(); ctx.fill();
+      ctx.fillRect(Math.min(s * 3, s * 17), CH - 7, 14, 7);
+    }
+    ctx.lineCap = 'round'; ctx.lineWidth = 11;
+    for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(s * 24, sh + 6); ctx.lineTo(s * 28, sh + 50); ctx.lineTo(s * 27, sh + 94); ctx.stroke(); }
+    ctx.restore();
+  };
   const body = (ctx, i, fill) => {
+    if (i === 5) return whole(ctx, i, fill);
     ctx.save(); ctx.translate(i * CW + CW / 2, 0); ctx.fillStyle = fill; ctx.strokeStyle = fill;
     const base = CH, sh = CH - 118, headY = CH - 150;
     ctx.beginPath();
@@ -325,9 +347,9 @@ export function personAtlas() {
   for (let i = 0; i < A.length; i += 4) {
     const a = A[i + 3] / 255;
     const inner = B[i + 3] / 255;
-    const y = Math.floor(i / 4 / c.width);
+    const y = Math.floor(i / 4 / c.width), cell = Math.floor((i / 4) % c.width / CW);
     const rim = clamp((1 - inner) * 2.4) * a;
-    const skin = y > CH - 172 && y < CH - 128 ? 1 : 0;
+    const skin = cell === 5 ? (y > CH - 250 && y < CH - 212 ? 1 : 0) : (y > CH - 172 && y < CH - 128 ? 1 : 0);
     out.data[i] = a * 255; out.data[i + 1] = rim * 255; out.data[i + 2] = skin * a * 255; out.data[i + 3] = 255;
   }
   g.putImageData(out, 0, 0);
@@ -407,8 +429,9 @@ export function silhouettes(people, cu, { seed = 5 } = {}) {
   const rnd = prng(seed);
   people.forEach((p, i) => {
     P[i * 4] = p.x; P[i * 4 + 1] = p.y; P[i * 4 + 2] = p.z; P[i * 4 + 3] = p.h ?? 1;
-    // everyone stands to attention; `cell` still says whose light is held up
-    L[i * 4] = 4;
+    // everyone stands to attention, a floor on its feet as whole figures;
+    // `cell` still says whose light is held up
+    L[i * 4] = p.full ? 5 : 4;
     L[i * 4 + 1] = Math.floor(rnd() * TOPS.length);
     L[i * 4 + 2] = rnd();
     L[i * 4 + 3] = rnd();
@@ -435,7 +458,7 @@ export function silhouettes(people, cu, { seed = 5 } = {}) {
         float h = 1.72 * iPos.w;
         float w = h * (96.0 / 256.0);
         vec3 p = base + right * (position.x * w) + vec3(0.0, position.y * h, 0.0);
-        vUv = vec2((uv.x + iLook.x) / 5.0, uv.y);
+        vUv = vec2((uv.x + iLook.x) / 6.0, uv.y);
         vTop = uTops[int(iLook.y)] * 0.6;
         vec3 facing = normalize(vec3(uStage.x - base.x, 0.0, uStage.z - base.z));
         vFront = dot(facing, fwd);

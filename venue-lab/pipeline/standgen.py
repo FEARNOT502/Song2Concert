@@ -2,7 +2,9 @@
 # polygons with heights, seats snapped onto their treads, aisle half-steps,
 # vomitory mouths, concourse floors, rails and door openings.
 import numpy as np, cv2, json
-from standlib import Grid, disk, seat_mask, front_from, depth, sample, contours, rings_px
+from standlib import Grid, disk, seat_mask, front_from, depth, sample, contours, rings_px, rings_field, smooth_front, STRAIGHT
+
+SMOOTH_FRONT={'on':True,'sig':2.0}
 
 def smooth_hull(G, M, close=3.0, blur=1.0):
     hull=cv2.morphologyEx(M,cv2.MORPH_CLOSE,disk(close/G.res))
@@ -35,16 +37,22 @@ def poly_out(polys, nd=1):
     return [[[round(float(x),nd),round(float(z),nd)] for x,z in ring] for ring in polys]
 
 class Level:
-    def __init__(s, G, name, seats, D, h0, rise, bottom='ground', fascia=2.6, close=1.1, keep_hole=3.0, centre=(0,0), open_w=3.0, hull_close=3.0, rmax=90, F=None, hs=None):
+    def __init__(s, G, name, seats, D, h0, rise, bottom='ground', fascia=2.6, close=1.1, keep_hole=3.0, centre=(0,0), open_w=3.0, hull_close=3.0, rmax=90, F=None, hs=None, front_sig=None, max_rows=None):
         s.G,s.name,s.D,s.h0,s.rise=G,name,D,h0,rise
         s.hs=None if hs is None else np.asarray(hs,float)
         s.bottom,s.fascia=bottom,fascia
         s.centre=centre
         M=seat_mask(G,seats)
         s.hull=smooth_hull(G,M,close=hull_close)
-        s.F=front_from(G,s.hull,centre,rmax=rmax) if F is None else F
+        if F is None:
+            s.F=front_from(G,s.hull,centre,rmax=rmax)
+            if SMOOTH_FRONT['on']: s.F=smooth_front(G,s.F,centre,front_sig or SMOOTH_FRONT['sig'])
+        else: s.F=F
         s.d=depth(G,s.F)
         s.behind=behind_mask(G,s.F,centre)
+        # the depth signed: negative in front of the front line, so the
+        # front row's front edge is the line itself
+        s.d=np.where(s.behind,s.d,-s.d).astype(np.float32)
         # the tread: everything inside the stand's outline that is near a seat,
         # less the openings wider than `open_w` (tunnel mouths); narrower gaps
         # (aisles, gangways between blocks) are treads too
@@ -58,10 +66,19 @@ class Level:
         for i in range(1,n):
             if st[i,4]*G.res*G.res<keep_hole: R[lab==i]=1
         R[~s.behind]=0
+        # no slivers: tongues of tread narrower than a metre (where the
+        # front's trace and the rays from the centre disagree by a cell) go
+        R=cv2.morphologyEx(R,cv2.MORPH_OPEN,disk(0.5/G.res))
         s.R=R
         s.seatmask=M
         ds=sample(G,s.d,seats)
         s.row=np.clip(np.floor(ds/D).astype(int),0,None)
+        if max_rows is not None:
+            # the few seats a smoothed front leaves a row or more too deep are
+            # strays of the plan's tracing: they go
+            keep=s.row<max_rows
+            seats,ds,s.row=seats[keep],ds[keep],s.row[keep]
+        s.raw=seats.copy()
         s.nrows=int(s.row.max())+1
         s.band=np.where(R>0,np.clip(np.floor(s.d/D).astype(int),0,s.nrows-1),-1)
         # snap each seat onto the middle-back of its tread, along the depth gradient
@@ -71,22 +88,84 @@ class Level:
         want=s.row*D+D*0.55
         s.seats=seats+g*(want-ds)[:,None]
         s.yaw=np.arctan2(-g[:,0],-g[:,1])     # facing the front (down the gradient)
+    def set_depth(s, d, grad=None):
+        """The rows counted from another depth field (signed metres, the
+        stand positive): the seats' rows, the treads' bands, and the seats
+        snapped on to their treads again. `grad`: the field to take the
+        seats' facing from, where `d` jumps (one section to the next)."""
+        G=s.G; seats=s.raw
+        s.d=d.astype(np.float32); s.behind=s.d>=0
+        ds=sample(G,s.d,seats)
+        s.row=np.clip(np.floor(ds/s.D).astype(int),0,None)
+        s.nrows=int(s.row.max())+1
+        s.band=np.where(s.R>0,np.clip(np.floor(s.d/s.D).astype(int),0,s.nrows-1),-1)
+        gz,gx=grad if grad is not None else np.gradient(cv2.GaussianBlur(s.d,(9,9),0))
+        g=np.c_[sample(G,gx,seats),sample(G,gz,seats)]
+        g/=np.maximum(1e-6,np.linalg.norm(g,axis=1))[:,None]
+        s.seats=seats+g*(s.row*s.D+s.D*0.55-ds)[:,None]
+        s.yaw=np.arctan2(-g[:,0],-g[:,1])
     def h(s,r):
         if s.hs is not None: return s.hs[np.clip(np.asarray(r),0,len(s.hs)-1)]
         return s.h0+s.rise*np.asarray(r)
     def rows_out(s):
+        # Each row traced as the zero level of a continuous field: the depth
+        # between its front and its back (and a little under the next row
+        # up, so the treads meet with no crack), within the tread's own
+        # outline — so a row laid out along a straight or curved front is
+        # straight or curved, not the raster's steps.
+        from scipy.ndimage import distance_transform_edt
         out=[]
         k=np.ones((3,3),np.uint8)
+        G=s.G; R=s.band>=0
+        # where the tread's raster outline falls short of the front line, the
+        # front row runs on to the line: cells just in front of the tread
+        # (the tread met within a metre going back from them) are the row's
+        from scipy.ndimage import map_coordinates
+        gz_,gx_=np.gradient(cv2.GaussianBlur(np.abs(s.d).astype(np.float32),(0,0),4))
+        gn=np.maximum(np.hypot(gx_,gz_),1e-6)
+        cand=(~R)&(s.d>-0.05)&(s.d<s.D)&(cv2.dilate(R.astype(np.uint8),disk(1.0/G.res))>0)
+        cy,cx=np.nonzero(cand); hit=np.zeros(len(cy),bool)
+        for t in (2,4,6,8,10):
+            sy=cy+gz_[cy,cx]/gn[cy,cx]*t; sx=cx+gx_[cy,cx]/gn[cy,cx]*t
+            hit|=map_coordinates(R.astype(np.float32),[sy,sx],order=0,mode='constant')>0.5
+        R=R.copy(); R[cy[hit],cx[hit]]=True
+        sdR=(np.where(R,distance_transform_edt(R)-0.5,-(distance_transform_edt(~R)-0.5))*G.res).astype(np.float32)
         for r in range(s.nrows):
             m=(s.band==r).astype(np.uint8)
             if not m.any(): continue
-            # reach a little under the next row up, so the treads meet with no crack
-            m=(m|(cv2.dilate(m,k,iterations=3)&(s.band>r))).astype(np.uint8)
             top=float(s.h(r))
             if callable(s.bottom): bot=float(s.bottom(r,top))
             elif s.bottom=='ground': bot=0.0
             else: bot=top-(s.fascia if r==0 else s.bottom)
-            out.append({'r':r,'y':round(top,3),'y0':round(bot,3),'polys':[poly_out(p,2) for p in contours(s.G,m,eps=0.012,minarea=0.2)]})
+            ys,xs=np.nonzero(m); pad=8
+            box=(max(0,ys.min()-pad),min(G.H,ys.max()+pad+1),max(0,xs.min()-pad),min(G.W,xs.max()+pad+1))
+            sl=(slice(box[0],box[1]),slice(box[2],box[3]))
+            d=s.d[sl]; b=s.band[sl]
+            lo=d-r*s.D
+            if r>0: lo=np.where(d<0,-1.0,lo)
+            hi=(r+1)*s.D+0.3-d
+            # where the rows stop (the last row, or a section's last) the row
+            # runs on to the tread's back
+            capped=(b==r)&(d>=(r+1)*s.D-1e-3)
+            capped=cv2.dilate(capped.astype(np.uint8),k,iterations=2)>0
+            hi=np.where(capped,10.0,hi)
+            # and no further than the raster says it may (a section's edge
+            # where the depth jumps, the rows either side of a gap)
+            f=np.minimum(np.minimum(lo,hi),sdR[sl])
+            if getattr(s,'secmap',None) is not None or getattr(s,'sec',None) is not None:
+                # a level measured section by section: its depth jumps at the
+                # sections' edges, so a row stops at its own section's edge
+                mb=(m[sl]|(cv2.dilate(m[sl],k,iterations=3)&(b>r))).astype(np.uint8)
+                mb=cv2.dilate(mb,k,iterations=2)>0
+                sdm=np.where(mb,distance_transform_edt(mb)-0.5,-(distance_transform_edt(~mb)-0.5))*G.res
+                f=np.minimum(f,sdm)
+            f=f.astype(np.float32)
+            full=np.full((G.H,G.W),-1.0,np.float32); full[sl]=f
+            polys=[]
+            for o,hs in rings_field(full,0.03/G.res,0.2/G.res**2,box=box):
+                ring=lambda q: np.c_[G.m(q[:,0],q[:,1])]
+                polys.append(poly_out([ring(o)]+[ring(h) for h in hs],2))
+            out.append({'r':r,'y':round(top,3),'y0':round(bot,3),'polys':polys})
         return out
     def aisles_out(s):
         # tread cells with no seat on them: aisles; a half step on the rear half of each
@@ -109,6 +188,11 @@ class Level:
                 if len(xs_)*s.G.res**2<0.15: continue
                 (cx_,cy_),(w_,h_),a_=cv2.minAreaRect(np.c_[xs_,ys_].astype(np.float32))
                 if min(w_,h_)*s.G.res<0.3: continue
+                # an aisle's step is one row's rear half, an aisle wide: a
+                # longer or deeper patch is a gangway along the row (a front
+                # row left empty, a cross-aisle), flat, and its rectangle
+                # would bridge the curve's chord out over the bowl
+                if max(w_,h_)*s.G.res>3.5 or min(w_,h_)*s.G.res>s.D*0.75: continue
                 box=cv2.boxPoints(((cx_,cy_),(w_+1,h_+1),a_))
                 X_,Z_=s.G.m(box[:,0]-0.5+0.5,box[:,1]-0.5+0.5)
                 out.append({'y':round(y,3),'y0':round(float(s.h(r)),3),'polys':[[[round(float(u),2),round(float(v),2)] for u,v in zip(X_,Z_)]]})
@@ -263,7 +347,7 @@ class Level:
 def mask_polys(G, m, eps=0.025, minarea=1.0):
     return [poly_out(p) for p in contours(G, m.astype(np.uint8), eps=eps, minarea=minarea)]
 
-def edge_walls(G, lvl, outside_level, doors=(), door_w=1.8, rail=1.0, doorwall=2.6, flush='doors', skip=None, front=None):
+def edge_walls(G, lvl, outside_level, doors=(), door_w=1.8, rail=1.0, doorwall=2.6, flush='doors', skip=None, front=None, parapet=True):
     """Walls along a level's outline: a rail where it drops away, a wall with
     door openings where it meets a concourse at its own height. `skip(ox, oy,
     h)` leaves an edge to the concourse's own walls; `front` = (y0, above) puts
@@ -308,6 +392,7 @@ def edge_walls(G, lvl, outside_level, doors=(), door_w=1.8, rail=1.0, doorwall=2
             A=G.m(a[0],a[1]); B=G.m(b[0],b[1])
             seg=[round(float(A[0]),2),round(float(A[1]),2),round(float(B[0]),2),round(float(B[1]),2)]
             if lvl.d[oy,ox]<0.6:                     # the front of the stand
+                if parapet and front is not None: continue      # front_parapet draws it whole
                 if front is not None and r==0:
                     y0=front[0]
                     if y0=='tread': y0=h-0.02
@@ -442,7 +527,7 @@ def _emit(G,chains,out,inset=0.06):
 
 DEBUG={}
 DOORLOG=[]
-def enclose(G, rooms, levels, slabs, flights, lamp_step=6.0, door_w=1.8, door_h=2.5):
+def enclose(G, rooms, levels, slabs, flights, lamp_step=6.0, door_w=1.8, door_h=2.5, roof=None):
     """Close the concourses in. Each room: {'mask','y','cl','own':[Level],
     'doors':[(x,z)]}. The part of the room open to the bowl (inside the back of
     its own stands, with nothing over it) stays open; the rest gets a ceiling
@@ -506,6 +591,13 @@ def enclose(G, rooms, levels, slabs, flights, lamp_step=6.0, door_w=1.8, door_h=
         ceil=A&~low&~openm
         encl=A&~openm
         roomtop=np.where(low,over,Hk).astype(np.float32)
+        # under nothing but the roof: no ceiling of its own, its walls go on
+        # up to the roof (no box standing in the air behind the top rows)
+        if roof is not None and R_.get('toroof',True):
+            tall=ceil&~np.isfinite(over)
+            tall=cv2.morphologyEx(tall.astype(np.uint8),cv2.MORPH_OPEN,disk(2.5/G.res))>0
+            ceil&=~tall
+            roomtop=np.where(tall,roof,roomtop).astype(np.float32)
         DEBUG[R_.get('name')]=(ceil,low,openm,shaft,A)
         roomtop_all[encl]=np.maximum(roomtop_all[encl],roomtop[encl])
         print('  room',R_.get('name'),'y',y,'cells: enclosed',int(encl.sum()),'ceiling',int(ceil.sum()),'under',int(low.sum()),'open',int(openm.sum()),'shaft',int(shaft.sum()))
@@ -645,7 +737,7 @@ def enclose(G, rooms, levels, slabs, flights, lamp_step=6.0, door_w=1.8, door_h=
                 bi_,bj_=np.nonzero(blk); k_=np.argmin((bi_-st//2)**2+(bj_-st//2)**2)
                 ii,jj=max(0,i-st//2)+bi_[k_],max(0,j-st//2)+bj_[k_]
                 h_=float(roomtop[ii,jj])-0.03
-                if h_-y<2.1: continue
+                if h_-y<2.1 or h_>Hk+0.5: continue
                 X,Z=G.m(jj,ii)
                 # along the corridor: across the gradient of the distance from its walls
                 yaw=float(np.arctan2(gxx[ii,jj],gzz[ii,jj])) if (gxx[ii,jj]**2+gzz[ii,jj]**2)>1e-8 else 0.0
@@ -702,3 +794,232 @@ def redepth(l, G, sec, fvecs, K, rows=None):
     l.seats = S - f * ((l.row * l.D + l.D * 0.55) - ds)[:, None]
     l.yaw = np.arctan2(f[:, 0], f[:, 1])
     l.secmap = cs
+
+def straight_blocks(l, corner, wedges=4, pitch=0.5, aisle=0.4, extra_rows=1):
+    """A bowl laid out in blocks, each with straight rows, as a building with
+    a polygonal plan has them: each side and each end one block across, every
+    corner a fan of `wedges` blocks converging on the corner's centre
+    `corner` = (cx, cz at -z, cz at +z) (where the straight sides and ends
+    stop), each facing back along its middle, a radial aisle between them.
+    The level's depth is recomputed block by block (each block's front a
+    straight line through the old front's most forward points), its treads
+    run on to that line, and its seats are laid again along the straight rows
+    wherever the plan had seats (its aisles and tunnel mouths kept), `pitch`
+    apart, facing the block's way."""
+    from standlib import sample, seat_mask
+    G = l.G; D = l.D
+    gy, gx = np.mgrid[0:G.H, 0:G.W]; X, Z = G.m(gx, gy)
+    cx, czn, czp = corner
+    sx = np.where(X >= 0, 1, -1); sz = np.where(Z >= 0, 1, -1)
+    cz = np.where(Z >= 0, czp, czn)
+    ax_, az_ = np.abs(X) - cx, np.abs(Z) - cz
+    phi = np.degrees(np.arctan2(np.maximum(az_, 0), np.maximum(ax_, 1e-6)))
+    k = np.clip(np.floor(phi / (90.0 / wedges)).astype(int), 0, wedges - 1)
+    qi = (sx > 0).astype(int) + 2 * (sz > 0).astype(int)          # corner 0..3
+    sec = np.where(az_ <= 0, np.where(sx > 0, 0, 1), np.where(ax_ <= 0, np.where(sz > 0, 2, 3), 4 + qi * wedges + k))
+    nsec = 4 + 4 * wedges
+    ang = [0.0, 180.0, 90.0, -90.0]
+    for q_ in range(4):
+        s_x = 1 if q_ & 1 else -1; s_z = 1 if q_ & 2 else -1
+        for kk in range(wedges):
+            m_ = np.radians((kk + 0.5) * 90.0 / wedges)
+            ang.append(np.degrees(np.arctan2(s_z * np.sin(m_), s_x * np.cos(m_))))
+    ang = np.array(ang)
+    fin = -np.c_[np.cos(np.radians(ang)), np.sin(np.radians(ang))]   # facing the field
+    R0 = l.R > 0
+    near = cv2.dilate(R0.astype(np.uint8), disk(2.0 / G.res)) > 0
+    d = np.full(l.d.shape, -1e3, np.float32); K = np.zeros(nsec)
+    front = R0 & (l.d < 0.35)
+    for s_ in range(nsec):
+        m = near & (sec == s_)
+        if not m.any(): continue
+        f = fin[s_]
+        fm = front & m
+        if fm.any():
+            c = X[fm] * f[0] + Z[fm] * f[1] + l.d[fm]
+            K[s_] = np.percentile(c, 99.0)
+        else:
+            c = X[m & R0] * f[0] + Z[m & R0] * f[1] + l.d[m & R0]
+            K[s_] = np.percentile(c, 99.0) if c.size else 0
+        d[m] = K[s_] - (X[m] * f[0] + Z[m] * f[1])
+    # the treads: the old ones, run forward to each block's straight front
+    # where the stand lies just behind (a sliver in front of a curved front)
+    back = np.zeros_like(R0)
+    fx = fin[np.clip(sec, 0, nsec - 1), 0]; fz = fin[np.clip(sec, 0, nsec - 1), 1]
+    for step in (0.5, 1.0, 1.5):
+        ix = np.clip(np.round(gx - fx * step / G.res).astype(int), 0, G.W - 1)
+        iy = np.clip(np.round(gy - fz * step / G.res).astype(int), 0, G.H - 1)
+        back |= R0[iy, ix]
+    sliver = near & ~R0 & (d >= 0) & (l.d > -1.6) & back
+    R = (R0 | sliver) & (d >= 0)
+    R = cv2.morphologyEx(R.astype(np.uint8), cv2.MORPH_OPEN, disk(0.3 / G.res)) > 0
+    nrows = int(min(np.floor(d[R].max() / D) + 1, l.nrows + extra_rows))
+    R &= d < nrows * D
+    # where the plan had seats: its seats' footprints closed over the gaps
+    # between rows and seats, not over its aisles; a sliver takes the cover
+    # of the stand just behind it
+    cover = cv2.morphologyEx(l.seatmask.astype(np.uint8), cv2.MORPH_CLOSE, disk(0.35 / G.res)) > 0
+    ix = np.clip(np.round(gx - fx * 1.2 / G.res).astype(int), 0, G.W - 1)
+    iy = np.clip(np.round(gy - fz * 1.2 / G.res).astype(int), 0, G.H - 1)
+    cover = np.where(sliver, cover[iy, ix], cover) & R
+    # the aisles between the blocks
+    secR = np.where(R, sec, -1)
+    edge = np.zeros_like(R)
+    for dy_, dx_ in ((0, 1), (1, 0), (1, 1), (1, -1)):
+        a = secR; b = np.roll(np.roll(secR, dy_, 0), dx_, 1)
+        edge |= (a >= 0) & (b >= 0) & (a != b)
+    aisles = cv2.dilate(edge.astype(np.uint8), disk(aisle / G.res)) > 0
+    cover &= ~aisles
+    # the seats, block by block, row by row
+    S, rows, yaws = [], [], []
+    for s_ in range(nsec):
+        f = fin[s_]; u = np.array([-f[1], f[0]])
+        m = (secR == s_)
+        if not m.any(): continue
+        ys, xs = np.nonzero(m); P = np.c_[X[ys, xs], Z[ys, xs]]
+        lo, hi = (P @ u).min(), (P @ u).max()
+        us = np.arange(lo, hi, 0.05)
+        for r in range(nrows):
+            cc = K[s_] - (r + 0.55) * D                     # p·f on the row's line
+            C = u[None, :] * us[:, None] + f[None, :] * cc
+            i_ = np.clip(np.round((C[:, 0] - G.x0) / G.res).astype(int), 0, G.W - 1)
+            j_ = np.clip(np.round((C[:, 1] - G.z0) / G.res).astype(int), 0, G.H - 1)
+            ok = cover[j_, i_] & (secR[j_, i_] == s_)
+            idx = np.nonzero(ok)[0]
+            if not len(idx): continue
+            for run in np.split(idx, np.nonzero(np.diff(idx) > 1)[0] + 1):
+                L_ = us[run[-1]] - us[run[0]] + 0.05
+                n = int(np.floor(L_ / pitch + 1e-6))
+                if n < 1: continue
+                t0 = us[run[0]] - 0.025 + (L_ - n * pitch) / 2 + pitch / 2
+                for kk in range(n):
+                    S.append(u * (t0 + kk * pitch) + f * cc); rows.append(r); yaws.append(np.arctan2(f[0], f[1]))
+    l.seats = np.array(S); l.row = np.array(rows); l.yaw = np.array(yaws); l.raw = l.seats.copy()
+    l.d = np.where(R | (d > -1e2), d, l.d).astype(np.float32)
+    l.behind = l.d >= 0
+    l.hull = ((l.hull > 0) | sliver).astype(np.uint8)
+    l.R = R.astype(np.uint8); l.nrows = nrows
+    l.band = np.where(R, np.clip(np.floor(l.d / D).astype(int), 0, nrows - 1), -1)
+    l.seatmask = seat_mask(G, l.seats)
+    l.secmap = np.where(R, sec, 0).astype(np.int32)
+    return {'sections': nsec, 'seats': len(S), 'rows': nrows, 'sliver_m2': float(sliver.sum() * G.res ** 2)}
+
+def cut_tunnels(G, l, tunnels, body, deck_t=0.6, back=3.0):
+    """Tunnels at floor level straight out under a stand: each `t` = {p: its
+    mouth's centre on the stand's front, u: outward, w, h, closed, Lmax}. It
+    runs from `back` metres in front of the mouth to where `body` ends (or
+    Lmax); the rows too low to roof it are cut away over it (an open cut, its
+    deck at its end), the rows above left as its roof. Adds L, deck, rect to
+    each; returns the union of their footprints."""
+    gy, gx = np.mgrid[0:G.H, 0:G.W]; X, Z = G.m(gx, gy)
+    allm = np.zeros((G.H, G.W), bool)
+    for t in tunnels:
+        p, u = np.asarray(t['p'], float), np.asarray(t['u'], float); v = np.array([-u[1], u[0]])
+        L_ = 2.0
+        while L_ < t.get('Lmax', 90.0):
+            q = p + u * L_; i_, j_ = [int(round(float(c))) for c in G.g(q[0], q[1])]
+            if not (0 <= i_ < G.W and 0 <= j_ < G.H) or not body[j_, i_]: break
+            L_ += 0.2
+        t['L'] = round(float(L_ + (0.0 if t.get('closed') else 1.5)), 2)
+        al = (X - p[0]) * u[0] + (Z - p[1]) * u[1]; la = np.abs((X - p[0]) * v[0] + (Z - p[1]) * v[1])
+        m = (la < t['w'] / 2) & (al > -back) & (al < t['L'])
+        t['mask'] = m; allm |= m
+        on = m & (l.band >= 0)
+        low = on & (l.h(np.maximum(l.band, 0)) < t['h'] + deck_t + 0.01)
+        t['deck'] = round(max(float(al[low].max()) + 0.05 if low.any() else 0.0, min(t.get('open', 0.0), t['L'])), 2)
+        l.R[low] = 0; l.band[low] = -1
+        q = l.seats - p
+        keep = ~((np.abs(q @ v) < t['w'] / 2 + 0.3) & (q @ u > -back) & (q @ u < t['deck'] + 0.3))
+        l.seats, l.row, l.yaw = l.seats[keep], l.row[keep], l.yaw[keep]
+        t['rect'] = [(p + u * a + v * b).round(3).tolist() for a, b in ((-back, -t['w'] / 2), (t['L'], -t['w'] / 2), (t['L'], t['w'] / 2), (-back, t['w'] / 2))]
+        t['deckY'] = t['h'] + deck_t
+        # the cut's side walls: a rail's height over the rows beside it, as
+        # far as its deck (no higher than the deck's own parapet)
+        sides = []
+        for sg in (-1, 1):
+            prof = []
+            for a in np.arange(-back, t['deck'] + 0.01, 0.5):
+                qq = p + u * a + v * sg * (t['w'] / 2 + 0.45)
+                i_, j_ = [int(round(float(c))) for c in G.g(qq[0], qq[1])]
+                b_ = int(l.band[j_, i_]) if (0 <= i_ < G.W and 0 <= j_ < G.H) else -1
+                top = float(l.h(b_)) + 1.0 if b_ >= 0 else 1.1
+                prof.append([round(float(a), 2), round(min(top, t['deckY'] + 1.0), 2)])
+            # a straight slope, not the rows' steps: the upper envelope of
+            # the steps, simplified
+            if len(prof) > 2:
+                P_ = np.array(prof, np.float32)
+                q_ = cv2.approxPolyDP(P_.reshape(-1, 1, 2), 0.4, False)[:, 0, :]
+                prof = [[round(float(a), 2), round(float(np.interp(a, P_[:, 0], np.maximum.accumulate(P_[:, 1]))), 2)] for a in q_[:, 0]]
+            sides.append(prof)
+        t['sides'] = sides
+    return allm
+
+def tunnel_rows(rows, tunnels, deck_t=0.6):
+    """Over a tunnel the rows stand on its flat roof, not the ground."""
+    from shapely.geometry import Polygon
+    rects = [(Polygon(t['rect']), t['h']) for t in tunnels]
+    out = []
+    def emit(geoms):
+        ps = []
+        for g in geoms:
+            for q in (g.geoms if hasattr(g, 'geoms') else [g]):
+                if q.geom_type != 'Polygon' or q.area < 0.05: continue
+                ps.append([[[round(float(x), 2), round(float(z), 2)] for x, z in list(q.exterior.coords)[:-1]]] +
+                          [[[round(float(x), 2), round(float(z), 2)] for x, z in list(h.coords)[:-1]] for h in q.interiors])
+        return ps
+    for r in rows:
+        if all(r['y'] < th + deck_t or r['y0'] >= th for _, th in rects): out.append(r); continue
+        keep, over = [], {}
+        for polys in r['polys']:
+            g = Polygon(polys[0], polys[1:]).buffer(0)
+            for rc, th in rects:
+                if r['y'] < th + deck_t or r['y0'] >= th: continue
+                i_ = g.intersection(rc)
+                if not i_.is_empty: over.setdefault(th, []).append(i_)
+                g = g.difference(rc)
+            keep.append(g)
+        out.append({**r, 'polys': emit(keep)})
+        for th, gs in over.items():
+            ov = emit(gs)
+            if ov: out.append({**r, 'y0': th, 'polys': ov})
+    return out
+
+def tunnels_out(tunnels):
+    return [{'p': [round(float(c), 3) for c in t['p']], 'u': [round(float(c), 4) for c in t['u']], 'w': t['w'], 'h': t['h'], 'L': t['L'],
+             'deck': t['deck'], 'deckY': t['deckY'], 'closed': bool(t.get('closed')), 'sides': t.get('sides')} for t in tunnels]
+
+def front_parapet(G, l, front, eps=0.05, minlen=1.0):
+    """The parapet along a tier's front, traced whole: the front line (the
+    depth's zero level) wherever the front row stands behind it, drawn as one
+    run at one height (the front row's, plus `front[1]`), from `front[0]`
+    ('tread': the front row's tread; a number: that height) — not piece by
+    piece off the raster's outline, which leaves it broken wherever the row
+    behind a piece is not the front row, and stepped."""
+    from skimage import measure
+    near = cv2.dilate((l.band == 0).astype(np.uint8), disk(0.6 / G.res)) > 0
+    pits = getattr(l, 'pits', None)
+    if pits is not None and pits.any(): near &= ~(cv2.dilate(pits.astype(np.uint8), disk(0.25 / G.res)) > 0)
+    ys, xs = np.nonzero(near)
+    if not len(xs): return []
+    y0_, y1_ = max(0, ys.min() - 2), min(G.H, ys.max() + 3); x0_, x1_ = max(0, xs.min() - 2), min(G.W, xs.max() + 3)
+    f = l.d[y0_:y1_, x0_:x1_].astype(np.float64); msk = near[y0_:y1_, x0_:x1_]
+    h = float(l.h(0))
+    if front[0] == 'tread': yb = h - 0.02
+    elif front[0] is None:
+        yb = float(l.bottom(0, h)) if callable(l.bottom) else (0.0 if l.bottom == 'ground' else h - l.fascia)
+    else: yb = float(front[0])
+    yt = h + front[1]
+    out = []
+    for c in measure.find_contours(f, 0.0, mask=msk):
+        if len(c) < 3: continue
+        P = np.c_[c[:, 1] + x0_, c[:, 0] + y0_].astype(np.float32)
+        closed = np.hypot(*(P[0] - P[-1])) < 1e-3
+        q = cv2.approxPolyDP(P.reshape(-1, 1, 2), eps / G.res, closed)[:, 0, :]
+        X, Z = G.m(q[:, 0], q[:, 1])
+        L_ = float(np.sum(np.hypot(np.diff(X), np.diff(Z))))
+        if L_ < minlen: continue
+        n = len(q) if closed else len(q) - 1
+        for i in range(n):
+            j = (i + 1) % len(q)
+            out.append([round(float(X[i]), 2), round(float(Z[i]), 2), round(float(X[j]), 2), round(float(Z[j]), 2), round(yb, 2), round(yt, 2)])
+    return out
