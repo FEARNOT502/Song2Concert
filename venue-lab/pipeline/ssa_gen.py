@@ -14,13 +14,13 @@ def clean(s,eps=1.5,minn=12):
 S=[clean(s) for s in S]
 G=Grid(-74,74,-68,68,0.1)
 STRAIGHT.update(on=True,res=G.res)
-C200,C300,C400,C500=6.2,11.44,18.7,25.5
+C200,C300,C400,C500=6.2,11.44,16.2,23.0
 t=time.time()
 LV={}
 LV['200']=Level(G,'200',S[0],0.865,0.45,0.33,bottom=lambda r,h: 0.0 if r<=24 else h-0.6,keep_hole=6,front_sig=3.0,max_rows=32)
 LV['300']=Level(G,'300',S[1],1.0,10.6,0.42,0.5,2.2,close=0.9,keep_hole=6,open_w=4.5,hull_close=5.0,front_sig=5.0,max_rows=3)
-LV['400']=Level(G,'400',S[2],0.85,17.0,0.42,0.5,2.8,close=1.3,front_sig=3.0,max_rows=24)
-LV['500']=Level(G,'500',S[3],0.87,24.5,0.5,0.5,2.4,close=0.9,keep_hole=6,open_w=4.5,hull_close=5.0,front_sig=5.0,max_rows=3)
+LV['400']=Level(G,'400',S[2],0.85,14.5,0.42,0.5,1.3,close=1.3,front_sig=3.0,max_rows=24)
+LV['500']=Level(G,'500',S[3],0.87,22.0,0.5,0.5,2.4,close=0.9,keep_hole=6,open_w=4.5,hull_close=5.0,front_sig=5.0,max_rows=3)
 print('levels',round(time.time()-t,1), {k:(l.nrows,len(l.seats)) for k,l in LV.items()})
 # the 200s and the 400s in blocks with straight rows, as the map draws them:
 # the sides and ends straight across, each corner a fan of wedges
@@ -30,7 +30,7 @@ from standgen import straight_blocks
 # the 300 and 500 balconies the same way, each block's treads the whole band
 for k_,c_,rt_,fl_ in (('200',(15.0,33.0,33.0),(1,-1),False),('400',(20.0,33.0,33.0),(),False),
                       ('300',(20.0,33.0,33.0),(),True),('500',(20.0,33.0,33.0),(),True)):
-    print('blocks',k_,straight_blocks(LV[k_],c_,retract=rt_,fill=fl_),'retracted',LV[k_].retracted)
+    print('blocks',k_,straight_blocks(LV[k_],c_,retract=rt_,fill=fl_,full_corners=(k_=='200')),'retracted',LV[k_].retracted)
 # the tunnels in from the concourses, made straight: through the 200 level's
 # sides at rows 18-27, through the 400 level's
 VOMS={'200':LV['200'].make_voms(C200,head=1.9,wmax=3.0),'400':LV['400'].make_voms(C400,head=1.9,wmax=3.0)}
@@ -149,18 +149,23 @@ pk_=c200&~op_&(np.abs(Z)>28)
 low_=c200&(np.abs(Z)>28)&(L2.d>=0)&((L2.h0+L2.rise*np.floor(np.maximum(L2.d,0)/L2.D))<C200+0.2)&(cv2.dilate((L2.R>0).astype(np.uint8),disk(8.0/G.res))>0)
 pk_|=low_
 fill_=pk_&(L2.d>=0)&(L2.d<(L2.nrows+8)*L2.D)&(cv2.dilate((L2.R>0).astype(np.uint8),disk(8.0/G.res))>0)
+# only where the rows carry on from the ones in front (a cell whose block's
+# depth is less than the stand's beside it belongs to another block's fan)
+_dR=cv2.dilate(np.where(L2.R>0,L2.d,-1e3).astype(np.float32),disk(3.0/G.res))
+fill_&=L2.d>=_dR-0.5
 if fill_.any():
     L2.nrows=max(L2.nrows,int(np.floor(L2.d[fill_].max()/L2.D))+1)
     L2.R[fill_]=1; L2.band[fill_]=np.clip(np.floor(L2.d[fill_]/L2.D).astype(int),0,L2.nrows-1)
-c200&=~pk_
+c200&=~fill_
 from standgen import lay_seats
 print('pocket seats',lay_seats(L2,fill_))
 print('pockets filled',round(float(fill_.sum()*G.res**2),1),'m2; cleared',round(float((pk_&~fill_).sum()*G.res**2),1))
+TUN_W,TUN_H=7.0,4.4
 # ── the floor's corner tunnels ──
 # At each corner of the arena floor a passage runs out under the 200s, along
 # the aisle in the middle of the corner's fan of blocks (the X the floor's
 # gangways make in the map), to the service ways inside the building.
-from standgen import cut_tunnels, tunnel_rows, tunnels_out
+from standgen import cut_tunnels, tunnel_rows, tunnels_out, tunnel_decks
 TUN=[]
 # each from the floor's corner along the middle of the corner's fan (where
 # the plan leaves the passage unseated), from the stand's front: an open cut
@@ -173,23 +178,21 @@ body_=((L2.R>0)|(L2.hull>0)|c200)&(hull>0)       # what they run under, before t
 c200&=~(near2&(L2.R==0)&(L2.d<12.0)&(np.abs(Z)>28))
 for sx_ in (-1,1):
     for sz_ in (-1,1):
-        C_=np.array([sx_*15.0,sz_*33.0]); u_=np.array([sx_,sz_])/np.sqrt(2)
-        q_=C_.copy()
-        for _ in range(400):
-            i_,j_=[int(round(float(c))) for c in G.g(q_[0],q_[1])]
-            if near2[j_,i_]: break
-            q_=q_+u_*0.1
-        # open as far as 10 m into the stand; the concourse's storey not over that
-        al_=(X-q_[0])*u_[0]+(Z-q_[1])*u_[1]; la_=np.abs(-(X-q_[0])*u_[1]+(Z-q_[1])*u_[0])
-        c200&=~((la_<2.5+0.3)&(al_>-3)&(al_<10.0))
-        TUN.append({'p':q_,'u':u_,'w':5.0,'h':4.0,'closed':True,'Lmax':30.0,'open':10.0})
+        # from the middle of the corner's front, square to it (so the rows
+        # either side of it, and its two walls, are the same)
+        C0_,V_,_sx,_sz=L2._blk['corners'][(1 if sx_>0 else 0)+(2 if sz_>0 else 0)]
+        V_=[np.asarray(v) for v in V_]; m_=len(V_)//2
+        tt=V_[m_+1]-V_[m_-1]; u_=np.array([-tt[1],tt[0]])/np.linalg.norm(tt)
+        if u_@(V_[m_]-C0_)<0: u_=-u_
+        q_=V_[m_].copy()
+        TUN.append({'p':q_,'u':u_,'w':TUN_W,'h':TUN_H,'closed':True,'Lmax':30.0,'Lmin':8.0,'trapezoid':True})
 # on under the stand and the 200 concourse's storey, to the building's wall
 TUNM=cut_tunnels(G,LV['200'],TUN,body_)
 print('tunnels',[(t['p'].round(1).tolist(),t['L'],t['deck']) for t in TUN])
 slabs=[(grow_under(c,y,[L2,L3,L4,L5]),(0.0 if y==C200 else y-0.35),y) for c,y in ((c200,C200),(c300,C300),(c400,C400),(c500,C500))]
 # under the 200 concourse the tunnels run on hollow
 s0_=slabs[0][0]; slabs[0]=(s0_&~TUNM,0.0,C200)
-if (s0_&TUNM).any(): slabs.insert(1,(s0_&TUNM,4.0,C200))
+if (s0_&TUNM).any(): slabs.insert(1,(s0_&TUNM,TUN_H,C200))
 # ── the concourses closed in: ceilings 4 m up (or the stand over them), walls
 # with the doors in them, lights ──
 t=time.time()
@@ -230,20 +233,122 @@ def partitions(l, every=8):
     return out
 PART300=partitions(L3)
 print('300 partitions',len(PART300))
+# what stands under a balcony's end, for its cheek to come down to: the
+# tier below's treads, a concourse's ceiling
+def _below(lows,floor):
+    # (never lower than `floor`: the back of the tier below, so a cheek closes
+    # the gap over it, not a pillar down to the arena floor)
+    H_=np.full((G.H,G.W),floor,np.float32)
+    for l_,cm_,top_ in lows:
+        if l_ is not None:
+            t_=np.where(l_.band>=0,l_.h(np.maximum(l_.band,0)),0.0); H_=np.maximum(H_,t_)
+        if cm_ is not None: H_=np.maximum(H_,np.where(cm_,top_,0.0))
+    return lambda ox,oy: float(H_[min(G.H-1,max(0,oy)),min(G.W-1,max(0,ox))])
+CHEEK={'300':_below([(L2,c200,C200+4.0)],float(L2.h(L2.nrows-1))-0.3),'500':_below([(L4,c400,C400+4.0)],C400+2.5)}
+from shapely.geometry import Polygon as _P
+from shapely.ops import unary_union as _U
+def lifted_rows(rows,M):
+    # the lifted blocks stand solid on the floor: rows raised past the ones
+    # that stand over the concourse keep a floor under them
+    if not M.any(): return rows
+    LP=_U([_P(p[0],p[1:]).buffer(0) for p in mask_polys(G,M,eps=0.03,minarea=0.5)]).buffer(0.08)
+    out=[]
+    def emit(g):
+        ps=[]
+        for q in (g.geoms if hasattr(g,'geoms') else [g]):
+            if q.geom_type!='Polygon' or q.area<0.05: continue
+            ps.append([[[round(float(x),2),round(float(z),2)] for x,z in list(q.exterior.coords)[:-1]]]+[[[round(float(x),2),round(float(z),2)] for x,z in list(h.coords)[:-1]] for h in q.interiors])
+        return ps
+    for r in rows:
+        if r['y0']<0.01: out.append(r); continue
+        ins,rest=[],[]
+        for p in r['polys']:
+            g=_P(p[0],p[1:]).buffer(0)
+            i_=g.intersection(LP)
+            if not i_.is_empty: ins.append(i_)
+            rest.append(g.difference(LP))
+        a_=emit(_U(rest)) if rest else []
+        b_=emit(_U(ins)) if ins else []
+        if a_: out.append({**r,'polys':a_})
+        if b_: out.append({**r,'y0':0.0,'polys':b_})
+    return out
+def step_rails(G,l,M,rail=1.0,thr=0.6):
+    # a rail along a raised block's edges where what is beside it is lower
+    from standlib import rings_px
+    out=[]
+    for o,hs in rings_px(M.astype(np.uint8),0.02/G.res,sigma=0.8,minarea_px=2/G.res**2):
+        for ring in [o]+list(hs):
+            n=len(ring)
+            for i in range(n):
+                a,b=ring[i],ring[(i+1)%n]; L_=np.hypot(*(b-a)); k=max(1,int(np.ceil(L_*G.res/0.5)))
+                for j in range(k):
+                    p0=a+(b-a)*j/k; p1=a+(b-a)*(j+1)/k; m_=(p0+p1)/2; t_=p1-p0; Lt=np.hypot(*t_)
+                    if Lt<1e-6: continue
+                    nv=np.array([t_[1],-t_[0]])/Lt
+                    pa=m_+nv*3; pb=m_-nv*3
+                    ia=(int(round(pa[1])),int(round(pa[0]))); ib=(int(round(pb[1])),int(round(pb[0])))
+                    if not (0<=ia[0]<G.H and 0<=ia[1]<G.W and 0<=ib[0]<G.H and 0<=ib[1]<G.W): continue
+                    pin,pout=(ia,ib) if M[ia] else (ib,ia)
+                    if M[pout] or l.band[pin]<0: continue
+                    hin=float(l.h(l.band[pin])); hout=float(l.h(l.band[pout])) if l.band[pout]>=0 else 0.0
+                    if hin-hout<=thr: continue
+                    A=G.m(p0[0],p0[1]); B=G.m(p1[0],p1[1])
+                    out.append([round(float(A[0]),2),round(float(A[1]),2),round(float(B[0]),2),round(float(B[1]),2),round(hin,2),round(hin+rail,2)])
+    return out
 levels=[]
 for name,l,cm,cy in (('200',L2,c200,C200),('300',L3,c300,C300),('400',L4,c400,C400),('500',L5,c500,C500)):
-    rails,walls=edge_walls(G,l,outside_fn(cm,cy),doors[name]+l.aisle_doors(),skip=skip,front=fronts[name],cheek=name in ('300','500'))
+    rails,walls=edge_walls(G,l,outside_fn(cm,cy),doors[name]+l.aisle_doors(),skip=skip,front=fronts[name],cheek=CHEEK[name] if name in ('300','500') else False)
     rails+=front_parapet(G,l,fronts[name])
     rows_=l.rows_out()
-    if name=='200': rows_=tunnel_rows(rows_,TUN)
+    if name=='200':
+        rows_=tunnel_rows(rows_,TUN); dr_,drl_=tunnel_decks(G,L2,TUN); rows_+=dr_; rails+=drl_
     levels.append({'name':name,'D':l.D,'h0':l.h0,'rise':l.rise,'rows':rows_,'steps':l.aisles_out(),'holes':[],'voms':VOMS.get(name,[]),'partitions':PART300 if name=='300' else [],
                    'seats':l.seats_out(),'rails':rails,'walls':walls})
     print(name,'rows',len(levels[-1]['rows']),'steps',len(levels[-1]['steps']),'holes',len(levels[-1]['holes']),'rails',len(rails),'walls',len(walls))
+# ── the suites (3rd floor) along the left side, seen from the floor's desk ──
+# The VIP room and the suites (スイートルーム): rooms on the 3rd floor behind
+# the 200s' back, each with a glass front and a balcony of two rows in front
+# of it behind a glass balustrade (the VIP room 12 seats, a suite 8), boxed
+# off from each other; not on the public seating map.
+import base64
+_b=L2._blk; _nb=int(L2.band[(_b['sec']==1)&(L2.band>=0)].max())+1
+xb=float(_b['K'][1]-_nb*L2.D)-0.3        # the 200s' back line on the -x side, less a gap
+SY=10.6; SR=0.4; SZ=29.0
+bx=[]; z=-SZ
+while z<SZ-0.1:
+    w=6.0 if abs(z+3.0)<0.01 else 4.0
+    bx.append((round(z,2),round(z+w,2),12 if w>5 else 8)); z+=w
+# the VIP room in the middle
+bx=[]; zz=-SZ
+for i in range(7): bx.append((zz,zz+4.0,8)); zz+=4.0
+bx.append((zz,zz+6.0,12)); zz+=6.0
+for i in range(7): bx.append((zz,zz+4.0,8)); zz+=4.0
+off=-(zz+SZ)/2-(-SZ)          # centre the run on z=0
+bx=[(round(a+off,2),round(b+off,2),n) for a,b,n in bx]
+z0s,z1s=bx[0][0],bx[-1][1]
+rect=lambda x0,x1,za,zb: [[round(x0,2),round(za,2)],[round(x1,2),round(za,2)],[round(x1,2),round(zb,2)],[round(x0,2),round(zb,2)]]
+srows=[{'r':0,'y':SY,'y0':SY-0.45,'polys':[[rect(xb-1.0,xb,z0s,z1s)]]},
+       {'r':1,'y':SY+SR,'y0':SY-0.45,'polys':[[rect(xb-2.1,xb-1.0,z0s,z1s)]]}]
+Ss=[]
+for za,zb,n in bx:
+    per=n//2; used=per*0.6; z0=(za+zb)/2-used/2+0.3
+    for r in (0,1):
+        for k in range(per): Ss.append((xb-0.45-r*1.0,z0+k*0.6,r))
+Ss=np.array(Ss)
+enc=np.c_[np.round(Ss[:,0]*10),np.round(Ss[:,1]*10),Ss[:,2],np.full(len(Ss),90)].astype('<i2')
+parts=[]
+for za,zb,n in bx[1:]:
+    parts.append([round(xb,2),round(za,2),round(xb-2.1,2),round(za,2),SY,round(SY+SR+1.1,2)])
+glass_rail=[[round(xb-0.05,2),round(z0s,2),round(xb-0.05,2),round(z1s,2),SY-0.45,round(SY+1.1,2)]]
+suites={'xf':round(xb,2),'xg':round(xb-2.25,2),'xr':round(xb-7.5,2),'y':SY+SR,'yc':round(SY+SR+3.0,2),'boxes':[[a,b,n] for a,b,n in bx]}
+print('suites',len(bx),'seats',len(Ss),'front x',round(xb,2),'z',z0s,z1s)
 # concourse floors reach a little under the stands they meet, so there is no crack
 floors=[{'y':y,'y0':y0,'polys':mask_polys(G,m)} for m,y0,y in slabs]
 ow=contours(G,outer.astype(np.uint8),eps=0.03,minarea=100)
 data={'levels':levels,'floors':floors,'flights':[{k:(round(float(v),3) if not isinstance(v,int) else v) for k,v in f.items()} for f in flights],
-      'outer':[poly_out(p) for p in ow],'rooms':encl,'tunnels':tunnels_out(TUN)}
+      'outer':[poly_out(p) for p in ow],'rooms':encl,'tunnels':tunnels_out(TUN),'suites':suites}
+data['levels'].append({'name':'300S','D':1.0,'h0':SY,'rise':SR,'rows':srows,'steps':[],'holes':[],'voms':[],'partitions':parts,
+                       'seats':base64.b64encode(enc.tobytes()).decode('ascii'),'rails':glass_rail,'walls':[]})
 json.dump(data,open('ssa_stands.json','w'),separators=(',',':'))
 import os; print('json KB',os.path.getsize('ssa_stands.json')//1024)
 pickle.dump((c200,c300,c400,c500),open('ssa_conc.pkl','wb'))

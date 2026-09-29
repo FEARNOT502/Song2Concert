@@ -32,8 +32,18 @@ LV['E']=Level(G,'E',st['SE'],0.8,H_E,R_E,0.5,0.6,centre=O,rmax=180,open_w=2.2,hu
 # row is level with it, and the doors at the backs of their aisles open onto it
 LV['F'].rise=(C1F-H_F)/(LV['F'].nrows-1)
 print('levels',round(time.time()-T0,1),{k:(l.nrows,len(l.seats)) for k,l in LV.items()},'F rise',round(LV['F'].rise,3))
+# The entrances as the official seating map marks them (the numbered
+# circles, td/entrances.json, in the map's own points): 48 round the back of
+# the infield's 1st floor and 10 behind the outfield's, from the 1st-floor
+# concourse; 14 through the front rows of E, from the 2nd floor's. The map
+# draws the 2nd floor out of scale, so there only their angles are taken.
+_ent=np.array([c['c'] for c in json.load(open('td/entrances.json'))])
+_ent=(_ent-np.array([579.2,441.7]))/2.996
+_eth=np.degrees(np.arctan2(_ent[:,0]-O[0],_ent[:,1]-O[1])); _er=np.hypot(_ent[:,0]-O[0],_ent[:,1]-O[1])
+ENT1=_ent[_er<125]; VOM2=sorted(_eth[_er>=125])
+print('entrances: 1st floor',len(ENT1),'2nd floor',len(VOM2))
 # the tunnels from the 2nd-floor concourse through E's first rows, made straight
-VOMS={'E':LV['E'].make_voms(C2F,detect=False,cands=[(np.abs(TH-tv)<np.degrees(1.1/RRO))&(dOut>=E0-0.3)&(dOut<E0+5*DP) for tv in st['VOM']])}
+VOMS={'E':LV['E'].make_voms(C2F,detect=False,cands=[(np.abs(TH-tv)<np.degrees(1.1/RRO))&(dOut>=E0-0.3)&(dOut<E0+5*DP) for tv in VOM2])}
 # each named for the E block it runs under, as the signs over them are
 _lab=json.load(open('td/td_labeled.json')); _Hm=np.array([579.2,441.7]); _s=2.996
 _Esp=[]
@@ -271,7 +281,20 @@ suitem=(dOut>=C0W)&(dOut<=3.9)&(np.abs(TH)<SUITE_TH)&~field
 slabs=[(gu(cross,H_A+R_A*25),0.0,H_A+R_A*25),(gu(c1,C1F),0.0,C1F),(gu(cb,CBAL),CBAL-0.35,CBAL),(gu(c2,C2F),C2F-0.35,C2F),(suitem,H_C-0.4-0.4,H_C-0.4)]
 # ── the concourses closed in ──
 t_=time.time()
-rooms=[{'name':'1F','mask':c1,'y':C1F,'cl':4.0,'own':[A,B,F],'doors':B.aisle_doors()+F.aisle_doors()},
+# the 1st floor's doors: each entrance on the map, carried out along its
+# ray to the concourse's wall (behind the open walkway, under the balcony)
+_overhead=(Cl.R>0)|(D.R>0)|(E.R>0)|cb|c2|suitem
+_walk=c1&~_overhead&dil(A.R|B.R|F.R,6.0)
+_inside=c1&~_walk
+DOORS1=[]
+for q in ENT1:
+    u_=(q-np.array(O))/np.linalg.norm(q-np.array(O))
+    for t_ in np.arange(-6.0,20.0,0.1):
+        pp=q+u_*t_; i_,j_=[int(round(float(c))) for c in G.g(pp[0],pp[1])]
+        if 0<=i_<G.W and 0<=j_<G.H and _inside[j_,i_]:
+            DOORS1.append((float(pp[0]+u_[0]*0.3),float(pp[1]+u_[1]*0.3))); break
+print('1st-floor doors placed',len(DOORS1),'of',len(ENT1))
+rooms=[{'name':'1F','mask':c1,'y':C1F,'cl':4.0,'own':[A,B,F],'doors':DOORS1},
        {'name':'BAL','mask':cb,'y':CBAL,'cl':3.8,'own':[Cl],'doors':Cl.aisle_doors()},
        {'name':'2F','mask':c2,'y':C2F,'cl':4.0,'own':[D,E],'doors':D.aisle_doors()+E.aisle_doors()}]
 rooms[2]['open']=E.pits
@@ -291,7 +314,8 @@ spec={'G':(),'A':((cross,H_A+R_A*25),),'B':((c1,C1F),),'F':((c1,C1F),),'C':((cb,
 flushmode={'G':'open','A':'open','B':'doors','F':'doors','C':'doors','D':'open','E':'doors'}
 voms={'E':C2F}
 for name,l in LV.items():
-    rails,walls=edge_walls(G,l,outside_fn(spec[name]),l.aisle_doors(),flush=flushmode[name],skip=skip,front=fronts.get(name))
+    drs=DOORS1 if name in ('B','F') else l.aisle_doors()
+    rails,walls=edge_walls(G,l,outside_fn(spec[name]),drs,flush=flushmode[name],skip=skip,front=fronts.get(name))
     if fronts.get(name): rails+=front_parapet(G,l,fronts[name])
     levels.append({'name':name,'D':l.D,'h0':l.h0,'rise':l.rise,'rows':l.rows_out(),'steps':l.aisles_out(),'holes':[],'voms':VOMS.get(name,[]),
                    'seats':l.seats_out(),'rails':rails,'walls':walls})

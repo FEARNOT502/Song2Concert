@@ -219,6 +219,117 @@ export function smoothRuns(segs, tol = 0.14) {
   return out;
 }
 
+// A stand's rails climb its raked edges row by row: one flat piece per row,
+// each a step up from the last — a staircase along what is one sloping
+// rail. Chain the pieces that meet end to end (a step of a row or two
+// between them), give each point along the chain its own height, and draw
+// the chain again as straight sloping runs: [x0, z0, x1, z1, bottom0, top0,
+// bottom1, top1] each.
+export function slopedRuns(segs, { step = 0.75, tol = 0.14, ytol = 0.12 } = {}) {
+  const key = (x, z) => `${Math.round(x * 50)},${Math.round(z * 50)}`;
+  const from = new Map(), to = new Map();
+  segs.forEach((s, i) => {
+    const kf = key(s[0], s[1]), kt = key(s[2], s[3]);
+    if (!from.has(kf)) from.set(kf, []); from.get(kf).push(i);
+    if (!to.has(kt)) to.set(kt, []); to.get(kt).push(i);
+  });
+  // pieces at one height chain round any bend; pieces a step apart only
+  // straight on (a raked edge), not round a notch
+  const near = (a, b) => {
+    const same = Math.abs(a[4] - b[4]) < 1e-3 && Math.abs(a[5] - b[5]) < 1e-3;
+    if (same) return true;
+    if (Math.abs(a[4] - b[4]) > step || Math.abs(a[5] - b[5]) > step) return false;
+    const ax = a[2] - a[0], az = a[3] - a[1], bx = b[2] - b[0], bz = b[3] - b[1];
+    return (ax * bx + az * bz) / ((Math.hypot(ax, az) * Math.hypot(bx, bz)) || 1) > 0.9;
+  };
+  const used = new Uint8Array(segs.length), out = [];
+  const nextOf = (i) => (from.get(key(segs[i][2], segs[i][3])) || []).find((j) => !used[j] && near(segs[i], segs[j]));
+  const prevOf = (i) => (to.get(key(segs[i][0], segs[i][1])) || []).find((j) => !used[j] && near(segs[i], segs[j]));
+  for (let i = 0; i < segs.length; i++) {
+    if (used[i]) continue;
+    let s0 = i, g = 0;
+    while (g++ < segs.length) { const j = prevOf(s0); if (j === undefined || j === i) break; used[s0] = 1; s0 = j; }
+    for (let k = 0; k < segs.length; k++) if (used[k] === 1 && k !== i) { /* reset the walk-back marks */ }
+    // walk forward from the chain's start
+    const chain = []; let c = s0; const seen = new Set();
+    used[s0] = 0;
+    while (c !== undefined && !seen.has(c)) { seen.add(c); used[c] = 2; chain.push(segs[c]); c = nextOf(c); }
+    // points with heights: each segment's middle carries its own; the
+    // chain's ends and joints take their neighbours'
+    const P = [[chain[0][0], chain[0][1]]];
+    let L = 0; const T = [0], Y = [];
+    for (const sg of chain) { L += Math.hypot(sg[2] - sg[0], sg[3] - sg[1]); P.push([sg[2], sg[3]]); T.push(L); }
+    const flat = chain.every((sg) => Math.abs(sg[4] - chain[0][4]) < 1e-3 && Math.abs(sg[5] - chain[0][5]) < 1e-3);
+    // heights at the segments' middles, eased along the chain
+    const mids = chain.map((sg, k) => [(T[k] + T[k + 1]) / 2, sg[4], sg[5]]);
+    const at = (t) => {
+      if (flat || mids.length === 1) return [chain[0][4], chain[0][5]];
+      if (t <= mids[0][0]) return [mids[0][1], mids[0][2]];
+      if (t >= mids[mids.length - 1][0]) return [mids[mids.length - 1][1], mids[mids.length - 1][2]];
+      let k = 0; while (mids[k + 1][0] < t) k++;
+      const f = (t - mids[k][0]) / (mids[k + 1][0] - mids[k][0] || 1);
+      return [mids[k][1] + (mids[k + 1][1] - mids[k][1]) * f, mids[k][2] + (mids[k + 1][2] - mids[k][2]) * f];
+    };
+    for (const t of T) Y.push(at(t));
+    // Douglas-Peucker over plan and height together
+    const keep = new Uint8Array(P.length); keep[0] = keep[P.length - 1] = 1;
+    const st = [[0, P.length - 1]];
+    while (st.length) {
+      const [a, b] = st.pop(); let m = -1, md = 0;
+      for (let j = a + 1; j < b; j++) {
+        const f = (T[j] - T[a]) / (T[b] - T[a] || 1);
+        const px = P[a][0] + (P[b][0] - P[a][0]) * f, pz = P[a][1] + (P[b][1] - P[a][1]) * f;
+        const dxy = Math.hypot(P[j][0] - px, P[j][1] - pz) / tol;
+        const dy = Math.abs(Y[j][1] - (Y[a][1] + (Y[b][1] - Y[a][1]) * f)) / ytol;
+        const dd = Math.max(dxy, dy);
+        if (dd > 1 && dd > md) { md = dd; m = j; }
+      }
+      if (m >= 0) { keep[m] = 1; st.push([a, m], [m, b]); }
+    }
+    const idx = []; for (let j = 0; j < P.length; j++) if (keep[j]) idx.push(j);
+    for (let k = 0; k + 1 < idx.length; k++) {
+      const a = idx[k], b = idx[k + 1];
+      out.push([P[a][0], P[a][1], P[b][0], P[b][1], Y[a][0], Y[a][1], Y[b][0], Y[b][1]]);
+    }
+  }
+  return out;
+}
+
+// A closed outline traced off a raster (a building's outer wall) carries the
+// raster's jitter: smooth it along its length (a Gaussian over `sig` metres,
+// resampled every 0.5 m) and draw it again within `tol` of the smoothed line.
+export function smoothRing(ring, { sig = 2.5, tol = 0.08 } = {}) {
+  const n = ring.length;
+  if (n < 8) return ring;
+  const T = [0];
+  for (let i = 0; i < n; i++) { const [a, b] = [ring[i], ring[(i + 1) % n]]; T.push(T[i] + Math.hypot(b[0] - a[0], b[1] - a[1])); }
+  const L = T[n], m = Math.max(16, Math.round(L / 0.5)), P = [];
+  let k = 0;
+  for (let j = 0; j < m; j++) {
+    const t = (j / m) * L; while (T[k + 1] < t) k++;
+    const f = (t - T[k]) / (T[k + 1] - T[k] || 1), a = ring[k], b = ring[(k + 1) % n];
+    P.push([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f]);
+  }
+  const h = Math.max(1, Math.round((sig / 0.5) * 3)), w = [];
+  for (let d = -h; d <= h; d++) w.push(Math.exp(-0.5 * (d * 0.5 / sig) ** 2));
+  const ws = w.reduce((a, b) => a + b, 0);
+  const S = P.map((_, j) => { let x = 0, z = 0; for (let d = -h; d <= h; d++) { const q = P[(j + d + m) % m]; x += q[0] * w[d + h]; z += q[1] * w[d + h]; } return [x / ws, z / ws]; });
+  // Douglas-Peucker, closed: split at the two farthest-apart points
+  const dp = (Q) => {
+    const keep = new Uint8Array(Q.length); keep[0] = keep[Q.length - 1] = 1; const st = [[0, Q.length - 1]];
+    while (st.length) {
+      const [a, b] = st.pop(); const [ax, az] = Q[a], [bx, bz] = Q[b]; const dx = bx - ax, dz = bz - az, l = Math.hypot(dx, dz) || 1e-9;
+      let mi = -1, md = tol;
+      for (let i = a + 1; i < b; i++) { const d = Math.abs((Q[i][0] - ax) * dz - (Q[i][1] - az) * dx) / l; if (d > md) { md = d; mi = i; } }
+      if (mi >= 0) { keep[mi] = 1; st.push([a, mi], [mi, b]); }
+    }
+    return Q.filter((_, i) => keep[i]);
+  };
+  const half = Math.floor(m / 2);
+  const A = dp(S.slice(0, half + 1)), B = dp(S.slice(half).concat([S[0]]));
+  return A.slice(0, -1).concat(B.slice(0, -1));
+}
+
 // Thin vertical panels laid end to end (a rail, a wall round a curve) each
 // carry their own facing; where two meet at a gentle bend they share one, so
 // the run shades as one smooth surface rather than a row of facets.
@@ -317,16 +428,23 @@ export function buildTunnels(data, ox, oz) {
       tunnelGeo.wall.push(ex.toNonIndexed());
     };
     const hw = t.w / 2, T = 0.3;
-    // the cut's side walls: a rail's height over the rows beside them
-    const cut = (prof) => (prof?.length > 1
-      ? [[prof[0][0], 0], [prof[prof.length - 1][0], 0], ...prof.slice().reverse()]
-      : [[-0.4, 0], [t.deck, 0], [t.deck, t.deckY + 1.0], [-0.4, h1 + 1.0]]);
-    raked(hw - T, hw + 0.12, cut(t.sides?.[1])); raked(-hw - 0.12, -hw + T, cut(t.sides?.[0]));
-    for (const sg of [-1, 1]) box(tunnelGeo.wall, t.deck, t.L, sg > 0 ? hw - T : -hw - 0.12, sg > 0 ? hw + 0.12 : -hw + T, 0, t.h + 0.02);
-    box(tunnelGeo.wall, t.deck - 0.05, t.L, -hw, hw, t.h - 0.02, t.h + 0.12);      // the roof on under the rows
+    if (t.covered) {
+      // covered from its mouth: the same wall either side, the whole way, a
+      // flat roof under the deck and the rows over it
+      for (const sg of [-1, 1]) box(tunnelGeo.wall, -0.3, t.L, sg > 0 ? hw - T : -hw - 0.12, sg > 0 ? hw + 0.12 : -hw + T, 0, t.h + 0.02);
+      box(tunnelGeo.wall, -0.3, t.L, -hw - 0.12, hw + 0.12, t.h - 0.02, t.h + 0.12);
+    } else {
+      // the cut's side walls: a rail's height over the rows beside them
+      const cut = (prof) => (prof?.length > 1
+        ? [[prof[0][0], 0], [prof[prof.length - 1][0], 0], ...prof.slice().reverse()]
+        : [[-0.4, 0], [t.deck, 0], [t.deck, t.deckY + 1.0], [-0.4, h1 + 1.0]]);
+      raked(hw - T, hw + 0.12, cut(t.sides?.[1])); raked(-hw - 0.12, -hw + T, cut(t.sides?.[0]));
+      for (const sg of [-1, 1]) box(tunnelGeo.wall, t.deck, t.L, sg > 0 ? hw - T : -hw - 0.12, sg > 0 ? hw + 0.12 : -hw + T, 0, t.h + 0.02);
+      box(tunnelGeo.wall, t.deck - 0.05, t.L, -hw, hw, t.h - 0.02, t.h + 0.12);      // the roof on under the rows
+    }
     box(tunnelGeo.floor, -0.4, t.L + (t.closed ? 0 : 12), -hw - 0.3, hw + 0.3, -0.02, 0.04);
     if (t.closed) box(tunnelGeo.wall, t.L - 0.3, t.L, -hw, hw, 0, t.h);      // its doors, shut
-    for (let a = t.deck + 1.5; a < t.L; a += 6) box(tunnelGeo.lamp, a, a + 1.4, -0.12, 0.12, t.h - 0.08, t.h - 0.02);
+    for (let a = (t.covered ? 1.0 : t.deck + 1.5); a < t.L; a += 6) box(tunnelGeo.lamp, a, a + 1.4, -0.12, 0.12, t.h - 0.08, t.h - 0.02);
   }
   if (tunnelGeo.wall.length) g.add(new THREE.Mesh(mergeGeometries(tunnelGeo.wall), std({ color: 0x4c4a47, roughness: 0.92 })));
   if (tunnelGeo.floor.length) g.add(new THREE.Mesh(mergeGeometries(tunnelGeo.floor), std({ color: 0x2c2c2e, roughness: 0.95 })));
@@ -441,6 +559,13 @@ export function buildStands(data, {
   };
   // thin vertical panels, merged: rails, walls, tunnel sides
   const panels = { rail: [[], []], wall: [[], []], mouth: [[], []], own: [[], []] };
+  const panel4 = (kind, x0, z0, x1, z1, ya0, ya1, yb0, yb1) => {
+    const [p, n] = panels[kind];
+    const dx = x1 - x0, dz = z1 - z0, l = Math.hypot(dx, dz) || 1;
+    const nx = -dz / l, nz = dx / l;
+    const a = [x0 + ox, z0 + oz], b = [x1 + ox, z1 + oz];
+    for (const [x, y, z] of [[a[0], ya0, a[1]], [b[0], yb0, b[1]], [b[0], yb1, b[1]], [a[0], ya0, a[1]], [b[0], yb1, b[1]], [a[0], ya1, a[1]]]) { p.push(x, y, z); n.push(nx, 0, nz); }
+  };
   const panel = (kind, x0, z0, x1, z1, y0, y1) => {
     const [p, n] = panels[kind];
     const dx = x1 - x0, dz = z1 - z0, l = Math.hypot(dx, dz) || 1;
@@ -482,7 +607,7 @@ export function buildStands(data, {
     // a level can have its own front (a VIP balcony's dark mesh), and the
     // low partitions between its boxes
     const own = materials.levelRail?.[L.name];
-    for (const [x0, z0, x1, z1, y0, y1] of smoothRuns(L.rails)) panel(own ? 'own' : 'rail', x0, z0, x1, z1, y0, y1);
+    for (const [x0, z0, x1, z1, ya0, ya1, yb0, yb1] of slopedRuns(L.rails)) panel4(own ? 'own' : 'rail', x0, z0, x1, z1, ya0, ya1, yb0, yb1);
     if (own && panels.own[0].length) { g.add(new THREE.Mesh(mkPanels(panels.own), own)); panels.own = [[], []]; }
     if (L.partitions?.length) {
       const pp = [];
@@ -548,7 +673,7 @@ export function buildStands(data, {
   if (floors.length) g.add(new THREE.Mesh(mergeGeometries(floors), floorMat));
   // the building's outer wall, up to the roof
   for (const polys of data.outer) {
-    const ring = polys[0];
+    const ring = smoothRing(polys[0]);
     for (let i = 0; i < ring.length; i++) {
       const [x0, z0] = ring[i], [x1, z1] = ring[(i + 1) % ring.length];
       panel('wall', x0, z0, x1, z1, 0, roofY);
