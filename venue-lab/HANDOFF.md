@@ -45,11 +45,13 @@ Design of the Arch and Roof of Wembley Stadium*. The acoustics were left alone.
   a pit whose mouth stands well below the concourse gets steps up inside it.
   `node vomtest.mjs <venue> <data module> <offset z>` walks every vomitory.
 - Tokyo Dome against the seating map: the pole stand is gone. Each block is
-  the map's again: A02-A48 in the A stand, B up to B02/B48, and A01/A49 in the
-  outfield stand (F). Its rows are counted from the fence (distance from the
-  field), level along it, so the outfield runs round the pole into A01 with no
-  seam; A01's seats are re-laid on those rows. Against A02/B02 there is a
-  side wall with its rail, as between any two blocks. The excite seats are
+  the map's again, each its own: A01-A49 in the A stand (A01/A49, the wedges
+  at the poles, rows 15-26 in A and 27-40 in B), B up to B02/B48, and the
+  outfield (F) a stand of its own beside them. F's rows are counted from the
+  fence (distance from the field), so its front row and the fence are level
+  along it. Nothing bridges one block to the next: where one stand's tread
+  ran on under another's seats, the cell goes to the nearer seats, and where
+  their heights differ there is a side wall with its rail. The excite seats are
   the map's own G05-G15/G35-G45 boxes, flood-filled from `td_vec.json`, their
   rows running
   back to the A blocks' front (level past the sixth). The excite strip runs
