@@ -497,7 +497,8 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
   people.forEach((p, i) => {
     const up = (p.cell ?? 0) > 0;
     const hs = p.h ?? 1;
-    pos[i * 3] = p.x + (rnd() - 0.5) * 0.3; pos[i * 3 + 1] = p.y + (up ? 1.95 : 1.3) * hs; pos[i * 3 + 2] = p.z + (rnd() - 0.5) * 0.2;
+    // in the stands, held lower (sitting)
+    pos[i * 3] = p.x + (rnd() - 0.5) * 0.3; pos[i * 3 + 1] = p.y + (p.seat ? (up ? 1.55 : 1.05) : (up ? 1.95 : 1.3)) * hs; pos[i * 3 + 2] = p.z + (rnd() - 0.5) * 0.2;
     look[i * 4] = rnd() * 6.283; look[i * 4 + 1] = Math.floor(rnd() * 4); look[i * 4 + 2] = size * (0.8 + rnd() * 0.4); look[i * 4 + 3] = rnd();
   });
   const geo = new THREE.BufferGeometry();

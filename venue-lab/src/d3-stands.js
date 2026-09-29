@@ -637,7 +637,7 @@ function buildStands(data, {
       if (c != null && c !== col) { if (!odd.has(c)) odd.set(c, []); odd.get(c).push({ x, y, z, yaw }); }
       else spots.push({ x, y, z, yaw });
       if (crowd && sold(x, z, L.name) && rnd() < occupancy) {
-        people.push({ x: x - Math.sin(yaw) * 0.12, y, z: z - Math.cos(yaw) * 0.12, turn: Math.atan2(stage.x - x, stage.z - z) });
+        people.push({ x: x - Math.sin(yaw) * 0.12, y, z: z - Math.cos(yaw) * 0.12, turn: Math.atan2(stage.x - x, stage.z - z), seat: true });
       }
     }
     seatSpots.push({ spots, col });

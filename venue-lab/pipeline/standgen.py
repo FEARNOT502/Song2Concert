@@ -1303,3 +1303,47 @@ def tunnel_decks(G, l, tunnels):
                 rows_ok = lower
                 if rows_ok: rails.append([round(float(a[0]), 2), round(float(a[1]), 2), round(float(b[0]), 2), round(float(b[1]), 2), round(t['deckY'], 2), round(t['deckY'] + 1.0, 2)])
     return rows, rails
+
+def relay_columns(l, sel, back=8.0, fwd=0.0, replace=False, near=0.3, pitch=0.5):
+    """Seats along a level's rows over `sel`, wherever a row's cell lies in
+    one of its blocks' columns: a seat within `near` of the line down the
+    rake through it, from `fwd` in front to `back` behind (so a block runs on
+    over the bare rows in front of it, and an aisle stays an aisle). With
+    `replace`, the seats already over `sel` go first and are laid again, in
+    straight rows. Returns how many seats were laid."""
+    from scipy.spatial import cKDTree
+    G = l.G; D = l.D
+    tree0 = cKDTree(l.seats)
+    gz, gx = np.gradient(cv2.GaussianBlur(l.d.astype(np.float32), (0, 0), 8))
+    if replace:
+        k = sample(G, sel.astype(np.uint8), l.seats) == 0
+        l.seats, l.row, l.yaw = l.seats[k], l.row[k], l.yaw[k]
+    keep = cKDTree(l.seats) if len(l.seats) else None
+    S, rows, yaws = [], [], []
+    for r in range(l.nrows):
+        line = sel & (l.R > 0) & (l.band == r) & (np.abs(l.d - (r + 0.55) * D) < 0.06)
+        if getattr(l, 'pits', None) is not None: line &= ~l.pits
+        ys, xs = np.nonzero(line)
+        if not len(xs): continue
+        X, Z = G.m(xs, ys); P = np.c_[X, Z]
+        g = np.c_[gx[ys, xs], gz[ys, xs]]; g /= np.maximum(1e-6, np.linalg.norm(g, axis=1))[:, None]
+        if keep is not None:
+            ok = keep.query(P)[0] >= 0.45
+            P, g = P[ok], g[ok]
+        if not len(P): continue
+        best = np.full(len(P), 9.0)
+        for t in np.arange(-fwd, back + 1e-6, 0.1):
+            best = np.minimum(best, tree0.query(P + g * t)[0])
+        ok = best < near
+        P, g = P[ok], g[ok]
+        if not len(P): continue
+        tr = cKDTree(P); taken = np.zeros(len(P), bool)
+        th = np.arctan2(P[:, 0] - l.centre[0], P[:, 1] - l.centre[1])
+        for i in np.argsort(th):
+            if taken[i]: continue
+            S.append(P[i]); rows.append(r); yaws.append(np.arctan2(-g[i, 0], -g[i, 1]))
+            for j in tr.query_ball_point(P[i], pitch * 0.95): taken[j] = True
+    if S:
+        l.seats = np.r_[l.seats, np.array(S)]; l.row = np.r_[l.row, np.array(rows)]; l.yaw = np.r_[l.yaw, np.array(yaws)]
+    l.seatmask = seat_mask(G, l.seats)
+    return len(S)
