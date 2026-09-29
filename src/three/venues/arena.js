@@ -1,16 +1,17 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// ARENA — Saitama Super Arena in arena mode: 110 × 130 × 37 m, 22,500 seats,
-// seen from FOH 35 m out on a standing floor. The 200 level, the three-row
-// 300 balcony, the 400 level above it and the 500 level along the middle of
-// each side; a stage set of its own with the seats behind it left empty; a
-// roof of deep steel over a rig of three trusses.
+// ARENA — Saitama Super Arena in arena mode: 130 × 120 m under a ceiling
+// about 30 m up, 22,500 seats, seen from FOH 35 m out on a standing floor.
+// The 200 level, the three-row 300 balcony, the 400 level above it and the
+// 500 level along the middle of each side; a stage set of its own with the
+// seats behind it left empty; the movable ceiling's panels over a rig of
+// three trusses.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { APP, KELVIN, V3, concreteTex, std, withRepeat } from '../core.js';
 import { lightPoints } from '../people.js';
-import { ampStack, drumKit, guitar, hoists, keyboardRig, latticeInto, lineArray, micStand, shadowSpot, stageDeck, stageSteps, subStack, truss, wedge } from '../rig.js';
+import { ampStack, drumKit, guitar, hoists, keyboardRig, lineArray, micStand, shadowSpot, stageDeck, stageSteps, subStack, truss, wedge } from '../rig.js';
 import { bigCrowd, bigScreens, blockGrid, floorBlocks, floorChairs, fohPosition, maskingDrapes, runLasers, runShow, stageSet } from '../show.js';
 import { buildStands } from '../stands.js';
 import { SSA_STANDS } from './ssa-data.js';
@@ -18,7 +19,7 @@ import { SSA_STANDS } from './ssa-data.js';
 export function buildArena(ctx) {
   const { pipe, q, cu } = ctx;
   const root = new THREE.Group();
-  const H = 38;
+  const H = 30;                        // the movable ceiling, lowered for arena mode
   const DECK = 2.2, RIG = 20;
   // FOH, and the listener there: at the back of the floor's seats
   const eye = V3(0, 1.6 + 0.9, 81.4);
@@ -79,23 +80,35 @@ export function buildArena(ctx) {
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(X1 - X0, Z1 - Z0), std({ ...withRepeat(concreteTex({ key: 'arenafloor', tone: 0.1 }), (X1 - X0) / 4, (Z1 - Z0) / 4), roughness: 0.9 }));
   floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, (Z0 + Z1) / 2); floor.receiveShadow = true;
   root.add(floor);
-  const roofPlane = new THREE.Mesh(new THREE.PlaneGeometry(X1 - X0, Z1 - Z0), std({ color: 0x0b0b0e, roughness: 0.95, side: THREE.DoubleSide }));
-  roofPlane.rotation.x = Math.PI / 2; roofPlane.position.set(0, H, (Z0 + Z1) / 2); root.add(roofPlane);
-  const roofParts = [];
-  for (let z = Z0 + 6; z <= Z1 - 4; z += 12) latticeInto(roofParts, V3(X0, H - 2.2, z), V3(X1, H - 2.2, z), 2.6, 0.08);
-  for (let x = X0 + 6; x <= X1 - 4; x += 16) latticeInto(roofParts, V3(x, H - 1.2, Z0), V3(x, H - 1.2, Z1), 1.6, 0.06);
-  root.add(new THREE.Mesh(mergeGeometries(roofParts), std({ color: 0x2a2c32, metalness: 0.6, roughness: 0.5 })));
-  // catwalks and the house lights on them
+  // The ceiling: the arena's movable one, lowered for arena mode to about
+  // 30 m over the floor (43 m in stadium mode). It is in panels, each raised
+  // and lowered on its own, with the hooks the shows rig from along the seams
+  // between them; the dark void over the seams, the downlights in the panels.
+  const roofPlane = new THREE.Mesh(new THREE.PlaneGeometry(X1 - X0, Z1 - Z0), std({ color: 0x08080a, roughness: 0.95, side: THREE.DoubleSide }));
+  roofPlane.rotation.x = Math.PI / 2; roofPlane.position.set(0, H + 3, (Z0 + Z1) / 2); root.add(roofPlane);
+  const roofParts = [], hooks = [];
+  const PX = 8, PZ = 8, GAP = 0.8;
+  for (let i = 0; i < PX; i++) for (let j = 0; j < PZ; j++) {
+    const x0 = X0 + (X1 - X0) * i / PX, x1 = X0 + (X1 - X0) * (i + 1) / PX, z0 = Z0 + (Z1 - Z0) * j / PZ, z1 = Z0 + (Z1 - Z0) * (j + 1) / PZ;
+    const b = new THREE.BoxGeometry(x1 - x0 - GAP, 0.5, z1 - z0 - GAP); b.translate((x0 + x1) / 2, H + 0.25, (z0 + z1) / 2); roofParts.push(b.toNonIndexed());
+  }
+  for (let i = 1; i < PX; i++) for (let j = 0; j <= PZ * 3; j++) {
+    const x = X0 + (X1 - X0) * i / PX, z = Z0 + (Z1 - Z0) * j / (PZ * 3);
+    const b = new THREE.BoxGeometry(0.25, 0.7, 0.25); b.translate(x, H - 0.1, z); hooks.push(b.toNonIndexed());
+  }
+  root.add(new THREE.Mesh(mergeGeometries(roofParts), std({ color: 0x1a1b1f, roughness: 0.85 })));
+  root.add(new THREE.Mesh(mergeGeometries(hooks), std({ color: 0x2a2c32, metalness: 0.6, roughness: 0.5 })));
+  // the downlights in the ceiling's panels, in rows over the floor and stands
   const houseFix = [];
-  for (let z = 12; z <= 84; z += 18) for (let x = -36; x <= 36; x += 18) {
-    houseFix.push(pipe.flares.add(V3(x, H - 4.2, z), KELVIN(4200), 1.2, 0));
+  for (let z = Z0 + 8; z <= Z1 - 6; z += 9) for (let x = -63; x <= 63; x += 9) {
+    houseFix.push(pipe.flares.add(V3(x, H - 0.05, z), KELVIN(4200), 0.9, 0));
   }
   // the set stands on the deck; the building's stands carry on round it
   stageSet(root, { w: 24, h: 17, z: 1.8, deck: DECK, towerX: 13.6, backdropW: 32, backdropH: 16, wingX: 18.5, wingW: 6, wingH: 11 });
   // masking across the building behind the stage, wall to wall and floor to
-  // the roof steel, over the set's own backdrop in the middle: the end stands
+  // the ceiling, over the set's own backdrop in the middle: the end stands
   // and the corners behind it are out of sight
-  maskingDrapes(root, { a: [-76, 2.2], b: [76, 2.2], top: H - 2.4,
+  maskingDrapes(root, { a: [-76, 2.2], b: [76, 2.2], top: H,
     bottomAt: (x, z) => (Math.abs(x) < 16 ? DECK + 16 : stands.topAt(x, z)) });
 
   // ── stage ──
@@ -123,7 +136,7 @@ export function buildArena(ctx) {
   // ── rig ──
   const rig = ctx.rig({ finish: 'black' });
   const trussZ = [3.2, 9.2, 15.2];
-  for (const z of trussZ) { const t = truss(36, { size: 0.76, finish: 'black' }); t.position.set(0, RIG, z); root.add(t); root.add(hoists([-16, -6, 6, 16], RIG, z, H - 2.2)); }
+  for (const z of trussZ) { const t = truss(36, { size: 0.76, finish: 'black' }); t.position.set(0, RIG, z); root.add(t); root.add(hoists([-16, -6, 6, 16], RIG, z, H)); }
   const pa = [];
   for (const side of [-1, 1]) {
     const main = lineArray({ boxes: 16, width: 1.3 }); main.position.set(side * 15.5, RIG - 0.6, 16.5); main.rotation.y = -side * 0.08; root.add(main); pa.push(main);
@@ -149,7 +162,11 @@ export function buildArena(ctx) {
   const fill = [];
   for (const [x, y, z] of [[-20, 18, 30], [20, 18, 30], [0, 24, 60]]) { const l = new THREE.PointLight(0xffffff, 0, 90, 2); l.position.set(x, y, z); root.add(l); fill.push(l); }
   const house = [];
-  for (const [x, z] of [[-24, 20], [24, 20], [-24, 60], [24, 60], [0, 40], [0, 80]]) { const l = new THREE.PointLight(KELVIN(4200), 0, 120, 2); l.position.set(x, H - 4.5, z); root.add(l); house.push(l); }
+  // the house lights: the ceiling's downlights, shining down, not onto it
+  for (const [x, z] of [[-24, 20], [24, 20], [-24, 60], [24, 60], [0, 40], [0, 80]]) {
+    const l = new THREE.SpotLight(KELVIN(4200), 0, 140, 1.4, 0.3, 2); l.position.set(x, H - 0.6, z); l.target.position.set(x, 0, z);
+    root.add(l, l.target); house.push(l);
+  }
   root.add(new THREE.HemisphereLight(0x14141c, 0x050508, 0.18));
 
   // ── people ──

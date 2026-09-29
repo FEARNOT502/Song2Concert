@@ -2,6 +2,36 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 15: the three big rooms checked against the buildings
+Sources: the Japan Membrane Structures Association's 2016 lecture on Tokyo Dome
+(its sections and roof plan), Nikken Sekkei's project page, ja.wikipedia (Tokyo
+Dome, Saitama Super Arena), Wembley's own stats page, Kayvani's *Structural
+Design of the Arch and Roof of Wembley Stadium*. The acoustics were left alone.
+- Tokyo Dome: the roof as drawn — a superellipse set corner-on to home plate
+  (201 m corner to corner, 180.6 m across the diagonals, n ≈ 1.53), centred 33 m
+  out from home; the compression ring leaning 1/10 from 44.7 m over the field at
+  the home corner to 24.7 m at centre field; the membrane 25 m over the ring's
+  plane, crown 60.7 m; the cables along and across the home–centre axis, 8.5 m
+  apart. The balcony and the 2nd floor stand out over the 1st floor (their
+  fronts 9 m and 12.3 m in from its back: `td_gen.py`'s distances are signed),
+  and the heights come from the infield section (the 1st floor up to 10.6 m, the
+  balcony 15-16.2 m, the 2nd floor 18.6-35.4 m); the concourses and the outer
+  wall end at the building's line, 7 % out from the ring. Hung from the cables:
+  the 14 light gondolas (the house lights), 21 loudspeakers round the edge and
+  one in the middle with the TV camera. The 2022 main screen (125.6 m, 1,050 m²)
+  over the outfield stands and the two ribbon screens along the outfield fence,
+  both off; the fence's 0.24 m net. Balcony seats grey (season seats).
+- SSA: the ceiling at 30 m (arena mode; 43 m in stadium mode), the movable
+  ceiling's panels with the rigging hooks along their seams and downlights in
+  them, in place of the exposed trusses at 38 m. The seat count stays 22,500.
+- Wembley: the arch's top 133 m over the pitch (it had been 133 m along the
+  leaning plane, 117 m high); the cladding's top at 52 m; the south roof's
+  leading edge as the bowstring truss (five spans, the central one 140 m long and
+  15 m deep, a cable bottom chord, the services gantry), the four primary trusses
+  from the south perimeter to the north roof's leading edge with their pyramid
+  struts and forestays, the twin catenary cables over the north roof's southern
+  edge, and the translucent band (25 m) along it.
+
 ## Round 12 (done)
 - UI: the side panels show only the venue name and the track; no centre chip.
 - Floor crowds are full standing figures (atlas cell 5); FOH at the back of the floor in

@@ -9,12 +9,17 @@ STRAIGHT.update(on=True,res=G.res)
 O=(0.0,-60.0)
 dOut,TH,hull1,field=st['dOut'],st['TH'],st['hull1'],st['field']
 dOut1=st['dOut1']
-E0=st['E0']; D0,DP=4.0,0.8
+E0=st['E0']; D0,DP=-12.3,0.8
 _gy,_gx=np.mgrid[0:G.H,0:G.W]; _Xg,_Zg=G.m(_gx,_gy); RRO=np.maximum(np.hypot(_Xg-O[0],_Zg-O[1]),1.0); del _gy,_gx
-H_A,R_A=1.3,0.28; H_B,R_B=8.6,0.28; H_F,R_F=4.6,0.46
-H_C,R_C=17.8,0.4; H_D,R_D=23.0,0.5; H_E,R_E=28.0,0.55
-C1F,CBAL,C2F=14.2,19.0,27.5
-C0W=0.3            # the balcony's front, out from the 1st floor's hull
+# Heights from the building's section (the infield, the field 5.5 m under
+# GL): the lower stand shallow at the front and steeper towards its back,
+# up to the open concourse behind it (10.6 m); the balcony at the next
+# floor (15.6 m); the upper stand from 18.6 m, over the 4th-floor concourse,
+# up to 35.6 m under the ring
+H_A,R_A=1.0,0.17; H_B,R_B=5.5,0.255; H_F,R_F=4.6,0.46
+H_C,R_C=15.0,0.4; H_D,R_D=18.6,0.55; H_E,R_E=24.4,0.5
+C1F,CBAL,C2F=10.6,16.2,24.0
+C0W=-9.0           # the balcony's front, in from the 1st floor's hull (over its back rows)
 LV={}
 # the A seats as the building rows them (td_rowsA.py): each block's rows
 # parallel to its back, numbered back from the walkway behind row 26, the
@@ -191,18 +196,19 @@ cross&=dil(A.R,2.5)&dil(B.R,2.5)
 stand1=(A.R|B.R|F.R|cross.astype(np.uint8))>0
 c1=(dOut1>0)&(dOut<=9.0)&~stand1&~field
 # balcony concourse behind the balcony
-cb=(dOut>3.9)&(dOut<=E0+6)&(np.abs(TH)<=130)&(Cl.R==0)
+cb=(dOut>C0W+3.6)&(dOut<=E0+6)&(np.abs(TH)<=130)&(Cl.R==0)
 # 2nd-floor concourse: the D/E walkway, the hall under E behind its first
 # rows (and the tunnel mouths through them), and 6 m behind it all
 Eback=E0+23*DP
 c2=(dOut>=D0+8*DP)&(dOut<=Eback+6)&(np.abs(TH)<=106)&(D.R==0)&~((E.R>0)&(dOut<E0+4.0))
-# the building's outer wall
-allm=(stand1|c1|cb|c2|(Cl.R>0)|(D.R>0)|(E.R>0))
-# the outer wall: straight runs round it all
-cs_,_=cv2.findContours(allm.astype(np.uint8),cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_NONE)
-hull=np.zeros(allm.shape,np.uint8); cv2.fillPoly(hull,[cv2.convexHull(np.vstack(cs_))],1)
-hull=(hull>0)&(~field)
-outer=dil(hull,0.4)&~field
+# the building's outer wall: the roof's plan, a superellipse set corner-on
+# to home plate (201 m corner to corner at its ring beam, the sides bulging
+# out to 180.6 m apart across the diagonals), centred 33 m out from home,
+# the wall 5-7 m out from the ring; the concourses end at it
+BN=1.53
+bldg=((np.abs(_Xg/100.5)**BN+np.abs((_Zg+33.0)/100.5)**BN)**(1/BN))<=1.07
+c1&=bldg; cb&=bldg; c2&=bldg
+outer=bldg&~field
 c1|=(outer&~stand1&~field&(dOut1>0)&(dOut<=9.5))
 print('masks',round(time.time()-T0,1))
 # ── stairs ──
@@ -258,7 +264,7 @@ def ringpt(theta,d):
     X,Z=G.m(xs.mean(),ys.mean()); return (float(X),float(Z))
 flights=[]
 for th in (-75,-20,20,75):
-    for lo,up,y0,y1,dd in ((c1,cb,C1F,CBAL,6.5),(cb,c2,CBAL,C2F,E0+5.0)):
+    for lo,up,y0,y1,dd in ((c1,cb,C1F,CBAL,3.0),(cb,c2,CBAL,C2F,E0+5.0)):
         p=ringpt(th,dd)
         f=find_flight(lo,up,y0,y1,p) if p else None
         print('flight',th,y0,y1,f and {k:round(v,1) for k,v in f.items()})
@@ -277,7 +283,7 @@ def outside_fn(pairs):
 grow=lambda c: cv2.dilate(c.astype(np.uint8),np.ones((3,3),np.uint8),iterations=3)>0
 gu=lambda c,y: grow_under(c,y,list(LV.values()))
 SUITE_TH=st.get('SUITE_TH',33.7)
-suitem=(dOut>=C0W)&(dOut<=3.9)&(np.abs(TH)<SUITE_TH)&~field
+suitem=(dOut>=C0W)&(dOut<=C0W+3.6)&(np.abs(TH)<SUITE_TH)&~field
 slabs=[(gu(cross,H_A+R_A*25),0.0,H_A+R_A*25),(gu(c1,C1F),0.0,C1F),(gu(cb,CBAL),CBAL-0.35,CBAL),(gu(c2,C2F),C2F-0.35,C2F),(suitem,H_C-0.4-0.4,H_C-0.4)]
 # ── the concourses closed in ──
 t_=time.time()
@@ -289,10 +295,17 @@ _inside=c1&~_walk
 DOORS1=[]
 for q in ENT1:
     u_=(q-np.array(O))/np.linalg.norm(q-np.array(O))
+    last=None
     for t_ in np.arange(-6.0,20.0,0.1):
         pp=q+u_*t_; i_,j_=[int(round(float(c))) for c in G.g(pp[0],pp[1])]
+        if 0<=i_<G.W and 0<=j_<G.H and c1[j_,i_]: last=pp
         if 0<=i_<G.W and 0<=j_<G.H and _inside[j_,i_]:
-            DOORS1.append((float(pp[0]+u_[0]*0.3),float(pp[1]+u_[1]*0.3))); break
+            DOORS1.append((float(pp[0]+u_[0]*0.3),float(pp[1]+u_[1]*0.3))); last=None; break
+    else:
+        # where the walkway runs on to the building's wall (behind the
+        # outfield, the building's line close behind the stands) the door is
+        # in that wall
+        if last is not None: DOORS1.append((float(last[0]),float(last[1])))
 print('1st-floor doors placed',len(DOORS1),'of',len(ENT1))
 rooms=[{'name':'1F','mask':c1,'y':C1F,'cl':4.0,'own':[A,B,F],'doors':DOORS1},
        {'name':'BAL','mask':cb,'y':CBAL,'cl':3.8,'own':[Cl],'doors':Cl.aisle_doors()},

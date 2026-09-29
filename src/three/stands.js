@@ -671,12 +671,14 @@ export function buildStands(data, {
   if (stairs.length) { const m = new THREE.Mesh(mergeGeometries(stairs), lit ? lit.stairMat : structMat); m.receiveShadow = true; g.add(m); }
   if (mouthFloors.length) g.add(new THREE.Mesh(mergeGeometries(mouthFloors), lit.mouthFloor));
   if (floors.length) g.add(new THREE.Mesh(mergeGeometries(floors), floorMat));
-  // the building's outer wall, up to the roof
+  // the building's outer wall, up to the roof (roofY a height, or the height
+  // at a point of the stands' plan where the roof is not level)
+  const roofAtXZ = typeof roofY === 'function' ? roofY : () => roofY;
   for (const polys of data.outer) {
     const ring = smoothRing(polys[0]);
     for (let i = 0; i < ring.length; i++) {
       const [x0, z0] = ring[i], [x1, z1] = ring[(i + 1) % ring.length];
-      panel('wall', x0, z0, x1, z1, 0, roofY);
+      panel('wall', x0, z0, x1, z1, 0, roofAtXZ((x0 + x1) / 2, (z0 + z1) / 2));
     }
   }
   if (panels.wall[0].length) g.add(new THREE.Mesh(mkPanels(panels.wall), wallMat));

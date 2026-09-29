@@ -1,7 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// DOME — Tokyo Dome: an air-supported membrane over a round bowl, 1.24 million
-// m³, from FOH 55 m out on the field. Blue seats in the 1st-floor stand, the
-// balcony band, the steep 2nd-floor stand under the roof; arena seats in
+// DOME — Tokyo Dome: an air-supported membrane, 1.24 million m³, its ring
+// leaning 1/10 down from the infield to the outfield, from FOH 55 m out on
+// the field. Blue seats in the 1st-floor stand, the balcony band and the
+// steep 2nd-floor stand standing out over it under the roof; the lights and
+// loudspeakers hung from the roof's cables; arena seats in
 // blocks on the field; a short runway to a long stage across the field; a
 // sea of lightsticks under
 // central control.
@@ -11,14 +13,16 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { APP, DEG, KELVIN, V3, clamp, floorPanelTex, glowMat, lerp, std } from '../core.js';
 import { lightPoints } from '../people.js';
-import { hoists, latticeInto, ledScreen, lineArray, mats, micStand, shadowSpot, stageDeck, stageSteps, subStack, truss, wedge } from '../rig.js';
+import { hoists, latticeInto, ledScreen, lineArray, mats, micStand, rodInto, shadowSpot, stageDeck, stageSteps, subStack, truss, wedge } from '../rig.js';
 import { bigCrowd, bigScreens, blockGrid, floorBlocks, floorChairs, fohPosition, runLasers, runShow, section, stageSet, wallStrip } from '../show.js';
 import { buildStands } from '../stands.js';
 import { TD_STANDS } from './td-data.js';
 
 export function membraneMaterial() {
-  // The roof from inside, as it looks: a cable net in two families on the
-  // diagonal, 8.5 m apart, the membrane between them held up by the air in
+  // The roof from inside, as it looks: a cable net in two families, one
+  // along the home–centre axis and one across it, 8.5 m apart (the plan is a
+  // square set corner-on to home plate, the cables parallel to its
+  // diagonals), the membrane between them held up by the air in
   // shallow pillows — each a soft bulge, lighter in its middle, a darker
   // crease along the cables — the whole a warm off-white, lit through by the
   // daylight outside (it lets about a twentieth of it through).
@@ -32,14 +36,14 @@ export function membraneMaterial() {
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         {
           // the pillow's bulge tilts the normal away from its middle
-          vec2 p = vec2(vWP.x + vWP.z, vWP.x - vWP.z) / (8.5 * 1.4142);
+          vec2 p = vec2(vWP.x, vWP.z) / 8.5 + 0.5;
           vec2 d = fract(p) - 0.5;
-          vec3 tx = normalize(vec3(1.0, 0.0, 1.0)), tz = normalize(vec3(1.0, 0.0, -1.0));
+          vec3 tx = vec3(1.0, 0.0, 0.0), tz = vec3(0.0, 0.0, 1.0);
           normal = normalize(normal + (tx * d.x + tz * d.y) * 0.9);
         }`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         {
-          vec2 p = vec2(vWP.x + vWP.z, vWP.x - vWP.z) / (8.5 * 1.4142);
+          vec2 p = vec2(vWP.x, vWP.z) / 8.5 + 0.5;
           vec2 d = abs(fract(p) - 0.5);
           vec2 w = fwidth(p);
           // the crease along each cable, soft either side
@@ -51,7 +55,7 @@ export function membraneMaterial() {
           totalEmissiveRadiance += uBounce * bulge * (1.0 - 0.4 * crease);
         }`);
   };
-  m.customProgramCacheKey = () => 'membrane2';
+  m.customProgramCacheKey = () => 'membrane3';
   return m;
 }
 
@@ -79,18 +83,37 @@ export function buildDome(ctx) {
   const field = new THREE.Mesh(fieldGeo, std({ ...floorPanelTex({ key: 'domefloor', tone: 0.1 }), roughness: 0.8 }));
   field.position.y = 0.02; field.receiveShadow = true; root.add(field);
 
+  // ── the roof's geometry, from the drawings of it ──
+  // In plan a superellipse set corner-on to home plate: 201 m from corner to
+  // corner along the home–centre axis and across it, its sides bulging out
+  // (180.6 m apart across the diagonals), its centre 33 m out from home
+  // plate. The compression ring round it leans 1/10 from the infield down to
+  // the outfield, 44.7 m over the field at the home corner and 24.7 m at the
+  // centre-field corner; the air holds the membrane 25 m over the ring's
+  // plane, its crown 60.7 m up, 20 m in from the centre towards home. The
+  // building's wall stands 5 m out from the ring.
+  const ZC = ZH - 33, RA = 100.5, NE = 1.53, RISE = 25, DOME_WALL = 1.09;
+  const ringY = (z) => 34.7 + 0.1 * (z - ZC);
+  const norm = (x, z) => (Math.abs(x / RA) ** NE + Math.abs((z - ZC) / RA) ** NE) ** (1 / NE);
+  const roofAt = (x, z) => ringY(z) + RISE * (1 - Math.min(1, norm(x, z)) ** 2);
+  const edge = (t, rho = 1) => {
+    const c = Math.cos(t), sn = Math.sin(t);
+    return { x: rho * RA * Math.sign(c) * Math.abs(c) ** (2 / NE), z: ZC + rho * RA * Math.sign(sn) * Math.abs(sn) ** (2 / NE) };
+  };
+
   // ── the stands, from the official seating map ──
   // The 1st floor: blocks A (rows 1–26) and B (27–47) round the infield with
   // the walkway between them, entered from the concourse behind by the
   // numbered passages at the back; the outfield's F blocks above the fence.
-  // The balcony (C) behind the 1st floor, pole to pole round home. The 2nd
-  // floor: D (rows 1–10) and E (11 up to 33, deepest behind home) with the
-  // walkway between, the passages from its concourse opening onto it.
+  // The balcony (C) over the back of the 1st floor, pole to pole round home.
+  // The 2nd floor: D (rows 1–10) and E (11 up to 33, deepest behind home)
+  // with the walkway between, the passages from its concourse opening onto
+  // it; its front stands out 12 m over the 1st floor. Blue seats, the
+  // balcony's (season seats) grey; the outfield unsold.
   const stands = buildStands(TD_STANDS, {
-    offset: OFF, stage: STAGE, seed: 400, concreteTone: 0.28, roofY: 46.5,
-    seatColors: { A: 0x1d3c86, B: 0x1d3c86, F: 0x141417, G: 0x1d3c86, C: 0x7a1a20, D: 0x1d3c86, E: 0x1d3c86 },
+    offset: OFF, stage: STAGE, seed: 400, concreteTone: 0.28, roofY: (x, z) => ringY(z + ZH) + 0.3,
+    seatColors: { A: 0x1d3c86, B: 0x1d3c86, F: 0x1d3c86, G: 0x1d3c86, C: 0x5a5d63, D: 0x1d3c86, E: 0x1d3c86 },
     crowd: !!q.crowd,
-    // nobody behind or beside the set
     // nobody behind or beside the set, nor out in the outfield stands
     sold: (x, z, name) => z > 14 && name !== 'F',
   });
@@ -164,6 +187,18 @@ export function buildDome(ctx) {
       const pts = run.map((i) => ringPts[i]), top = run.map((i) => eased[i]);
       const lineGeo = wallStrip(pts, top.map((h) => h + 0.12), { y0: top.map((h) => h + 0.005), thick: 0.4, ease: 0 });
       if (lineGeo) root.add(new THREE.Mesh(lineGeo, glowMat(0xe8c830, 0.45)));
+      // the net over it, 0.24 m (the fence 4.24 m in all)
+      const netGeo = wallStrip(pts, top.map((h) => h + 0.36), { y0: top.map((h) => h + 0.12), thick: 0.04, ease: 0 });
+      if (netGeo) root.add(new THREE.Mesh(netGeo, std({ color: 0x1a1c1e, roughness: 0.8, transparent: true, opacity: 0.55, depthWrite: false })));
+      // the ribbon screens (1.28 × 53.76 m) along the top of the fence's face
+      // from each pole towards left- and right-centre; off for a concert
+      const inward = (p) => { const dx = -p.x, dz = ZH - 60 - p.z, l = Math.hypot(dx, dz) || 1; return { x: p.x + dx / l * 0.22, z: p.z + dz / l * 0.22 }; };
+      const L = Math.round(53.76 / 0.5);
+      for (const part of [run.slice(0, L), run.slice(-L)]) {
+        const rp = part.map((i) => inward(ringPts[i])), rt = part.map((i) => eased[i]);
+        const rg = wallStrip(rp, rt.map((h) => h - 0.15), { y0: rt.map((h) => h - 1.43), thick: 0.06, ease: 0 });
+        if (rg) root.add(new THREE.Mesh(rg, std({ color: 0x060607, roughness: 0.35, metalness: 0.2 })));
+      }
     }
   }
   // the foul poles, where the lines meet the fence
@@ -176,24 +211,7 @@ export function buildDome(ctx) {
   }
 
   // ── the membrane ──
-  // The roof in plan is a rounded square (a superellipse) drawn round the
-  // backs of the stands; the cushion rises from the ring beam on top of the
-  // outer wall to the crown.
-  const outer = TD_STANDS.outer[0][0].map(([x, z]) => ({ x, z: z + ZH }));
-  const zMin = Math.min(...outer.map((p) => p.z)), zMax = Math.max(...outer.map((p) => p.z));
-  const ZC = (zMin + zMax) / 2;
-  const NE = 3.2;
-  const norm = (x, z, a, b) => (Math.abs(x / a) ** NE + Math.abs((z - ZC) / b) ** NE) ** (1 / NE);
-  let RA = Math.max(...outer.map((p) => Math.abs(p.x))) + 2, RB = (zMax - zMin) / 2 + 2;
-  const over = Math.max(...outer.map((p) => norm(p.x, p.z, RA, RB)));
-  if (over > 1) { RA *= over; RB *= over; }
-  const YE = 46, APEX = 64;
-  const rise = APEX - YE;
-  const roofAt = (x, z) => YE + rise * (1 - Math.min(1, norm(x, z, RA, RB)) ** 2);
-  const edge = (t, rho = 1) => {
-    const c = Math.cos(t), sn = Math.sin(t);
-    return { x: rho * RA * Math.sign(c) * Math.abs(c) ** (2 / NE), z: ZC + rho * RB * Math.sign(sn) * Math.abs(sn) ** (2 / NE) };
-  };
+  // (its geometry, ZC, ringY, roofAt and edge, is set out before the stands)
   const membrane = membraneMaterial();
   membrane.side = THREE.DoubleSide;
   {
@@ -213,47 +231,102 @@ export function buildDome(ctx) {
     g.computeVertexNormals();
     root.add(new THREE.Mesh(g, membrane));
   }
-  // Nothing hangs from the roof: the light by day is the membrane's own,
-  // daylight through it. The dome's lights are banks along the top of the
-  // stands, round from the 1st-base pole behind home to the 3rd-base pole,
-  // under the membrane's edge, aimed down at the field.
-  // (the ring angle a: 0 and 2π along +x; home plate is at +z of the centre)
-  const onArc = (a) => { const e = edge(a, 1); return Math.abs(Math.atan2(e.x, e.z - ZC)) < 2.25; };
-  const bankAngles = [];
-  for (let i = 0; i < 40; i++) { const a = (i / 40) * Math.PI * 2; if (onArc(a)) bankAngles.push(a); }
-  const bankLamps = [];
+  // Hung from the cables: the lights at 14 places round over the field
+  // (the LED floodlights, about 700, in 14 gondolas), 21 loudspeakers round
+  // the membrane's edge and one in the middle, and the TV camera there.
+  const hangY = (x, z, d) => roofAt(x, z) - d;
   const bankM = new THREE.MeshBasicMaterial({ color: 0x000000, toneMapped: false });
-  const bankFrames = [];
-  for (const a of bankAngles) {
-    const { x, z } = edge(a, 0.985);
-    const y = YE - 1.2;
-    const yaw = Math.atan2(-x, ZC - z);
-    const fr = new THREE.BoxGeometry(7, 0.3, 1.6); fr.rotateX(0.7); fr.rotateY(yaw); fr.translate(x, y, z); bankFrames.push(fr);
-    for (let u = 0; u < 6; u++) for (let v = 0; v < 2; v++) {
-      const lx = -2.75 + u * 1.1, lz = -0.4 + v * 0.8;
-      const p = V3(lx, -0.2, lz).applyAxisAngle(V3(1, 0, 0), 0.7).applyAxisAngle(V3(0, 1, 0), yaw).add(V3(x, y, z));
+  const hungSteel = [], hungBlack = [], hangers = [], bankLamps = [];
+  const LIGHTS = [];
+  for (let i = 0; i < 14; i++) {
+    const { x, z } = edge((i + 0.5) / 14 * Math.PI * 2, 0.72);
+    const y = hangY(x, z, 4.0), yaw = Math.atan2(-x, ZC - z);
+    LIGHTS.push(V3(x, y, z));
+    // a gondola of floods, its face tipped down and in towards the field
+    const fr = new THREE.BoxGeometry(8, 1.0, 2.6); fr.rotateX(0.45); fr.rotateY(yaw); fr.translate(x, y, z); hungSteel.push(fr.toNonIndexed());
+    for (const u of [-3.4, 3.4]) {
+      const top = V3(u, 0, 0).applyAxisAngle(V3(0, 1, 0), yaw).add(V3(x, 0, z));
+      rodInto(hangers, V3(top.x, y + 0.4, top.z), V3(top.x, roofAt(top.x, top.z), top.z), 0.04, 0.04, 4);
+    }
+    for (let u = 0; u < 7; u++) for (let v = 0; v < 3; v++) {
+      const p = V3(-3.3 + u * 1.1, -0.55, -0.8 + v * 0.8).applyAxisAngle(V3(1, 0, 0), 0.45).applyAxisAngle(V3(0, 1, 0), yaw).add(V3(x, y, z));
       bankLamps.push(p);
     }
   }
-  root.add(new THREE.Mesh(mergeGeometries(bankFrames), std({ color: 0x202024, roughness: 0.6, metalness: 0.4 })));
-  const lampG = new THREE.CircleGeometry(0.35, 12);
+  for (let i = 0; i < 21; i++) {
+    const { x, z } = edge((i + 0.25) / 21 * Math.PI * 2, 0.9);
+    const y = hangY(x, z, 5.5), yaw = Math.atan2(-x, ZC - z);
+    const b = new THREE.BoxGeometry(1.3, 2.4, 1.1); b.rotateX(-0.3); b.rotateY(yaw); b.translate(x, y, z); hungBlack.push(b.toNonIndexed());
+    rodInto(hangers, V3(x, y + 1.2, z), V3(x, roofAt(x, z), z), 0.04, 0.04, 4);
+  }
+  {
+    const x = 0, z = ZC, y = hangY(x, z, 7.0);
+    for (let k = 0; k < 4; k++) {
+      const b = new THREE.BoxGeometry(1.4, 3.2, 1.2); b.translate(0, 0, 0.9); b.rotateY(k * Math.PI / 2); b.translate(x, y, z); hungBlack.push(b.toNonIndexed());
+    }
+    const cam = new THREE.BoxGeometry(0.7, 0.6, 1.0); cam.translate(x, y - 2.3, z); hungBlack.push(cam.toNonIndexed());
+    const lens = new THREE.CylinderGeometry(0.16, 0.2, 0.6, 12); lens.rotateX(Math.PI / 2); lens.translate(x, y - 2.3, z + 0.75); hungBlack.push(lens.toNonIndexed());
+    rodInto(hangers, V3(x, y + 1.6, z), V3(x, roofAt(x, z), z), 0.06, 0.06, 4);
+  }
+  root.add(new THREE.Mesh(mergeGeometries(hungSteel), std({ color: 0x2a2b30, roughness: 0.6, metalness: 0.4 })));
+  root.add(new THREE.Mesh(mergeGeometries(hungBlack), std({ color: 0x111114, roughness: 0.7 })));
+  root.add(new THREE.Mesh(mergeGeometries(hangers), std({ color: 0x8a8d92, roughness: 0.4, metalness: 0.7 })));
+  const lampG = new THREE.CircleGeometry(0.3, 12);
   const lampI = new THREE.InstancedMesh(lampG, bankM, bankLamps.length);
   const lm4 = new THREE.Matrix4(), lq = new THREE.Quaternion().setFromUnitVectors(V3(0, 0, 1), V3(0, -1, 0));
   bankLamps.forEach((p, i) => { lm4.compose(p, lq, V3(1, 1, 1)); lampI.setMatrixAt(i, lm4); });
   root.add(lampI);
-  // the outer wall, up to the ring beam
+  // the ring beam's support frame round the edge, 5 m deep, roofed at the
+  // ring; the outer wall under it
   {
-    const I = 160, pos = [], idx = [];
-    for (let i = 0; i <= I; i++) { const e = edge(i / I * Math.PI * 2); pos.push(e.x, 0, e.z, e.x, YE + 0.5, e.z); }
-    for (let i = 0; i < I; i++) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    g.setIndex(idx); g.computeVertexNormals();
-    root.add(new THREE.Mesh(g, std({ color: 0x0e0e12, roughness: 0.9, side: THREE.DoubleSide })));
+    const I = 160, R0 = 1.0, R1 = DOME_WALL;
+    const pos = [], idx = [], wpos = [], widx = [];
+    for (let i = 0; i <= I; i++) {
+      const t = i / I * Math.PI * 2, a = edge(t, R0), b = edge(t, R1);
+      pos.push(a.x, ringY(a.z) + 0.4, a.z, b.x, ringY(b.z) + 0.4, b.z);
+      wpos.push(b.x, 0, b.z, b.x, ringY(b.z) + 0.5, b.z);
+    }
+    for (let i = 0; i < I; i++) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); widx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+    const mat = std({ color: 0x0e0e12, roughness: 0.9, side: THREE.DoubleSide });
+    for (const [P, X] of [[pos, idx], [wpos, widx]]) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+      g.setIndex(X); g.computeVertexNormals();
+      root.add(new THREE.Mesh(g, mat));
+    }
     // and the floor out to it, under the stands
-    const sh = new THREE.Shape(Array.from({ length: 96 }, (_, i) => { const e = edge(i / 96 * Math.PI * 2); return new THREE.Vector2(e.x, -e.z); }));
+    const sh = new THREE.Shape(Array.from({ length: 96 }, (_, i) => { const e = edge(i / 96 * Math.PI * 2, R1); return new THREE.Vector2(e.x, -e.z); }));
     const fg = new THREE.ShapeGeometry(sh, 1); fg.rotateX(-Math.PI / 2);
     root.add(new THREE.Mesh(fg, std({ color: 0x0c0c0e, roughness: 1 })));
+  }
+
+  // The main screen (2022): LED, 125.6 m wide and about 1,050 m², over the
+  // outfield stands from the old backscreen out across nearly all of them,
+  // along the curve of their back; off for a concert, the set standing in
+  // front of its middle.
+  {
+    const F = TD_STANDS.levels.find((l) => l.name === 'F');
+    let ftop = 0;
+    const far = new Map();                 // the stand's back, by the angle from home (0 at centre field)
+    for (const r of F.rows) {
+      ftop = Math.max(ftop, r.y);
+      for (const p of r.polys) for (const ring of p) for (const [x, z] of ring) {
+        const a = Math.round(Math.atan2(x, -z) / DEG * 2) / 2, d = Math.hypot(x, z);
+        if (!(far.get(a) >= d)) far.set(a, d);
+      }
+    }
+    const angs = [...far.keys()].filter((a) => Math.abs(a) <= 44).sort((u, v) => u - v);
+    const back = angs.map((a) => { let sm = 0, w = 0; for (const b of angs) if (Math.abs(b - a) <= 3) { sm += far.get(b); w++; } return { a, d: sm / w + 1.0 }; });
+    const pts = back.map(({ a, d }) => ({ x: Math.sin(a * DEG) * d, z: ZH - Math.cos(a * DEG) * d }));
+    const len = [0];
+    for (let i = 1; i < pts.length; i++) len.push(len[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z));
+    const mid = len[back.findIndex((b) => b.a >= 0)];
+    const on = pts.filter((_, i) => Math.abs(len[i] - mid) <= 125.6 / 2);
+    const y0 = ftop + 1.6, y1 = y0 + 1050 / 125.6;
+    const scrG = wallStrip(on, on.map(() => y1), { y0, thick: 0.25, ease: 0 });
+    const boxG = wallStrip(on.map((p) => { const l = Math.hypot(p.x, p.z - ZH) || 1; return { x: p.x + p.x / l * 0.7, z: p.z + (p.z - ZH) / l * 0.7 }; }), on.map(() => y1 + 0.5), { y0: y0 - 0.6, thick: 1.0, ease: 0 });
+    if (scrG) root.add(new THREE.Mesh(scrG, std({ color: 0x050506, roughness: 0.3, metalness: 0.2 })));
+    if (boxG) root.add(new THREE.Mesh(boxG, std({ color: 0x1c1d21, roughness: 0.7 })));
   }
 
   // ── stage ──
@@ -289,7 +362,7 @@ export function buildDome(ctx) {
 
   // ── rig ──
   const rig = ctx.rig({ finish: 'black' });
-  for (const z of [5, 13, 21]) { const t = truss(52, { size: 1.0, finish: 'black' }); t.position.set(0, RIG, z); root.add(t); root.add(hoists([-22, -8, 8, 22], RIG, z, APEX - 2)); }
+  for (const z of [5, 13, 21]) { const t = truss(52, { size: 1.0, finish: 'black' }); t.position.set(0, RIG, z); root.add(t); root.add(hoists([-22, -8, 8, 22], RIG, z, Math.min(...[-22, -8, 8, 22].map((x) => roofAt(x, z))) - 0.5)); }
   for (const side of [-1, 1]) {
     const main = lineArray({ boxes: 18, width: 1.4 }); main.position.set(side * 20, RIG - 0.8, 22); main.rotation.y = -side * 0.06; root.add(main);
     const out = lineArray({ boxes: 14, width: 1.3 }); out.position.set(side * 30, RIG - 1.2, 20); out.rotation.y = -side * 0.35; root.add(out);
@@ -334,14 +407,13 @@ export function buildDome(ctx) {
   const fill = [];
   for (const [x, y, z] of [[-40, 30, 50], [40, 30, 50], [0, 40, 90]]) { const l = new THREE.PointLight(0xffffff, 0, 160, 2); l.position.set(x, y, z); root.add(l); fill.push(l); }
   const house = [];
-  // the house lights are the field banks: aimed down at the field and the
-  // stands, so the membrane above them only gets what bounces back up
+  // the house lights are the hung gondolas' floods: aimed down at the field
+  // and the stands, so the membrane above them only gets what bounces back up
   for (let i = 0; i < 9; i++) {
-    const a = bankAngles[Math.round(i / 8 * (bankAngles.length - 1))];
+    const p = LIGHTS[Math.round(i / 8 * (LIGHTS.length - 1))];
     const l = new THREE.SpotLight(KELVIN(5200), 0, 300, 1.2, 1, 2);
-    const e = edge(a, 0.97), e2 = edge(a, 0.05);
-    l.position.set(e.x, YE - 1.5, e.z);
-    l.target.position.set(e2.x, 0, e2.z);
+    l.position.copy(p).y -= 1.0;
+    l.target.position.set(p.x * 0.2, 0, ZC + (p.z - ZC) * 0.2);
     root.add(l, l.target); house.push(l);
   }
   root.add(new THREE.HemisphereLight(0x181a24, 0x050508, 0.35));

@@ -85,6 +85,32 @@ export function hoists(xs, y, z, roofY, { finish = 'black' } = {}) {
   return new THREE.Mesh(mergeGeometries(parts), finish === 'alu' ? mats().alu : mats().black);
 }
 
+// A straight member from a to b: a tube, tapering from r0 to r1.
+export function rodInto(out, a, b, r0, r1 = r0, seg = 6) {
+  const d = b.clone().sub(a), len = d.length();
+  if (len < 0.01) return;
+  const c = new THREE.CylinderGeometry(r1, r0, len, seg, 1, true);
+  c.applyMatrix4(new THREE.Matrix4().compose(a.clone().addScaledVector(d, 0.5), new THREE.Quaternion().setFromUnitVectors(V3(0, 1, 0), d.normalize()), V3(1, 1, 1)));
+  out.push(c.toNonIndexed());
+}
+// A prismatic truss from a to b: two top chords, one under them, and the
+// diagonals zigzagging down both faces between.
+export function prismInto(out, a, b, w, h, r) {
+  const d = b.clone().sub(a), len = d.length();
+  if (len < 0.01) return;
+  const t = d.clone().normalize(), side = V3(-t.z, 0, t.x).normalize().multiplyScalar(w / 2), down = V3(0, -h, 0);
+  const A = [a.clone().add(side), a.clone().sub(side), a.clone().add(down)];
+  const B = [b.clone().add(side), b.clone().sub(side), b.clone().add(down)];
+  for (let k = 0; k < 3; k++) rodInto(out, A[k], B[k], r, r, 5);
+  const n = Math.max(1, Math.round(len / Math.max(w, h)));
+  for (let i = 0; i < n; i++) {
+    const p0 = a.clone().addScaledVector(d, i / n), p1 = a.clone().addScaledVector(d, (i + 1) / n);
+    const top = (i % 2 ? p1 : p0), bot = (i % 2 ? p0 : p1);
+    for (const sd of [side, side.clone().negate()]) rodInto(out, top.clone().add(sd), bot.clone().add(down), r * 0.7, r * 0.7, 4);
+    rodInto(out, p0.clone().add(side), p0.clone().sub(side), r * 0.6, r * 0.6, 4);
+  }
+}
+
 // Lattice between two points (stadium roof structure, delay masts).
 export function latticeInto(out, from, to, size, r) {
   const dir = to.clone().sub(from);

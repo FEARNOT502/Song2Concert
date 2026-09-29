@@ -31,14 +31,17 @@ function nightSky(u) {
   return sky;
 }
 
-// The arch: 315 m, 133 m high, leaning 22 degrees north over the north stand.
-// A lattice tube, floodlit white. Its feet stand on their own bases outside
-// the building, past each end, 50 m north of the centre spot; from there it
-// climbs steeply enough to clear the roof everywhere it passes over it.
+// The arch: 315 m, its top 133 m above the pitch, leaning 22 degrees north
+// over the north stand (so in its own plane it rises further, 133 m over the
+// cosine of the lean). A lattice tube, floodlit white. Its feet stand on
+// their own bases outside the building, past each end, 50 m north of the
+// centre spot; from there it climbs steeply enough to clear the roof
+// everywhere it passes over it.
 function archCurve({ x0 = 50, zc = 64, span = 315, height = 133, lean = 22 * DEG, leg = 0.45 } = {}) {
+  const rise = (height + 6) / Math.cos(lean);
   // a point on the arch's axis at s (0..1, foot to foot)
   return (s) => {
-    const h = height * Math.sin(Math.PI * s) ** leg;
+    const h = rise * Math.sin(Math.PI * s) ** leg;
     return V3(x0 + h * Math.sin(lean), h * Math.cos(lean) - 6, zc + (s - 0.5) * span);
   };
 }
@@ -70,32 +73,6 @@ function wembleyArch({ x0 = 50, zc = 64, span = 315 } = {}) {
     base.position.set(x0, 2, zc + e * span / 2); g.add(base);
   }
   return g;
-}
-
-// A straight member from a to b: a tube, tapering from r0 to r1.
-function rodInto(out, a, b, r0, r1 = r0, seg = 6) {
-  const d = b.clone().sub(a), len = d.length();
-  if (len < 0.01) return;
-  const c = new THREE.CylinderGeometry(r1, r0, len, seg, 1, true);
-  c.applyMatrix4(new THREE.Matrix4().compose(a.clone().addScaledVector(d, 0.5), new THREE.Quaternion().setFromUnitVectors(V3(0, 1, 0), d.normalize()), V3(1, 1, 1)));
-  out.push(c.toNonIndexed());
-}
-// A prismatic truss from a to b: two top chords, one under them, and the
-// diagonals zigzagging down both faces between.
-function prismInto(out, a, b, w, h, r) {
-  const d = b.clone().sub(a), len = d.length();
-  if (len < 0.01) return;
-  const t = d.clone().normalize(), side = V3(-t.z, 0, t.x).normalize().multiplyScalar(w / 2), down = V3(0, -h, 0);
-  const A = [a.clone().add(side), a.clone().sub(side), a.clone().add(down)];
-  const B = [b.clone().add(side), b.clone().sub(side), b.clone().add(down)];
-  for (let k = 0; k < 3; k++) rodInto(out, A[k], B[k], r, r, 5);
-  const n = Math.max(1, Math.round(len / Math.max(w, h)));
-  for (let i = 0; i < n; i++) {
-    const p0 = a.clone().addScaledVector(d, i / n), p1 = a.clone().addScaledVector(d, (i + 1) / n);
-    const top = (i % 2 ? p1 : p0), bot = (i % 2 ? p0 : p1);
-    for (const sd of [side, side.clone().negate()]) rodInto(out, top.clone().add(sd), bot.clone().add(down), r * 0.7, r * 0.7, 4);
-    rodInto(out, p0.clone().add(side), p0.clone().sub(side), r * 0.6, r * 0.6, 4);
-  }
 }
 
 function buildStadium(ctx) {
@@ -130,7 +107,7 @@ function buildStadium(ctx) {
   // two big screens stand in bays in its front, tunnels a third of the way
   // up). The stand behind the stage is not sold.
   const stands = buildStands(WB_STANDS, {
-    offset: OFF, stage: STAGE, seatColor: 0x9a1418, concreteTone: 0.26, seed: 600, roofY: ROOF + 2.5,
+    offset: OFF, stage: STAGE, seatColor: 0x9a1418, concreteTone: 0.26, seed: 600, roofY: ROOF,
     sold: (x, z) => !(z < 14 && Math.abs(x) < 48),
   });
   root.add(stands.group);
@@ -245,14 +222,36 @@ function buildStadium(ctx) {
   // truss round its perimeter above the back of the top tier, a box girder
   // along the north roof's leading edge hung from the arch by forestay
   // cables on pyramid struts, backstays from the arch to the perimeter
-  // truss behind it, and the floodlight gantry round the opening.
+  // truss behind it, and the floodlight gantry round the opening. The south
+  // roof's leading edge is a bowstring truss hung between four primary
+  // trusses that run from the south perimeter to the north roof's leading
+  // edge; along the southern edge of the north roof the cladding is
+  // translucent, 25 m wide (Kayvani, Structural Design of the Arch and Roof
+  // of Wembley Stadium). The cladding rises to 52 m above the pitch.
+  const BAND = 25;
+  const northEdge = (p) => p.x > 30;
+  // the opening, and the translucent band beside it: one hole in the cladding
+  const holeRing = roofIn.map((p) => (northEdge(p) ? { x: p.x + BAND, z: p.z } : p));
   const plate = new THREE.Shape(outerRing.map((p) => new THREE.Vector2(p.x, p.z)));
-  plate.holes.push(new THREE.Path(roofIn.map((p) => new THREE.Vector2(p.x, p.z))));
-  const roofGeo = new THREE.ExtrudeGeometry(plate, { depth: 2.5, bevelEnabled: false, curveSegments: 1 });
+  plate.holes.push(new THREE.Path(holeRing.map((p) => new THREE.Vector2(p.x, p.z))));
+  const roofGeo = new THREE.ExtrudeGeometry(plate, { depth: 0.3, bevelEnabled: false, curveSegments: 1 });
   roofGeo.rotateX(Math.PI / 2);
   const roof = new THREE.Mesh(roofGeo, std({ color: 0x5e6268, roughness: 0.8, metalness: 0.3, side: THREE.DoubleSide }));
-  roof.position.y = ROOF + 2.5;
+  roof.position.y = ROOF;
   root.add(roof);
+  {
+    const run = roofIn.filter(northEdge).sort((a, b) => a.z - b.z);
+    const pos = [], idx = [];
+    run.forEach((p, i) => {
+      pos.push(p.x, ROOF - 0.15, p.z, p.x + BAND, ROOF - 0.15, p.z);
+      if (i) idx.push(2 * i - 2, 2 * i - 1, 2 * i, 2 * i - 1, 2 * i + 1, 2 * i);
+    });
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+    const band = new THREE.Mesh(g, std({ color: 0xc9ccd0, roughness: 0.6, transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false }));
+    band.userData.noCollide = true;
+    root.add(band);
+  }
   const inRing = (poly) => (x, z) => {
     let c = false;
     for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -263,7 +262,7 @@ function buildStadium(ctx) {
   };
   const inOuter = inRing(outerRing), inOpen = inRing(roofIn);
   const steel = [], cables = [];
-  const TOP = ROOF - 0.05;
+  const TOP = ROOF - 0.35;
   // the rafters, and the purlins' lines across them
   for (let k = -11; k <= 11; k++) {
     const z = ZC + k * 15.5;
@@ -331,8 +330,8 @@ function buildStadium(ctx) {
     for (let i = 0; i <= n; i++) {
       const z = z0 + ((z1 - z0) * i) / n;
       let p = leb[0]; for (const q of leb) if (Math.abs(q.z - z) < Math.abs(p.z - z)) p = q;
-      const apex = V3(p.x + 2.5, ROOF + 2.5 + 7.5, p.z);
-      for (const [dx, dz] of [[-0.8, -3.5], [-0.8, 3.5], [5.5, -3.5], [5.5, 3.5]]) rodInto(steel, V3(p.x + dx, ROOF + 2.5, p.z + dz), apex, 0.28, 0.18);
+      const apex = V3(p.x + 2.5, ROOF + 7.5, p.z);
+      for (const [dx, dz] of [[-0.8, -3.5], [-0.8, 3.5], [5.5, -3.5], [5.5, 3.5]]) rodInto(steel, V3(p.x + dx, ROOF, p.z + dz), apex, 0.28, 0.18);
       apexes.push(apex);
     }
     for (const ap of apexes) for (const dz of [-24, 24]) {
@@ -348,6 +347,79 @@ function buildStadium(ctx) {
       let p = null, bd = Infinity;
       for (const c of northBack) { const d = Math.abs(c.z - (q.z + dz)); if (d < bd) { bd = d; p = c; } }
       if (p && bd < 8) { const b = inward(p, 3.5); rodInto(cables, q, V3(b.x, TOP + 0.3, b.z), 0.09, 0.09, 4); }
+    }
+  }
+  // The south roof's leading edge: an east-west bowstring truss, curved in
+  // plan along the opening, five spans between the perimeter truss at either
+  // end and the four primary trusses; the central span 140 m long and 15 m
+  // deep, a cable bottom chord sagging under a steel top chord, the services
+  // gantry along it.
+  const southX = (() => {
+    // the opening's south edge, eased into one curve and run on east and
+    // west over the roof to the perimeter truss
+    const pts = roofIn.filter((p) => p.x < -20 && Math.abs(p.z - ZC) < 62);
+    let c = 0, x0 = 0;
+    { let sxx = 0, sx = 0, sy = 0, sxy = 0; for (const p of pts) { const u = (p.z - ZC) ** 2; sxx += u * u; sx += u; sy += p.x; sxy += u * p.x; } const n = pts.length; c = (n * sxy - sx * sy) / (n * sxx - sx * sx); x0 = (sy - c * sx) / n; }
+    return (z) => x0 + c * (z - ZC) ** 2;
+  })();
+  const PT = [-102, -70, 70, 102];            // the primary trusses, east-west from the centre spot
+  // the south perimeter truss's line at z
+  const southPerim = (z) => { for (let x = southX(z); x > -200; x -= 0.5) if (!inOuter(x, z)) return x + 3.5; return -130; };
+  // the ends of the bowstring: where its curve meets the perimeter truss
+  const endZ = (sd) => { for (let d = 74; d < 170; d += 0.5) { const z = ZC + sd * d; if (!inOuter(southX(z), z + sd * 3.5)) return d; } return 150; };
+  const ends = [-endZ(-1), endZ(1)];
+  const supports = [ends[0], ...PT, ends[1]];
+  const chordY = TOP - 0.6;
+  const bow = [];                              // the bottom chord, sampled
+  for (let k = 0; k + 1 < supports.length; k++) {
+    const a = supports[k], b = supports[k + 1], span = b - a, depth = 15 * span / 140;
+    const n = Math.max(3, Math.round(span / 7));
+    for (let i = 0; i <= n; i++) {
+      if (k && !i) continue;
+      const t = i / n, z = ZC + a + span * t;
+      bow.push({ z, top: V3(southX(z), chordY, z), bot: V3(southX(z), chordY - 1.2 - depth * 4 * t * (1 - t), z) });
+    }
+  }
+  for (let i = 0; i + 1 < bow.length; i++) {
+    const p = bow[i], q = bow[i + 1];
+    // the top chord: a box girder; the bottom chord: twin cables
+    const d = p.top.distanceTo(q.top), g = new THREE.BoxGeometry(1.6, 1.2, d + 0.05);
+    g.rotateY(Math.atan2(q.top.x - p.top.x, q.top.z - p.top.z)); g.translate((p.top.x + q.top.x) / 2, chordY, (p.top.z + q.top.z) / 2); steel.push(g.toNonIndexed());
+    for (const dx of [-0.6, 0.6]) rodInto(cables, V3(p.bot.x + dx, p.bot.y, p.bot.z), V3(q.bot.x + dx, q.bot.y, q.bot.z), 0.11, 0.11, 5);
+    // the struts down to it, and crossed diagonals between
+    rodInto(steel, p.top, p.bot, 0.18, 0.14);
+    rodInto(cables, p.top, q.bot, 0.05, 0.05, 4); rodInto(cables, q.top, p.bot, 0.05, 0.05, 4);
+  }
+  if (bow.length) rodInto(steel, bow[bow.length - 1].top, bow[bow.length - 1].bot, 0.18, 0.14);
+  // the services gantry, a walkway along the central span inside the truss
+  for (let i = 0; i + 1 < bow.length; i++) {
+    const p = bow[i], q = bow[i + 1];
+    if (Math.abs(p.z - ZC) > 70 || Math.abs(q.z - ZC) > 70) continue;
+    const y = chordY - 4.2, d = Math.hypot(q.top.x - p.top.x, q.top.z - p.top.z);
+    const g = new THREE.BoxGeometry(1.4, 0.12, d + 0.05);
+    g.rotateY(Math.atan2(q.top.x - p.top.x, q.top.z - p.top.z)); g.translate((p.top.x + q.top.x) / 2 + 1.0, y, (p.top.z + q.top.z) / 2); steel.push(g.toNonIndexed());
+  }
+  // the four primary trusses, north-south from the south perimeter truss to
+  // the north roof's leading edge (up to 180 m), where pyramid struts hang
+  // them from the arch by forestays; their top chords carry the moving roof
+  // panels' bogies
+  const NLE = 46;
+  for (const dz of PT) {
+    const z = ZC + dz, xs = southPerim(z);
+    prismInto(steel, V3(xs, TOP - 0.3, z), V3(NLE, TOP - 0.3, z), 3.0, 5.0, 0.2);
+    const apex = V3(NLE + 2.5, ROOF + 7.5, z);
+    for (const [ddx, ddz] of [[-0.8, -3.5], [-0.8, 3.5], [5.5, -3.5], [5.5, 3.5]]) rodInto(steel, V3(NLE + ddx, ROOF, z + ddz), apex, 0.3, 0.2);
+    apexes.push(apex);
+    for (const off of [-24, 24]) { const q = archAtZ(z + off); if (q.y > apex.y + 10) rodInto(cables, apex, q, 0.1, 0.1, 4); }
+  }
+  // the twin catenary cables over the southern edge of the north roof, 300 m
+  // from foot to foot of the arch through the struts' heads
+  {
+    const heads = apexes.slice().sort((a, b) => a.z - b.z);
+    const feet = [arch(0.012), arch(0.988)];
+    const path = [feet[0], ...heads, feet[1]];
+    for (const off of [-0.8, 0.8]) for (let i = 0; i + 1 < path.length; i++) {
+      rodInto(cables, V3(path[i].x + off, path[i].y + 0.4, path[i].z), V3(path[i + 1].x + off, path[i + 1].y + 0.4, path[i + 1].z), 0.07, 0.07, 4);
     }
   }
   const steelMat = std({ color: 0xe6e7e8, roughness: 0.5, metalness: 0.35, emissive: 0x2c2e32, emissiveIntensity: 0.2 });

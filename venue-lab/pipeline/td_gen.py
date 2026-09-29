@@ -78,7 +78,14 @@ cs_,_=cv2.findContours(hull1.astype(np.uint8),cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX
 hullC=np.zeros_like(hull1); cv2.fillPoly(hullC,[cv2.convexHull(np.vstack(cs_))],1)
 dOut1=dOut
 dOut=cv2.distanceTransform((1-hullC).astype(np.uint8),cv2.DIST_L2,5)*G.res
-dOut[field]=-1
+# The balcony and the 2nd floor stand out over the 1st floor's back rows
+# (the building's section: the upper stand's front 12 m in from the lower
+# stand's back, the balcony's 9 m), so the distance is signed, negative in
+# from the hull; never out over the field, nor within 6 m of it
+dIn=cv2.distanceTransform(hullC.astype(np.uint8),cv2.DIST_L2,5)*G.res
+dOut=np.where(hullC>0,-dIn,dOut)
+dFld=cv2.distanceTransform((~field).astype(np.uint8),cv2.DIST_L2,5)*G.res
+dOut[dFld<6.0]=-999
 gy,gx=np.mgrid[0:G.H,0:G.W]; X,Z=G.m(gx,gy)
 RRO=np.maximum(np.hypot(X-O[0],Z-O[1]),1.0)     # distance from the dome's centre
 TH=np.degrees(np.arctan2(X-O[0],Z-O[1]))   # 0 towards home, + towards +x (1st base side)
@@ -118,8 +125,9 @@ def ring_seats(mask, dlo, pitch, rows, spacing=0.5, first=0.45):
     return np.vstack(pts) if pts else np.zeros((0,2))
 def shrink_sector(t0,t1,r):
     dt=np.degrees(AISLE/2/r); return t0+dt,t1-dt
-# balcony (C): four rows just behind the 1st floor, pole to pole round home
-C0,CP,CR=0.3,0.9,4
+# balcony (C): four rows over the back of the 1st floor, its front 9 m in
+# from the 1st floor's back, pole to pole round home
+C0,CP,CR=-9.0,0.9,4
 SUITE_TH=33.7
 # (behind home, inside the lines from about D20 to D32, the balcony level is
 # the boxes, S101-110 and S301-310 either side of the VIP box)
@@ -128,8 +136,9 @@ Cmask=sector_mask(-130,130,C0,C0+CP*CR)&(np.abs(TH)>=SUITE_TH)
 cm=Cmask.copy()
 for t in np.arange(-130,131,7.0): cm&=~((np.abs(TH-t)<np.degrees(0.6/75)))
 SC=ring_seats(cm,C0,CP,CR)
-# 2nd floor: D rows 1–10 from 4 m out, a walkway, E rows 11–33
-D0,DP=4.0,0.8
+# 2nd floor: D rows 1–10 from 12.3 m in over the 1st floor, a walkway, E
+# rows 11–33
+D0,DP=-12.3,0.8
 E0=D0+10*DP+1.2
 SDl=[]; SEl=[]
 for t0,t1,n in Dsp:
