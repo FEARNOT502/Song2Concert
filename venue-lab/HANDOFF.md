@@ -49,15 +49,32 @@ Design of the Arch and Roof of Wembley Stadium*. The acoustics were left alone.
   at the poles, rows 15-26 in A and 27-40 in B), B up to B02/B48, and the
   outfield (F) a stand of its own beside them. F's rows are counted from the
   fence (distance from the field), so its front row and the fence are level
-  along it. Nothing bridges one block to the next: where one stand's tread
-  ran on under another's seats, the cell goes to the nearer seats, and where
-  their heights differ there is a side wall with its rail. The excite seats are
+  along it. Where one stand's tread ran on under another's seats, the cell
+  goes to the nearer seats. The corner at each pole (F20/F01, A01/A49,
+  A02/B02 and their neighbours near the join) is one stepped surface
+  (level `K`): its height laid smoothly between the treads round it, the
+  concourse behind and the fronts along the fence, then stepped in 0.333 m
+  risers, so the heights run on across the blocks' edges. Its seats are laid
+  block by block inside the map's own boxes (`BOXL`/`BOXN`, flood-filled from
+  each label in `td_vec.json`), each box pulled in 0.55 m, so the gaps between
+  blocks are seatless. The two aisles either side of A01 (A49) are set out
+  first as straight lines (the A01|F20 and A01|A02-B02 boundaries), from the
+  stand's front up to the concourse. Each is one straight flight 1.2 m wide
+  with equal treads and 0.333 m risers, on a solid base, with a handrail each
+  side and a landing at its head at the concourse's level. The surface is
+  laid to meet it (`flights` with `open`). Near the poles B's rows are counted
+  from the walkway behind row 26 (on the 1B side its outline had run 2.5 m
+  astray, B02 having had no seats traced); the bare B02/B48 boxes are seated.
+  No rail stands along an edge facing the field or the excite seats (the
+  fence is the barrier there). The dome's rails are grey concrete. The excite seats are
   the map's own G05-G15/G35-G45 boxes, flood-filled from `td_vec.json`, their
   rows running
   back to the A blocks' front (level past the sixth). The excite strip runs
   on from G05's corner to the A02/A03 line; the floor behind it (G03/G04) is open.
-  The green fence (`fence` in the data) runs behind the excite seats along the
-  A blocks' front, coming down gently from the outfield. The yellow line is
+  The green fence (`fence` in the data, its outline smoothed) runs behind the
+  excite seats along the A blocks' front: one height round the outfield, and
+  from home out to each pole only rising with the stands' fronts, never below
+  one; a low (1.0 m) padded fence in front of the excite seats. The yellow line is
   paint, not lit. The floor blocks run on behind home plate. B
   behind home is re-laid in straight rows (`standgen.relay_columns`). The
   wells through the 1st floor (under the 2nd floor's overhang) are treads now.

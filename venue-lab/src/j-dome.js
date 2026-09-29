@@ -113,10 +113,13 @@ function buildDome(ctx) {
   // balcony's (season seats) grey; the outfield unsold.
   const stands = buildStands(TD_STANDS, {
     offset: OFF, stage: STAGE, seed: 400, concreteTone: 0.28, roofY: (x, z) => ringY(z + ZH) + 0.3,
-    seatColors: { A: 0x1d3c86, B: 0x1d3c86, F: 0x1d3c86, P: 0x1d3c86, G: 0x1d3c86, C: 0x5a5d63, D: 0x1d3c86, E: 0x1d3c86 },
+    seatColors: { A: 0x1d3c86, B: 0x1d3c86, F: 0x1d3c86, K: 0x1d3c86, G: 0x1d3c86, C: 0x5a5d63, D: 0x1d3c86, E: 0x1d3c86 },
     crowd: !!q.crowd,
     // nobody behind or beside the set, nor out in the outfield stands
     sold: (x, z, name) => z > 14 && name !== 'F',
+    // the side walls where a stand drops away: the stands' own concrete,
+    // not dark steel
+    materials: { rail: std({ color: 0x77736c, roughness: 0.92, side: THREE.DoubleSide }) },
   });
   root.add(stands.group);
   // the boxes behind home at the balcony's level (S101–110 and S301–310
@@ -176,6 +179,23 @@ function buildDome(ctx) {
       ringOut.push(outfield);
       ringH.push(outfield ? Math.max(4.0, top) : Math.max(1.2, top));
     }
+    // one height all round the outfield (its stand's front row is level), and
+    // from home out to each pole only ever rising with the stands' fronts
+    // (never below one, so no front's face shows over it; no dip and rise
+    // past the poles), up to the outfield's height at the pole
+    const outs = ringH.filter((_, i) => ringOut[i]).sort((a, b) => a - b);
+    const outH = outs.length ? outs[outs.length >> 1] : 4.0;
+    for (let i = 0; i < n; i++) if (ringOut[i]) ringH[i] = outH;
+    let home = -1, hp = -1;
+    for (let i = 0; i < n; i++) if (!ringOut[i]) { const f = phi(ringPts[i].x, ringPts[i].z); if (f > hp) { hp = f; home = i; } }
+    for (const step of [1, -1]) {
+      let h = 0;
+      for (let k = 0; k < n; k++) {
+        const j = (home + step * k + n * 4) % n;
+        if (ringOut[j]) break;
+        h = Math.min(outH, Math.max(h, ringH[j])); ringH[j] = h;
+      }
+    }
   }
   const padGeo = wallStrip(ringPts, ringH, { thick: 0.36, closed: true, ease: 6 });
   // steps from the field up over the low wall into the 1st floor's front
@@ -194,6 +214,21 @@ function buildDome(ctx) {
     root.add(stageSteps({ x: p.x - ux * (len + 0.2), z: p.z - uz * (len + 0.2), h, dir: [ux, uz], width: 1.6 }));
   }
   root.add(new THREE.Mesh(padGeo, std({ color: 0x0f3a24, roughness: 0.8 })));
+  // the low padded fence (1.0 m) in front of the excite seats, where the
+  // field's edge runs out ahead of the fence behind them
+  {
+    const src = fieldRing.concat([fieldRing[0]]), pts = [];
+    for (let k = 0; k + 1 < src.length; k++) {
+      const a = src[k], b = src[k + 1], len = Math.hypot(b.x - a.x, b.z - a.z);
+      for (let t = 0; t < len; t += 0.5) pts.push({ x: a.x + (b.x - a.x) * t / len, z: a.z + (b.z - a.z) * t / len });
+    }
+    const off = pts.map((p) => { let m = Infinity; for (const q of ringPts) m = Math.min(m, (q.x - p.x) ** 2 + (q.z - p.z) ** 2); return m > 1.2 * 1.2; });
+    const lowMat = std({ color: 0x0f3a24, roughness: 0.8 });
+    let run = [];
+    const flush = () => { if (run.length > 3) { const g = wallStrip(run, run.map(() => 1.0), { thick: 0.22, ease: 0 }); if (g) root.add(new THREE.Mesh(g, lowMat)); } run = []; };
+    pts.forEach((p, i) => { if (off[i]) run.push(p); else flush(); });
+    flush();
+  }
   // the yellow line along the top of the outfield fence, and its net
   {
     const n = ringPts.length, eased = ringH.map((_, i) => { let s = 0, w = 0; for (let k = -6; k <= 6; k++) { const wk = 7 - Math.abs(k); s += ringH[(i + k + n) % n] * wk; w += wk; } return s / w; });

@@ -1,6 +1,6 @@
 import sys, re, json, time, pickle, numpy as np, cv2
 sys.path.insert(0,'.')
-from standlib import Grid, disk, contours, STRAIGHT, sample
+from standlib import Grid, disk, contours, STRAIGHT, sample, seat_mask
 from standgen import Level, poly_out, mask_polys, edge_walls, enclose, grow_under, redepth, trim_tunnels, front_parapet, relay_columns
 T0=time.time()
 st=pickle.load(open('td_stage1.pkl','rb'))
@@ -171,6 +171,26 @@ EX&=~((B.R>0)|(F.R>0)|dil(A.seatmask,0.6))
 EX=cv2.morphologyEx(EX.astype(np.uint8),cv2.MORPH_OPEN,disk(0.3/G.res))>0
 field&=~EX
 A.R[EX]=0; A.band[EX]=-1
+# The 1st floor's blocks as the map draws them (A, B and F boxes, each
+# flood-filled from its letter, named by the number beside it), for seating
+# a box the model left bare and the corners at the poles block by block
+BOXN=['']; _lk=np.zeros(_ink.shape,np.int16)
+for _w in _vec['words']:
+    cx_,cy_=(_w[0]+_w[2])/2,(_w[1]+_w[3])/2
+    if re.fullmatch(r'[ABF]\d\d',_w[4]): _w=list(_w); _num=_w[4][1:]; _w[4]=_w[4][0]      # 'B02' written as one word
+    elif _w[4] in ('A','B','F'):
+        _nn=[w for w in _vec['words'] if re.fullmatch(r'\d\d',w[4]) and abs((w[0]+w[2])/2-cx_)<14 and abs((w[1]+w[3])/2-cy_)<14]
+        if not _nn: continue
+        _num=min(_nn,key=lambda w:np.hypot((w[0]+w[2])/2-cx_,(w[1]+w[3])/2-cy_))[4]
+    else: continue
+    _m=np.zeros((_ink.shape[0]+2,_ink.shape[1]+2),np.uint8)
+    _n=cv2.floodFill(_ink.copy(),_m,(int(cx_*_K),int(cy_*_K)),128,flags=4)[0]
+    if _n/_K**2/_s**2>400: continue
+    BOXN.append(_w[4]+_num); _lk[(_m[1:-1,1:-1]>0)&(_lk==0)]=len(BOXN)-1
+_pxb=((_Xg*_s+_Hm[0])*_K).astype(np.float32); _pyb=((_Zg*_s+_Hm[1])*_K).astype(np.float32)
+BOXL=cv2.remap(_lk,_pxb,_pyb,cv2.INTER_NEAREST,borderValue=0)
+del _pxb,_pyb,_lk
+print('map boxes',len(BOXN)-1)
 print('excite seats',int(EX.sum()*G.res**2),'m2')
 EXe=cv2.erode(EX.astype(np.uint8),disk(0.35/G.res))>0
 # the rows from the fence: every edge of the strip but the one against the A blocks
@@ -203,6 +223,19 @@ Gx.band=np.where(Gx.R>0,np.clip(np.floor(np.maximum(Gx.d,0)/Gx.D).astype(int),0,
 field_out=field&~(cv2.dilate(((Gx.R>0)|EX).astype(np.uint8),disk(0.2/G.res))>0)
 n_,lab_,st_,_=cv2.connectedComponentsWithStats(field_out.astype(np.uint8),connectivity=4)
 field_out=lab_==(1+int(np.argmax(st_[1:,4])))
+# Near the poles the B stand's rows counted from the walkway behind row 26
+# (its outline's front runs astray there on the 1B side, B02 having had no
+# seats traced, and row 27 stood 1.3 m over the walkway): as everywhere
+# else, row 27 a step up from the walkway
+_crB=(cv2.morphologyEx(((A.R>0)|(B.R>0)).astype(np.uint8),cv2.MORPH_CLOSE,disk(25))>0)&(A.R==0)&(B.R==0)&~field
+_crB&=dil(A.R,2.5)&dil(B.R,2.5)
+_dcw=(cv2.distanceTransform((~_crB).astype(np.uint8),cv2.DIST_L2,5)*G.res).astype(np.float32)
+# (every cell there, not only B's treads now: the pole's fills give B more)
+_selB=(np.abs(TH)>=75)&(np.abs(TH)<=125)&(_dcw<30)&~field&((B.R>0)|((A.R==0)&(F.R==0)))
+_ndB=B.d.copy(); _ndB[_selB]=np.where(B.d[_selB]>0,np.minimum(B.d[_selB],_dcw[_selB]),_dcw[_selB])
+print('B rows from the walkway at the poles: moved',int((_ndB<B.d-0.3).sum()*G.res**2),'m2')
+_nrB=B.nrows; B.set_depth(_ndB); B.nrows=max(B.nrows,_nrB)
+B.band=np.where(B.R>0,np.clip(np.floor(B.d/B.D).astype(int),0,B.nrows-1),-1)
 # the treads' tops, for the edges between the 1st floor's stands
 TOP1=np.zeros(A.R.shape,np.float32)
 for l in (A,B,F):
@@ -274,12 +307,189 @@ _any=np.zeros(field.shape,bool)
 for l in _L3: _any|=l.R>0
 _moved=0
 for k,l in enumerate(_L3):
-    take=_any&(_win==k)&(_dmin<1.0)&(l.R==0)&(l.d>=0)
+    take=_any&(_win==k)&((_dmin<1.0)|((np.abs(TH)>=80)&(np.abs(TH)<=120)&(_dmin<3.0)))&(l.R==0)&(l.d>=0)
     for j,o in enumerate(_L3):
         if j!=k: o.R[take]=0; o.band[take]=-1
     l.R[take]=1; l.band[take]=np.clip(np.floor(l.d[take]/l.D).astype(int),0,(len(l.hs) if l.hs is not None else l.nrows)-1)
     _moved+=int(take.sum())
 print('treads under another stand\'s seats given to it',int(_moved*G.res**2),'m2')
+# The corner at each pole (F20/F01, A01/A49, A02/B02 and their neighbours
+# near the join): one stepped surface under all of them, so the heights run
+# on from one block to the next with no wall or slot between: the height
+# laid smoothly between the treads round it (the stands beyond, the
+# concourse behind, the fronts along the fence kept as they are), then
+# stepped in 0.333 m risers (the outfield's own). Each block keeps its own seats (the map's),
+# set on those steps; the gaps between blocks stay seatless, stairs. The
+# walkway behind row 26 kept back from the outfield (it had run in between).
+_pz=(np.abs(TH)>=80)&(np.abs(TH)<=120)
+_tr=(A.R>0)|(B.R>0)|(F.R>0)
+_dToF=cv2.distanceTransform((F.R==0).astype(np.uint8),cv2.DIST_L2,5)*G.res
+_dToAB=cv2.distanceTransform(((A.R==0)&(B.R==0)).astype(np.uint8),cv2.DIST_L2,5)*G.res
+_crossIn=cross&_pz&(_dToF<=3.0)
+_U=_pz&(_tr|_crossIn)&(_dToF<=12.0)&(_dToAB<=12.0)
+cross&=~_U
+def _hgt(l):
+    h=np.full(field.shape,np.nan,np.float32); on=(l.band>=0)&(l.R>0)
+    h[on]=np.asarray(l.h(l.band[on]),np.float32); return h
+_known=np.full(field.shape,np.nan,np.float32)
+for l in (A,B,F):
+    hh=_hgt(l); _known=np.where(np.isnan(_known),hh,_known)
+_known[cross]=H_A+R_A*25; _known[c1]=C1F
+# The stair aisles either side of A01 (A49), set out first as lines: each
+# the boundary the map draws between the blocks (A01|F20, A01|A02-B02),
+# from the front of the stand up to the concourse; along it one straight
+# flight, 1.2 m wide, every tread the same, every riser 0.333 m, from the
+# front row's level up to the concourse's. The stand round it is laid to
+# meet it (its line held at the flight's rise while the rest is laid).
+def _boxline(p,qs):
+    ip=BOXN.index(p); dp=cv2.distanceTransform((BOXL!=ip).astype(np.uint8),cv2.DIST_L2,5)*G.res
+    mq=np.isin(BOXL,[BOXN.index(q) for q in qs if q in BOXN])
+    dq=cv2.distanceTransform((~mq).astype(np.uint8),cv2.DIST_L2,5)*G.res
+    ys,xs=np.nonzero((dp<=1.0)&(dq<=1.0)); P_=np.c_[G.m(xs,ys)]
+    c=P_.mean(0); u=np.linalg.svd(P_-c)[2][0]
+    return c,u
+AISLES=[]; AW=1.2
+_fixS=np.zeros(field.shape,bool); _rampS=np.zeros(field.shape,np.float32)
+_dFld=cv2.distanceTransform((~field).astype(np.uint8),cv2.DIST_L2,5)*G.res
+_trS=(A.R>0)|(B.R>0)|(F.R>0)|_U
+def _at(m,p):
+    gx_,gz_=G.g(p[:,0],p[:,1]); i_=np.clip(np.round(gz_).astype(int),0,G.H-1); j_=np.clip(np.round(gx_).astype(int),0,G.W-1)
+    return m[i_,j_]
+for p,qs in (('A01',('F20',)),('A01',('A02','B02')),('A49',('F01',)),('A49',('A48','B48'))):
+    if p not in BOXN or not any(q in BOXN for q in qs): continue
+    c,u=_boxline(p,qs)
+    if _at(_dFld,np.array([c+u*8]))[0]<_at(_dFld,np.array([c-u*8]))[0]: u=-u      # away from the field
+    ts=np.arange(-30,30,0.1); pts=c[None,:]+ts[:,None]*u[None,:]
+    tr=_at(_trS,pts)&~_at(field,pts)
+    if not tr.any(): continue
+    k0=int(np.argmax(tr)); k1=k0
+    while k1+1<len(ts) and (tr[k1+1] or (k1+6<len(ts) and tr[k1+2:k1+6].any())): k1+=1
+    t0,t1=float(ts[k0]),float(ts[k1])
+    h0=_at(np.nan_to_num(_known,nan=H_F),np.array([c+u*(t0+0.3)]))[0]
+    h0=round(h0/0.333)*0.333; h1=C1F
+    n=max(1,int(round((h1-h0)/0.333)))
+    tt=(_Xg-c[0])*u[0]+(_Zg-c[1])*u[1]; pp=np.abs(-(_Xg-c[0])*u[1]+(_Zg-c[1])*u[0])
+    strip=(pp<=AW/2)&(tt>=t0)&(tt<=t1)&~field
+    _fixS|=strip; _rampS[strip]=(h0+(tt[strip]-t0)/(t1-t0)*(h1-h0)).astype(np.float32)
+    AISLES.append(dict(c=c,u=u,t0=t0,t1=t1,y0=h0,y1=h1,n=n,strip=strip,tt=tt,pp=pp,name=p+'|'+'/'.join(qs)))
+    print('stair aisle',p,qs,'from',(c+u*t0).round(1),'to',(c+u*t1).round(1),'length',round(t1-t0,1),'m',n,'risers of',round((h1-h0)/n,3),'treads',round((t1-t0)/n,2),'m')
+_U|=_fixS&_trS
+_fix=(_U&(cv2.dilate(field.astype(np.uint8),disk(1.2/G.res))>0))|_fixS     # the fronts along the fence as they are, and the aisles' lines
+_live=_U&~_fix
+_K0=_known.copy(); _K0[_fixS]=_rampS[_fixS]; _K0[_live]=np.nan
+def _harmonic(V,fixed,live,iters):
+    Wm=(fixed|live).astype(np.float32); ker=np.array([[0,1,0],[1,0,1],[0,1,0]],np.float32)
+    den=np.maximum(cv2.filter2D(Wm,-1,ker,borderType=cv2.BORDER_CONSTANT),1e-6)
+    for _it in range(iters):
+        V=np.where(live,cv2.filter2D(V*Wm,-1,ker,borderType=cv2.BORDER_CONSTANT)/den,V)
+    return V
+_Hc=np.full(field.shape,np.nan,np.float32)
+ys_,xs_=np.nonzero(_U)
+for _side in (xs_>G.W//2, xs_<=G.W//2):
+    if not _side.any(): continue
+    y0_,y1_=max(0,ys_[_side].min()-40),min(G.H,ys_[_side].max()+40); x0_,x1_=max(0,xs_[_side].min()-40),min(G.W,xs_[_side].max()+40)
+    live=_live[y0_:y1_,x0_:x1_]; Kc=_K0[y0_:y1_,x0_:x1_]; fixed=~np.isnan(Kc)
+    V=np.where(fixed,Kc,np.where(live,np.nan_to_num(_known[y0_:y1_,x0_:x1_],nan=6.0),0)).astype(np.float32)
+    sh=(V.shape[1]//4,V.shape[0]//4)
+    Vc=cv2.resize(V,sh,interpolation=cv2.INTER_AREA)
+    fc=cv2.resize(fixed.astype(np.uint8),sh,interpolation=cv2.INTER_NEAREST)>0
+    lc=(cv2.resize(live.astype(np.uint8),sh,interpolation=cv2.INTER_NEAREST)>0)&~fc
+    Vc=_harmonic(Vc,fc,lc,6000)
+    V=np.where(live,cv2.resize(Vc,(V.shape[1],V.shape[0]),interpolation=cv2.INTER_LINEAR),V)
+    V=_harmonic(V,fixed,live,2000)
+    sub=_Hc[y0_:y1_,x0_:x1_]; m_=_U[y0_:y1_,x0_:x1_]; sub[m_]=V[m_]
+KST=0.333
+_seedK=[]
+for l in (A,B,F):
+    k_=sample(G,_U.astype(np.uint8),l.seats)>0
+    _seedK.append(l.seats[k_])
+    l.seats,l.row,l.yaw=l.seats[~k_],l.row[~k_],l.yaw[~k_]; l.seatmask=seat_mask(G,l.seats)
+    if len(l.raw): l.raw=l.raw[sample(G,_U.astype(np.uint8),l.raw)==0]
+    l.R[_U]=0; l.band[_U]=-1
+_seedK=np.vstack(_seedK)
+LV['K']=Level(G,'K',_seedK,0.74,0.0,KST,'ground',centre=O,rmax=180,hull_close=1.0)
+Kl=LV['K']; Kl.R=_U.astype(np.uint8); Kl.hull=Kl.R.copy()
+Kl.d=np.where(_U,np.nan_to_num(_Hc)/KST*0.74,-1.0).astype(np.float32); Kl.behind=_U
+Kl.nrows=int(np.ceil(np.nanmax(_Hc[_U])/KST))+1
+Kl.band=np.where(_U,np.clip(np.floor(Kl.d/0.74).astype(int),0,Kl.nrows-1),-1)
+# the seats: block by block, each map box pulled in 0.55 m from its edges
+# (the stair aisles between blocks, 1.1 m, seatless), along every step
+# within it, 0.5 m apart, facing down the steps; none on a step too
+# shallow for a seat, none outside the boxes (aisles, the standing area)
+_gz,_gx=np.gradient(cv2.GaussianBlur(Kl.d,(0,0),6)/G.res)
+_gn=np.maximum(np.hypot(_gx,_gz),1e-6); _depth=0.74/_gn
+_bxe=np.zeros(field.shape,bool)
+for i in np.unique(BOXL[_U]):
+    if i==0: continue
+    _bxe|=cv2.erode((BOXL==i).astype(np.uint8),disk(0.55/G.res))>0
+from scipy.spatial import cKDTree as _KD
+_S,_Rw,_Yw=[],[],[]
+for r in range(Kl.nrows):
+    line=_U&_bxe&(Kl.band==r)&(np.abs(Kl.d-(r+0.55)*0.74)<0.06)&(_depth>=0.55)
+    ys_,xs_=np.nonzero(line)
+    if not len(xs_): continue
+    P_=np.c_[G.m(xs_,ys_)]; t_=_KD(P_); tk=np.zeros(len(P_),bool)
+    for i in np.argsort(np.arctan2(P_[:,0]-O[0],P_[:,1]-O[1])):
+        if tk[i]: continue
+        _S.append(P_[i]); _Rw.append(r); _Yw.append(np.arctan2(-_gx[ys_[i],xs_[i]],-_gz[ys_[i],xs_[i]]))
+        for j in t_.query_ball_point(P_[i],0.5*0.95): tk[j]=True
+Kl.seats=np.array(_S).reshape(-1,2); Kl.row=np.array(_Rw,int); Kl.yaw=np.array(_Yw); Kl.raw=Kl.seats.copy()
+Kl.seatmask=seat_mask(G,Kl.seats)
+# a pocket left in the 1st floor's treads here with tread all round it
+# (under 3 m2) is tread, of the stand most round it, level with it
+_t1=(A.R>0)|(B.R>0)|(F.R>0)|(Kl.R>0)
+# (scraps of the walkway the corner left, too small to be floor, first)
+_n,_lab,_st,_=cv2.connectedComponentsWithStats(cross.astype(np.uint8),connectivity=4)
+for k_ in range(1,_n):
+    if _st[k_,4]*G.res**2<3.0: cross[_lab==k_]=False
+_n,_lab,_st,_=cv2.connectedComponentsWithStats((~_t1&~field&~cross&~c1).astype(np.uint8),connectivity=4)
+for k_ in range(1,_n):
+    if _st[k_,4]*G.res**2<3.0:
+        m_=_lab==k_
+        if not (m_&(cv2.dilate(_U.astype(np.uint8),disk(3.0/G.res))>0)).any(): continue
+        rg=(cv2.dilate(m_.astype(np.uint8),np.ones((3,3),np.uint8))>0)&~m_
+        if _t1[rg].mean()<0.9: continue
+        l=max((A,B,F,Kl),key=lambda l:int((l.R[rg]>0).sum()))
+        b_=int(np.median(l.band[rg&(l.R>0)]))
+        l.R[m_]=1; l.band[m_]=b_; l.d[m_]=(b_+0.5)*l.D
+        TOP1[m_]=float(l.h(b_))
+on_=Kl.band>=0; TOP1[on_]=np.asarray(Kl.h(Kl.band[on_]),np.float32)
+print('pole corners one stepped surface',int(_U.sum()*G.res**2),'m2, seats',len(Kl.seats),'(map seats there',len(_seedK),')')
+# the aisles out of the stands: no tread, no seat within them (a seat's back
+# 0.25 m clear of the flight's edge); the flight's own treads there instead
+for a_ in AISLES:
+    st_=a_['strip']; run_=(a_['t1']-a_['t0'])/a_['n']
+    for l in (A,B,F,Kl):
+        l.R[st_]=0; l.band[st_]=-1
+        if len(l.seats):
+            sp=l.seats-a_['c'][None,:]; tt_=sp@a_['u']; pp_=np.abs(-sp[:,0]*a_['u'][1]+sp[:,1]*a_['u'][0])
+            k_=~((pp_<AW/2+0.3)&(tt_>=a_['t0']-0.5)&(tt_<=a_['t1']+0.5))
+            l.seats,l.row,l.yaw=l.seats[k_],l.row[k_],l.yaw[k_]; l.seatmask=seat_mask(G,l.seats)
+    i_=np.clip(np.floor((a_['tt'][st_]-a_['t0'])/run_),0,a_['n']-1)
+    TOP1[st_]=(a_['y0']+(i_+1)*(a_['y1']-a_['y0'])/a_['n']).astype(np.float32)
+    cross&=~st_; c1&=~st_
+    # the landing at its head, level with the concourse: 2.5 m on and a
+    # little wider than the flight, with whatever pocket of open space it
+    # leaves between the stand's top and the concourse (floor, not a hole)
+    land=(a_['pp']<=AW/2+0.5)&(a_['tt']>a_['t1'])&(a_['tt']<=a_['t1']+2.5)&~field
+    for l in (A,B,F,Kl): land&=~(l.R>0)
+    _cv=(A.R>0)|(B.R>0)|(F.R>0)|(Kl.R>0)|cross|c1|field|land|st_
+    _n,_lab,_st,_=cv2.connectedComponentsWithStats((~_cv).astype(np.uint8),connectivity=4)
+    near_=cv2.dilate(land.astype(np.uint8),disk(0.3/G.res))>0
+    for k_ in range(1,_n):
+        if _st[k_,4]*G.res**2<25 and (near_&(_lab==k_)).any(): land|=_lab==k_
+    c1|=land
+    print('  landing at the head of',a_['name'],int(land.sum()*G.res**2),'m2')
+# A box the model left bare (the map's B02/B48 had no seats traced): its
+# level's rows laid across it, pulled in from its edges as above
+for i in range(1,len(BOXN)):
+    l={'A':A,'B':B,'F':F}[BOXN[i][0]]
+    m_=(BOXL==i)&~_U&(l.R>0)
+    if m_.sum()*G.res**2<20: continue
+    have=int((sample(G,m_.astype(np.uint8),l.seats)>0).sum())
+    if have>=0.3*m_.sum()*G.res**2/(0.5*0.75): continue
+    me=(cv2.erode((BOXL==i).astype(np.uint8),disk(0.55/G.res))>0)&m_
+    print('bare box',BOXN[i],'seated',relay_columns(l,me,back=0.0,near=99.0,replace=True))
 # Behind home the map's B blocks are traced out of true (rows skipping,
 # running askew): laid again in straight rows, block by block
 print('B behind home re-laid',relay_columns(B,(B.R>0)&(_Zg>34)&(np.abs(_Xg)<22),back=1.6,fwd=1.6,replace=True,near=0.35))
@@ -400,11 +610,14 @@ trim_tunnels(G,VOMS['E'],c2)
 encl,roomtop=enclose(G,rooms,list(LV.values()),slabs,flights)
 print('enclose',round(time.time()-t_,1),{k:len(v) for k,v in encl.items()})
 # no rail or wall where one stand of the 1st floor meets another near level
-skip=lambda ox,oy,h: roomtop[oy,ox]>=h+1.0 or (TOP1[oy,ox]>0 and abs(h-TOP1[oy,ox])<=0.6) or (WALK[oy,ox] and abs(h-C1F)<=0.6)
+# (and none along the field's edge or the excite seats': the fence is the
+# barrier there, the stands' fronts coming up to its top)
+FENCEZ=cv2.dilate((field_out|EX|(Gx.R>0)).astype(np.uint8),disk(0.6/G.res))>0
+skip=lambda ox,oy,h: roomtop[oy,ox]>=h+1.0 or (TOP1[oy,ox]>0 and abs(h-TOP1[oy,ox])<=0.6) or (WALK[oy,ox] and abs(h-C1F)<=0.6) or FENCEZ[oy,ox]
 fronts={'C':('tread',0.8),'D':('tread',0.8)}
 levels=[]
-spec={'G':(),'A':((cross,H_A+R_A*25),),'B':((c1,C1F),),'F':((c1,C1F),),'P':((c1,C1F),),'C':((cb,CBAL),),'D':((c2,C2F),),'E':((c2,C2F),)}
-flushmode={'G':'open','A':'open','B':'doors','F':'doors','P':'doors','C':'doors','D':'open','E':'doors'}
+spec={'K':((c1,C1F),(cross,H_A+R_A*25)),'G':(),'A':((cross,H_A+R_A*25),),'B':((c1,C1F),),'F':((c1,C1F),),'P':((c1,C1F),),'C':((cb,CBAL),),'D':((c2,C2F),),'E':((c2,C2F),)}
+flushmode={'K':'open','G':'open','A':'open','B':'doors','F':'doors','P':'doors','C':'doors','D':'open','E':'doors'}
 voms={'E':C2F}
 for name,l in LV.items():
     drs=DOORS1 if name in ('B','F','P') else l.aisle_doors()
@@ -431,6 +644,16 @@ sm=(np.abs(dOut-(C0W+0.2))<0.06)&(np.abs(TH)<SUITE_TH-0.5)
 ys_,xs_=np.nonzero(sm); SX,SZ=G.m(xs_,ys_); oo=np.argsort(TH[ys_,xs_])
 suite_line=[[round(float(SX[i]),2),round(float(SZ[i]),2)] for i in oo[::15]]
 floors=[{'y':y,'y0':y0,'polys':mask_polys(G,m)} for m,y0,y in slabs]
+# the aisle stairs at the poles: each flight on a solid base up to its
+# first tread (the stand is solid concrete under it), a handrail each side
+aisle_flights=[]
+for a_ in AISLES:
+    c_,u_=a_['c'],a_['u']; nv=np.array([-u_[1],u_[0]])
+    p0=c_+u_*a_['t0']; p1=c_+u_*a_['t1']
+    rect=[p0+nv*AW/2,p1+nv*AW/2,p1-nv*AW/2,p0-nv*AW/2]
+    floors.append({'y':round(float(a_['y0']),3),'y0':0.0,'polys':[[[[round(float(x),2),round(float(z),2)] for x,z in rect]]]})
+    aisle_flights.append({'x':float(p0[0]),'z':float(p0[1]),'dx':float(u_[0]),'dz':float(u_[1]),'n':int(a_['n']),'L':float(a_['t1']-a_['t0']),
+                          'y0':float(a_['y0']),'y1':float(a_['y1']),'w':AW,'open':True})
 ow=contours(G,outer.astype(np.uint8),eps=0.03,minarea=100)
 # the field's edge (the wall round it) eased along its length: straight
 # runs straight, the curves even, no steps
@@ -444,7 +667,12 @@ fw=[[np.c_[G.m(c_[:,0],c_[:,1])]]]
 # the fence: round the field and the excite seats' strip together (it
 # stands behind them, along the A blocks' front)
 fence_in=field_out|(Gx.R>0)|EX
-fence_in=cv2.morphologyEx(fence_in.astype(np.uint8),cv2.MORPH_CLOSE,disk(0.6/G.res))
+# (one sweep, no notches: the strip's jogs and the open floor's corners
+# rounded off)
+fence_in=cv2.morphologyEx(fence_in.astype(np.uint8),cv2.MORPH_CLOSE,disk(3.0/G.res))
+fence_in=cv2.morphologyEx(fence_in,cv2.MORPH_OPEN,disk(1.5/G.res))
+_kf=int(3.0/G.res)*2+1
+fence_in=(cv2.GaussianBlur(fence_in.astype(np.float32),(_kf,_kf),0)>0.5).astype(np.uint8)
 cs_,_=cv2.findContours(fence_in,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_NONE)
 c_=max(cs_,key=cv2.contourArea)[:,0,:].astype(np.float32)
 c_=_smooth_chain(c_,30.0,8,35.0)
@@ -456,7 +684,7 @@ fy,fx=np.nonzero(D.F); FX,FZ=G.m(fx,fy); ang=np.arctan2(FX-O[0],FZ-O[1]); o=np.a
 rim=[[round(float(FX[i]),1),round(float(FZ[i]),1)] for i in o[::40]]
 # (the building's own outer wall stands behind the outfield, up to the
 # membrane's edge: no separate wall of the outfield's own)
-data={'suites':{'line':suite_line,'y':H_C-0.4,'h':3.6,'depth':3.4},'levels':levels,'floors':floors,'flights':flights,'outer':[poly_out(p) for p in ow],'field':[poly_out(p) for p in fw],'fence':[poly_out(p) for p in fnw],'rim':rim,'rimY':H_D,'rooms':encl}
+data={'suites':{'line':suite_line,'y':H_C-0.4,'h':3.6,'depth':3.4},'levels':levels,'floors':floors,'flights':flights+aisle_flights,'outer':[poly_out(p) for p in ow],'field':[poly_out(p) for p in fw],'fence':[poly_out(p) for p in fnw],'rim':rim,'rimY':H_D,'rooms':encl}
 json.dump(data,open('td_stands.json','w'),separators=(',',':'))
 import os; print('json KB',os.path.getsize('td_stands.json')//1024, round(time.time()-T0,1))
 
