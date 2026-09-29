@@ -72,6 +72,16 @@ export function buildDome(ctx) {
   const ZH = 114;                 // home plate
   const OFF = V3(0, 0, ZH);
   const fieldRing = TD_STANDS.field[0][0].map(([x, z]) => ({ x, z: z + ZH }));
+  // the fence round the field and, along the lines, behind the excite seats
+  const fenceRing = (TD_STANDS.fence ? TD_STANDS.fence[0][0] : TD_STANDS.field[0][0]).map(([x, z]) => ({ x, z: z + ZH }));
+  const inRing = (ring, x, z) => {
+    let c = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const a = ring[i], b = ring[j];
+      if ((a.z > z) !== (b.z > z) && x < (b.x - a.x) * (z - a.z) / (b.z - a.z) + a.x) c = !c;
+    }
+    return c;
+  };
   const phi = (x, z) => Math.abs(Math.atan2(x, ZH - z)) / DEG;   // 0 at centre field, 45 at the poles
 
   // ── field ──
@@ -148,14 +158,15 @@ export function buildDome(ctx) {
       root.add(new THREE.Mesh(mergeGeometries(lit), std({ color: 0x1a1612, roughness: 0.8, emissive: 0x6a4a2a, emissiveIntensity: 0.3, side: THREE.DoubleSide })));
     }
   }
-  // the wall in front of the 1st floor: padded 4.0 m with 0.24 m of net and the
+  // the wall in front of the 1st floor (behind the excite seats along the
+  // lines): padded 4.0 m with 0.24 m of net and the
   // yellow line in the outfield, a low padded wall along the lines (for a
   // concert the backstop net behind home plate is taken down)
   // one continuous wall round the field, its height eased along it
   const ringPts = [], ringH = [], ringOut = [];
   {
     // the traced ring resampled evenly, every half metre
-    const src = fieldRing.concat([fieldRing[0]]);
+    const src = fenceRing.concat([fenceRing[0]]);
     let acc = 0;
     for (let k = 0; k + 1 < src.length; k++) {
       const a = src[k], b = src[k + 1], len = Math.hypot(b.x - a.x, b.z - a.z);
@@ -181,7 +192,9 @@ export function buildDome(ctx) {
   // and goes from the stands at a concert)
   for (const want of [95, 125, 160]) for (const sd of [-1, 1]) {
     let best = -1, bd = Infinity;
-    ringPts.forEach((p, i) => { if (ringOut[i] || Math.sign(p.x) !== sd) return; const d = Math.abs(phi(p.x, p.z) - want); if (d < bd) { bd = d; best = i; } });
+    // (only where the fence stands on the field itself, not behind the excite seats)
+    const onFieldEdge = (p) => { const dx = -p.x, dz = ZH - 60 - p.z, l = Math.hypot(dx, dz) || 1; return inRing(fieldRing, p.x + dx / l * 1.5, p.z + dz / l * 1.5); };
+    ringPts.forEach((p, i) => { if (ringOut[i] || Math.sign(p.x) !== sd || !onFieldEdge(p)) return; const d = Math.abs(phi(p.x, p.z) - want); if (d < bd) { bd = d; best = i; } });
     if (best < 0) continue;
     const n = ringPts.length, a = ringPts[(best - 2 + n) % n], c = ringPts[(best + 2) % n], p = ringPts[best];
     let ux = -(c.z - a.z), uz = c.x - a.x; const l = Math.hypot(ux, uz) || 1; ux /= l; uz /= l;
@@ -199,7 +212,7 @@ export function buildDome(ctx) {
       for (let k = 0; k < n && ringOut[(i0 + k) % n]; k++) run.push((i0 + k) % n);
       const pts = run.map((i) => ringPts[i]), top = run.map((i) => eased[i]);
       const lineGeo = wallStrip(pts, top.map((h) => h + 0.12), { y0: top.map((h) => h + 0.005), thick: 0.4, ease: 0 });
-      if (lineGeo) root.add(new THREE.Mesh(lineGeo, glowMat(0xe8c830, 0.45)));
+      if (lineGeo) root.add(new THREE.Mesh(lineGeo, std({ color: 0xc9a82a, roughness: 0.7 })));   // paint, unlit
       // the net over it, 0.24 m (the fence 4.24 m in all)
       const netGeo = wallStrip(pts, top.map((h) => h + 0.36), { y0: top.map((h) => h + 0.12), thick: 0.04, ease: 0 });
       if (netGeo) root.add(new THREE.Mesh(netGeo, std({ color: 0x1a1c1e, roughness: 0.8, transparent: true, opacity: 0.55, depthWrite: false })));
@@ -454,9 +467,10 @@ export function buildDome(ctx) {
     return m;
   };
   const onField = (x, z) => inField(x, z) && edgeDist(x, z) > 3;
-  // the arena: lettered blocks A (at the stage) to F (at home plate), numbered
-  // across, 13 seats wide and 15 rows deep, clipped to the field and cleared
-  // for the runway, the B-stage, the delay towers and the desk
+  // the arena: lettered blocks A (at the stage) to G (behind home plate, up
+  // to the backstop's seats), numbered across, 13 seats wide and 15 rows
+  // deep, clipped to the field and cleared for the runway, the B-stage, the
+  // delay towers and the desk
   const xs = [];
   for (let i = 0; i < 8; i++) { const x0 = 1.0 + i * 8.2; xs.unshift([-x0 - 7, -x0]); xs.push([x0, x0 + 7]); }
   const keep = (x, z) => onField(x, z)
@@ -464,9 +478,8 @@ export function buildDome(ctx) {
     && !(Math.abs(x) < 3.6 && z < RW1)                                   // the runway
     && !(Math.abs(x) < XW + 1.6 && z > RW1 - 1.8 && z < RW1 + XD + 1.8)  // the long stage, seats either side of it
     && !(Math.abs(x - eye.x) < 5.5 && Math.abs(z - eye.z) < 4.5)         // the desk
-    && z < eye.z + 3.0                                                   // nobody behind the desk
     && Math.hypot(Math.abs(x) - 34, z - 58) > 1.6;
-  const arena = floorBlocks(blockGrid([[25, 39], [41, 55], [57, 71], [73, 87], [89, 103], [105, 119]], xs), { keep, seed: 55 });
+  const arena = floorBlocks(blockGrid([[25, 39], [41, 55], [57, 71], [73, 87], [89, 103], [105, 119], [121, 135]], xs), { keep, seed: 55 });
   root.add(floorChairs(arena.chairs));
   const fieldPeople = arena.people;
   bigCrowd(root, cu, q, fieldPeople.concat(stands.people.map((p) => ({ ...p, h: 0.97 }))), { seed: 21 });

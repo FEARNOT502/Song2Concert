@@ -46,13 +46,17 @@ Design of the Arch and Roof of Wembley Stadium*. The acoustics were left alone.
   `node vomtest.mjs <venue> <data module> <offset z>` walks every vomitory.
 - Tokyo Dome against the seating map: the pole stand is gone. Each block is
   the map's again: A02-A48 in the A stand, B up to B02/B48, and A01/A49 in the
-  outfield stand (F). F's rows are counted from the stands' back line, so they
-  are level with the concourse all round. A01/A49's rows follow a height laid
-  smoothly between A02/B02 and F20 (a fan). A step remains at A01|A02, because
-  the outfield concourse is nearer there. The excite seats are the map's own
-  G05-G15/G35-G45 boxes, flood-filled from `td_vec.json`, their rows running
-  back to the A blocks' front (level past the sixth). The fence runs from
-  G05's corner to the A02/A03 line; the floor behind it (G03/G04) is open. B
+  outfield stand (F). Its rows are counted from the fence (distance from the
+  field), level along it, so the outfield runs round the pole into A01 with no
+  seam; A01's seats are re-laid on those rows. Against A02/B02 there is a
+  side wall with its rail, as between any two blocks. The excite seats are
+  the map's own G05-G15/G35-G45 boxes, flood-filled from `td_vec.json`, their
+  rows running
+  back to the A blocks' front (level past the sixth). The excite strip runs
+  on from G05's corner to the A02/A03 line; the floor behind it (G03/G04) is open.
+  The green fence (`fence` in the data) runs behind the excite seats along the
+  A blocks' front, coming down gently from the outfield. The yellow line is
+  paint, not lit. The floor blocks run on behind home plate. B
   behind home is re-laid in straight rows (`standgen.relay_columns`). The
   wells through the 1st floor (under the 2nd floor's overhang) are treads now.
   Lightsticks in the stands are held at sitting height.

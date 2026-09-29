@@ -1304,24 +1304,27 @@ def tunnel_decks(G, l, tunnels):
                 if rows_ok: rails.append([round(float(a[0]), 2), round(float(a[1]), 2), round(float(b[0]), 2), round(float(b[1]), 2), round(t['deckY'], 2), round(t['deckY'] + 1.0, 2)])
     return rows, rails
 
-def relay_columns(l, sel, back=8.0, fwd=0.0, replace=False, near=0.3, pitch=0.5):
+def relay_columns(l, sel, back=8.0, fwd=0.0, replace=False, near=0.3, pitch=0.5, cols=None, mindepth=0.0):
     """Seats along a level's rows over `sel`, wherever a row's cell lies in
     one of its blocks' columns: a seat within `near` of the line down the
     rake through it, from `fwd` in front to `back` behind (so a block runs on
     over the bare rows in front of it, and an aisle stays an aisle). With
     `replace`, the seats already over `sel` go first and are laid again, in
-    straight rows. Returns how many seats were laid."""
+    straight rows. `cols`: the seats whose columns count (default: the
+    level's own); `mindepth`: no seat on a tread shallower than this (where
+    the rows crowd together). Returns how many seats were laid."""
     from scipy.spatial import cKDTree
     G = l.G; D = l.D
-    tree0 = cKDTree(l.seats)
+    tree0 = cKDTree(l.seats if cols is None else cols)
     gz, gx = np.gradient(cv2.GaussianBlur(l.d.astype(np.float32), (0, 0), 8))
+    tdep = D / np.maximum(np.hypot(gx, gz) / G.res, 1e-6)      # each tread's depth
     if replace:
         k = sample(G, sel.astype(np.uint8), l.seats) == 0
         l.seats, l.row, l.yaw = l.seats[k], l.row[k], l.yaw[k]
     keep = cKDTree(l.seats) if len(l.seats) else None
     S, rows, yaws = [], [], []
     for r in range(l.nrows):
-        line = sel & (l.R > 0) & (l.band == r) & (np.abs(l.d - (r + 0.55) * D) < 0.06)
+        line = sel & (l.R > 0) & (l.band == r) & (np.abs(l.d - (r + 0.55) * D) < 0.06) & (tdep >= mindepth)
         if getattr(l, 'pits', None) is not None: line &= ~l.pits
         ys, xs = np.nonzero(line)
         if not len(xs): continue

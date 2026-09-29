@@ -37,54 +37,35 @@ LV['F']=Level(G,'F',np.r_[st['SF'],ra['SA'][_pole],ra['SBx']],0.74,H_F,R_F,'grou
 LV['C']=Level(G,'C',st['SC'],0.9,H_C,R_C,0.5,1.2,centre=O,rmax=180,open_w=4.0,hull_close=4.0,max_rows=4)
 LV['D']=Level(G,'D',st['SD'],0.8,H_D,R_D,0.5,1.5,centre=O,rmax=180,open_w=3.0,hull_close=3.0,max_rows=10)
 LV['E']=Level(G,'E',st['SE'],0.8,H_E,R_E,0.5,0.6,centre=O,rmax=180,open_w=2.2,hull_close=3.0)
-# the outfield stand's rows counted from its back, level with the 1st-floor
-# concourse all the way round (the doors at the backs of its aisles open
-# onto it), each 0.333 m lower towards the fence: 4.6 m over the outfield's
-# tall fence, lower at the poles, where the stand runs deeper
+# the outfield stand's rows from the fence, level along it (4.6 m over the
+# outfield's tall fence), each 0.333 m higher, up to the 1st-floor concourse
+# at its 19th (the doors at the backs of its aisles open onto it)
 _F=LV['F']
 _st1=cv2.morphologyEx(((_F.R>0)|(LV['A'].R>0)|(LV['B'].R>0)).astype(np.uint8),cv2.MORPH_CLOSE,disk(6.0/G.res))>0
 _open=~(_st1|(cv2.dilate(field.astype(np.uint8),disk(4.0/G.res))>0))     # behind the stands' back line: the concourse
-_dBk=cv2.distanceTransform((~_open).astype(np.uint8),cv2.DIST_L2,5)*G.res
-_nF=int(np.ceil(_dBk[_F.R>0].max()/0.74))
-_F.set_depth((_nF*0.74-_dBk).astype(np.float32))
-_F.nrows=_nF
-_F.band=np.where(_F.R>0,np.clip(np.floor(_F.d/0.74).astype(int),0,_nF-1),-1)
-_F.hs=np.array([max(1.0,C1F-0.333*(_nF-1-b)) for b in range(_nF)]); _F.h0=float(_F.hs[0])
-# A01 (and A49) between the infield's stand and the outfield's: its rows
-# laid along the lines of a height that runs smoothly from A02/B02's treads
-# on one side to F20's on the other and up to the concourse behind (a fan,
-# as the corner's seats are), so it meets both with no wall between
+_nF=_F.nrows
+_riseF=(C1F-H_F)/18
+_F.hs=np.array([min(C1F,H_F+_riseF*b) for b in range(_nF)]); _F.h0=H_F
+# At each pole A01 (A49) and the outfield are one stand: every row of it
+# counted from the fence, level along it, so the outfield's rows run on round
+# the pole into A01 with no seam (a fan about the corner); A01's seats laid
+# again along those rows. Against A02/B02, whose rows climb their own way, a
+# side wall with its rail, as between any two blocks.
 _SFp=np.r_[ra['SA'][_pole],ra['SBx']]
-def _seedlab(P):
-    m=np.ones(field.shape,np.uint8); gx_,gz_=G.g(P[:,0],P[:,1])
-    m[np.clip(np.round(gz_).astype(int),0,G.H-1),np.clip(np.round(gx_).astype(int),0,G.W-1)]=0
-    return cv2.distanceTransform(m,cv2.DIST_L2,5)
-_R1=(_F.R>0)&(_seedlab(_SFp)<_seedlab(st['SF']))
-_Al,_Bl=LV['A'],LV['B']
-_known=np.full(field.shape,np.nan,np.float32)
-_on=(_Al.band>=0)&(_Al.R>0); _known[_on]=np.asarray(_Al.h(_Al.band[_on]),np.float32)
-_on=(_Bl.band>=0)&(_Bl.R>0); _known[_on]=np.asarray(_Bl.h(_Bl.band[_on]),np.float32)
-_on=(_F.band>=0)&(_F.R>0)&~_R1; _known[_on]=np.asarray(_F.h(_F.band[_on]),np.float32)
-_known[_open]=C1F
-_known[_R1]=np.nan
-ys_,xs_=np.nonzero(_R1)
-for _side in (xs_>G.W//2, xs_<=G.W//2):
-    if not _side.any(): continue
-    y0_,y1_=max(0,ys_[_side].min()-40),min(G.H,ys_[_side].max()+40); x0_,x1_=max(0,xs_[_side].min()-40),min(G.W,xs_[_side].max()+40)
-    R1c=_R1[y0_:y1_,x0_:x1_]; Kc=_known[y0_:y1_,x0_:x1_]
-    fixed=~np.isnan(Kc)&~R1c; live=R1c
-    V=np.where(fixed,Kc,np.where(live,np.asarray(_F.h(np.maximum(_F.band[y0_:y1_,x0_:x1_],0)),np.float32),0)).astype(np.float32)
-    Wm=(fixed|live).astype(np.float32); ker=np.array([[0,1,0],[1,0,1],[0,1,0]],np.float32)
-    for _it in range(4000):
-        num=cv2.filter2D(V*Wm,-1,ker,borderType=cv2.BORDER_CONSTANT); den=cv2.filter2D(Wm,-1,ker,borderType=cv2.BORDER_CONSTANT)
-        V=np.where(live,num/np.maximum(den,1e-6),V)
-    _F.d[y0_:y1_,x0_:x1_][live]=((V[live]-_F.hs[0])/0.333+0.5)*0.74
-_F.set_depth(_F.d.copy()); _F.nrows=_nF
+from standgen import smooth_hull
+from standlib import seat_mask
+_AB=(LV['A'].R>0)|(LV['B'].R>0)
+_A01=(smooth_hull(G,seat_mask(G,_SFp),close=2.0)>0)&~_AB&~field
+_F.R[_A01]=1
+_F.R[(cv2.dilate(_AB.astype(np.uint8),disk(1.2/G.res))>0)&(cv2.dilate(_A01.astype(np.uint8),disk(1.2/G.res))>0)&~_AB&~field]=1
+_dFence=(cv2.distanceTransform((~field).astype(np.uint8),cv2.DIST_L2,5)*G.res).astype(np.float32)
+_F.set_depth(_dFence); _F.nrows=_nF
 _F.band=np.where(_F.R>0,np.clip(np.floor(_F.d/0.74).astype(int),0,_nF-1),-1)
-print('A01/A49 laid between their neighbours',int(_R1.sum()*G.res**2),'m2')
+_A01w=_A01|((_F.R>0)&(cv2.dilate(_A01.astype(np.uint8),disk(1.5/G.res))>0))
+print('A01/A49 in the outfield stand',int(_A01w.sum()*G.res**2),'m2, seats',relay_columns(_F,_A01w,back=0.0,near=99.0,replace=True))
 _ff=(_F.R>0)&(cv2.dilate(field.astype(np.uint8),disk(2.0/G.res))>0)
 print('outfield front band median',np.median(_F.band[_ff]) if _ff.any() else None)
-print('outfield stand rows',_nF,'front',round(float(_F.hs[0]),2),'seats',len(_F.seats))
+print('outfield stand rows',_nF,'seats',len(_F.seats))
 print('levels',round(time.time()-T0,1),{k:(l.nrows,len(l.seats)) for k,l in LV.items()})
 # The entrances as the official seating map marks them (the numbered
 # circles, td/entrances.json, in the map's own points): 48 round the back of
@@ -457,12 +438,22 @@ c_=_smooth_chain(c_,30.0,8,35.0)
 c_=_straighten(c_,True,int(round(6.0/G.res)),0.05/G.res)
 c_=cv2.approxPolyDP(c_.reshape(-1,1,2),0.02/G.res,True)[:,0,:]
 fw=[[np.c_[G.m(c_[:,0],c_[:,1])]]]
+# the fence: round the field and the excite seats' strip together (it
+# stands behind them, along the A blocks' front)
+fence_in=field_out|(Gx.R>0)|EX
+fence_in=cv2.morphologyEx(fence_in.astype(np.uint8),cv2.MORPH_CLOSE,disk(0.6/G.res))
+cs_,_=cv2.findContours(fence_in,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_NONE)
+c_=max(cs_,key=cv2.contourArea)[:,0,:].astype(np.float32)
+c_=_smooth_chain(c_,30.0,8,35.0)
+c_=_straighten(c_,True,int(round(6.0/G.res)),0.05/G.res)
+c_=cv2.approxPolyDP(c_.reshape(-1,1,2),0.02/G.res,True)[:,0,:]
+fnw=[[np.c_[G.m(c_[:,0],c_[:,1])]]]
 # the 2nd floor's front edge, for the lights along it
 fy,fx=np.nonzero(D.F); FX,FZ=G.m(fx,fy); ang=np.arctan2(FX-O[0],FZ-O[1]); o=np.argsort(ang)
 rim=[[round(float(FX[i]),1),round(float(FZ[i]),1)] for i in o[::40]]
 # (the building's own outer wall stands behind the outfield, up to the
 # membrane's edge: no separate wall of the outfield's own)
-data={'suites':{'line':suite_line,'y':H_C-0.4,'h':3.6,'depth':3.4},'levels':levels,'floors':floors,'flights':flights,'outer':[poly_out(p) for p in ow],'field':[poly_out(p) for p in fw],'rim':rim,'rimY':H_D,'rooms':encl}
+data={'suites':{'line':suite_line,'y':H_C-0.4,'h':3.6,'depth':3.4},'levels':levels,'floors':floors,'flights':flights,'outer':[poly_out(p) for p in ow],'field':[poly_out(p) for p in fw],'fence':[poly_out(p) for p in fnw],'rim':rim,'rimY':H_D,'rooms':encl}
 json.dump(data,open('td_stands.json','w'),separators=(',',':'))
 import os; print('json KB',os.path.getsize('td_stands.json')//1024, round(time.time()-T0,1))
 
