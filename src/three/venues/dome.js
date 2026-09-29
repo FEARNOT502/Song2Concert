@@ -112,7 +112,7 @@ export function buildDome(ctx) {
   // balcony's (season seats) grey; the outfield unsold.
   const stands = buildStands(TD_STANDS, {
     offset: OFF, stage: STAGE, seed: 400, concreteTone: 0.28, roofY: (x, z) => ringY(z + ZH) + 0.3,
-    seatColors: { A: 0x1d3c86, B: 0x1d3c86, F: 0x1d3c86, G: 0x1d3c86, C: 0x5a5d63, D: 0x1d3c86, E: 0x1d3c86 },
+    seatColors: { A: 0x1d3c86, B: 0x1d3c86, F: 0x1d3c86, P: 0x1d3c86, G: 0x1d3c86, C: 0x5a5d63, D: 0x1d3c86, E: 0x1d3c86 },
     crowd: !!q.crowd,
     // nobody behind or beside the set, nor out in the outfield stands
     sold: (x, z, name) => z > 14 && name !== 'F',

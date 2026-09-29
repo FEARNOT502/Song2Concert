@@ -1,6 +1,6 @@
 import sys, json, time, pickle, numpy as np, cv2
 sys.path.insert(0,'.')
-from standlib import Grid, disk, contours, STRAIGHT
+from standlib import Grid, disk, contours, STRAIGHT, sample
 from standgen import Level, poly_out, mask_polys, edge_walls, enclose, grow_under, redepth, trim_tunnels, front_parapet
 T0=time.time()
 st=pickle.load(open('td_stage1.pkl','rb'))
@@ -223,6 +223,46 @@ for k,l in enumerate((B,F)):
     l.band=np.where(l.R>0,np.clip(np.floor(l.d/l.D).astype(int),0,l.nrows-1),-1)
     c1&=~add
     print('pole climb',l.name,int(add.sum()*G.res**2),'m2')
+# Round each pole the 1st floor is one stand, as the building has it: the
+# infield's and the outfield's rows run on into each other, counted from the
+# concourse at its back (so its back is level with the concourse all the way
+# round), the front coming down to the field's fence wherever it is: 4.6 m
+# over the outfield's tall fence, lower towards the infield as the stand
+# deepens. (The blocks the map draws there, each counted from its own front,
+# had left steps, walls and pockets of concourse between them.)
+_phi=np.degrees(np.abs(np.arctan2(_Xg,-_Zg)))
+_hullC=st['hullC']>0
+_dB=cv2.distanceTransform(_hullC.astype(np.uint8),cv2.DIST_L2,5)*G.res
+_dF=cv2.distanceTransform((~field).astype(np.uint8),cv2.DIST_L2,5)*G.res
+P0=(_phi>=40)&(_phi<=56)&_hullC&~field&(_dB>0)&(_dF>0.05)&~EX
+P0=cv2.morphologyEx(P0.astype(np.uint8),cv2.MORPH_OPEN,disk(0.5/G.res))>0
+KP=int(np.ceil(_dB[P0].max()/0.74))+1
+HS=[]
+for k_ in range(KP):
+    HS.append(C1F-0.333*k_ if k_<=18 else max(1.0,C1F-0.333*18-0.17*(k_-18)))
+HS=HS[::-1]                                   # by band, the front first
+_seed=[]
+from scipy.spatial import cKDTree as _KD
+for k_ in range(KP):
+    ys_,xs_=np.nonzero(P0&(np.abs(_dB-(k_+0.45)*0.74)<0.05))
+    if not len(xs_): continue
+    Pk=np.c_[G.m(xs_,ys_)]; tr=_KD(Pk); tk=np.zeros(len(Pk),bool)
+    for i_ in np.argsort(np.arctan2(Pk[:,0]-O[0],Pk[:,1]-O[1])):
+        if tk[i_]: continue
+        _seed.append(Pk[i_])
+        for j_ in tr.query_ball_point(Pk[i_],0.5*0.95): tk[j_]=True
+_seed=np.array(_seed)
+LV['P']=Level(G,'P',_seed,0.74,HS[0],0.0,'ground',centre=O,rmax=180,hull_close=2.0,hs=HS)
+Pl=LV['P']; Pl.R=P0.astype(np.uint8); Pl.hull=P0.astype(np.uint8)
+Pl.set_depth((KP*0.74-_dB).astype(np.float32))
+Pl.band=np.where(P0,np.clip(np.floor(Pl.d/0.74).astype(int),0,len(HS)-1),-1)
+for l in (A,B,F):
+    l.R[P0]=0; l.band[P0]=-1
+    k_=sample(G,P0.astype(np.uint8),l.seats)==0
+    l.seats,l.row,l.yaw,l.raw=l.seats[k_],l.row[k_],l.yaw[k_],l.raw[k_] if len(l.raw)==len(k_) else l.raw
+cross&=~P0; c1&=~P0
+on_=Pl.band>=0; TOP1[P0]=0; TOP1[on_]=np.asarray(Pl.h(Pl.band[on_]),np.float32)
+print('pole stands',int(P0.sum()*G.res**2),'m2 rows',KP,'seats',len(_seed))
 print('masks',round(time.time()-T0,1))
 # ── stairs ──
 RISE,RUN,WID=0.19,0.28,1.6
@@ -343,14 +383,14 @@ print('enclose',round(time.time()-t_,1),{k:len(v) for k,v in encl.items()})
 skip=lambda ox,oy,h: roomtop[oy,ox]>=h+1.0 or (TOP1[oy,ox]>0 and abs(h-TOP1[oy,ox])<=0.6) or (WALK[oy,ox] and abs(h-C1F)<=0.6)
 fronts={'C':('tread',0.8),'D':('tread',0.8)}
 levels=[]
-spec={'G':(),'A':((cross,H_A+R_A*25),),'B':((c1,C1F),),'F':((c1,C1F),),'C':((cb,CBAL),),'D':((c2,C2F),),'E':((c2,C2F),)}
-flushmode={'G':'open','A':'open','B':'doors','F':'doors','C':'doors','D':'open','E':'doors'}
+spec={'G':(),'A':((cross,H_A+R_A*25),),'B':((c1,C1F),),'F':((c1,C1F),),'P':((c1,C1F),),'C':((cb,CBAL),),'D':((c2,C2F),),'E':((c2,C2F),)}
+flushmode={'G':'open','A':'open','B':'doors','F':'doors','P':'doors','C':'doors','D':'open','E':'doors'}
 voms={'E':C2F}
 for name,l in LV.items():
-    drs=DOORS1 if name in ('B','F') else l.aisle_doors()
+    drs=DOORS1 if name in ('B','F','P') else l.aisle_doors()
     rails,walls=edge_walls(G,l,outside_fn(spec[name]),drs,flush=flushmode[name],skip=skip,front=fronts.get(name))
     if fronts.get(name): rails+=front_parapet(G,l,fronts[name])
-    levels.append({'name':name,'D':l.D,'h0':l.h0,'rise':l.rise,'rows':l.rows_out(),'steps':l.aisles_out(),'holes':[],'voms':VOMS.get(name,[]),
+    levels.append({'name':name,'D':l.D,'h0':l.h0,'rise':l.rise,**({'hs':[round(float(v),3) for v in l.hs]} if l.hs is not None else {}),'rows':l.rows_out(),'steps':l.aisles_out(),'holes':[],'voms':VOMS.get(name,[]),
                    'seats':l.seats_out(),'rails':rails,'walls':walls})
     print(name,'rows',len(levels[-1]['rows']),'steps',len(levels[-1]['steps']),'holes',len(levels[-1]['holes']),'rails',len(rails),'walls',len(walls))
 # Behind the outfield there is no upper tier: the wall behind its top rows
