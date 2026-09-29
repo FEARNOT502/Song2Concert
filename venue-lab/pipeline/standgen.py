@@ -1165,13 +1165,11 @@ def cut_tunnels(G, l, tunnels, body, deck_t=0.6, back=3.0):
             sides.append(prof)
         if t.get('trapezoid'):
             # the same wall either side: one straight rake (a trapezoid),
-            # from a rail's height over the front row, never below a rail's
-            # height over the rows either side, up to the deck's parapet
-            P_ = {}
-            for prof in sides:
-                for a_, y_ in prof: P_[a_] = max(P_.get(a_, 0.0), y_)
+            # from a rail's height over the front row up to the deck's
+            # parapet (not steepened to clear rows beside it that belong to
+            # a block facing another way: those stand back from the cut)
             y0_ = float(l.h(0)) + 1.0
-            sl_ = max([(y_ - y0_) / (a_ + 0.4) for a_, y_ in P_.items() if a_ > -0.4 + 1e-3] + [(t['deckY'] + 1.0 - y0_) / (t['deck'] + 0.4)])
+            sl_ = (t['deckY'] + 1.0 - y0_) / (t['deck'] + 0.4)
             sides = [[[-0.4, round(y0_, 2)], [round(t['deck'], 2), round(y0_ + sl_ * (t['deck'] + 0.4), 2)]]] * 2
         t['sides'] = sides
     return allm
