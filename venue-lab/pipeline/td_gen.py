@@ -128,13 +128,14 @@ def shrink_sector(t0,t1,r):
 # balcony (C): four rows over the back of the 1st floor, its front 9 m in
 # from the 1st floor's back, pole to pole round home
 C0,CP,CR=-9.0,0.9,4
+CPOLE=98.5          # the foul poles, seen from the dome's centre: the balcony ends there
 SUITE_TH=33.7
 # (behind home, inside the lines from about D20 to D32, the balcony level is
 # the boxes, S101-110 and S301-310 either side of the VIP box)
-Cmask=sector_mask(-130,130,C0,C0+CP*CR)&(np.abs(TH)>=SUITE_TH)
+Cmask=sector_mask(-CPOLE,CPOLE,C0,C0+CP*CR)&(np.abs(TH)>=SUITE_TH)
 # aisles every 12 m round the ring
 cm=Cmask.copy()
-for t in np.arange(-130,131,7.0): cm&=~((np.abs(TH-t)<np.degrees(0.6/75)))
+for t in np.arange(-CPOLE,CPOLE+1,7.0): cm&=~((np.abs(TH-t)<np.degrees(0.6/75)))
 SC=ring_seats(cm,C0,CP,CR)
 # 2nd floor: D rows 1–10 from 12.3 m in over the 1st floor, a walkway, E
 # rows 11–33

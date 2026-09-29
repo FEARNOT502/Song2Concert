@@ -180,11 +180,13 @@ for sx_ in (-1,1):
     for sz_ in (-1,1):
         # from the middle of the corner's front, square to it (so the rows
         # either side of it, and its two walls, are the same)
-        C0_,V_,_sx,_sz=L2._blk['corners'][(1 if sx_>0 else 0)+(2 if sz_>0 else 0)]
-        V_=[np.asarray(v) for v in V_]; m_=len(V_)//2
-        tt=V_[m_+1]-V_[m_-1]; u_=np.array([-tt[1],tt[0]])/np.linalg.norm(tt)
-        if u_@(V_[m_]-C0_)<0: u_=-u_
-        q_=V_[m_].copy()
+        # (the corner's diagonal front: its mouth where the corner's middle
+        # ray meets that front, so it opens straight off the floor)
+        qi_=(1 if sx_>0 else 0)+(2 if sz_>0 else 0)
+        C0_,V_,_sx,_sz=L2._blk['corners'][qi_]
+        s_=4+qi_*4+1; f_=L2._blk['fin'][s_]; K_=L2._blk['K'][s_]
+        u_=np.array([_sx,_sz],float)/np.sqrt(2.0)
+        q_=np.asarray(C0_,float)+u_*((K_-np.asarray(C0_)@f_)/(u_@f_))
         TUN.append({'p':q_,'u':u_,'w':TUN_W,'h':TUN_H,'closed':True,'Lmax':30.0,'Lmin':8.0,'trapezoid':True})
 # on under the stand and the 200 concourse's storey, to the building's wall
 TUNM=cut_tunnels(G,LV['200'],TUN,body_)

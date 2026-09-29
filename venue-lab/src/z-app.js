@@ -586,6 +586,7 @@ window.__rayHits = (root, o, d, far = 60) => {
   return hits.slice(0, 3).map((h) => {
     const names = []; let p = h.object; while (p && names.length < 3) { names.push(p.type + (p.name ? ':' + p.name : '') + (p.geometry ? '/' + p.geometry.type : '')); p = p.parent; }
     const m = Array.isArray(h.object.material) ? h.object.material[0] : h.object.material;
-    return { d: +h.distance.toFixed(2), p: h.point.toArray().map((v) => +v.toFixed(2)), obj: names.join(' < '), mat: m?.type, col: m?.color?.getHexString(), em: m?.emissive?.getHexString(), n: h.face?.normal?.toArray().map((v) => +v.toFixed(2)), verts: h.object.geometry?.attributes?.position?.count };
+    return { d: +h.distance.toFixed(2), p: h.point.toArray().map((v) => +v.toFixed(2)), obj: names.join(' < '), mat: m?.type, col: m?.color?.getHexString(), em: m?.emissive?.getHexString(), n: h.face?.normal?.toArray().map((v) => +v.toFixed(2)), verts: h.object.geometry?.attributes?.position?.count,
+      tri: h.face ? [h.face.a, h.face.b, h.face.c].map((i) => V3().fromBufferAttribute(h.object.geometry.attributes.position, i).applyMatrix4(h.object.matrixWorld).toArray().map((v) => +v.toFixed(2))) : null };
   });
 };

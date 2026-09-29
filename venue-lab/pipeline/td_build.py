@@ -196,7 +196,7 @@ cross&=dil(A.R,2.5)&dil(B.R,2.5)
 stand1=(A.R|B.R|F.R|cross.astype(np.uint8))>0
 c1=(dOut1>0)&(dOut<=9.0)&~stand1&~field
 # balcony concourse behind the balcony
-cb=(dOut>C0W+3.6)&(dOut<=E0+6)&(np.abs(TH)<=130)&(Cl.R==0)
+cb=(dOut>C0W+3.6)&(dOut<=E0+6)&(np.abs(TH)<=98.5)&(Cl.R==0)
 # 2nd-floor concourse: the D/E walkway, the hall under E behind its first
 # rows (and the tunnel mouths through them), and 6 m behind it all
 Eback=E0+23*DP
@@ -210,6 +210,19 @@ bldg=((np.abs(_Xg/100.5)**BN+np.abs((_Zg+33.0)/100.5)**BN)**(1/BN))<=1.07
 c1&=bldg; cb&=bldg; c2&=bldg
 outer=bldg&~field
 c1|=(outer&~stand1&~field&(dOut1>0)&(dOut<=9.5))
+# At the poles the infield's and the outfield's stands climb on up to the
+# concourse behind them, as they do everywhere else: their rows carry on
+# over the corner the blocks leave, no wall of concourse standing up between
+# them and the walkway
+_poles=(np.abs(TH)>=85)&(np.abs(TH)<=112)&c1&~field
+_dist=[cv2.distanceTransform((l.R==0).astype(np.uint8),cv2.DIST_L2,5)*G.res for l in (B,F)]
+_near=np.argmin(np.stack(_dist),axis=0)
+for k,l in enumerate((B,F)):
+    add=_poles&(_near==k)&(_dist[k]<=12.0)&(l.d>0)
+    l.R[add]=1
+    l.band=np.where(l.R>0,np.clip(np.floor(l.d/l.D).astype(int),0,l.nrows-1),-1)
+    c1&=~add
+    print('pole climb',l.name,int(add.sum()*G.res**2),'m2')
 print('masks',round(time.time()-T0,1))
 # ── stairs ──
 RISE,RUN,WID=0.19,0.28,1.6
@@ -296,7 +309,7 @@ DOORS1=[]
 for q in ENT1:
     u_=(q-np.array(O))/np.linalg.norm(q-np.array(O))
     last=None
-    for t_ in np.arange(-6.0,20.0,0.1):
+    for t_ in np.arange(-6.0,32.0,0.1):
         pp=q+u_*t_; i_,j_=[int(round(float(c))) for c in G.g(pp[0],pp[1])]
         if 0<=i_<G.W and 0<=j_<G.H and c1[j_,i_]: last=pp
         if 0<=i_<G.W and 0<=j_<G.H and _inside[j_,i_]:
@@ -306,6 +319,13 @@ for q in ENT1:
         # outfield, the building's line close behind the stands) the door is
         # in that wall
         if last is not None: DOORS1.append((float(last[0]),float(last[1])))
+        else:
+            # (at the poles, where the stands now climb on over the corner,
+            # the nearest of the concourse behind them)
+            ys_,xs_=np.nonzero(c1)
+            if len(xs_):
+                CX,CZ=G.m(xs_,ys_); k_=int(np.argmin(np.hypot(CX-q[0],CZ-q[1])))
+                if np.hypot(CX[k_]-q[0],CZ[k_]-q[1])<20: DOORS1.append((float(CX[k_]),float(CZ[k_])))
 print('1st-floor doors placed',len(DOORS1),'of',len(ENT1))
 rooms=[{'name':'1F','mask':c1,'y':C1F,'cl':4.0,'own':[A,B,F],'doors':DOORS1},
        {'name':'BAL','mask':cb,'y':CBAL,'cl':3.8,'own':[Cl],'doors':Cl.aisle_doors()},

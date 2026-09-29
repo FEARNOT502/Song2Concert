@@ -96,7 +96,16 @@ function vomParts(v, ox, oz) {
   }
   // a guard across the front where the rows in front fall away
   if (v.front != null && v.front < v.y - 0.3) pit.push(box(-T, 0, -hw, hw, v.front, v.y + PAR));
-  floor.push(box(0, v.L + v.T, -hw, hw, v.y - 0.12, v.y + 0.005));
+  // where the rows at the mouth stand well below the concourse, steps up
+  // inside the pit to its floor
+  const mouth = Math.min(...v.sides.filter((sd) => sd[1] < 0.3).map((sd) => sd[3])) - 0.17;
+  let t0f = 0;
+  if (Number.isFinite(mouth) && v.y - mouth > 0.5) {
+    const n = Math.ceil((v.y - mouth) / 0.18), rise = (v.y - mouth) / n;
+    for (let i = 0; i < n; i++) floor.push(box(i * 0.3, (i + 1) * 0.3, -hw + T, hw - T, mouth - 0.3, mouth + rise * (i + 1)));
+    t0f = n * 0.3;
+  }
+  floor.push(box(t0f, v.L + v.T, -hw, hw, v.y - 0.12, v.y + 0.005));
   if (v.T > 0 && v.roof != null) {
     for (const sg of [-1, 1]) tunnel.push(box(v.L, v.L + v.T, sg * (hw - T), sg * hw, v.y, v.roof));
     // a tunnel to a concourse not drawn here ends at its doors

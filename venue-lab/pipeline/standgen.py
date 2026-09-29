@@ -292,7 +292,10 @@ class Level:
             low[on]=bots[band[on]]<floor+head
             # the pit: the low rows over the rectangle, as far as they go
             if not low.any(): continue
-            L=float(A[low].max()-a0+G.res)
+            # (0.4 m on past the last low row: its outline, traced smooth,
+            # runs a little beyond its cells, and would stand in the tunnel's
+            # way as a sliver of solid tread)
+            L=float(A[low].max()-a0+G.res)+0.4
             pit=rect&(A<=a0+L)
             sub=s.R[y0_:y1_,x0_:x1_]; subb=s.band[y0_:y1_,x0_:x1_]
             sub[pit]=0; subb[pit]=-1
@@ -831,6 +834,11 @@ def straight_blocks(l, corner, wedges=4, pitch=0.5, aisle=0.4, extra_rows=1, ret
     sec = np.where(az_ <= 0, np.where(sx > 0, 0, 1), np.where(ax_ <= 0, np.where(sz > 0, 2, 3), 4 + qi * wedges + k))
     nsec = 4 + 4 * wedges
     R0 = l.R > 0
+    if fill and len(l.raw):
+        # a balcony: its treads wherever the plan seats it (the level's own
+        # trace, made from rays out of the room's centre, loses the angled
+        # ends of a band that runs on round a corner)
+        R0 |= cv2.morphologyEx(seat_mask(G, l.raw), cv2.MORPH_CLOSE, disk(1.0 / G.res)) > 0
     near = cv2.dilate(R0.astype(np.uint8), disk(2.0 / G.res)) > 0
     front = R0 & (l.d < 0.35)
     # The front as one polygon: each side and end a straight line, each
@@ -902,11 +910,53 @@ def straight_blocks(l, corner, wedges=4, pitch=0.5, aisle=0.4, extra_rows=1, ret
         rho = [lin[kk] + c_ * bow[kk] for kk in range(wedges + 1)]
         V = [C0 + rho[kk] * np.array([s_x * np.cos(np.radians(kk * 90.0 / wedges)), s_z * np.sin(np.radians(kk * 90.0 / wedges))]) for kk in range(wedges + 1)]
         CORN[q_] = (C0, V, s_x, s_z)
+        # Each corner block faces square to a front of its own: the one
+        # beside the side faces as the side does, the one beside the end as
+        # the end does, those between the corner's diagonal; blocks facing
+        # the same way share one front line (their rows run on across the
+        # aisle between them)
+        side_s, end_s = (0 if s_x > 0 else 1), (2 if s_z > 0 else 3)
+        n45 = -np.array([s_x, s_z]) / np.sqrt(2.0)
+        # (the diagonal front through the middle of the fan's inner wedges' fronts,
+        # so the diagonal blocks keep the share of the corner the plan gives them)
+        K45 = float(((V[1] + V[wedges - 1]) / 2) @ n45)
         for kk in range(wedges):
             s_ = 4 + q_ * wedges + kk
-            t_ = V[kk + 1] - V[kk]; n_ = np.array([-t_[1], t_[0]]) / (np.linalg.norm(t_) + 1e-9)
-            if n_ @ (C0 - V[kk]) < 0: n_ = -n_
-            fin[s_] = n_; K[s_] = float(V[kk] @ n_)
+            if kk == 0 and xs_[s_x] is not None: fin[s_] = fin[side_s]; K[s_] = K[side_s]
+            elif kk == wedges - 1 and zs_[s_z] is not None: fin[s_] = fin[end_s]; K[s_] = K[end_s]
+            else: fin[s_] = n45; K[s_] = K45
+    # Each point belongs to the block it is deepest behind: the blocks part
+    # along the bisectors of their fronts (mitred, as a bowl with a polygonal
+    # plan is laid out), so a row on one side of an aisle is at the height of
+    # the same row on the other, not a step up or down from it
+    have = {0: xs_[1], 1: xs_[-1], 2: zs_[1], 3: zs_[-1]}
+    best = np.full(X.shape, -1e9, np.float32); arg = np.full(X.shape, -1, np.int32)
+    for s_ in range(nsec):
+        if s_ < 4 and have[s_] is None: continue
+        ds_ = (K[s_] - (X * fin[s_, 0] + Z * fin[s_, 1])).astype(np.float32)
+        up_ = ds_ > best; best[up_] = ds_[up_]; arg[up_] = s_
+    # blocks sharing a front line tie: each point goes to the one of them
+    # nearest it round the corner
+    arg = np.where(arg >= 0, arg, sec)
+    for q_ in range(4):
+        s_x = 1 if q_ & 1 else -1; s_z = 1 if q_ & 2 else -1
+        order = {(0 if s_x > 0 else 1): -1, (2 if s_z > 0 else 3): wedges}
+        for kk in range(wedges): order[4 + q_ * wedges + kk] = kk
+        qm = (qi == q_)
+        oa = np.full(X.shape, np.nan, np.float32)
+        for s_, o_ in order.items(): oa[qm & (sec == s_)] = o_
+        groups = {}
+        for s_ in order:
+            if s_ < 4 and have[s_] is None: continue
+            groups.setdefault((round(float(fin[s_, 0]), 5), round(float(fin[s_, 1]), 5), round(float(K[s_]), 4)), []).append(s_)
+        for g_ in groups.values():
+            if len(g_) < 2: continue
+            m = qm & np.isin(arg, g_) & ~np.isnan(oa)
+            if not m.any(): continue
+            os_ = np.array([order[s_] for s_ in g_], np.float32)
+            pick = np.argmin(np.abs(oa[m][:, None] - os_[None, :]), axis=1)
+            arg[m] = np.array(g_)[pick]
+    sec = arg
     d = np.full(l.d.shape, -1e3, np.float32)
     # the depth laid out well beyond the treads, so anything added behind or
     # beside them later (a pocket filled, a gap bridged) is counted from the

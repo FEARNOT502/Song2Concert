@@ -31,6 +31,19 @@ Design of the Arch and Roof of Wembley Stadium*. The acoustics were left alone.
   from the south perimeter to the north roof's leading edge with their pyramid
   struts and forestays, the twin catenary cables over the north roof's southern
   edge, and the translucent band (25 m) along it.
+- Follow-up: Tokyo Dome's outfield seats blue again; the balcony (and its
+  concourse) ends at the foul poles; at the poles the infield's and outfield's
+  stands climb on up to the concourse (no wall of it between them); steps from
+  the field over its low wall into the 1st floor's front rows (six, round foul
+  territory). SSA: blocks part along the bisectors of their fronts (mitred), so
+  rows meet across the aisles; each corner faces as the side does, then the
+  diagonal, then as the end does (a chamfered octagon), and every seat faces its
+  block's front; the floor's corner tunnels open off the diagonal front; the 300
+  and 500 balconies keep their angled ends (seat footprint, `straight_blocks`
+  fill). All venues: a vomitory's pit runs 0.4 m past its last low row (its
+  traced outline had left a solid sliver across Wembley's Level 1 tunnels), and
+  a pit whose mouth stands well below the concourse gets steps up inside it.
+  `node vomtest.mjs <venue> <data module> <offset z>` walks every vomitory.
 
 ## Round 12 (done)
 - UI: the side panels show only the venue name and the track; no centre chip.

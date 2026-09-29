@@ -167,6 +167,19 @@ function buildDome(ctx) {
     }
   }
   const padGeo = wallStrip(ringPts, ringH, { thick: 0.36, closed: true, ease: 6 });
+  // steps from the field up over the low wall into the 1st floor's front
+  // rows, round foul territory either side (the way the field's crowd comes
+  // and goes from the stands at a concert)
+  for (const want of [95, 125, 160]) for (const sd of [-1, 1]) {
+    let best = -1, bd = Infinity;
+    ringPts.forEach((p, i) => { if (ringOut[i] || Math.sign(p.x) !== sd) return; const d = Math.abs(phi(p.x, p.z) - want); if (d < bd) { bd = d; best = i; } });
+    if (best < 0) continue;
+    const n = ringPts.length, a = ringPts[(best - 2 + n) % n], c = ringPts[(best + 2) % n], p = ringPts[best];
+    let ux = -(c.z - a.z), uz = c.x - a.x; const l = Math.hypot(ux, uz) || 1; ux /= l; uz /= l;
+    if (ux * p.x + uz * (p.z - (ZH - 60)) < 0) { ux = -ux; uz = -uz; }   // outwards, from the field to the stand
+    const h = ringH[best], run = 0.28, len = Math.ceil(h / 0.2) * run;
+    root.add(stageSteps({ x: p.x - ux * (len + 0.2), z: p.z - uz * (len + 0.2), h, dir: [ux, uz], width: 1.6 }));
+  }
   root.add(new THREE.Mesh(padGeo, std({ color: 0x0f3a24, roughness: 0.8 })));
   // the yellow line along the top of the outfield fence, and its net
   {
