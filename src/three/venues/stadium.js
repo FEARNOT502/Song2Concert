@@ -257,8 +257,7 @@ export function buildStadium(ctx) {
     });
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
-    const band = new THREE.Mesh(g, std({ color: 0xc9ccd0, roughness: 0.6, transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false }));
-    band.userData.noCollide = true;
+    const band = new THREE.Mesh(g, std({ color: 0xa9adb3, roughness: 0.9, emissive: 0x1c1d20, transparent: true, opacity: 0.92, side: THREE.DoubleSide }));
     root.add(band);
   }
   const inRing = (poly) => (x, z) => {
