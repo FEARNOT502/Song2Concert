@@ -30,6 +30,18 @@ Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
   (`edge_walls(cheek=True)`). The official map draws each level apart (no overlap);
   the model scales each level on its own, so the 400s overhang the 200s' back by
   ~8 m along the sides, the 300/400 by ~7 m at the ends.
+- Round 14: SSA's 200s laid out whole block by block (`straight_blocks(full_corners=)`):
+  sides and ends to their plan depth, each corner a fan of four wedges from a smooth
+  arc of fronts to one continuous back line; the floor's four corner tunnels as at
+  Wembley (7 x 4.4 m, an open cut with the same straight-raked wall either side to a
+  portal the rows run on over, `cut_tunnels(trapezoid=True)`); the 400s and 500s 2.5 m
+  lower; the suites (3rd floor, glass fronts, two-row balconies, the VIP room in the
+  middle) along the left side behind the 200s (level `300S`); balcony ends closed down
+  to what stands under them. Tokyo Dome: the 72 entrances from the official seating
+  map (`td/entrances.json`, the numbered circles of dome_seating-map.pdf): 58 doors
+  onto the 1st-floor concourse, 14 vomitories through E. Renderer: rails along raked
+  edges drawn as sloping runs (`slopedRuns`), the building's outer wall smoothed
+  (`smoothRing`).
 - All venues: each tier's front parapet traced whole along the front line
   (`standgen.front_parapet`) at one height, not piece by piece off the raster; rails
   and walls joined into runs and redrawn without the raster's jogs

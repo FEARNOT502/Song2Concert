@@ -37,14 +37,42 @@ export function buildArena(ctx) {
   const OZ = 45;                       // the floor's centre, in this room's coordinates
   const stands = buildStands(SSA_STANDS, {
     offset: V3(0, 0, OZ), stage: STAGE, seed: 200, concreteTone: 0.2, roofY: H,
-    seatColors: { 200: 0x1c1d22, 300: 0xc8341e, 400: 0x1c1d22, 500: 0x1c1d22 },
-    // the 300 level, the VIP balcony: red seats in boxes behind a dark mesh front
-    materials: { levelRail: { 300: std({ color: 0x141518, roughness: 0.55, metalness: 0.4, side: THREE.DoubleSide }) } },
+    seatColors: { 200: 0x1c1d22, 300: 0xc8341e, 400: 0x1c1d22, 500: 0x1c1d22, '300S': 0x2a1d17 },
+    // the 300 level, the VIP balcony: red seats in boxes behind a dark mesh
+    // front; the suites' balconies behind glass
+    materials: { levelRail: {
+      300: std({ color: 0x141518, roughness: 0.55, metalness: 0.4, side: THREE.DoubleSide }),
+      '300S': new THREE.MeshPhysicalMaterial({ color: 0xa8bcc6, roughness: 0.06, metalness: 0, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false }),
+    } },
     crowd: !!q.crowd,
     // nobody behind the masking
     sold: (x, z) => z > 3,
   });
   root.add(stands.group);
+
+  // ── the suites on the 3rd floor, along the left side ──
+  // behind the 200s' back: a row of rooms, each behind a glass front with its
+  // balcony in front of it, the VIP room in the middle; lit warm within
+  const SU = SSA_STANDS.suites;
+  if (SU) {
+    const g = [], glassG = [], lit = [], ox = 0, oz = OZ;
+    const box = (out, x0, x1, y0, y1, z0, z1) => { const b = new THREE.BoxGeometry(Math.abs(x1 - x0), y1 - y0, Math.abs(z1 - z0)); b.translate((x0 + x1) / 2 + ox, (y0 + y1) / 2, (z0 + z1) / 2 + oz); out.push(b.toNonIndexed()); };
+    const z0 = SU.boxes[0][0], z1 = SU.boxes[SU.boxes.length - 1][1];
+    box(g, SU.xr, SU.xg, SU.y - 0.45, SU.y, z0, z1);                   // the rooms' floor
+    box(g, SU.xr, SU.xf, SU.yc, SU.yc + 0.5, z0, z1);                   // their ceiling, on over the balconies
+    box(g, SU.xr - 0.3, SU.xr, SU.y - 0.45, SU.yc + 0.5, z0, z1);       // the back wall
+    for (const zz of [z0, ...SU.boxes.map((b) => b[1])]) box(g, SU.xr, SU.xg, SU.y, SU.yc, zz - 0.1, zz + 0.1);   // walls between the rooms
+    for (const [za, zb] of [[z0 - 0.3, z0], [z1, z1 + 0.3]]) box(g, SU.xr - 0.3, SU.xf, SU.y - 0.45, SU.yc + 0.5, za, zb);   // the run's ends
+    // the glass fronts, their mullions, the lit back wall of each room
+    box(glassG, SU.xg - 0.02, SU.xg + 0.02, SU.y, SU.yc, z0, z1);
+    for (const [za, zb, n] of SU.boxes) {
+      for (let k = 1; k < (n > 8 ? 4 : 3); k++) { const zz = za + (zb - za) * k / (n > 8 ? 4 : 3); box(g, SU.xg - 0.06, SU.xg + 0.06, SU.y, SU.yc, zz - 0.04, zz + 0.04); }
+      box(lit, SU.xr + 0.02, SU.xr + 0.06, SU.y + 0.4, SU.yc - 0.3, za + 0.3, zb - 0.3);
+    }
+    root.add(new THREE.Mesh(mergeGeometries(g), std({ color: 0x2c2d31, roughness: 0.7 })));
+    root.add(new THREE.Mesh(mergeGeometries(glassG), new THREE.MeshPhysicalMaterial({ color: 0x3e4c55, roughness: 0.05, metalness: 0.3, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false })));
+    root.add(new THREE.Mesh(mergeGeometries(lit), std({ color: 0x1a1612, emissive: 0xc79a6a, emissiveIntensity: 0.35 })));
+  }
 
   // ── the building: floor, roof and its steel ──
   const X0 = -76, X1 = 76, Z0 = OZ - 70, Z1 = OZ + 70;

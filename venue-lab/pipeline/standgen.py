@@ -420,7 +420,8 @@ def edge_walls(G, lvl, outside_level, doors=(), door_w=1.8, rail=1.0, doorwall=2
                 fv=lvl._blk['fin'][sb]; tv=(np.array(B)-np.array(A)); tv=tv/(np.linalg.norm(tv)+1e-9)
                 end_=abs(float(tv@fv))>0.8
             if end_:
-                yb=float(lvl.bot(r))
+                # down to whatever stands under it (a callable `cheek` says what)
+                yb=float(cheek(ix,iy)) if callable(cheek) else float(lvl.bot(r))
                 rails.append(seg+[round(min(yb,h-0.02),2),round(h+rail,2)])
             elif below is None or h-below>0.6: rails.append(seg+[round(h,2),round(h+rail,2)])
             elif flush=='open': continue
@@ -806,7 +807,7 @@ def redepth(l, G, sec, fvecs, K, rows=None):
     l.yaw = np.arctan2(f[:, 0], f[:, 1])
     l.secmap = cs
 
-def straight_blocks(l, corner, wedges=4, pitch=0.5, aisle=0.4, extra_rows=1, retract=(), fill=False):
+def straight_blocks(l, corner, wedges=4, pitch=0.5, aisle=0.4, extra_rows=1, retract=(), fill=False, full_corners=False):
     """A bowl laid out in blocks, each with straight rows, as a building with
     a polygonal plan has them: each side and each end one block across, every
     corner a fan of `wedges` blocks converging on the corner's centre
@@ -867,7 +868,7 @@ def straight_blocks(l, corner, wedges=4, pitch=0.5, aisle=0.4, extra_rows=1, ret
         j_ = np.clip(np.round((P[:, 1] - G.z0) / G.res).astype(int), 0, G.H - 1)
         hit = np.nonzero(R0[j_, i_])[0]
         return float(t[hit[0]]) if len(hit) else None
-    fin = np.zeros((nsec, 2)); K = np.zeros(nsec)
+    fin = np.zeros((nsec, 2)); K = np.zeros(nsec); CORN = {}
     fin[0], fin[1], fin[2], fin[3] = (-1, 0), (1, 0), (0, -1), (0, 1)
     # K = V·f for a point V on the line: +x side, V = (x_side, *), f = (-1, 0)
     if xs_[1] is not None: K[0] = -xs_[1]
@@ -891,7 +892,16 @@ def straight_blocks(l, corner, wedges=4, pitch=0.5, aisle=0.4, extra_rows=1, ret
             if rho[kk] is None:
                 nb = [rho[j] for j in (kk - 1, kk + 1) if 0 <= j <= wedges and rho[j] is not None]
                 rho[kk] = nb[0] if nb else 10.0
+        # the plan's front round a corner is traced from its seats, which the
+        # aisles and mouths break up: take it as a smooth arc from the side's
+        # front to the end's, bowed as the traced one is on average
+        lin = [rho[0] + (rho[wedges] - rho[0]) * kk / wedges for kk in range(wedges + 1)]
+        bow = [np.sin(np.pi * kk / wedges) for kk in range(wedges + 1)]
+        c_ = float(np.sum([(rho[kk] - lin[kk]) * bow[kk] for kk in range(1, wedges)]) / max(1e-9, np.sum([b * b for b in bow[1:wedges]])))
+        c_ = max(0.0, c_)          # never bowed in toward the field: at worst a straight chamfer
+        rho = [lin[kk] + c_ * bow[kk] for kk in range(wedges + 1)]
         V = [C0 + rho[kk] * np.array([s_x * np.cos(np.radians(kk * 90.0 / wedges)), s_z * np.sin(np.radians(kk * 90.0 / wedges))]) for kk in range(wedges + 1)]
+        CORN[q_] = (C0, V, s_x, s_z)
         for kk in range(wedges):
             s_ = 4 + q_ * wedges + kk
             t_ = V[kk + 1] - V[kk]; n_ = np.array([-t_[1], t_[0]]) / (np.linalg.norm(t_) + 1e-9)
@@ -942,6 +952,44 @@ def straight_blocks(l, corner, wedges=4, pitch=0.5, aisle=0.4, extra_rows=1, ret
     ix = np.clip(np.round(gx - fx * 1.2 / G.res).astype(int), 0, G.W - 1)
     iy = np.clip(np.round(gy - fz * 1.2 / G.res).astype(int), 0, G.H - 1)
     cover = np.where(sliver, cover[iy, ix], cover) & R
+    if full_corners and not fill:
+        # each corner block whole: a band from its straight front to its own
+        # last row (the deepest the plan seats it), seated all along
+        # the back a straight chord from ray to ray, from the side block's
+        # back (the ray square to the side) to the end block's (square to the
+        # end), so the backs run on unbroken round the corner
+        rs = sample(G, sec, l.raw); dr = sample(G, d, l.raw)
+        def depth_of(ids):
+            k_ = np.isin(rs, ids)
+            return (np.floor(np.percentile(dr[k_], 99.5) / D) + 1) * D if k_.sum() > 20 else None
+        # the sides and the ends whole too, to the edges of their blocks
+        # (their own gaps, a vomitory's mouth, kept)
+        hull_gap = (l.hull > 0) & ~R0
+        for s_ in range(4):
+            dd_ = depth_of([s_])
+            if dd_ is None: continue
+            band_ = (sec == s_) & (d >= 0) & (d < dd_) & near_d & ~hull_gap
+            R = (R & ~(sec == s_)) | band_
+            cover = (cover & ~(sec == s_)) | (band_ & (cover | ~R0))
+        for q_, (C0, V, s_x, s_z) in CORN.items():
+            wids = [4 + q_ * wedges + kk for kk in range(wedges)]
+            dside = depth_of([0 if s_x > 0 else 1]); dend = depth_of([2 if s_z > 0 else 3])
+            if dend is None: dend = depth_of(wids[-1:]) or depth_of(wids)
+            if dside is None: dside = depth_of(wids[:1]) or depth_of(wids)
+            if dside is None or dend is None: continue
+            Vb = []
+            for kk in range(wedges + 1):
+                dirv = np.array([s_x * np.cos(np.radians(kk * 90.0 / wedges)), s_z * np.sin(np.radians(kk * 90.0 / wedges))])
+                Vb.append(V[kk] + dirv * (dside + (dend - dside) * kk / wedges))
+            for kk in range(wedges):
+                s_ = 4 + q_ * wedges + kk
+                tb = Vb[kk + 1] - Vb[kk]; nb = np.array([-tb[1], tb[0]]) / (np.linalg.norm(tb) + 1e-9)
+                if nb @ (C0 - Vb[kk]) < 0: nb = -nb           # toward the field
+                inside = ((X - Vb[kk][0]) * nb[0] + (Z - Vb[kk][1]) * nb[1]) >= 0
+                band_ = (sec == s_) & (d >= 0) & inside & near_d
+                R = (R & ~(sec == s_)) | band_
+                cover = (cover & ~(sec == s_)) | band_
+        nrows = int(max(nrows, np.floor(d[R].max() / D) + 1))
     if fill:
         # a balcony's rows seated all the way along wherever the plan has a
         # seat in any of them (its aisles, seatless in every row, kept)
@@ -998,7 +1046,7 @@ def straight_blocks(l, corner, wedges=4, pitch=0.5, aisle=0.4, extra_rows=1, ret
     l.band = np.where(R, np.clip(np.floor(l.d / D).astype(int), 0, nrows - 1), -1)
     l.seatmask = seat_mask(G, l.seats)
     l.secmap = np.where(R, sec, 0).astype(np.int32)
-    l._blk = {'fin': fin, 'K': K, 'sec': sec, 'aisles': aisles, 'pitch': pitch}
+    l._blk = {'fin': fin, 'K': K, 'sec': sec, 'aisles': aisles, 'pitch': pitch, 'corners': CORN}
     return {'sections': nsec, 'seats': len(S), 'rows': nrows, 'sliver_m2': float(sliver.sum() * G.res ** 2)}
 
 def cut_tunnels(G, l, tunnels, body, deck_t=0.6, back=3.0):
@@ -1017,19 +1065,36 @@ def cut_tunnels(G, l, tunnels, body, deck_t=0.6, back=3.0):
             q = p + u * L_; i_, j_ = [int(round(float(c))) for c in G.g(q[0], q[1])]
             if not (0 <= i_ < G.W and 0 <= j_ < G.H) or not body[j_, i_]: break
             L_ += 0.2
-        t['L'] = round(float(L_ + (0.0 if t.get('closed') else 1.5)), 2)
+        t['L'] = round(float(max(L_, t.get('Lmin', 0.0)) + (0.0 if t.get('closed') else 1.5)), 2)
         al = (X - p[0]) * u[0] + (Z - p[1]) * u[1]; la = np.abs((X - p[0]) * v[0] + (Z - p[1]) * v[1])
         m = (la < t['w'] / 2) & (al > -back) & (al < t['L'])
         t['mask'] = m; allm |= m
         on = m & (l.band >= 0)
-        low = on & (l.h(np.maximum(l.band, 0)) < t['h'] + deck_t + 0.01)
+        dt_ = t.get('slab', deck_t)
+        low = on & (l.h(np.maximum(l.band, 0)) < t['h'] + dt_ + 0.01)
         t['deck'] = round(max(float(al[low].max()) + 0.05 if low.any() else 0.0, min(t.get('open', 0.0), t['L'])), 2)
+        if t.get('trapezoid'):
+            # the portal where the rows along the tunnel's middle clear it;
+            # low rows beside it further in (a fan's side blocks) are a flat
+            # deck over its roof
+            mid_ = low & (la < 0.6)
+            t['deck'] = round(float(al[mid_].max()) + 0.05 if mid_.any() else 0.0, 2)
+            t['deckMask'] = low & (al > t['deck'])
+            low = low & (al <= t['deck'])
+        if t.get('covered'):
+            # the rows too low to pass under, over the tunnel, are a flat
+            # deck on its roof, level with the first row high enough
+            t['deckMask'] = low.copy()
         l.R[low] = 0; l.band[low] = -1
+        if t.get('trapezoid') and t['deckMask'].any():
+            l.R[t['deckMask']] = 0; l.band[t['deckMask']] = -1
+            ds_ = sample(l.G, t['deckMask'].astype(np.uint8), l.seats) > 0
+            l.seats, l.row, l.yaw = l.seats[~ds_], l.row[~ds_], l.yaw[~ds_]
         q = l.seats - p
         keep = ~((np.abs(q @ v) < t['w'] / 2 + 0.3) & (q @ u > -back) & (q @ u < t['deck'] + 0.3))
         l.seats, l.row, l.yaw = l.seats[keep], l.row[keep], l.yaw[keep]
         t['rect'] = [(p + u * a + v * b).round(3).tolist() for a, b in ((-back, -t['w'] / 2), (t['L'], -t['w'] / 2), (t['L'], t['w'] / 2), (-back, t['w'] / 2))]
-        t['deckY'] = t['h'] + deck_t
+        t['deckY'] = t['h'] + dt_
         # the cut's side walls: a rail's height over the rows beside it, as
         # far as its deck (no higher than the deck's own parapet)
         sides = []
@@ -1048,13 +1113,24 @@ def cut_tunnels(G, l, tunnels, body, deck_t=0.6, back=3.0):
                 q_ = cv2.approxPolyDP(P_.reshape(-1, 1, 2), 0.4, False)[:, 0, :]
                 prof = [[round(float(a), 2), round(float(np.interp(a, P_[:, 0], np.maximum.accumulate(P_[:, 1]))), 2)] for a in q_[:, 0]]
             sides.append(prof)
+        if t.get('trapezoid'):
+            # the same wall either side: one straight rake (a trapezoid),
+            # from a rail's height over the front row, never below a rail's
+            # height over the rows either side, up to the deck's parapet
+            P_ = {}
+            for prof in sides:
+                for a_, y_ in prof: P_[a_] = max(P_.get(a_, 0.0), y_)
+            y0_ = float(l.h(0)) + 1.0
+            sl_ = max([(y_ - y0_) / (a_ + 0.4) for a_, y_ in P_.items() if a_ > -0.4 + 1e-3] + [(t['deckY'] + 1.0 - y0_) / (t['deck'] + 0.4)])
+            sides = [[[-0.4, round(y0_, 2)], [round(t['deck'], 2), round(y0_ + sl_ * (t['deck'] + 0.4), 2)]]] * 2
         t['sides'] = sides
     return allm
 
 def tunnel_rows(rows, tunnels, deck_t=0.6):
+    deck_t = {id(t): t.get('slab', deck_t) for t in tunnels}
     """Over a tunnel the rows stand on its flat roof, not the ground."""
     from shapely.geometry import Polygon
-    rects = [(Polygon(t['rect']), t['h']) for t in tunnels]
+    rects = [(Polygon(t['rect']), t['h'], deck_t[id(t)]) for t in tunnels]
     out = []
     def emit(geoms):
         ps = []
@@ -1065,12 +1141,12 @@ def tunnel_rows(rows, tunnels, deck_t=0.6):
                           [[[round(float(x), 2), round(float(z), 2)] for x, z in list(h.coords)[:-1]] for h in q.interiors])
         return ps
     for r in rows:
-        if all(r['y'] < th + deck_t or r['y0'] >= th for _, th in rects): out.append(r); continue
+        if all(r['y'] < th + dt or r['y0'] >= th for _, th, dt in rects): out.append(r); continue
         keep, over = [], {}
         for polys in r['polys']:
             g = Polygon(polys[0], polys[1:]).buffer(0)
-            for rc, th in rects:
-                if r['y'] < th + deck_t or r['y0'] >= th: continue
+            for rc, th, dt in rects:
+                if r['y'] < th + dt or r['y0'] >= th: continue
                 i_ = g.intersection(rc)
                 if not i_.is_empty: over.setdefault(th, []).append(i_)
                 g = g.difference(rc)
@@ -1083,7 +1159,7 @@ def tunnel_rows(rows, tunnels, deck_t=0.6):
 
 def tunnels_out(tunnels):
     return [{'p': [round(float(c), 3) for c in t['p']], 'u': [round(float(c), 4) for c in t['u']], 'w': t['w'], 'h': t['h'], 'L': t['L'],
-             'deck': t['deck'], 'deckY': t['deckY'], 'closed': bool(t.get('closed')), 'sides': t.get('sides')} for t in tunnels]
+             'deck': t['deck'], 'deckY': t['deckY'], 'closed': bool(t.get('closed')), 'covered': bool(t.get('covered')), 'sides': t.get('sides')} for t in tunnels]
 
 def front_parapet(G, l, front, eps=0.05, minlen=1.0):
     """The parapet along a tier's front, traced whole: the front line (the
@@ -1152,3 +1228,30 @@ def lay_seats(l, mask):
         l.seats = np.r_[l.seats, np.array(S)]; l.row = np.r_[l.row, np.array(rows)]; l.yaw = np.r_[l.yaw, np.array(yaws)]
         l.seatmask = seat_mask(G, l.seats)
     return len(S)
+
+def tunnel_decks(G, l, tunnels):
+    """For covered tunnels: each deck as a tread (rows data), and a rail
+    round its edges where the treads beside it are lower."""
+    rows, rails = [], []
+    for t in tunnels:
+        m = t.get('deckMask')
+        if m is None or not m.any(): continue
+        ps = mask_polys(G, m, eps=0.03, minarea=0.5)
+        rows.append({'r': -1, 'y': round(t['deckY'], 3), 'y0': round(t['h'], 3), 'polys': ps})
+        for poly in ps:
+            ring = np.array(poly[0]); n = len(ring)
+            for i in range(n):
+                a, b = ring[i], ring[(i + 1) % n]
+                mid = (a + b) / 2; tv = b - a; L_ = np.linalg.norm(tv)
+                if L_ < 1e-3: continue
+                nv = np.array([tv[1], -tv[0]]) / L_
+                lower = True
+                for sg in (1, -1):
+                    q = mid + nv * sg * 0.35; i_, j_ = [int(round(float(c))) for c in G.g(q[0], q[1])]
+                    if not (0 <= i_ < G.W and 0 <= j_ < G.H): continue
+                    if m[j_, i_]: continue
+                    bnd = l.band[j_, i_]
+                    lower = bnd < 0 or float(l.h(bnd)) < t['deckY'] - 0.3
+                rows_ok = lower
+                if rows_ok: rails.append([round(float(a[0]), 2), round(float(a[1]), 2), round(float(b[0]), 2), round(float(b[1]), 2), round(t['deckY'], 2), round(t['deckY'] + 1.0, 2)])
+    return rows, rails
