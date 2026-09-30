@@ -2,6 +2,82 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 16: Tokyo Dome's pole corners laid out block by block; the balcony and 2nd floor on past the poles
+- **The corner at each foul pole** is no longer a stepped surface traced off a
+  raster (round 15's harmonic height field, cut into 0.333 m contours and seated
+  along them: terraces, wavy rows, a fence top that jogged). `td_pole.py` lays
+  it out as the seating map draws it: the map's 1st floor is a fan of blocks
+  ("fingers") with straight rows square to their own axes, so the wedge A01,
+  A02 with B02 behind the walkway and A03 with B03 are each that. Rows are
+  `td_rowsA.py`'s lines (0.74 m pitch in A, 0.748 in B, counted from the walkway),
+  the walkway between A and B a strip of its own, the aisle between two blocks
+  the seam where one block's rows end and the next's begin (each block's rows run
+  to the middle of the gap the map leaves, seats stop at its outline). The row
+  polygons are exact strips (two lines square to the block's axis, cut to its
+  outline: `td_pole.rows_out`), the seats laid along the row lines
+  (`td_pole.lay_seats`). Both poles are built from the 1B side's map blocks (the
+  building is symmetric; the 3B side is its mirror image, on its own cells).
+  A02's rows run the whole 10.6 m of its outline (13-26; the map's label says 20).
+  Nothing else changes in the 1st floor: A04.. and B04.., the outfield's F
+  blocks and the excite seats are the raster levels as before, and the corner
+  takes the cells of the old stand nearest its blocks (scraps of the infield's
+  treads beside F20 too).
+- **Heights.** The infield's stand is 37 m deep and shallow, the outfield's 13 m
+  and steep; at the pole the blocks' depth falls from 32 m to 14 in three blocks. So
+  each of the three blocks climbs from the fence to the concourse over its own
+  depth, its (front, walkway, back) heights fitted (a linear programme: the
+  smallest step across every aisle between one block and the next, and to F20,
+  with the fronts, where the fence stands, pinned to rise smoothly from the
+  lines' to the outfield's): A01 3.90 / 7.42 / 10.60, A02+B02 3.25 / 7.78 / 9.44,
+  A03+B03 2.44 / 6.46 / 10.60 (`ANCH` in `td_pole.py`; linear between them, level
+  behind the back). Measured on the built rows (heights either side of the
+  corner's outline), the steps across the aisles to the neighbouring A, B and F
+  stands are 0.54 m on average, 1.04 at the 90th percentile and 1.26 m at most
+  (1B side; 3B 0.52 / 1.04 / 1.25). The old corner's were smaller (0.23 m, 0.84
+  at most) because its surface was made to meet its neighbours, at the price of
+  its terraces and wavy rows; the new one keeps every block's rows straight and
+  lets the aisle between two blocks take the difference (no photographs of the
+  real corner were to hand to check the heights against; the map has none).
+  A rail stands where a step is over 0.6 m. The stair flights the old corner had
+  (two 1.2 m aisles either side of A01) are gone: the rows and the aisle seams
+  climb to the concourse. The corner has 196 rows, 940 m² of tread and 1389
+  seats (661 before), both poles.
+- **The balcony (C) runs on past the poles** to the map's last blocks, C01 and
+  C97, at 130.4 degrees from the dome's centre (it stopped at the poles, 98.5),
+  and **the 2nd floor** on past D04 (89.7-93.7) through D03, D02 and D01 to 112
+  (D49, D50, D51 on the 3B side; 3 rows each, the map's blocks taper D05 8, D04
+  5, D03 3), and E past E09 through E08, E07 and E06 to 84 degrees (8, 5 and 3
+  rows; E44, E45, E46). `td_upper.py` has the blocks' angles. Behind the poles
+  the 1st floor's stand is the outfield's, 13.5 m deep with 4 m to the wall
+  (25-37 m at the lines), so the balcony's and the 2nd floor's fronts, which
+  stand out 9 and 12.3 m from its back, move back over its rear beyond the
+  poles (up to 3.2 and 6.5 m: `tau_c`, `tau_d`), or the tiers would hang over
+  the fence. How far is read off the edge of `td_gen.py`'s 6 m rule (a tier's
+  first row stays 6 m off the field) at each angle: the tables in `td_upper.py`
+  stand 0.25-0.5 m clear of it. (A first version eased them in over 10 degrees;
+  that left the balcony's first two rows and D03's first two out of the rule and
+  D03 almost empty: 11 seats where it now has 26.) D04's rows move with them,
+  so its block runs into D03. The balcony's and the 2nd floor's concourses
+  follow (`cb`, `c2` in `td_build.py`). Seats: balcony 1455 -> 2039, D 4453 ->
+  4684, E 8850 -> 9186 (the 3B side included).
+- The map's D and E outlines beyond D04 and E09 are not in `td_labeled.json`
+  (its labeller skipped them); their angles and rows are read off the map
+  (`td/td_vec.json`) into `td_upper.py`.
+- Regenerate: `cd pipeline && python3 td_gen.py && python3 td_build.py` (about 4
+  and 4 minutes), then `python3 pipeline/mkdata.py td && node build.mjs`, and to
+  the app `node gen.mjs <dir>` and copy `venues/td-data.js` to
+  `src/three/venues/` (`dome.js` did not change).
+- Checks (whole dome flooded on foot from the infield, `reachtest.mjs dome
+  0,104 1.0`, then `reachcheck.py dome pipeline/td_stands.json 114`): A, B, F, K
+  and D 100 %, C 2038 of 2039, E 9153 of 9186, G 1753 of 1759; at the start of
+  the round C 1454 of 1455, E 8822 of 8850, G 1753 of 1759. The few that are
+  missed are of the kinds there were: E rows 1-4 beside a vomitory mouth (33
+  now, 28 then), a balcony seat, six excite seats. Local floods
+  from a back-row K seat and from a balcony seat past the pole reach every seat
+  of A, B, F, K and of C, D, E in the ends of the tiers, on both sides.
+  `vomtest.mjs dome`: 13 of 14 vomitories, E25 stuck, as at the start. The app
+  builds and draws the Dome without errors (`apptest.mjs`).
+
 ## Round 15: the three big rooms checked against the buildings
 Sources: the Japan Membrane Structures Association's 2016 lecture on Tokyo Dome
 (its sections and roof plan), Nikken Sekkei's project page, ja.wikipedia (Tokyo

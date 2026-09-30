@@ -102,17 +102,24 @@ def spans(L):
     return sorted(out)
 Dsp=[x for x in spans('D') if len(x[2])>=3]; Esp=spans('E')
 AISLE=1.2
-def sector_mask(t0,t1,dlo,dhi):
-    m=(dOut>=dlo)&(dOut<dhi)&(TH>=t0)&(TH<=t1)
+import td_upper as U
+# (the balcony's and the 2nd floor's fronts move back over the outfield stand
+# beyond the poles: their distance from the hull is measured from that line)
+dOutC=dOut-U.tau_c(TH)
+dOutD=dOut-U.tau_d(TH)
+def sector_mask(t0,t1,dlo,dhi,fld=None):
+    fld=dOut if fld is None else fld
+    m=(fld>=dlo)&(fld<dhi)&(TH>=t0)&(TH<=t1)
     return m
-def ring_seats(mask, dlo, pitch, rows, spacing=0.5, first=0.45):
+def ring_seats(mask, dlo, pitch, rows, spacing=0.5, first=0.45, fld=None):
     from scipy.spatial import cKDTree
+    fld=dOut if fld is None else fld
     pts=[]
     for r in range(rows):
         dc=dlo+first+r*pitch
         # half a cell either side: where the hull runs straight along the grid
         # (behind home) the distance steps by whole cells
-        band=(np.abs(dOut-dc)<0.051)&mask
+        band=(np.abs(fld-dc)<0.051)&mask
         ys,xs=np.nonzero(band)
         if not len(xs): continue
         P=np.c_[G.m(xs,ys)]
@@ -128,15 +135,17 @@ def shrink_sector(t0,t1,r):
 # balcony (C): four rows over the back of the 1st floor, its front 9 m in
 # from the 1st floor's back, pole to pole round home
 C0,CP,CR=-9.0,0.9,4
-CPOLE=98.5          # the foul poles, seen from the dome's centre: the balcony ends there
 SUITE_TH=33.7
 # (behind home, inside the lines from about D20 to D32, the balcony level is
 # the boxes, S101-110 and S301-310 either side of the VIP box)
-Cmask=sector_mask(-CPOLE,CPOLE,C0,C0+CP*CR)&(np.abs(TH)>=SUITE_TH)
+# The balcony runs on past the foul poles (98.5 degrees from the dome's
+# centre) to the map's last blocks, C01 and C97, at 130.4 degrees, over the
+# outfield stand's rear (td_upper.py)
+Cmask=sector_mask(-U.C_END,U.C_END,C0,C0+CP*CR,dOutC)&(np.abs(TH)>=SUITE_TH)
 # aisles every 12 m round the ring
 cm=Cmask.copy()
-for t in np.arange(-CPOLE,CPOLE+1,7.0): cm&=~((np.abs(TH-t)<np.degrees(0.6/75)))
-SC=ring_seats(cm,C0,CP,CR)
+for t in np.linspace(-U.C_END,U.C_END,39): cm&=~((np.abs(TH-t)<np.degrees(0.6/75)))
+SC=ring_seats(cm,C0,CP,CR,fld=dOutC)
 # 2nd floor: D rows 1–10 from 12.3 m in over the 1st floor, a walkway, E
 # rows 11–33
 D0,DP=-12.3,0.8
@@ -145,14 +154,19 @@ SDl=[]; SEl=[]
 for t0,t1,n in Dsp:
     rows=max(v for v in n if v<=10) if any(v<=10 for v in n) else 10
     a,b=shrink_sector(t0,t1,70)
-    SDl.append(ring_seats(sector_mask(a,b,D0,D0+rows*DP),D0,DP,rows))
+    SDl.append(ring_seats(sector_mask(a,b,D0,D0+rows*DP,dOutD),D0,DP,rows,fld=dOutD))
+# the 2nd floor's ring on past D04 and E09 to the map's last blocks: D03, D02,
+# D01 (D49, D50, D51) beside the rest of the ring, their front moving back over
+# the outfield stand's rear (td_upper.py); E08, E07, E06 (E44, E45, E46)
+for t0,t1,rows in U.both_sides(U.DX):
+    a,b=shrink_sector(t0,t1,70)
+    SDl.append(ring_seats(sector_mask(a,b,D0,D0+rows*DP,dOutD),D0,DP,rows,fld=dOutD))
 VOM=[]   # tunnel mouths through the first rows of E, at every other gap between D blocks
 for i in range(len(Dsp)-1):
     if i%2: continue
     VOM.append((Dsp[i][1]+Dsp[i+1][0])/2)
-for t0,t1,n in Esp:
-    top=max(n[1:]) if len(n)>1 else 27      # n[0] is the block's own number
-    rows=top-10
+Ex=[(t0,t1,max(n[1:])-10 if len(n)>1 else 17) for t0,t1,n in Esp]+U.both_sides(U.EX)
+for t0,t1,rows in Ex:
     a,b=shrink_sector(t0,t1,85)
     m=sector_mask(a,b,E0,E0+rows*DP)
     for tv in VOM:
