@@ -676,7 +676,7 @@ def enclose(G, rooms, levels, slabs, flights, lamp_step=6.0, door_w=1.8, door_h=
                 isdoor=np.zeros(n,bool)
                 for dxz in doors:
                     dd=np.hypot(XY[:,0]-dxz[0],XY[:,1]-dxz[1]); j=int(np.argmin(dd))
-                    if dd[j]<3.0: isdoor|=np.hypot(XY[:,0]-XY[j,0],XY[:,1]-XY[j,1])<door_w/2
+                    if dd[j]<3.0: isdoor|=np.hypot(XY[:,0]-XY[j,0],XY[:,1]-XY[j,1])<R_.get('door_w',door_w)/2
                     DOORLOG.append((R_.get('name'),float(dxz[0]),float(dxz[1]),float(dd[j])))
                 land=np.zeros(n,bool)
                 for f in landings:

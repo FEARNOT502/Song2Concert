@@ -2,7 +2,105 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 17: Tokyo Dome's whole 1st floor block by block; the entrances where the map puts them; the upper decks' aisles
+- **Every A, B and F block of the 1st floor is laid out as the map draws it**, not
+  only the poles' (round 16's corner method for the whole floor: `td_stand1.py`
+  replaces `td_pole.py`, and the raster A and B levels, the redepth, the pole
+  aisles, notches and wells, the corner K and the pockets are gone from
+  `td_build.py`). Each A block is a finger with the B block behind its walkway:
+  the rows straight and square to the finger's own axis (A rows 1-26 counted back
+  from the walkway, the walkway strip, B rows 27 on, the landing behind the last
+  row), the aisle between two blocks the seam where one block's rows end and the
+  next's begin (each block's rows run to the middle of the gap the map leaves,
+  seats stop at its outline). Heights are the building's section, linear between
+  a finger's front, walkway and back (A 1.0 m + 0.17 a row, B 5.5 m + 0.255 a row,
+  every back meeting the 10.6 m concourse); the three corner fingers keep round
+  16's fitted anchors. The 3B side is the 1B side mirrored; the centre blocks
+  (A25, B25 ...) are built from their own outlines. The outfield's F blocks keep
+  the raster's treads from the fence (4.6 m + 0.344 a row up to 10.6) cut to the
+  map's F outlines, and their seats (`td_stand1.lay_curved`) are laid along those
+  rows inside the outlines (5496; the old ones, laid from another front and re-rowed
+  from the fence, stood 255 pairs on top of each other). 1203 rows / 7944 seats in
+  A, 1028 / 8565 in B; no two seats within 0.3 m.
+- **B02** (the corner's middle block) was too shallow (0.113 m a row, its back 9.44
+  m under the concourse): its anchors are now 3.25 / 7.70 / 10.60 m (front,
+  walkway, back), 0.197 m a row and flush with the concourse; the price is a step
+  across the B02 | B03 aisle of 1.26 m on average.
+- **Entrances** (`td_entrances.py`): the map's 72 numbered circles, read with the
+  digit word inside each (under 1 pt from its centre). Numbers run clockwise from
+  the right-field foul pole and are the ticket's aisle number (通路): the 1st floor
+  1-58 (1-24 down the 1B side, 25-48 up the 3B side, 49-58 across the outfield),
+  the upper deck 1-14. On the 1st floor every circle stands at the head of the
+  aisle between two blocks, a metre and a half from the back of each (measured on
+  the map's outlines, all 58). `td_build.py` puts each door where that aisle's axis
+  (the mean of the two blocks' finger axes, `td_stand1.aisle_axes`; in the outfield
+  the way the distance from the field climbs) meets the concourse wall, so the
+  doors stand on their aisles (0.10 m median off the seam between the two blocks,
+  0.85 m at most, `proto/door_check.py`), 2.0 m wide as the circle is. Behind home
+  (24-27) the circles stand 4-7 m behind the blocks (the map's concourse is deeper
+  there): the doors are in the wall at the aisles' heads, the furthest 8 m from its
+  circle. Over each door the number on a plate in the style of the building's own
+  aisle signs (black, the number large, 通路 AISLE under it; a photograph of aisle
+  10 was the model), on both faces of the wall, hung on the line of the wall's own
+  panels over the opening (`data.signs`, all 116 plates one mesh, `signSheet` in
+  `d3-stands.js`; seven doors, 5 and 51-56, have no such panel and take the aisle's
+  axis). `sheetdump.mjs` saves the plates' sheet as a picture.
+- **Upper-deck entrances.** The 14 vomitories through E's front rows are at the
+  circles' angles (each in the notch of one E block's front edge on the map) as
+  before, but `td_gen.py` had left the seat-free notches at every other gap
+  between D blocks (22 of them), so 13 of the 14 pits had 8-29 seats standing in
+  them and eight notches had nothing. `td_gen.py` now takes its notches from the
+  same 14 angles (`td_entrances.py`) and `td_build.py` drops any seat left over a
+  pit (136). The signs over them read the map's aisle numbers 1-14, in the same
+  plate style (`sign` in the vomitory's data; `label` still names the E block for
+  the tools). The stair flights between the balcony and the 2nd floor keep 2.5 m
+  off the vomitories' pits and look 46 m out for room (E25's was walled in by the
+  flight at 6.6 degrees, the last stuck vomitory of round 16; the flight now
+  stands at x = 6.5, 5 m from the pit).
+- **E's aisles.** The blocks' angles (`spans('E')`) are the map's polygons' extremes,
+  which overlap their neighbours' by up to 3 degrees where the map draws its blocks
+  as slanted parallelograms, and td_gen.py pulled 1.2 m off each block at 85 m out,
+  not out on E's ring at 110-145 m: aisles 3-3.7 m wide (or none where the blocks
+  overlapped, their seats standing on each other: 859 pairs), too wide for the
+  tread's 2.2 m opening rule, so bare gaps between the blocks all the way up.
+  `aisle_sectors` (td_gen.py) pulls the overlaps apart to an aisle of 1.3 m at
+  least, and leaves the map's own gap where it is wider: E has 8356 seats (9194)
+  and every aisle has its tread and half steps (326 of them) but the 14 pits.
+- **Rows of the upper tiers** are counted from the distance field each ring of seats
+  was laid along (`set_depth` in `td_build.py`: the hull's distance, the balcony's
+  and the 2nd floor's fronts moved back beyond the poles), not from the front the
+  level found for itself from its seats: the balcony's ends had run their four rows
+  into one (row 0 had 42 seats to the others' 15 at 120-135 degrees, 456 pairs on
+  top of each other; each row now has 22). A last pass drops any seat within 0.3 m of
+  another (D 45, the excite seats 246).
+- **Behind the outfield (doors 51-56)** the walkway runs on to the building's outer wall
+  and the concourse has no wall of its own, so there is no opening to cut: each door
+  is a dark leaf with a light frame (2.0 x 2.5 m, `data.leaves`, `doorLeaves` in
+  `d3-stands.js`) on the outer wall facing the stand, the plate over it. The wall as
+  drawn is the ring smoothed (`smoothRing`, 2.5 m) and simplified, up to 0.1 m off
+  the raw ring, so `td_build.py` fits the line to that smoothed ring (`_smooth_ring`)
+  and hangs the plates 0.14 m, the leaves 0.10 m, proud of it (at 0.05 m half of a
+  leaf and its plate were buried in the wall). Doors 49, 50, 57, 58 (near the poles,
+  where the concourse has walls) are real openings with lintels, as the infield's.
+- **Excite seats (G)** are laid block by block: each of the map's 22 solid G outlines
+  is a strip whose rows (the "1-6" beside its name, as the A blocks' "15-40") run
+  along its long axis from the field's end, square to it, a seat every 0.5 m across
+  (1053 seats; the raster's rows parallel to the fence, 1692 with stacked doubles,
+  are gone). G03, G04, G46, G47 (drawn dotted) stay unseated. All reachable.
+- B20|B21 (and B17|B18, B12, B24 ...): the map's aisle jogs wider mid-block there; the
+  circles at its ends (entrances 20 and 21) have their doors, the jog itself is
+  plain stairs (open question: whether it is a gate).
+- Not changed: the balcony's aisles (every 12 m: the map draws its C01-C97 as a
+  ring of 2-degree cells with no gaps, so there is nothing to read the real ones
+  off), D as sectors between the map's block angles.
+- Regenerate: `cd pipeline && python3 td_gen.py && python3 td_build.py`
+  (2.5 and 3 minutes; `td_gen.py` rewrites `td_seats1F.npy`, which nothing reads
+  any more: `git checkout` it), `python3 pipeline/mkdata.py td && node build.mjs`,
+  and to the app `node gen.mjs <dir>`, copying `venues/td-data.js` and
+  `stands.js` to `src/three/`.
+
 ## Round 16: Tokyo Dome's pole corners laid out block by block; the balcony and 2nd floor on past the poles
+(`td_pole.py`, named below, is gone: round 17's `td_stand1.py` is the same method for the whole 1st floor.)
 - **The corner at each foul pole** is no longer a stepped surface traced off a
   raster (round 15's harmonic height field, cut into 0.333 m contours and seated
   along them: terraces, wavy rows, a fence top that jogged). `td_pole.py` lays

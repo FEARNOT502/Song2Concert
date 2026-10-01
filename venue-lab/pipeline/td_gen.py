@@ -161,13 +161,26 @@ for t0,t1,n in Dsp:
 for t0,t1,rows in U.both_sides(U.DX):
     a,b=shrink_sector(t0,t1,70)
     SDl.append(ring_seats(sector_mask(a,b,D0,D0+rows*DP,dOutD),D0,DP,rows,fld=dOutD))
-VOM=[]   # tunnel mouths through the first rows of E, at every other gap between D blocks
-for i in range(len(Dsp)-1):
-    if i%2: continue
-    VOM.append((Dsp[i][1]+Dsp[i+1][0])/2)
+# tunnel mouths through the first rows of E, where the map puts the upper
+# deck's 14 entrances (td_entrances.py): the vomitories td_build.py digs there
+import td_entrances
+VOM=[th for _,th in td_entrances.load(O)[1]]
 Ex=[(t0,t1,max(n[1:])-10 if len(n)>1 else 17) for t0,t1,n in Esp]+U.both_sides(U.EX)
-for t0,t1,rows in Ex:
-    a,b=shrink_sector(t0,t1,85)
+# The aisles between E's blocks: the map's own gap between two blocks (0.4-0.9
+# degrees, 1-2 m out on the ring) where it is wide enough, else the blocks'
+# edges pulled in, so that every aisle is 1.3 m at least; and no wider than
+# the open_w below which td_build.py treats a gap as tread, not an opening
+# (a fixed 1.2 m pulled off each block at 85 m out, as before, made them 3-3.7 m
+# out on E's ring, bare gaps between the blocks all the way up)
+def aisle_sectors(blocks, r, amin=1.3):
+    order=sorted(range(len(blocks)),key=lambda i: blocks[i][0]); dmin=np.degrees(amin/r)
+    a=[blk[0] for blk in blocks]; b=[blk[1] for blk in blocks]
+    for i,j in zip(order[:-1],order[1:]):
+        gap=blocks[j][0]-blocks[i][1]
+        if gap<dmin: b[i]-=(dmin-gap)/2; a[j]+=(dmin-gap)/2
+    a[order[0]]+=dmin/2; b[order[-1]]-=dmin/2
+    return list(zip(a,b))
+for (t0,t1,rows),(a,b) in zip(Ex,aisle_sectors(Ex,122.0)):
     m=sector_mask(a,b,E0,E0+rows*DP)
     for tv in VOM:
         m&=~((np.abs(TH-tv)<np.degrees(1.1/RRO))&(dOut<E0+5*DP))
