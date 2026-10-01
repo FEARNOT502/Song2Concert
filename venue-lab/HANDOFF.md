@@ -2,6 +2,60 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 19: Tokyo Dome's gates dug in under the stand, the entrances left open, one rake along every block
+- **One rake on every block** (`fit_profiles`: `uniform`, `flat`, `w_hold`, `w_back`). Round 18's section grew its rake along
+  each finger (0.17 -> 0.37 m/m), so the upper blocks looked gentler towards the outfield. Now A and B of every block from the
+  3rd (counted from each pole) on climb at the one 0.270 m/m of the real rows (the walkway 5.9-6.5 m up along fingers 4-22).
+  What that costs where the stand is not the section's:
+  * blocks 1 and 2, beside the outfield stand (its rows climb 0.46 m/m, 13 m deep), take one straight slope each (`flat`: block 1
+    A 0.43 / B 0.20, block 2 0.32 / 0.26) that meets the outfield's rows (`w_F` 100) and the concourse (`w_hold`); the two aisles
+    B01|B02 and B02|B03 carry steps of about 1.2 m (1.73 at the worst point), drawn as steps and wall faces, no rail;
+  * the five blocks behind home (21-25) are shallower (31 m, the rest 34-37): at 0.27 their backs stood 0.2-1.3 m under the
+    concourse, a wall across every entrance there, so their backs are pulled up to it (`w_back` 100) and their front rows stand
+    2.1-2.2 m up (0.5-1.5 elsewhere, the walkway 7.0-7.6 m); the aisles 22|23 and 23|24 step 0.65 and 0.50 m;
+  * mean step across all aisles 0.174 m (0.10 in round 18, with its growing rake), the largest 1.73 m (between fingers); into the
+    outfield's rows 0.13 m on the average, 0.58 at the most.
+- **Gates dug in under the stand** (`gate_sites`, `gate_corridors`, `carve_gates`, `corridor_rooms`). The gates no longer end in
+  an open stair cut up to the 1st floor's concourse. The pit (open to the walkway) runs into a short tunnel, flat at the pit's
+  floor under the rows (their own slab its roof, 0.25 m), and the tunnels meet one lower corridor per side: 1B and 3B along the
+  back of the stand (359 m2 each, floor 6.13, 4 gates) and H behind home (129 m2, floor 7.27, 2 gates). Each corridor is 5 m wide,
+  2.8 m from floor to ceiling (its floor the lowest of its gates' walkway heights), runs 6 m past its outermost gate, and has two
+  stairs (rise 0.19, run 0.27; 24 treads, 18 behind home) climbing through the 1st floor's concourse floor (an open cut with a
+  1.5 m landing at the foot and 2 m of floor at the head) to the concourse. The corridor is cut from a raster: the signed distance
+  `sd` to the stand's back edge (+ into the stand, - into the concourse; smoothed 1.5 m), the band `front - 5 .. front` of it (the
+  front wall as far in under the stand as the rows' slab leaves 2.8 m of head room, 4 m at most), outlined and simplified (0.12).
+  The rows over a tunnel or the corridor stay as roof slabs (`y0 = y - 0.25`), the 1st floor's slab prism over it is hollowed
+  (`floors` entries with `y0`) and its walls (`corridor_rooms`: zero-thickness panels whose left side faces the room, 5 cm inside
+  the outline the solids are cut to; the ring is turned counter-clockwise first (`orient`), a buffer comes out clockwise and
+  the corridor showed its dark outside material on every wall), ceilings, lit floors and lamps join `rooms`; the old gate lamps and the open stair cuts
+  are gone. 33 seats over the gates go (27 before), none over the stairs. Walk test (`gatewalk`, the walker started in the pit of
+  each gate and sent along pit, tunnel, corridor, stair): 10/10 climb to the concourse (y 10.61).
+- **Roof slabs meet with no crack.** Each row's slab used to be clipped to a straight strip square to the finger's axis while the
+  rows are bent (`warp_rows`): 0.1 m cracks along every riser over the corridors, which the walker's step could not cross
+  (20 seats of B unreachable, and thin black lines in the render). `carve_gates` now cuts a row's slab at the next row's own
+  polygon, 3 cm (`GATE_LAP`) under it (`rows_out` hands over `nxt`, the next row up of each row of a finger).
+- **Partitions with thickness.** The tan panels beside the pits and the stairs' cuts (`gateRails`) are solid, `gateRailT` 0.25 m
+  (`thickPanel` in `d3-stands.js`: a face each side, the top and the two ends, each its own flat normal; the right side of a panel
+  is the thick side, `_side_rails` runs them so that it faces away from the pit).
+- **The 1st floor's entrances open.** There is no wall between the concourse and the 1st floor's stands any more
+  (`enclose`: rooms[0] `open_stand`, `edge_walls(open_stand=True)`; the 4.5 m opening of the first try is gone too, as is the
+  frame): the pillar stands free at the head of each aisle. Where a stand ends lower than the concourse by 0.4 m or more
+  `edge_walls` leaves a wall 1 m over the concourse's floor on the step (with the present heights there is none).
+- **Lights in '공연 중' (house 0)** (`roomLights`): the concourses, corridors, tunnels and stairs stay dark; the lights come up
+  only for someone inside an entrance (`showZones`: 1.8 m on the stand's side of the pillar's line to 2.8 m past it, 4.8 m wide).
+  '입장 전' (house 1) as before: they come up on entering any concourse, tunnel, stair or corridor. (A tour that renders several
+  views in one page load shows the fade of the previous view for a few frames: take a show view first, or on its own.)
+- **2nd-floor (E) entrances.** Each vomitory's pit walls are one continuous solid 0.35 m thick with a cap, raked with the rows
+  (`vomParts`), the mouth framed by a post each side and a lintel over it, as deep as the wall is thick (0.6 m at least), the
+  panels' seams gone. 14/14 walk through (`vomtest`).
+- Checked: walk-flood on foot (`reachtest.mjs dome 0,104 1.0`, 50 743 nodes, 140 s; `reachcheck.py`) A, B, F, C, D, E, G 100 %;
+  `vomtest.mjs` 14/14; `gatewalk` 10/10; renders of the pits, tunnel mouths, corridors, stairs (foot and head, from above), the
+  pillars from the stand and from the concourse, the show-mode lights out and in, behind home.
+- Not done / to know: the horizontal soffit seams on the E concourse wall are thin and left; the corner aisles' and the aisles
+  behind home's steps (above) are what the one rake leaves.
+- Regenerate as in round 18: `cd pipeline && python3 td_build.py` (5 minutes), `python3 pipeline/mkdata.py td && node build.mjs`, and to the
+  app `node gen.mjs <dir>`, copying `stands.js` and `venues/td-data.js` (and `venues/dome.js` when it changed) to `src/three/`, `npm run build`.
+
 ## Round 18: Tokyo Dome's gates, the pillars, the junction of the infield and the outfield stands
 - **B24** was only half drawn (its two outlines in `td_labeled.json` overlap and leave out the wide part of its L behind
   home): `chart_blocks` takes it from the map's flood-filled box (`BOXL`, the ink's inside; 0.16 m back out).

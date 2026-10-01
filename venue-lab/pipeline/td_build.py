@@ -239,35 +239,42 @@ _A_ch,_B_ch,_F_ch=T1.chart_blocks(_labc,BOXL,BOXN,G)
 _frames={b['blk']:(b['f'],b['sA']) for b in ra['blocks'] if b['poly'].mean(0)[0]>0 or b['blk']==25}
 S1=T1.build(G,_A_ch,_B_ch,_F_ch,_frames,hull1>0,field|EX)
 # The fingers' heights, fitted so that the stand is continuous across every aisle
-# between blocks and into the outfield stand (td_stand1.fit_profiles_balanced): the
-# section climbs from the infield's (A 0.17 m a row) to the outfield's (0.33 m) over
-# the fingers before each pole, the change shared out evenly over the twelve aisles
-# nearest it (a mean step of 0.1 m at each) instead of left to the poles' few short ones
+# between blocks and into the outfield stand (td_stand1.fit_profiles_balanced), with
+# every block from the 3rd (counted from each pole) on climbing at the one rake of the
+# real building's rows (0.27 m/m, A and B alike: `uniform`), the two corner blocks
+# beside the outfield stand each one straight slope of their own (`flat`) that meets the
+# outfield's rows (`w_F`) and the concourse (`w_hold`): what the steep outfield stand
+# and the infield's section do not agree on is the step at the corner's two aisles. The five
+# blocks behind home (21-25) are shallower than the rest: at the one rake their backs would end up
+# to 1.3 m under the concourse (a wall across every entrance there), so their backs are pulled up
+# to it (`w_back`) and their front rows stand higher instead, the aisles between them stepping 0.5-0.65 m
 _FhF=np.where(S1['zoneF'],np.minimum(C1F,H_F+_riseF*np.floor(_dFence/0.74)),np.nan).astype(np.float32)
-_profs=T1.fit_profiles_balanced(G,S1,_FhF)
+_profs=T1.fit_profiles_balanced(G,S1,_FhF,uniform=(0.27,3000.0,3),flat=(500.0,0.0),nom_ramp=(1,2,0.0,0.0),w_hold=3000.0,w_F=100.0,
+                                  w_back={**T1.POLE_BACK,**{n_:100.0 for n_ in range(21,26)}})
 T1.apply_profiles(S1,_profs)
 _st=T1.seam_steps(S1,T1.seam_pairs(G,S1,_FhF)); _cn=sum(v[0] for v in _st.values())
 print('steps across the aisles: mean %.3f m, the largest %.2f m (between fingers); into the outfield stand: mean %.2f, largest %.2f m'%(
     sum(v[0]*v[1] for v in _st.values())/_cn,max(v[3] for k,v in _st.items() if -1 not in k),
     np.mean([v[1] for k,v in _st.items() if -1 in k]),max(v[3] for k,v in _st.items() if -1 in k)))
 # The gates (td_stand1.gate_sites): the ten places where the map widens the aisle between two B blocks;
-# each is a pit open to the walkway, a tunnel under the rows, then a stair cut up through the stand's back to the door of the
-# aisle's entrance (the 1st-floor circle whose aisle it is: the nearest to where the stair comes out)
+# each is a pit open to the walkway, a short tunnel under the rows into a lower concourse dug under the back of the stand
+# (td_stand1.gate_corridors, once the concourse is laid out), the door of the gate's aisle at the stand's back on its axis
+# (the 1st-floor circle whose aisle it is: the nearest to where the stand ends)
 PILLAR_R=0.55
 def _on_stand(p):
     i_,j_=[int(round(float(c))) for c in G.g(p[0],p[1])]
     return 0<=i_<G.W and 0<=j_<G.H and S1['band'][j_,i_]>=0
-_sites=T1.gate_sites(_B_ch,S1['fingers'],_on_stand,[(q_[0],q_[1],PILLAR_R) for q_ in ENT1])
+_sites=T1.gate_sites(_B_ch,S1['fingers'],_on_stand)
 _gate_of={}
 for _s in _sites:
-    _w=_s['a']*_s['t_top']+_s['u']*_s['s_c']; _d=np.hypot(*(ENT1-_w).T); _i=int(np.argmin(_d))
+    _w=_s['a']*_s['t_wall']+_s['u']*_s['s_c']; _d=np.hypot(*(ENT1-_w).T); _i=int(np.argmin(_d))
     assert _d[_i]<12.0 and ENT1N[_i] not in _gate_of, ('gate without its entrance',_s['pair'],_d[_i])
     _gate_of[ENT1N[_i]]=_s
 print('gates',len(_sites),{n_:'B%d|B%d%+d'%(s_['pair'][0],s_['pair'][1],s_['side']) for n_,s_ in sorted(_gate_of.items())})
 _lv=T1.split_levels(S1)
 _S1seats,_S1row,_S1yaw=T1.lay_seats(G,S1)
-# no seat over a pit or a stair's cut
-_gz=unary_union([s_['pit'] for s_ in _sites]+[s_['trench'] for s_ in _sites]).buffer(0.25)
+# no seat over a pit (or, below, a stair's cut)
+_gz=unary_union([s_['pit'] for s_ in _sites]).buffer(0.25)
 _kg=~shapely.contains_xy(_gz,_S1seats[:,0],_S1seats[:,1])
 print('seats over the gates dropped',int((~_kg).sum()))
 _S1seats,_S1row,_S1yaw=_S1seats[_kg],_S1row[_kg],_S1yaw[_kg]
@@ -285,7 +292,7 @@ def _shell(name,D,lv,kinds,rows_fn):
     l.rows_out=rows_fn; l.aisles_out=lambda: []
     return l
 A=_shell('A',0.74,_lv['A'],'A',lambda: T1.rows_out(G,S1,_lv['A']))
-B=_shell('B',0.748,_lv['B'],'B',lambda: T1.rows_out(G,S1,_lv['B'],sites=_sites))
+B=_shell('B',0.748,_lv['B'],'B',lambda: T1.rows_out(G,S1,_lv['B'],sites=_sites,corrs=_corrs))
 # the outfield: rows from the fence as before, on the cells of the F blocks' outlines
 F=LV['F']
 F.R=S1['zoneF'].astype(np.uint8)
@@ -409,6 +416,17 @@ for f in flights:
     gx_,gz_=G.g(fp[:,0],fp[:,1]); gx_=np.clip(np.round(gx_).astype(int),0,G.W-1); gz_=np.clip(np.round(gz_).astype(int),0,G.H-1)
     for c,y in ((c1,C1F),(cb,CBAL),(c2,C2F)):
         if f['y0']<y<=f['y1']+0.01: c[gz_,gx_]=False
+# The lower concourses the gates lead into (td_stand1.gate_corridors): under the back of the stand and the
+# concourse's edge, with a stair at each end up through the concourse's floor, clear of the pillars and the balcony's stairs
+from shapely.geometry import LineString as _LS
+_blocked=unary_union([_LS([(f['x'],f['z']),(f['x']+f['dx']*f['L'],f['z']+f['dz']*f['L'])]).buffer(WID/2+0.6) for f in flights]) if flights else None
+_corrs=T1.gate_corridors(G,_sites,B.R>0,c1,O,[(q_[0],q_[1],PILLAR_R) for q_ in ENT1],_blocked)
+print('lower concourses',{c_['name']:'%.0f m2, %d gates, floor %.2f'%(c_['poly'].area,len(c_['gates']),c_['floor']) for c_ in _corrs})
+_trZ=unary_union([st_['trench'] for c_ in _corrs for st_ in c_['stairs']]).buffer(0.25)
+_kg2=~shapely.contains_xy(_trZ,B.seats[:,0],B.seats[:,1])
+print('seats over the stairs\' cuts dropped',int((~_kg2).sum()))
+B.seats,B.row,B.yaw=B.seats[_kg2],B.row[_kg2],B.yaw[_kg2]
+if len(B.raw): B.raw=B.raw[~shapely.contains_xy(_trZ,B.raw[:,0],B.raw[:,1])]
 def outside_fn(pairs):
     def f(ox,oy):
         for m,y in pairs:
@@ -456,7 +474,7 @@ for n_,q,a_ in zip(ENT1N,ENT1,AX1):
     if door is not None:
         DOORS1.append((float(door[0]),float(door[1]))); DOOR1.append((n_,door,a_,wall))
 print('1st-floor doors placed',len(DOORS1),'of',len(ENT1),'; the furthest from its circle %.1f m'%max(np.hypot(*(d-ENT1[ENT1N.index(n)])) for n,d,_,_ in DOOR1))
-rooms=[{'name':'1F','mask':c1,'y':C1F,'cl':4.0,'own':[A,B,F],'doors':DOORS1,'door_w':2.0},
+rooms=[{'name':'1F','mask':c1,'y':C1F,'cl':4.0,'own':[A,B,F],'doors':DOORS1,'door_w':2.0,'open_stand':True},
        {'name':'BAL','mask':cb,'y':CBAL,'cl':3.8,'own':[Cl],'doors':Cl.aisle_doors()},
        {'name':'2F','mask':c2,'y':C2F,'cl':4.0,'own':[D,E],'doors':D.aisle_doors()+E.aisle_doors()}]
 rooms[2]['open']=E.pits
@@ -467,6 +485,9 @@ WALK=c1&~overhead&dil(A.R|B.R|F.R,6.0)
 rooms[0]['walk']=WALK
 trim_tunnels(G,VOMS['E'],c2)
 encl,roomtop=enclose(G,rooms,list(LV.values()),slabs,flights)
+# the lower concourses and the gates' tunnels, closed in the same way: walls, ceilings, lit floors, lamps
+_cr=T1.corridor_rooms(_corrs,_sites)
+for k_ in ('walls','ceils','lit','lamps'): encl[k_]+=_cr[k_]
 print('enclose',round(time.time()-t_,1),{k:len(v) for k,v in encl.items()})
 # no rail or wall where one stand of the 1st floor meets another near level (within 0.9 m: the
 # step between two blocks' rows at an aisle, up to 0.75 m round the poles, is a step, not a drop)
@@ -481,11 +502,11 @@ flushmode={'K':'open','G':'open','A':'open','B':'doors','F':'doors','P':'doors',
 voms={'E':C2F}
 for name,l in LV.items():
     drs=DOORS1 if name in ('B','F','P') else l.aisle_doors()
-    rails,walls=edge_walls(G,l,outside_fn(spec[name]),drs,flush=flushmode[name],skip=skip,front=fronts.get(name),**({'door_w':2.0} if drs is DOORS1 else {}))
+    rails,walls=edge_walls(G,l,outside_fn(spec[name]),drs,flush=flushmode[name],skip=skip,front=fronts.get(name),**({'door_w':2.0,'open_stand':True} if drs is DOORS1 else {}))
     if fronts.get(name): rails+=front_parapet(G,l,fronts[name])
-    if name=='B': rails=rails+[r_ for s_ in _sites for r_ in s_['rails']]
     levels.append({'name':name,'D':l.D,'h0':l.h0,'rise':l.rise,**({'hs':[round(float(v),3) for v in l.hs]} if l.hs is not None else {}),'rows':l.rows_out(),'steps':l.aisles_out(),'holes':[],'voms':VOMS.get(name,[]),
-                   'seats':l.seats_out(),'rails':rails,'walls':walls})
+                   'seats':l.seats_out(),'rails':rails,'walls':walls,
+                   **({'gateRails':[r_ for s_ in _sites for r_ in s_['rails']]+[r_ for c_ in _corrs for st_ in c_['stairs'] for r_ in st_['rails']],'gateRailT':T1.RAIL_T} if name=='B' else {})})
     print(name,'rows',len(levels[-1]['rows']),'steps',len(levels[-1]['steps']),'holes',len(levels[-1]['holes']),'rails',len(rails),'walls',len(walls))
 # Behind the outfield there is no upper tier: the wall behind its top rows
 # runs on up to the roof, over the concourse behind them
@@ -505,11 +526,27 @@ sm=(np.abs(dOut-(C0W+0.2))<0.06)&(np.abs(TH)<SUITE_TH-0.5)
 ys_,xs_=np.nonzero(sm); SX,SZ=G.m(xs_,ys_); oo=np.argsort(TH[ys_,xs_])
 suite_line=[[round(float(SX[i]),2),round(float(SZ[i]),2)] for i in oo[::15]]
 floors=[{'y':y,'y0':y0,'polys':mask_polys(G,m)} for m,y0,y in slabs]
-_trU=unary_union([s_['trench'] for s_ in _sites])
+# the stairs' cuts through the concourse's floor, and the lower concourses dug out of its slab (a roof of their own over
+# each, from their ceiling up to the floor)
+_site_corr={i_:c_ for c_ in _corrs for i_ in c_['gates']}
+_trU=unary_union([st_['trench'] for c_ in _corrs for st_ in c_['stairs']])
+_tuns=[(s_['tunnel'],_site_corr[i_]['floor']+T1.GATE_HEAD+0.05) for i_,s_ in enumerate(_sites) if s_['tunnel'] is not None]
+_hollow=unary_union([c_['poly'] for c_ in _corrs]+[t_ for t_,_ in _tuns]+[_trU])
+_roofs=[]
 for _f in floors+encl['lit']:               # (the concourse's lit floor is a sheet of its own, 1 cm over the slab: the walker stands on it)
     if abs(_f['y']-C1F)<1e-6 and _f.get('y0',0.0)<0.01:
         _g=T1._geom_of(_f['polys'])
-        if _g.intersects(_trU): _f['polys']=T1._polys_of(_g.difference(_trU))
+        if any(_f is e_ for e_ in encl['lit']):
+            if _g.intersects(_trU): _f['polys']=T1._polys_of(_g.difference(_trU))
+        else:
+            for c_ in _corrs:
+                _ig=_g.intersection(c_['poly'])
+                if not _ig.is_empty: _roofs.append({'y':C1F,'y0':round(c_['floor']+T1.CORR_HEAD+0.05,3),'polys':T1._polys_of(_ig)})
+            for t_,y_ in _tuns:
+                _ig=_g.intersection(t_)
+                if not _ig.is_empty: _roofs.append({'y':C1F,'y0':round(y_,3),'polys':T1._polys_of(_ig)})
+            if _g.intersects(_hollow): _f['polys']=T1._polys_of(_g.difference(_hollow))
+floors+=_roofs
 # the aisle stairs at the poles: each flight on a solid base up to its
 # first tread (the stand is solid concrete under it), a handrail each side
 aisle_flights=[]
@@ -569,14 +606,14 @@ for n_,d_,a_,w_ in DOOR1:
     y0=max(float(TOP1[j_,i_]),C1F if c1[j_,i_] else 0.0) or C1F
     rt=float(roomtop[j_,i_])
     y1=y0+(4.0 if np.isfinite(rt) and rt>y0+2.5 else 5.4)       # up to the concourse's ceiling (4 m over its floor), or 5.4 m where it is open to the dome
-    PILLARS.append({'x':round(float(q_[0]),2),'z':round(float(q_[1]),2),'r':PILLAR_R,'y0':round(y0,2),'y1':round(y1,2)})
+    PILLARS.append({'x':round(float(q_[0]),2),'z':round(float(q_[1]),2),'r':PILLAR_R,'y0':round(y0,2),'y1':round(y1,2),'ax':round(float(a_[0]),3),'az':round(float(a_[1]),3)})      # (ax, az: the way out of the stand, for the lights of the entrance)
     yaw=float(np.arctan2(a_[0],a_[1]))
     for face in (0,np.pi):          # to the concourse (out of the stand), to the stand
         SIGNS.append({'x':round(float(q_[0]),2),'y':round(y0+2.2,2),'z':round(float(q_[1]),2),'yaw':round(yaw+face,3),'w':1.1,'r':PILLAR_R,'label':str(n_)})
 print('pillars',len(PILLARS),'; the furthest one moved off its circle %.2f m'%max(np.hypot(*(np.array([p_['x'],p_['z']])-ENT1[ENT1N.index(n_)])) for p_,(n_,_,_,_) in zip(PILLARS,DOOR1)))
 # (the building's own outer wall stands behind the outfield, up to the
 # membrane's edge: no separate wall of the outfield's own)
-data={'suites':{'line':suite_line,'y':H_C-0.4,'h':3.6,'depth':3.4},'levels':levels,'floors':floors,'flights':flights+aisle_flights,'outer':[poly_out(p) for p in ow],'field':[poly_out(p) for p in fw],'fence':[poly_out(p) for p in fnw],'rim':rim,'rimY':H_D,'rooms':encl,'signs':SIGNS,'pillars':PILLARS,'gateLamps':[{'x':l_[0],'y':l_[1],'z':l_[2],'yaw':l_[3]} for s_ in _sites for l_ in s_['lamps']]}
+data={'suites':{'line':suite_line,'y':H_C-0.4,'h':3.6,'depth':3.4},'levels':levels,'floors':floors,'flights':flights+aisle_flights,'outer':[poly_out(p) for p in ow],'field':[poly_out(p) for p in fw],'fence':[poly_out(p) for p in fnw],'rim':rim,'rimY':H_D,'rooms':encl,'signs':SIGNS,'pillars':PILLARS}
 json.dump(data,open('td_stands.json','w'),separators=(',',':'))
 import os; print('json KB',os.path.getsize('td_stands.json')//1024, round(time.time()-T0,1))
 

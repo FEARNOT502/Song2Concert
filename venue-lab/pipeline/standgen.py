@@ -350,7 +350,7 @@ class Level:
 def mask_polys(G, m, eps=0.025, minarea=1.0):
     return [poly_out(p) for p in contours(G, m.astype(np.uint8), eps=eps, minarea=minarea)]
 
-def edge_walls(G, lvl, outside_level, doors=(), door_w=1.8, rail=1.0, doorwall=2.6, flush='doors', skip=None, front=None, parapet=True, cheek=False):
+def edge_walls(G, lvl, outside_level, doors=(), door_w=1.8, rail=1.0, doorwall=2.6, flush='doors', skip=None, front=None, parapet=True, cheek=False, open_stand=False):
     """Walls along a level's outline: a rail where it drops away, a wall with
     door openings where it meets a concourse at its own height. `skip(ox, oy,
     h)` leaves an edge to the concourse's own walls; `front` = (y0, above) puts
@@ -428,6 +428,9 @@ def edge_walls(G, lvl, outside_level, doors=(), door_w=1.8, rail=1.0, doorwall=2
                 rails.append(seg+[round(min(yb,h-0.02),2),round(h+rail,2)])
             elif below is None or h-below>0.6: rails.append(seg+[round(h,2),round(h+rail,2)])
             elif flush=='open': continue
+            elif open_stand:
+                # no wall behind the stand: where it stands lower than the concourse, a rail-high wall up the step
+                if below-h>=0.4: walls.append(seg+[round(h,2),round(below+rail,2)])
             else:
                 # split round any door on this edge
                 P0=np.array(A,np.float64); P1=np.array(B,np.float64); u=P1-P0; Lm=np.linalg.norm(u)
@@ -699,6 +702,7 @@ def enclose(G, rooms, levels, slabs, flights, lamp_step=6.0, door_w=1.8, door_h=
                         ob=float(over[bo])
                         if lo<ob<hi: hi=ob
                         if isdoor[i] and abs(lo-y)<0.45: lo=max(lo,y+door_h)
+                        if R_.get('open_stand') and ownrows[bo]: hi=lo      # no wall between the room and its own stands' rows
                         if hi-lo>0.05: seg=(lo,hi)
                     vals.append(None if seg is None else (P[i],seg[0],seg[1],nin[i]))
                 chains_wall+=_chains(vals)

@@ -142,10 +142,12 @@ function pillars(list, ox, oz, mat) {
 }
 
 // A vomitory as its own solid: a straight pit through the rows too low to
-// walk under, walled either side up past the treads beside it (the walls sit
-// inside the pit, so the treads' own sides are behind them, never in the same
-// plane), a tunnel on under the rows above to the concourse, walled, ceiled
-// and lit from within, and the section's name over the mouth.
+// walk under, walled either side up past the treads beside it (each wall one
+// solid, its top raked with the rows, capped; the walls sit inside the pit, so
+// the treads' own sides are behind them, never in the same plane), the mouth
+// framed (a post each side, a lintel over it, as deep as the walls are thick),
+// a tunnel on under the rows above to the concourse, ceiled and lit from
+// within, and the section's name over the mouth.
 function vomParts(v, ox, oz) {
   const [ux, uz] = v.u, vx = -uz, vz = ux;
   const yaw = Math.atan2(ux, uz);
@@ -158,12 +160,38 @@ function vomParts(v, ox, oz) {
     g.translate(x, (y0 + y1) / 2, z);
     return g.toNonIndexed();
   };
-  const T = 0.22, hw = v.w / 2, PAR = 1.0;
+  // a wall along the pit, a profile (t, y) of its own extruded across s0..s1
+  const wall = (pts, s0, s1) => {
+    if (pts.length < 3) return null;
+    const ex = new THREE.ExtrudeGeometry(new THREE.Shape(pts.map(([t, y]) => new THREE.Vector2(t, y))), { depth: s1 - s0, bevelEnabled: false });
+    const [x, z] = at(0, s0);
+    ex.applyMatrix4(new THREE.Matrix4().makeBasis(new THREE.Vector3(ux, 0, uz), new THREE.Vector3(0, 1, 0), new THREE.Vector3(vx, 0, vz)).setPosition(x, 0, z));
+    return ex.toNonIndexed();
+  };
+  const T = 0.35, hw = v.w / 2, PAR = 1.0;
   const pit = [], cap = [], tunnel = [], floor = [], ceil = [], lamps = [], signs = [];
-  for (const [sg, t0, t1, top] of v.sides) {
-    const s0 = sg * (hw - T), s1 = sg * hw;
-    pit.push(box(t0, t1, s0, s1, v.y, top + PAR));
-    cap.push(box(t0, t1, s0 - sg * 0.03, s1 + sg * 0.03, top + PAR, top + PAR + 0.06));
+  for (const sg of [-1, 1]) {
+    // the rows' treads beside the pit, the wall's top a rail's height over each, raked from one row's middle to the next's
+    const rows = v.sides.filter((sd) => sd[0] === sg).sort((p, q) => p[1] - q[1]);
+    if (!rows.length) continue;
+    const top = rows.map(([, t0, t1, h]) => [(t0 + t1) / 2, h + PAR]);
+    const prof = [[rows[0][1], top[0][1]], ...top, [rows[rows.length - 1][2], top[top.length - 1][1]]];
+    // only where the wall stands up over the pit's floor
+    let run = [];
+    const flush = () => {
+      if (run.length > 1) {
+        const lo = v.y, t0 = run[0][0], t1 = run[run.length - 1][0];
+        const s0 = sg * (hw - T), s1 = sg * hw, a = Math.min(s0, s1), b = Math.max(s0, s1);
+        pit.push(wall([[t0, lo], [t1, lo], ...run.slice().reverse().map(([t, y]) => [t, y])], a, b));
+        cap.push(wall([...run.map(([t, y]) => [t, y]), ...run.slice().reverse().map(([t, y]) => [t, y + 0.06])], a - 0.03, b + 0.03));
+      }
+      run = [];
+    };
+    for (let i = 0; i < prof.length; i++) {
+      if (prof[i][1] - v.y > 0.02) run.push(prof[i]);
+      else flush();
+    }
+    flush();
   }
   // a guard across the front where the rows in front fall away
   if (v.front != null && v.front < v.y - 0.3) pit.push(box(-T, 0, -hw, hw, v.front, v.y + PAR));
@@ -178,10 +206,13 @@ function vomParts(v, ox, oz) {
   }
   floor.push(box(t0f, v.L + v.T, -hw, hw, v.y - 0.12, v.y + 0.005));
   if (v.T > 0 && v.roof != null) {
-    for (const sg of [-1, 1]) tunnel.push(box(v.L, v.L + v.T, sg * (hw - T), sg * hw, v.y, v.roof));
+    // the mouth's frame: posts as thick as the pit's walls, a lintel between them, deep enough to read as the wall's thickness
+    const D = Math.max(v.T, 0.6);
+    for (const sg of [-1, 1]) tunnel.push(box(v.L, v.L + D, sg * (hw - T), sg * hw, v.y, v.roof + 0.45));
+    tunnel.push(box(v.L, v.L + D, -hw, hw, v.roof, v.roof + 0.45));
     // a tunnel to a concourse not drawn here ends at its doors
     if (v.end) tunnel.push(box(v.L + v.T - T, v.L + v.T, -hw, hw, v.y, v.roof));
-    ceil.push(box(v.L, v.L + v.T, -hw + T, hw - T, v.roof - 0.05, v.roof - 0.01));
+    ceil.push(box(v.L, v.L + D, -hw + T, hw - T, v.roof - 0.05, v.roof - 0.01));
     for (let t = v.L + 1.2; t < v.L + v.T - 0.6; t += 3) {
       const [x, z] = at(t, 0);
       lamps.push([x, v.roof - 0.06, z, yaw]);
@@ -228,8 +259,18 @@ function roomLights(data, { ox, oz, lit }) {
     }
     return c;
   };
-  const inside = ({ x, y, z }) => zones.some((q) => y > q.y0 && y < q.y1 && x > q.x0 && x < q.x1 && z > q.z0 && z < q.z1
+  const inZones = (list, { x, y, z }) => list.some((q) => y > q.y0 && y < q.y1 && x > q.x0 && x < q.x1 && z > q.z0 && z < q.z1
     && inRing(q.rings[0], x, z) && !q.rings.slice(1).some((h) => inRing(h, x, z)));
+  // while the show runs ('공연 중', house 0) the concourses stay dark: the lights come up only for someone who has stepped
+  // in at an entrance, between the wall's line and a couple of metres past the pillar
+  const showZones = (data.pillars || []).map((p) => {
+    const ax = p.ax ?? 0, az = p.az ?? 1, vx = -az, vz = ax;
+    const ring = [[-1.8, -2.4], [2.8, -2.4], [2.8, 2.4], [-1.8, 2.4]].map(([a, b]) => [p.x + ox + ax * a + vx * b, p.z + oz + az * a + vz * b]);
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (const [x, z] of ring) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
+    return { rings: [ring], x0, x1, z0, z1, y0: p.y0 + 0.2, y1: p.y1 + 0.2 };
+  });
+  const inside = (c, house) => inZones(house < 0.5 && showZones.length ? showZones : zones, c);
   const mats = ['inMat', 'ceilMat', 'floorLit', 'mouthMat', 'mouthFloor', 'stairMat'].map((k) => [lit[k], lit[k].emissiveIntensity]);
   const lamp = lit.lampMat.color.clone();
   let k = -1;
@@ -242,7 +283,7 @@ function roomLights(data, { ox, oz, lit }) {
   return {
     update(f) {
       if (!f.cam) return;
-      const want = inside(f.cam) ? 1 : 0;
+      const want = inside(f.cam, f.house ?? 1) ? 1 : 0;
       if (want === k) return;
       const step = Math.min(1, (f.dt ?? 1 / 60) * 5);
       set(Math.abs(want - k) < 0.02 ? want : k + (want - k) * step);
@@ -404,6 +445,30 @@ function smoothRing(ring, { sig = 2.5, tol = 0.08 } = {}) {
   const half = Math.floor(m / 2);
   const A = dp(S.slice(0, half + 1)), B = dp(S.slice(half).concat([S[0]]));
   return A.slice(0, -1).concat(B.slice(0, -1));
+}
+
+// A partition with thickness: the panel [x0, z0, x1, z1, ya0, ya1, yb0, yb1] (its bottom and top at each end)
+// as a solid box `T` thick towards its right (running x0,z0 -> x1,z1), a face each side, the top and the two ends
+// (every face its own flat normal).
+function thickPanel(P, N, [x0, z0, x1, z1, ya0, ya1, yb0, yb1], T) {
+  const dx = x1 - x0, dz = z1 - z0, l = Math.hypot(dx, dz) || 1;
+  const nx = (dz / l) * T, nz = (-dx / l) * T;
+  const a0 = [x0, ya0, z0], a1 = [x0, ya1, z0], b0 = [x1, yb0, z1], b1 = [x1, yb1, z1];
+  const o = (v) => [v[0] + nx, v[1], v[2] + nz];
+  const quad = (p, q, r, s_) => {
+    // flat normal facing away from the box's middle (the outer face's normal is the panel's right, the inner its left)
+    const e1 = [q[0] - p[0], q[1] - p[1], q[2] - p[2]], e2 = [s_[0] - p[0], s_[1] - p[1], s_[2] - p[2]];
+    let n = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+    const c = [(p[0] + r[0]) / 2 - (x0 + x1 + nx) / 2, (p[1] + r[1]) / 2 - (ya0 + ya1 + yb0 + yb1) / 4, (p[2] + r[2]) / 2 - (z0 + z1 + nz) / 2];
+    if (n[0] * c[0] + n[1] * c[1] + n[2] * c[2] < 0) { n = n.map((v) => -v); [q, s_] = [s_, q]; }
+    const m = Math.hypot(...n) || 1;
+    for (const v of [p, q, r, p, r, s_]) { P.push(...v); N.push(n[0] / m, n[1] / m, n[2] / m); }
+  };
+  quad(a0, b0, b1, a1);                              // the face towards the pit
+  quad(o(a0), o(b0), o(b1), o(a1));                  // the outer face
+  quad(a1, b1, o(b1), o(a1));                        // the top
+  quad(a0, a1, o(a1), o(a0));                        // the ends
+  quad(b0, b1, o(b1), o(b0));
 }
 
 // Thin vertical panels laid end to end (a rail, a wall round a curve) each
@@ -686,6 +751,17 @@ function buildStands(data, {
     const own = materials.levelRail?.[L.name];
     for (const [x0, z0, x1, z1, ya0, ya1, yb0, yb1] of slopedRuns(L.rails)) panel4(own ? 'own' : 'rail', x0, z0, x1, z1, ya0, ya1, yb0, yb1);
     if (own && panels.own[0].length) { g.add(new THREE.Mesh(mkPanels(panels.own), own)); panels.own = [[], []]; }
+    // the partitions beside a gate's pit and its stairs' cuts: solid, `gateRailT` thick
+    if (L.gateRails?.length) {
+      const gp = [], gn = [];
+      for (const r of slopedRuns(L.gateRails.map(([x0, z0, x1, z1, y0, y1]) => [x0 + ox, z0 + oz, x1 + ox, z1 + oz, y0, y1]))) thickPanel(gp, gn, r, L.gateRailT ?? 0.25);
+      if (gp.length) {
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(gp, 3));
+        geo.setAttribute('normal', new THREE.Float32BufferAttribute(gn, 3));
+        const m = new THREE.Mesh(geo, railMat); m.receiveShadow = true; g.add(m);
+      }
+    }
     if (L.partitions?.length) {
       const pp = [];
       for (const [x0, z0, x1, z1, y0, y1] of L.partitions) {
