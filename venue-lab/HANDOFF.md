@@ -50,13 +50,19 @@ Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
   * the price: the walkway stands 6.2-6.4 m up along fingers 12-24 (5.4 m in the building's section; the A rows' rake
     0.27 m/m, the B rows' the same), 8-9 m at the poles, the first rows of fingers 1-4 4.6-3.0 m (the outfield fence's
     4.6 m, then down to the section's 0.9 m by finger 8); the backs held at the concourse's height.
+- **The balcony's and the 2nd floor's fronts round each pole** (`td_upper.py`): the fronts (an iso-line of the hull
+  distance less `tau`) ran as an S, in from the lines' arc, a stretch nearly straight along the pole's corner, in again
+  along the outfield wall: a bulge up to 3 m towards the field at 90-98 degrees. `_FC`, `_FD` add to `tau` what moves each
+  front onto the smoothest curve r(theta) that stays 6.5 m off the field (the balcony up to 2.1 m back, the 2nd floor 2.5 m,
+  both 1.3 m forward at 84 degrees, nothing before 80 or after 104). The rings are laid by `td_gen.py`, so it runs again
+  (3 minutes; it rewrites the tracked `td_seats1F.npy`: restore that with git): seats C 2016 (2044), D 4656 (4688).
 - **Fence** colour darker (`0x0b2a1a`, `j-dome.js`).
 - Checked: walk-flood A, B, F, C, D, E, G 100 % (`reachtest.mjs dome 0,104 1.0`, `reachcheck.py`); 14/14 vomitories
   (`vomtest.mjs`); the walker climbs all 10 gates' stairs to the concourse; renders of the poles' aisles, the gates, the
   pillars, the fence and the stand's slope from the front row and from the back.
 - Outfield: the map has no gate-pattern blocks there (the outfield's F blocks have only the pillar notches at circles
   52-58).
-- Regenerate: `cd pipeline && python3 td_build.py` (5 minutes), `python3 pipeline/mkdata.py td && node build.mjs`, and to the
+- Regenerate: `cd pipeline && python3 td_gen.py` (only if `td_upper.py` changed), `python3 td_build.py` (5 minutes), `python3 pipeline/mkdata.py td && node build.mjs`, and to the
   app `node gen.mjs <dir>`, copying `stands.js`, `venues/td-data.js` and `venues/dome.js` to `src/three/`.
 
 ## Round 17: Tokyo Dome's whole 1st floor block by block; the entrances where the map puts them; the upper decks' aisles
