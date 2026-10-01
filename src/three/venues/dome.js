@@ -222,7 +222,7 @@ export function buildDome(ctx) {
     const h = ringH[best], run = 0.28, len = Math.ceil(h / 0.2) * run;
     root.add(stageSteps({ x: p.x - ux * (len + 0.2), z: p.z - uz * (len + 0.2), h, dir: [ux, uz], width: 1.6 }));
   }
-  root.add(new THREE.Mesh(padGeo, std({ color: 0x0f3a24, roughness: 0.8 })));
+  root.add(new THREE.Mesh(padGeo, std({ color: 0x0b2a1a, roughness: 0.8 })));
   // the low padded fence (1.0 m) in front of the excite seats, where the
   // field's edge runs out ahead of the fence behind them
   {
@@ -232,7 +232,7 @@ export function buildDome(ctx) {
       for (let t = 0; t < len; t += 0.5) pts.push({ x: a.x + (b.x - a.x) * t / len, z: a.z + (b.z - a.z) * t / len });
     }
     const off = pts.map((p) => { let m = Infinity; for (const q of ringPts) m = Math.min(m, (q.x - p.x) ** 2 + (q.z - p.z) ** 2); return m > 1.2 * 1.2; });
-    const lowMat = std({ color: 0x0f3a24, roughness: 0.8 });
+    const lowMat = std({ color: 0x0b2a1a, roughness: 0.8 });
     let run = [];
     const flush = () => { if (run.length > 3) { const g = wallStrip(run, run.map(() => 1.0), { thick: 0.22, ease: 0 }); if (g) root.add(new THREE.Mesh(g, lowMat)); } run = []; };
     pts.forEach((p, i) => { if (off[i]) run.push(p); else flush(); });

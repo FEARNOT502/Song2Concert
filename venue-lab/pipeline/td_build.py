@@ -233,11 +233,44 @@ field_out=lab_==(1+int(np.argmax(st_[1:,4])))
 # side's mirror image). The outfield's F blocks keep their rows from the fence,
 # cut to their outlines. ──
 import td_stand1 as T1
+from shapely.ops import unary_union
+import shapely
 _A_ch,_B_ch,_F_ch=T1.chart_blocks(_labc,BOXL,BOXN,G)
 _frames={b['blk']:(b['f'],b['sA']) for b in ra['blocks'] if b['poly'].mean(0)[0]>0 or b['blk']==25}
 S1=T1.build(G,_A_ch,_B_ch,_F_ch,_frames,hull1>0,field|EX)
+# The fingers' heights, fitted so that the stand is continuous across every aisle
+# between blocks and into the outfield stand (td_stand1.fit_profiles_balanced): the
+# section climbs from the infield's (A 0.17 m a row) to the outfield's (0.33 m) over
+# the fingers before each pole, the change shared out evenly over the twelve aisles
+# nearest it (a mean step of 0.1 m at each) instead of left to the poles' few short ones
+_FhF=np.where(S1['zoneF'],np.minimum(C1F,H_F+_riseF*np.floor(_dFence/0.74)),np.nan).astype(np.float32)
+_profs=T1.fit_profiles_balanced(G,S1,_FhF)
+T1.apply_profiles(S1,_profs)
+_st=T1.seam_steps(S1,T1.seam_pairs(G,S1,_FhF)); _cn=sum(v[0] for v in _st.values())
+print('steps across the aisles: mean %.3f m, the largest %.2f m (between fingers); into the outfield stand: mean %.2f, largest %.2f m'%(
+    sum(v[0]*v[1] for v in _st.values())/_cn,max(v[3] for k,v in _st.items() if -1 not in k),
+    np.mean([v[1] for k,v in _st.items() if -1 in k]),max(v[3] for k,v in _st.items() if -1 in k)))
+# The gates (td_stand1.gate_sites): the ten places where the map widens the aisle between two B blocks;
+# each is a pit open to the walkway, a tunnel under the rows, then a stair cut up through the stand's back to the door of the
+# aisle's entrance (the 1st-floor circle whose aisle it is: the nearest to where the stair comes out)
+PILLAR_R=0.55
+def _on_stand(p):
+    i_,j_=[int(round(float(c))) for c in G.g(p[0],p[1])]
+    return 0<=i_<G.W and 0<=j_<G.H and S1['band'][j_,i_]>=0
+_sites=T1.gate_sites(_B_ch,S1['fingers'],_on_stand,[(q_[0],q_[1],PILLAR_R) for q_ in ENT1])
+_gate_of={}
+for _s in _sites:
+    _w=_s['a']*_s['t_top']+_s['u']*_s['s_c']; _d=np.hypot(*(ENT1-_w).T); _i=int(np.argmin(_d))
+    assert _d[_i]<12.0 and ENT1N[_i] not in _gate_of, ('gate without its entrance',_s['pair'],_d[_i])
+    _gate_of[ENT1N[_i]]=_s
+print('gates',len(_sites),{n_:'B%d|B%d%+d'%(s_['pair'][0],s_['pair'][1],s_['side']) for n_,s_ in sorted(_gate_of.items())})
 _lv=T1.split_levels(S1)
 _S1seats,_S1row,_S1yaw=T1.lay_seats(G,S1)
+# no seat over a pit or a stair's cut
+_gz=unary_union([s_['pit'] for s_ in _sites]+[s_['trench'] for s_ in _sites]).buffer(0.25)
+_kg=~shapely.contains_xy(_gz,_S1seats[:,0],_S1seats[:,1])
+print('seats over the gates dropped',int((~_kg).sum()))
+_S1seats,_S1row,_S1yaw=_S1seats[_kg],_S1row[_kg],_S1yaw[_kg]
 _S1kind=np.array([S1['meta'][i][1] for i in _S1row])
 _dFE=(cv2.distanceTransform((~(field|EX)).astype(np.uint8),cv2.DIST_L2,5)*G.res).astype(np.float32)
 def _shell(name,D,lv,kinds,rows_fn):
@@ -252,7 +285,7 @@ def _shell(name,D,lv,kinds,rows_fn):
     l.rows_out=rows_fn; l.aisles_out=lambda: []
     return l
 A=_shell('A',0.74,_lv['A'],'A',lambda: T1.rows_out(G,S1,_lv['A']))
-B=_shell('B',0.748,_lv['B'],'B',lambda: T1.rows_out(G,S1,_lv['B']))
+B=_shell('B',0.748,_lv['B'],'B',lambda: T1.rows_out(G,S1,_lv['B'],sites=_sites))
 # the outfield: rows from the fence as before, on the cells of the F blocks' outlines
 F=LV['F']
 F.R=S1['zoneF'].astype(np.uint8)
@@ -400,6 +433,9 @@ AX1=T1.aisle_axes(S1,ENT1,_dFence,G)
 DOORS1=[]; DOOR1=[]        # DOOR1: (entrance number, door, the axis out of the stand, the wall's point)
 for n_,q,a_ in zip(ENT1N,ENT1,AX1):
     last=None; door=None; wall=None
+    if n_ in _gate_of:
+        # a gate's stair comes up through the wall along the gate's own axis, not the aisle's
+        g_=_gate_of[n_]; a_=g_['a']; q=g_['a']*float(q@g_['a'])+g_['u']*g_['s_c']
     for k_ in range(-120,320):       # from 12 m in front of the circle (behind home, the wall is 7 m before it)
         pp=q+a_*(k_*0.1); i_,j_=[int(round(float(c))) for c in G.g(pp[0],pp[1])]
         if 0<=i_<G.W and 0<=j_<G.H and c1[j_,i_]: last=pp
@@ -432,11 +468,12 @@ rooms[0]['walk']=WALK
 trim_tunnels(G,VOMS['E'],c2)
 encl,roomtop=enclose(G,rooms,list(LV.values()),slabs,flights)
 print('enclose',round(time.time()-t_,1),{k:len(v) for k,v in encl.items()})
-# no rail or wall where one stand of the 1st floor meets another near level
+# no rail or wall where one stand of the 1st floor meets another near level (within 0.9 m: the
+# step between two blocks' rows at an aisle, up to 0.75 m round the poles, is a step, not a drop)
 # (and none along the field's edge or the excite seats': the fence is the
 # barrier there, the stands' fronts coming up to its top)
 FENCEZ=cv2.dilate((field_out|EX|(Gx.R>0)).astype(np.uint8),disk(0.6/G.res))>0
-skip=lambda ox,oy,h: roomtop[oy,ox]>=h+1.0 or (TOP1[oy,ox]>0 and abs(h-TOP1[oy,ox])<=0.6) or (WALK[oy,ox] and abs(h-C1F)<=0.6) or FENCEZ[oy,ox]
+skip=lambda ox,oy,h: roomtop[oy,ox]>=h+1.0 or (TOP1[oy,ox]>0 and abs(h-TOP1[oy,ox])<=0.9) or (WALK[oy,ox] and abs(h-C1F)<=0.6) or FENCEZ[oy,ox]
 fronts={'C':('tread',0.8),'D':('tread',0.8)}
 levels=[]
 spec={'K':((c1,C1F),(cross,H_A+R_A*25)),'G':(),'A':((cross,H_A+R_A*25),),'B':((c1,C1F),),'F':((c1,C1F),),'P':((c1,C1F),),'C':((cb,CBAL),),'D':((c2,C2F),),'E':((c2,C2F),)}
@@ -446,6 +483,7 @@ for name,l in LV.items():
     drs=DOORS1 if name in ('B','F','P') else l.aisle_doors()
     rails,walls=edge_walls(G,l,outside_fn(spec[name]),drs,flush=flushmode[name],skip=skip,front=fronts.get(name),**({'door_w':2.0} if drs is DOORS1 else {}))
     if fronts.get(name): rails+=front_parapet(G,l,fronts[name])
+    if name=='B': rails=rails+[r_ for s_ in _sites for r_ in s_['rails']]
     levels.append({'name':name,'D':l.D,'h0':l.h0,'rise':l.rise,**({'hs':[round(float(v),3) for v in l.hs]} if l.hs is not None else {}),'rows':l.rows_out(),'steps':l.aisles_out(),'holes':[],'voms':VOMS.get(name,[]),
                    'seats':l.seats_out(),'rails':rails,'walls':walls})
     print(name,'rows',len(levels[-1]['rows']),'steps',len(levels[-1]['steps']),'holes',len(levels[-1]['holes']),'rails',len(rails),'walls',len(walls))
@@ -467,6 +505,11 @@ sm=(np.abs(dOut-(C0W+0.2))<0.06)&(np.abs(TH)<SUITE_TH-0.5)
 ys_,xs_=np.nonzero(sm); SX,SZ=G.m(xs_,ys_); oo=np.argsort(TH[ys_,xs_])
 suite_line=[[round(float(SX[i]),2),round(float(SZ[i]),2)] for i in oo[::15]]
 floors=[{'y':y,'y0':y0,'polys':mask_polys(G,m)} for m,y0,y in slabs]
+_trU=unary_union([s_['trench'] for s_ in _sites])
+for _f in floors+encl['lit']:               # (the concourse's lit floor is a sheet of its own, 1 cm over the slab: the walker stands on it)
+    if abs(_f['y']-C1F)<1e-6 and _f.get('y0',0.0)<0.01:
+        _g=T1._geom_of(_f['polys'])
+        if _g.intersects(_trU): _f['polys']=T1._polys_of(_g.difference(_trU))
 # the aisle stairs at the poles: each flight on a solid base up to its
 # first tread (the stand is solid concrete under it), a handrail each side
 aisle_flights=[]
@@ -505,61 +548,35 @@ fnw=[[np.c_[G.m(c_[:,0],c_[:,1])]]]
 # the 2nd floor's front edge, for the lights along it
 fy,fx=np.nonzero(D.F); FX,FZ=G.m(fx,fy); ang=np.arctan2(FX-O[0],FZ-O[1]); o=np.argsort(ang)
 rim=[[round(float(FX[i]),1),round(float(FZ[i]),1)] for i in o[::40]]
-# the numbers over the 1st floor's doors (the aisle number on a ticket): a
-# plate on each face of the wall, over the opening, on the wall's own line. Where
-# the concourse has a wall of its own (the lintel panels over the opening, from
-# 2.5 m up) that line is fitted through the panels' ends within 1.8 m of the
-# door; behind the outfield, where the walkway runs on to the building's outer
-# wall and there is none, it is the outer wall's nearest edge, and the door is
-# a leaf on the wall, facing the stand (a door to the street: nothing to see
-# through it)
-_lint=np.array([w for w in encl['walls'] if abs(w[4]-(C1F+2.5))<0.03 and w[5]-w[4]>0.5],float).reshape(-1,6)
-def _smooth_ring(ring,sig=2.5):
-    """The outer wall as the renderer draws it (smoothRing in d3-stands.js: the ring
-    resampled every 0.5 m and Gaussian-smoothed along its length, before its
-    Douglas-Peucker pass, which moves it 0.08 m at most)."""
-    n=len(ring)
-    if n<8: return ring
-    nxt=np.roll(ring,-1,axis=0); seg=np.hypot(*(nxt-ring).T); T=np.r_[0,np.cumsum(seg)]; L=T[-1]; m=max(16,int(round(L/0.5)))
-    t=np.arange(m)/m*L; k=np.clip(np.searchsorted(T,t,side='right')-1,0,n-1); f=(t-T[k])/np.maximum(seg[k],1e-9)
-    P=ring[k]+(nxt[k]-ring[k])*f[:,None]
-    h=max(1,int(round(sig/0.5*3))); w=np.exp(-0.5*(np.arange(-h,h+1)*0.5/sig)**2); w/=w.sum()
-    return np.c_[[np.convolve(np.r_[P[-h:,c],P[:,c],P[:h,c]],w,mode='valid') for c in (0,1)]].T
-_rings=[_smooth_ring(np.asarray(poly_out(q)[0],float)) for q in ow]
-def _wall_line(w_):
-    if len(_lint):
-        P0,P1=_lint[:,0:2],_lint[:,2:4]; D_=P1-P0; L2=(D_**2).sum(1)
-        t_=np.clip(((w_-P0)*D_).sum(1)/np.maximum(L2,1e-9),0,1); dist=np.hypot(*(P0+D_*t_[:,None]-w_).T)
-        ok=np.nonzero(dist<1.8)[0]
-        if len(ok):
-            Q=np.r_[P0[ok],P1[ok]]; c=Q.mean(0); vt=np.linalg.svd(Q-c)[2]
-            return c,np.array([-vt[0][1],vt[0][0]]),False
-    best=None
-    for r in _rings:
-        P0=r; P1=np.roll(r,-1,axis=0); D_=P1-P0; L2=(D_**2).sum(1)
-        t_=np.clip(((w_-P0)*D_).sum(1)/np.maximum(L2,1e-9),0,1); C_=P0+D_*t_[:,None]; dist=np.hypot(*(C_-w_).T)
-        k=int(np.argmin(dist))
-        if best is None or dist[k]<best[0]:
-            near=np.hypot(*(r-C_[k]).T)<1.3                  # the wall's own points about it: a line through them
-            Q=r[near] if near.sum()>=2 else r[[k,(k+1)%len(r)]]; c=Q.mean(0); vt=np.linalg.svd(Q-c)[2]
-            best=(dist[k],c,np.array([-vt[0][1],vt[0][0]]))
-    return best[1],best[2],True
-SIGNS=[]; LEAVES=[]
+# The 1st floor's circles are columns (the map marks each as a numbered circle at the head of an
+# aisle; the building's photographs show a column there with the aisle's number on it, and the end of the aisle
+# an open entrance): a round pillar at each, up to the ceiling where there is one, a plate with the number on
+# either side of it (one to the stand, one to the concourse), the way between it and the nearest wall kept wide
+# enough to walk through (0.8 m: the circles' centres stand 1.0-1.9 m out from the wall, a few at its corners).
+PILLARS=[]; SIGNS=[]
+_WS=np.array([w for w in encl['walls'] if abs(w[4]-C1F)<0.05],float).reshape(-1,6)      # the concourse's wall panels (the lintels over its openings are not in the way)
+def _off_the_wall(q):
+    """q moved away from the nearest wall panel until the way between it and the pillar is 0.8 m (a few passes: the corners)"""
+    for _ in range(8):
+        P0,P1=_WS[:,0:2],_WS[:,2:4]; D_=P1-P0; t_=np.clip(((q-P0)*D_).sum(1)/np.maximum((D_**2).sum(1),1e-9),0,1); C_=P0+D_*t_[:,None]
+        dist=np.hypot(*(C_-q).T); k_=int(np.argmin(dist))
+        if dist[k_]-PILLAR_R>=0.8: break
+        v_=q-C_[k_]; v_=v_/(np.linalg.norm(v_)+1e-9); q=q+v_*(PILLAR_R+0.8-dist[k_]+0.02)
+    return q
 for n_,d_,a_,w_ in DOOR1:
-    c_,nrm,leaf=_wall_line(w_)
-    if np.dot(nrm,a_)<0: nrm=-nrm              # the normal out of the stand
-    yaw=float(np.arctan2(nrm[0],nrm[1]))
-    for face,off in ((1,0.06),(-1,-0.06)):        # away from the stand; towards it
-        # (the outer wall as drawn is the ring smoothed and simplified again: it can stand 0.1 m off the line fitted to it)
-        q_=c_+nrm*off*(2.4 if leaf else 1.0)
-        SIGNS.append({'x':round(float(q_[0]),2),'y':round(C1F+3.0,2),'z':round(float(q_[1]),2),'yaw':round(yaw if face>0 else yaw+np.pi,3),'w':1.2,'label':str(n_)})
-    if leaf:
-        q_=c_-nrm*0.10
-        LEAVES.append({'x':round(float(q_[0]),2),'y':C1F,'z':round(float(q_[1]),2),'yaw':round(yaw+np.pi,3),'w':2.0,'h':2.5})
-print('signs',len(SIGNS),'; door leaves on the outer wall:',len(LEAVES),[int(s['label']) for s in SIGNS[::2] if any(abs(l['x']-s['x'])<0.3 and abs(l['z']-s['z'])<0.3 for l in LEAVES)])
+    q_=_off_the_wall(ENT1[ENT1N.index(n_)].copy())
+    i_,j_=[int(round(float(c))) for c in G.g(q_[0],q_[1])]
+    y0=max(float(TOP1[j_,i_]),C1F if c1[j_,i_] else 0.0) or C1F
+    rt=float(roomtop[j_,i_])
+    y1=y0+(4.0 if np.isfinite(rt) and rt>y0+2.5 else 5.4)       # up to the concourse's ceiling (4 m over its floor), or 5.4 m where it is open to the dome
+    PILLARS.append({'x':round(float(q_[0]),2),'z':round(float(q_[1]),2),'r':PILLAR_R,'y0':round(y0,2),'y1':round(y1,2)})
+    yaw=float(np.arctan2(a_[0],a_[1]))
+    for face in (0,np.pi):          # to the concourse (out of the stand), to the stand
+        SIGNS.append({'x':round(float(q_[0]),2),'y':round(y0+2.2,2),'z':round(float(q_[1]),2),'yaw':round(yaw+face,3),'w':1.1,'r':PILLAR_R,'label':str(n_)})
+print('pillars',len(PILLARS),'; the furthest one moved off its circle %.2f m'%max(np.hypot(*(np.array([p_['x'],p_['z']])-ENT1[ENT1N.index(n_)])) for p_,(n_,_,_,_) in zip(PILLARS,DOOR1)))
 # (the building's own outer wall stands behind the outfield, up to the
 # membrane's edge: no separate wall of the outfield's own)
-data={'suites':{'line':suite_line,'y':H_C-0.4,'h':3.6,'depth':3.4},'levels':levels,'floors':floors,'flights':flights+aisle_flights,'outer':[poly_out(p) for p in ow],'field':[poly_out(p) for p in fw],'fence':[poly_out(p) for p in fnw],'rim':rim,'rimY':H_D,'rooms':encl,'signs':SIGNS,'leaves':LEAVES}
+data={'suites':{'line':suite_line,'y':H_C-0.4,'h':3.6,'depth':3.4},'levels':levels,'floors':floors,'flights':flights+aisle_flights,'outer':[poly_out(p) for p in ow],'field':[poly_out(p) for p in fw],'fence':[poly_out(p) for p in fnw],'rim':rim,'rimY':H_D,'rooms':encl,'signs':SIGNS,'pillars':PILLARS,'gateLamps':[{'x':l_[0],'y':l_[1],'z':l_[2],'yaw':l_[3]} for s_ in _sites for l_ in s_['lamps']]}
 json.dump(data,open('td_stands.json','w'),separators=(',',':'))
 import os; print('json KB',os.path.getsize('td_stands.json')//1024, round(time.time()-T0,1))
 

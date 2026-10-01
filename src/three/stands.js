@@ -90,8 +90,9 @@ export function vomSignTexture(label, bg = '#15181f', fg = '#f2f2ee', aisle = fa
   return t;
 }
 
-// The numbers over the doors (data.signs: {x, y, z, yaw, w, label}, a plate
-// facing (sin yaw, cos yaw)), every plate of them on one sheet and in one mesh.
+// The aisle numbers (data.signs: {x, y, z, yaw, w, label}, a plate facing (sin yaw,
+// cos yaw); with `r` it is bent round a pillar of that radius about (x, z), w the
+// arc's length), every plate of them on one sheet and in one mesh.
 export function signSheet(list, ox, oz, bg = '#15181f', fg = '#f2f2ee') {
   const labels = [...new Set(list.map((s) => s.label))];
   const cols = 8, cw = 256, ch = 96, rows = Math.ceil(labels.length / cols);
@@ -106,7 +107,20 @@ export function signSheet(list, ox, oz, bg = '#15181f', fg = '#f2f2ee') {
     const i = labels.indexOf(s.label);
     const u0 = ((i % cols) * cw) / c.width, u1 = u0 + cw / c.width;
     const v1 = 1 - (Math.floor(i / cols) * ch) / c.height, v0 = v1 - ch / c.height;
-    const rx = Math.cos(s.yaw) * s.w / 2, rz = -Math.sin(s.yaw) * s.w / 2, hh = (s.w * ch / cw) / 2;
+    const hh = (s.w * ch / cw) / 2;
+    if (s.r) {
+      // round a pillar: a strip of segments along the arc (the angle runs the way the plate's u does, to the right of a viewer facing it)
+      const seg = 10, rs = s.r + 0.012, span = s.w / s.r;
+      for (let k = 0; k < seg; k++) {
+        const t0 = k / seg, t1 = (k + 1) / seg, a0 = s.yaw + (t0 - 0.5) * span, a1 = s.yaw + (t1 - 0.5) * span;
+        const p0 = [s.x + ox + rs * Math.sin(a0), s.z + oz + rs * Math.cos(a0)], p1 = [s.x + ox + rs * Math.sin(a1), s.z + oz + rs * Math.cos(a1)];
+        const ua = u0 + (u1 - u0) * t0, ub = u0 + (u1 - u0) * t1;
+        const q = [[p0[0], s.y - hh, p0[1], ua, v0], [p1[0], s.y - hh, p1[1], ub, v0], [p1[0], s.y + hh, p1[1], ub, v1], [p0[0], s.y + hh, p0[1], ua, v1]];
+        for (const j of [0, 1, 2, 0, 2, 3]) { P.push(q[j][0], q[j][1], q[j][2]); U.push(q[j][3], q[j][4]); }
+      }
+      continue;
+    }
+    const rx = Math.cos(s.yaw) * s.w / 2, rz = -Math.sin(s.yaw) * s.w / 2;
     const x = s.x + ox, z = s.z + oz;
     const q = [[x - rx, s.y - hh, z - rz, u0, v0], [x + rx, s.y - hh, z + rz, u1, v0], [x + rx, s.y + hh, z + rz, u1, v1], [x - rx, s.y + hh, z - rz, u0, v1]];
     for (const k of [0, 1, 2, 0, 2, 3]) { P.push(q[k][0], q[k][1], q[k][2]); U.push(q[k][3], q[k][4]); }
@@ -119,31 +133,16 @@ export function signSheet(list, ox, oz, bg = '#15181f', fg = '#f2f2ee') {
   return m;
 }
 
-// A door leaf on a wall with no opening behind it (data.leaves: {x, y, z, yaw, w,
-// h}, y the floor, a leaf facing (sin yaw, cos yaw)): a dark plate with a lighter
-// frame round it, all in one mesh.
-export function doorLeaves(list, ox, oz) {
-  const P = [], C = [];
-  const quad = (x, y0, y1, z, rx, rz, col) => {
-    const q = [[x - rx, y0, z - rz], [x + rx, y0, z + rz], [x + rx, y1, z + rz], [x - rx, y1, z - rz]];
-    for (const k of [0, 1, 2, 0, 2, 3]) { P.push(...q[k]); C.push(...col); }
-  };
-  for (const l of list) {
-    const rx = Math.cos(l.yaw) * l.w / 2, rz = -Math.sin(l.yaw) * l.w / 2, fx = Math.sin(l.yaw) * 0.02, fz = Math.cos(l.yaw) * 0.02;
-    const x = l.x + ox, z = l.z + oz;
-    quad(x, l.y, l.y + l.h, z, rx, rz, [0.03, 0.032, 0.04]);
-    // the frame: a lighter bar over the leaf and a post either side, proud of it
-    quad(x + fx, l.y + l.h - 0.12, l.y + l.h, z + fz, rx + 0.1 * Math.cos(l.yaw), rz - 0.1 * Math.sin(l.yaw), [0.62, 0.6, 0.56]);
-    for (const sg of [-1, 1]) {
-      const cx = x + fx + rx * sg, cz = z + fz + rz * sg, px = Math.cos(l.yaw) * 0.05, pz = -Math.sin(l.yaw) * 0.05;
-      quad(cx, l.y, l.y + l.h, cz, px, pz, [0.62, 0.6, 0.56]);
-    }
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
-  geo.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
-  const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }));
-  m.userData.noCollide = true;
+// The columns at the heads of the 1st floor's aisles (data.pillars: {x, z, r, y0, y1}):
+// round, in one mesh.
+export function pillars(list, ox, oz, mat) {
+  const parts = list.map((p) => {
+    const g = new THREE.CylinderGeometry(p.r, p.r, p.y1 - p.y0, 24, 1, false);
+    g.translate(p.x + ox, (p.y0 + p.y1) / 2, p.z + oz);
+    return g.toNonIndexed();
+  });
+  const m = new THREE.Mesh(mergeGeometries(parts), mat);
+  m.receiveShadow = true;
   return m;
 }
 
@@ -681,6 +680,7 @@ export function buildStands(data, {
         panel(lit ? 'mouth' : 'wall', x0, z0, x1, z1, h.floor, Math.max(h.tops[i], h.tops[j]) + 0.95);
       }
     }
+    for (const l of L.name === 'B' ? data.gateLamps || [] : []) voms.lamps.push([l.x + ox, l.y, l.z + oz, l.yaw]);
     for (const v of L.voms || []) {
       const p = vomParts(v, ox, oz);
       voms.pit.push(...p.pit); voms.cap.push(...p.cap); voms.tunnel.push(...p.tunnel);
@@ -799,7 +799,7 @@ export function buildStands(data, {
     g.add(m);
   }
   if (data.signs?.length) g.add(signSheet(data.signs, ox, oz, materials.signBg, materials.signFg));
-  if (data.leaves?.length) g.add(doorLeaves(data.leaves, ox, oz));
+  if (data.pillars?.length) g.add(pillars(data.pillars, ox, oz, lit ? lit.inMat : wallMat));
   // seats: instanced per colour, or handed to the venue's own seat
   const lights = lit ? roomLights(data, { ox, oz, lit }) : null;
   const update = (f) => lights?.update(f);

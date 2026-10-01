@@ -2,6 +2,60 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 18: Tokyo Dome's gates, the pillars, the junction of the infield and the outfield stands
+- **B24** was only half drawn (its two outlines in `td_labeled.json` overlap and leave out the wide part of its L behind
+  home): `chart_blocks` takes it from the map's flood-filled box (`BOXL`, the ink's inside; 0.16 m back out).
+- **Gates** (`td_stand1.gate_sites`, `carve_gates`). The map widens the aisle between two B blocks every third aisle
+  (B11|12, 14|15, 17|18, 20|21 on each side of the field, and B23|24 / B26|27 behind home: 10 gates in all, the entrances
+  12 15 18 21 24 | 25 28 31 34 37) from 1.6 m to 3.4 m wide (4.5 behind home) for 8-9 rows behind the walkway. Photographs
+  of the real dome show a gate at each, so the widening is a **pit** open to the walkway (the rows there stand too low to
+  walk under), then a **tunnel** 1.8 m wide under the rows (their own slab its roof, 0.25 m, the floor a stair a tread to a
+  row that climbs as the rows do, 2.1 m of headroom), and where the rows leave too little height over the floor an **open
+  stair cut** up through the back of the stand to the door in the concourse's wall (the aisle's). The tunnels come out
+  short (1-3 m): the B rows next to the walkway rise 0.19-0.20 m a row (the fitted section, below), so it takes 12-14 rows
+  of pit before a floor that climbs a tread a row has 2.1 m under the next slab, and the rest of the way is the open cut. Behind home the stand is
+  too shallow for that and the stair runs on out through the wall into the concourse (up to 4.5 m, as long as no column is
+  in the way). Rails 1 m high along the pit's and the cut's sides; lamps in the tunnels (`data.gateLamps`). The pit's cells
+  are cut out of the B level's rows (`rows_out(..., sites=)`), the stair's out of the concourse floor (the `floors` entry
+  and the walkable `encl['lit']` sheet both: a floor sheet left over the stair stopped the walker at the wall); 85 seats
+  over them go. The door of the aisle stands on the gate's axis (the gate defines it). Checked on foot (`x-walk.js`'s
+  walker, started in the pit of each gate and sent along the gate's own waypoints): all 10 stairs climb to the concourse
+  (y 10.61); on 5 of them the last waypoint, on the straight line to the door, is 0.4-0.5 m short because a column stands
+  on that line.
+- **Pillars instead of door plates.** The map's 58 numbered circles on the 1st floor are columns (the reference photographs
+  show a column at the head of each aisle with its number on it; the aisle's end is an open entrance): `data.pillars`, one
+  round pillar of 0.55 m radius at each circle (moved at most 1.15 m out where it stood closer than 0.8 m to the wall in
+  front of the door), 4 m high under the concourse's ceiling and 5.4 m where it is open to the dome, the number on a plate
+  bent round it on each side (`signSheet` with `r`; the plates on the wall and the outfield's door leaves are gone).
+- **The junction of the infield and the outfield stands, and every aisle between blocks.** The rows are now the same
+  continuous curve across every aisle: `warp_rows` bends each finger's rows (a parabola in its lateral coordinate) so that
+  the row coordinate and its direction run on across every seam, and into the outfield's rows (level with the fence),
+  instead of the map's straight rows with a kink of 4-7 degrees at each aisle (position mismatch 0.28 -> 0.05 m, direction
+  0.6 degrees rms). The wedge at each pole (A01, A49) counted its rows from a walkway line 5 rows off its neighbour's: moved
+  (`build`). No rail where two blocks of the 1st floor meet within 0.9 m (they were tan panels 1 m high standing on every
+  step of 0.6-0.75 m: the "odd polygons" at the junction).
+- **Heights: one smooth section along every finger, and the steps between blocks shared out evenly.** A knot every 1.5 m
+  along each finger (`Finger`, `KNOT`), fitted (`fit_profiles`) for the smallest step across every aisle and into the
+  outfield's rows, with
+  * **no change of slope along a finger**: the building's section is now one curve through the front row, the walkway
+    (5.4 m) and the back (10.6 m), a quadratic whose rake grows evenly (0.17 -> 0.37 m/m), not two straight pieces
+    (A 0.23 m/m, B 0.32) with a kink at the walkway (`Finger._lines`); and the fit keeps the rake smooth (`w_smooth` 100: it
+    changes by 0.04 m/m at the most between two 1.5 m segments of any finger, 0.36 before, 0.01 on the average; the A and B
+    parts' rakes at the walkway now differ by 0.03 on the average, 0.10 at the most);
+  * **the change from the outfield's steep rows to the infield's section shared out** over the twelve aisles nearest each
+    pole (`fit_profiles_balanced`: the weight of each seam raised in proportion to its step, ten times over, until all
+    twelve have the same mean, 0.16-0.18 m; it was 0.46, 0.38, 0.24 ... 0.04 along them, concentrated at the pole's few short
+    ones): mean step across all aisles 0.10 m, 0.40 m at the most (between fingers); into the outfield's rows 0.11 m, 0.50
+    at the most (`w_F` 10);
+  * the price: the walkway stands 6.2-6.4 m up along fingers 12-24 (5.4 m in the building's section; the A rows' rake
+    0.27 m/m, the B rows' the same), 8-9 m at the poles, the first rows of fingers 1-4 4.6-3.0 m (the outfield fence's
+    4.6 m, then down to the section's 0.9 m by finger 8); the backs held at the concourse's height.
+- **Fence** colour darker (`0x0b2a1a`, `j-dome.js`).
+- Outfield: the map has no gate-pattern blocks there (the outfield's F blocks have only the pillar notches at circles
+  52-58).
+- Regenerate: `cd pipeline && python3 td_build.py` (5 minutes), `python3 pipeline/mkdata.py td && node build.mjs`, and to the
+  app `node gen.mjs <dir>`, copying `stands.js`, `venues/td-data.js` and `venues/dome.js` to `src/three/`.
+
 ## Round 17: Tokyo Dome's whole 1st floor block by block; the entrances where the map puts them; the upper decks' aisles
 - **Every A, B and F block of the 1st floor is laid out as the map draws it**, not
   only the poles' (round 16's corner method for the whole floor: `td_stand1.py`
