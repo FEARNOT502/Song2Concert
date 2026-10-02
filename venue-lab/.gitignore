@@ -6,3 +6,4 @@ pipeline/__pycache__/
 pipeline/*.pkl
 shots/
 gen-out/
+pipeline/ssa/raw/
