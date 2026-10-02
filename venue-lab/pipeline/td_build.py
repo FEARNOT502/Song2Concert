@@ -241,16 +241,22 @@ S1=T1.build(G,_A_ch,_B_ch,_F_ch,_frames,hull1>0,field|EX)
 # The fingers' heights, fitted so that the stand is continuous across every aisle
 # between blocks and into the outfield stand (td_stand1.fit_profiles_balanced), with
 # every block from the 3rd (counted from each pole) on climbing at the one rake of the
-# real building's rows (0.27 m/m, A and B alike: `uniform`), the two corner blocks
-# beside the outfield stand each one straight slope of their own (`flat`) that meets the
-# outfield's rows (`w_F`) and the concourse (`w_hold`): what the steep outfield stand
-# and the infield's section do not agree on is the step at the corner's two aisles. The five
-# blocks behind home (21-25) are shallower than the rest: at the one rake their backs would end up
-# to 1.3 m under the concourse (a wall across every entrance there), so their backs are pulled up
-# to it (`w_back`) and their front rows stand higher instead, the aisles between them stepping 0.5-0.65 m
+# real building's rows (0.27 m/m, A and B alike: `uniform`). The five blocks behind home
+# (21-25) are shallower than the rest: at the one rake their backs would end up to 1.3 m
+# under the concourse (a wall across every entrance there), so their backs are pulled up to
+# it (`w_back`) and their front rows stand higher instead, the aisles between them stepping
+# 0.5-0.65 m. The corner (blocks 1-8 either side of the poles) is then refitted
+# (td_stand1.fit_straight): each block ONE straight slope, A and B alike (the first fit gave
+# the two nearest the pole a steep A and a flat B: a change of slope across every block, and
+# 1.2 m walls at their two aisles), the walkway rising towards the pole by about 0.35 m a
+# block and the rake from 0.27 to 0.39 m/m, so that the steps across the aisles are 0.26-0.34 m
+# all the way (0.8 m at the most) and the outfield stand's rows meet the first block's within 0.7 m.
+# What that costs is at the stand's back: the blocks that stand higher reach the concourse's
+# height before their back and run level to it (a landing 1.4-7.8 m deep on blocks 2-8).
 _FhF=np.where(S1['zoneF'],np.minimum(C1F,H_F+_riseF*np.floor(_dFence/0.74)),np.nan).astype(np.float32)
 _profs=T1.fit_profiles_balanced(G,S1,_FhF,uniform=(0.27,3000.0,3),flat=(500.0,0.0),nom_ramp=(1,2,0.0,0.0),w_hold=3000.0,w_F=100.0,
                                   w_back={**T1.POLE_BACK,**{n_:100.0 for n_ in range(21,26)}})
+_profs=T1.fit_straight(G,S1,_FhF,_profs,free=range(1,9),lam_F=1.0,over=(2.1,1.0))
 T1.apply_profiles(S1,_profs)
 _st=T1.seam_steps(S1,T1.seam_pairs(G,S1,_FhF)); _cn=sum(v[0] for v in _st.values())
 print('steps across the aisles: mean %.3f m, the largest %.2f m (between fingers); into the outfield stand: mean %.2f, largest %.2f m'%(

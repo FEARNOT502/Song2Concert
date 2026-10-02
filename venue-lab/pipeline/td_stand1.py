@@ -16,7 +16,8 @@
 # concourse (10.6 m). At the poles, where the infield's shallow 37 m stand meets
 # the outfield's steep 13 m one, the fingers' heights are fitted so that the step
 # across each aisle is small and the rake changes smoothly from one block to the
-# next (see fit_profiles).
+# next (see fit_profiles); the blocks beside the poles are then each given one
+# straight slope (fit_straight).
 import numpy as np, cv2
 from shapely.geometry import Polygon
 from shapely.ops import unary_union
@@ -503,6 +504,103 @@ def fit_profiles_balanced(G, res, Fh, zone=12, iters=10, gamma=0.6, lo=0.2, hi=2
         for k in zp: sw[k] = float(np.clip(0.5 * sw.get(k, 1.0) + 0.5 * new[k] / gm, lo, hi))
     for fg in F.values(): fg._lines()
     return fit_profiles(G, res, Fh, seam_w=sw, verbose=verbose, **kw)
+
+def fit_straight(G, res, Fh, profs, free=range(1, 9), lam_F=1.0, over=(2.1, 1.0), under=(0.3, 8.0), front=(0.5, 4.8),
+                 rake=(0.26, 0.5), smooth=(0.3, 3.0), step=2, verbose=True):
+    """The fingers `free` (their mirror images with them) each ONE straight slope, h = hw + r (u - uw)
+    (u from the front, uw the walkway's depth), the other fingers' profiles in `profs` held as they are.
+    The rows run on across every aisle, so the distance from the walkway is the same on both sides of
+    it and the step across an aisle is the plain difference of two such lines: linear in (hw, r). What the
+    corner's blocks cannot give each other without a wall at the aisle (their backs are 6.7 m, 11 m,
+    16.6 m behind the walkway, the outfield stand's rows climb 0.46 m/m) comes out as the wall, so this finds
+    the (hw, r) that keep the LARGEST wall across any aisle between fingers (T) and `lam_F` times the
+    largest across the aisle into the outfield stand (TF) as small as they can be (a linear program), with
+      - the back of a finger at the concourse: a finger whose line would pass it by more than `over[0]` m
+        costs `over[1]` per metre of it (the rows reach the concourse and run level to the back, the height
+        capped at C1F: a landing), one that stops more than `under[0]` m short of it `under[1]` per metre
+        (a step up at the entrance),
+      - the front row between `front` m (the outfield's fence is 4.6 m),
+      - a rake of at least `rake[0]` (the one rake of the real rows: no easing off towards the outfield) and
+        neither the walkway's height nor the rake rising from the pole towards the middle,
+      - hw and r changing smoothly from finger to finger (`smooth`: the weights of their second differences).
+    Returns `profs` with the free fingers' heights (at the finger's knots, as apply_profiles takes them)."""
+    from scipy.optimize import linprog
+    from scipy.sparse import csr_matrix
+    F = res['fingers']; NP = 25; free = sorted(free); NC = max(free)
+    fold = lambda k: k if k <= NP else 50 - k
+    # a pinned finger's own (hw, r) for the smoothness terms; its heights by interpolation for the steps
+    pin_hw = {n: float(np.interp(F[n].uw, F[n].ku, profs[n])) for n in range(1, NP + 1)}
+    pin_r = {n: float((profs[n][-1] - pin_hw[n]) / (F[n].ku[-1] - F[n].uw)) for n in range(1, NP + 1)}
+    ka, kb, pa, pb, fa, fb = seam_pairs(G, res, Fh, step=step)
+    def side(k, p, fh):
+        """per cell: the finger n it belongs to (0 for the outfield stand), the distance from the walkway
+        and the height the cell has already (pinned fingers', the outfield's)"""
+        n = np.zeros(len(k), int); rho = np.zeros(len(k)); h = np.array(fh, float)
+        for key in np.unique(k):
+            if key < 0: continue
+            m = k == key; fg = F[int(key)]; nn = fold(int(key)); u = np.clip(fg.cfront - fg.coord(p[m]), 0, fg.ku[-1])
+            n[m] = nn; rho[m] = u - fg.uw
+            h[m] = np.interp(u, fg.ku, profs[nn])
+        return n, rho, h
+    na, ra, ha = side(ka, pa, fa); nb, rb, hb = side(kb, pb, fb)
+    # the unknowns: hw[1..25], r[1..25] (the free fingers' are the free ones), T, TF, each back's shortfall and
+    # overshoot, the bounds of the second differences
+    iw = lambda n: n - 1; ir = lambda n: NP + n - 1; iT, iTF = 2 * NP, 2 * NP + 1
+    isb = lambda n: 2 * NP + 2 + n - 1; iso = lambda n: 3 * NP + 2 + n - 1
+    ish = lambda n: 4 * NP + 2 + (n - 2); isr = lambda n: 4 * NP + 2 + (NP - 2) + (n - 2)
+    nv = 4 * NP + 2 + 2 * (NP - 2)
+    rows, cols, vals, ub = [], [], [], []
+    def add(ent, rhs):                                          # ent . x <= rhs
+        for c, v in ent: rows.append(len(ub)); cols.append(c); vals.append(v)
+        ub.append(rhs)
+    isfree = np.isin(np.arange(NP + 1), free)
+    for q in np.nonzero(isfree[na] | isfree[nb])[0]:
+        isF = ka[q] < 0 or kb[q] < 0
+        ent = []; c = 0.0                                       # the step a - b = ent . x + c
+        for sgn, n, rho, h in ((1.0, na[q], ra[q], ha[q]), (-1.0, nb[q], rb[q], hb[q])):
+            if n > 0 and isfree[n]: ent += [(iw(n), sgn), (ir(n), sgn * rho)]
+            else: c += sgn * h
+        t = iTF if isF else iT
+        add(ent + [(t, -1.0)], -c); add([(j, -v) for j, v in ent] + [(t, -1.0)], c)
+    for n in free:
+        ub_ = F[n].ku[-1] - F[n].uw
+        add([(iw(n), -1.0), (ir(n), -ub_), (isb(n), -1.0)], -(C1F - under[0]))        # the back short of the concourse
+        add([(iw(n), 1.0), (ir(n), ub_), (iso(n), -1.0)], C1F + over[0])               # the back over it
+        add([(iw(n), -1.0), (ir(n), F[n].uw)], -front[0]); add([(iw(n), 1.0), (ir(n), -F[n].uw)], front[1])
+    def cvar(n, col, pin):        # finger n's unknown, or its pinned value: ([(index, 1)], 0) or ([], value)
+        return ([(col(n), 1.0)], 0.0) if isfree[n] else ([], pin[n])
+    for n in range(2, NC + 2):                                  # |second difference of hw, of r| <= its bound
+        for col, pin, sm in ((iw, pin_hw, ish), (ir, pin_r, isr)):
+            es, cs = [], 0.0
+            for m, w in ((n - 1, 1.0), (n, -2.0), (n + 1, 1.0)):
+                if m > NP: continue
+                e, v = cvar(m, col, pin); es += [(j, w * x) for j, x in e]; cs += w * v
+            if not es or n + 1 > NP: continue
+            add(es + [(sm(n), -1.0)], -cs); add([(j, -x) for j, x in es] + [(sm(n), -1.0)], cs)
+    for n in free:                # from the pole towards the middle neither hw nor r rises
+        for col, pin in ((iw, pin_hw), (ir, pin_r)):
+            e, v = cvar(n + 1, col, pin)
+            add(e + [(col(n), -1.0)], -v)                       # (finger n+1's value) - (finger n's) <= 0
+    A = csr_matrix((vals, (rows, cols)), shape=(len(ub), nv))
+    cost = np.zeros(nv); cost[iT] = 1.0; cost[iTF] = lam_F
+    for n in range(1, NP + 1): cost[isb(n)] = under[1]; cost[iso(n)] = over[1]
+    for n in range(2, NP): cost[ish(n)] = smooth[0]; cost[isr(n)] = smooth[1]
+    lo, hi = np.zeros(nv), np.full(nv, np.inf)
+    for n in range(1, NP + 1):
+        if isfree[n]: lo[iw(n)], hi[iw(n)], lo[ir(n)], hi[ir(n)] = 3.0, 11.5, rake[0], rake[1]
+        else: lo[iw(n)] = hi[iw(n)] = pin_hw[n]; lo[ir(n)] = hi[ir(n)] = pin_r[n]
+    sol = linprog(cost, A_ub=A, b_ub=np.array(ub), bounds=list(zip(lo, hi)), method='highs')
+    if sol.status != 0: raise RuntimeError('fit_straight: ' + sol.message)
+    x = sol.x; out = dict(profs)
+    for n in free:
+        fg = F[n]; hw, r = float(x[iw(n)]), float(x[ir(n)])
+        out[n] = np.minimum(C1F, hw + r * (fg.ku - fg.uw))
+        if verbose:
+            bk = hw + r * (fg.ku[-1] - fg.uw)
+            print('  straight finger %d: walkway %.2f m, rake %.3f, front %.2f m, back %+.2f m%s' % (
+                n, hw, r, hw - r * fg.uw, bk - C1F, (', level for the last %.1f m' % ((bk - C1F) / r)) if bk > C1F + 0.05 else ''))
+    if verbose: print('fit_straight: the largest wall across an aisle between fingers %.2f m, into the outfield stand %.2f m' % (x[iT], x[iTF]))
+    return out
 
 # ── the gates ──
 # The map widens the aisle between two B blocks, every third aisle (B11|12, 14|15,

@@ -2,6 +2,49 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 20: the corner blocks beside the poles, one straight slope each
+- **What was wrong** (the 3B stand beside the pole, the outfield stand to the right): a band of wall faces across the crowd, and a
+  change of slope in the middle of the blocks nearest the pole. Round 19's corner gave blocks 1 and 2 a steep A and a flat B
+  (0.43 / 0.20 and 0.32 / 0.26 m/m: a bend at the walkway of every block) and walls of 1.2 m (1.73 at the worst point) across the
+  aisles B01|B02 and B02|B03 (the walkway stepping 9.3, 7.7, 6.4 m). Photos (the aisle-by-aisle photos of the 1st floor on aoimahiroblog, 通路1, 2, 46-49 towards
+  centre and home; Wikimedia Commons interiors) show the opposite: one bank running round the corner across the blocks, the same
+  rake all the way up each block, the front barrier stepping down towards home, a pole at the foot of the junction.
+- **Why there are walls at all.** The rows run on across every aisle (`warp_rows`), so the distance from the walkway is the same on both
+  sides of it and the step across an aisle is `dhw + dr * rho` for two straight slopes (walkway height hw, rake r). The corner blocks'
+  backs are 6.7 m (block 1), 11 m, 16.6 m behind their walkways, the outfield's rows climb 0.46 m/m and the concourse is level at
+  10.6 m: with every back flush with it no set of slopes can have no walls. The sum of the mean steps across the aisles of the corner
+  is about the same (2.7-2.9 m) whatever is chosen; the choice is where it goes (two big walls, or a regular small step at every aisle)
+  and what is given up for it.
+- **`fit_straight`** (td_stand1.py, called in `td_build.py` after `fit_profiles_balanced`, which still gives blocks 9-25 exactly
+  what they had): fingers 1-8 (either side) each ONE straight slope `h = hw + r (u - uw)`, capped at the concourse's 10.6 m. A
+  linear program (steps are linear in hw and r: `scipy.optimize.linprog`, 0.6 s) keeps the largest step across any aisle between
+  them (T) and `lam_F` (1.0) times the largest into the outfield stand (TF) as small as it can be, with: the back not more than
+  `over[0]` (2.1 m) over the concourse (what is over costs 1.0 per metre: the block reaches 10.6 m before its back and runs level,
+  a *landing*) nor more than 0.3 m under it; the front row between 0.5 and 4.8 m (the fence is 4.6 m); a rake of at least 0.26
+  and neither hw nor r rising from the pole towards the middle; hw and r changing smoothly from block to block. Result (block: walkway m,
+  rake m/m, front m, landing m): 1: 9.06, 0.387, 4.80, 2.7 | 2: 8.57, 0.322, 4.80, 4.7 | 3: 8.23, 0.269, 4.62, 7.8 | 4: 7.88, 0.269, 3.78, 7.2 |
+  5: 7.53, 0.269, 2.98, 5.8 | 6: 7.18, 0.269, 2.22, 4.8 | 7: 6.84, 0.269, 1.56, 3.3 | 8: 6.49, 0.269, 1.01, 1.4 (block 9 on: as before, 6.14, 0.269).
+- **Numbers.** Steps across the aisles of blocks 1-9: 0.33 0.26 0.26 0.27 0.29 0.31 0.32 0.34 m on the average (1.18, 1.09, 0.38 ... before),
+  0.80 m at the worst point (1.73); into the outfield stand 0.26 m on the average, 0.67 at the most (0.13, 0.59 before: the price of
+  the corner's walls going down); every block's A and B climb at the same rake. Mean step across all aisles 0.186 m (0.174).
+  Renders from standing height in the 3B stand beside the pole (and the mirror on 1B) next to the old build: the band of
+  wall faces across the crowd is gone, the rows run round the pole as one bank.
+- **What it costs / to know.**
+  * The blocks that now stand higher reach the concourse's height before their back and run level to it: a landing 1.4-7.8 m deep on
+    blocks 2-8 (block 3, A47, the deepest), seats still laid on it at one height. Not visible from the stand, but the walker finds
+    it at the top. Capping it at 3 m (`over=(0.9, 3.0)`, `lam_F` 0.7, blocks 1-6: tried, rendered) gives walls of 0.55 m at four aisles
+    and 1.7 m at the outfield junction instead; the walls were plainly visible as grey slabs in the same views.
+  * The front barrier along the foul line stays high longer (fronts 4.8, 4.8, 4.6, 3.8, 3.0, 2.2, 1.6, 1.0 m for blocks 1-8, 4.5, 3.9, 2.9,
+    1.9, 1.4, 0.9, 0.6, 0.6 before): `edge_walls`/the fence ring follow it.
+  * What the row counts in the aisle photos' captions hint at (41 rows at A49/A48/A01/A02, 46 at A47, 47 in the middle, 35-39 behind home) is a corner
+    whose stands end LOWER than the concourse, with the same rows and the same walkway all round: no walls between blocks but 1.4-2.8 m
+    short backs at blocks 1-2 (stairs up at the aisles' heads) and a 3-4 m cliff to the outfield stand's steep rows. Not built.
+- Checked: walk-flood on foot (`reachtest.mjs dome 0,104 1.0`, 50 690 nodes, 150 s; `reachcheck.py`) A 8042, B 8449, F 5496, C 1995, D 4611,
+  E 8356, G 1053: all 100 %; `vomtest.mjs` 14/14; `gatewalk` 10/10 (the gates are blocks 11-24: unchanged); `npm run build`.
+- Regenerate: `cd pipeline && python3 td_build.py` (5 minutes; `git checkout -- td_seats1F.npy` if it was rewritten),
+  `python3 pipeline/mkdata.py td && node build.mjs`, `node gen.mjs <dir>` and copy `venues/td-data.js` to `src/three/venues/`
+  (`stands.js` and `venues/dome.js` did not change), `npm run build`.
+
 ## Round 19: Tokyo Dome's gates dug in under the stand, the entrances left open, one rake along every block
 - **One rake on every block** (`fit_profiles`: `uniform`, `flat`, `w_hold`, `w_back`). Round 18's section grew its rake along
   each finger (0.17 -> 0.37 m/m), so the upper blocks looked gentler towards the outfield. Now A and B of every block from the
