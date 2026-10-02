@@ -162,30 +162,44 @@ function doorFrames(list, ox, oz, mat) {
 
 // The walls round a bowl of open floor where it meets the stand (data.cutWalls: [{pts: [[x, z, top], ...]}]): each
 // stands from the floor and its top is raked with the rows beside it (a ribbon along the polyline, the open side
-// being the one the points lie on), shaded smooth along its length, the texture running on with it.
-function cutWalls(list, ox, oz, mat) {
+// being the one the points lie on), shaded smooth along its length, the texture running on with it, and a pale
+// coping along its top (`coping` high, 0 for none).
+function cutWalls(list, ox, oz, mat, coping = 0) {
   const P = [], U = [], I = [];
+  const C = [], CU = [], CI = [];
   for (const w of list) {
-    const q = w.pts, base = P.length / 3;
+    const q = w.pts, base = P.length / 3, cbase = C.length / 3;
     let s = 0;
     for (let i = 0; i < q.length; i++) {
       const [x, z, top] = q[i];
       if (i) s += Math.hypot(x - q[i - 1][0], z - q[i - 1][1]);
-      P.push(x + ox, 0, z + oz, x + ox, top, z + oz); U.push(s, 0, s, top);
+      P.push(x + ox, 0, z + oz, x + ox, top - coping, z + oz); U.push(s, 0, s, top - coping);
+      C.push(x + ox, top - coping, z + oz, x + ox, top, z + oz); CU.push(s, 0, s, coping);
     }
     for (let i = 0; i + 1 < q.length; i++) {
       const a = base + 2 * i, b = a + 1, c = a + 2, d = a + 3;
       I.push(a, c, d, a, d, b);
+      const ca = cbase + 2 * i, cb = ca + 1, cc = ca + 2, cd = ca + 3;
+      CI.push(ca, cc, cd, ca, cd, cb);
     }
   }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2));
-  g.setIndex(I);
-  g.computeVertexNormals();
-  const m = new THREE.Mesh(g, mat);
+  const geo = (p, u, ix) => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(u, 2));
+    g.setIndex(ix);
+    g.computeVertexNormals();
+    return g;
+  };
+  const grp = new THREE.Group();
+  const m = new THREE.Mesh(geo(P, U, I), mat);
   m.receiveShadow = true;
-  return m;
+  grp.add(m);
+  if (coping > 0) {
+    const cm = mat.clone(); cm.color.setScalar(1.0);
+    grp.add(new THREE.Mesh(geo(C, CU, CI), cm));
+  }
+  return grp;
 }
 
 // A vomitory as its own solid: a straight pit through the rows too low to
@@ -926,7 +940,8 @@ function buildStands(data, {
   if (data.pillars?.length) g.add(pillars(data.pillars, ox, oz, lit ? lit.inMat : wallMat));
   if (data.cutWalls?.length) {
     const cw = (materials.cutWall ?? structMat).clone(); cw.side = THREE.DoubleSide;
-    g.add(cutWalls(data.cutWalls, ox, oz, cw));
+    if (!materials.cutWall) cw.color.setScalar(0.4);        // dark concrete: the bowls' walls are the stands' fronts, not light panels
+    g.add(cutWalls(data.cutWalls, ox, oz, cw, 0.3));
   }
   if (data.frames?.length) g.add(doorFrames(data.frames, ox, oz, materials.doorFrame ?? std({ color: 0x1b1d22, roughness: 0.55, metalness: 0.35 })));
   // seats: instanced per colour, or handed to the venue's own seat

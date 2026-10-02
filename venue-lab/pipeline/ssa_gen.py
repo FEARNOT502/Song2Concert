@@ -410,7 +410,7 @@ for dd in DOORLIST:
         if LineString([(w[0],w[1]),(w[2],w[3])]).distance(seg)<0.06 and np.hypot(w[2]-w[0],w[3]-w[1])>0.2:
             blocked.append((dd['n'],kind,[round(c,2) for c in w])); break
 print('doors with something across the opening:',len(blocked),blocked[:12])
-json.dump(DOORLIST,open('/tmp/ssa_doors.json','w'))
+if os.environ.get('SSA_DOORS_OUT'): json.dump(DOORLIST,open(os.environ['SSA_DOORS_OUT'],'w'))      # (for the gate-walk checks)
 # (the suites' data: see above)
 rect=lambda x0,x1,za,zb: [[round(x0,2),round(za,2)],[round(x1,2),round(za,2)],[round(x1,2),round(zb,2)],[round(x0,2),round(zb,2)]]
 srows=[{'r':0,'y':SY,'y0':SY-0.45,'polys':[[rect(xb-1.0,xb,z0s,z1s)]]},

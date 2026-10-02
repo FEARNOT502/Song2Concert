@@ -2,6 +2,54 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 21: the Saitama Super Arena laid out from the official seat map; doors, corner tunnels, suites
+Arena mode, end stage 2. The seats, rows and doors are read off the official map (not drawn by hand), the structure round
+them is rebuilt on that, and every level and every door is checked on foot.
+- **The map as data.** `pipeline/ssa_chart.py` fetches the map (SVG `highlight_<id>` blocks, `gate_<n>` badges, `arena_1`,
+  the PNG with its seat squares and the magenta row numbers) and the seat-number rules (`seat_list.js`: per block its seat
+  numbers and rows), and writes `pipeline/ssa/ssa_chart.json` (224 blocks, 20,125 seats, 94 gates; the raw downloads stay
+  in `pipeline/ssa/raw/`, not committed). Seats the row labels hid are completed from the lattice (the gray across-row
+  edge evidence); rows are counted per block, the first row of each from the rules (the printed row numbers override
+  when they all agree within two rows). 152 of the 224 blocks have exactly their rule count (20,125 seats against 20,887).
+  The others: the blocks the stage stands on (61, 63, 305), the lettered A-H blocks (put away anyway), a few blocks
+  22-23 seats short (seats under the map's labels), and blocks 46 and 49, which trade seats (196 between them, as the
+  rules say). Each level is drawn at its own
+  scale about the floor's centre: metres = (px - C) / K, C = (1978.6, 1906.95), K = 20 / 24.6 / 28.8 / 33.8 for the 200 /
+  300 / 400 / 500 level (a seat is 0.5 m wide on all of them). The retracted telescopic rows (the lettered A-H blocks) stay
+  out, the floor stays wide.
+- **The levels.** `pipeline/ssa_blocks.py`: `build_level` makes a standgen `Level` (treads = each seat's cell, the
+  aisles between blocks closed to 2.6 m, depth from the rows themselves, row bands) from the chart's seats; heights as
+  before (200: 0.45 + 0.33 per row, 300: 10.6 + 0.42, 400: 14.5 + 0.42, 500: 22 + 0.5; concourses 6.2 / 11.44 / 16.2 /
+  23.0). A door stands at its block's end: `end_aisles` lays the aisle beside each row's last seat (a wedge block's slanted
+  end too, so nothing reaches out into the open floor). `ssa_gen.py` does the rest (concourses, stairs, vomitories, walls).
+- **The 94 doors** (200: 28, 300: 16, 400: 32, 500: 18): 24 of them are the side vomitories' mouths (labelled with the
+  gate's number), the other 70 are cut in the wall at the head of their aisle (`snap_doors`: the aisle's cell nearest the
+  badge, out along the rake), each with a frame (`doorFrames` in d3-stands.js) and its number plate on both faces. A door
+  whose aisle stands more than 0.3 m above the concourse (the 200 corner bays, a few 400 doors) has its sill up at the
+  aisle and a short stair down. Stairs keep clear of every door's and vomitory's exit (`keepclear`).
+- **The floor's south corners** are tunnels with raked walls (the north ones are behind the masking). The map leaves a
+  bowl of open floor in each corner; `pipeline/ssa_tunnels.py` finds it from the treads, follows its middle line in to
+  the throat (where it is no wider than 3.6 m) and puts a covered tunnel there (3.0-3.2 m wide, 4.4 m high, closed
+  at its end, `cut_tunnels(covered=True)`); the concourse's block is taken out of the bowl, and the bowl's sides get walls
+  whose tops rake with the rows beside them: `data.cutWalls`, one concrete ribbon per wall run, shaded smooth along its
+  length (`cutWalls()` in d3-stands.js), the tunnel's mouth left open.
+- **The 300 level** (the VIP balcony, 642 seats) and **the suites** (the 300S level: 15 rooms and 124 seats along the left
+  side): the balcony's blocks are boxes with a low partition at each end; the suites have a corridor behind them over the
+  200 concourse's ceiling (`xc0`..`xc1`), a stair down to the concourse at each end (found like the others, the
+  corridor's floor runs out over their landings), a door in each room's back wall onto the corridor and one in its glass
+  front onto its balcony (`src/i-arena.js`).
+- **Checks** (all in the lab; the throwaway scripts were kept out of the repo): the walker's flood fill from the floor
+  (`node reachtest.mjs arena 0,50 1.0`, then `python3 reachcheck.py arena pipeline/ssa_stands.json 45`): 200 10807 / 10807,
+  300 642 / 642, 400 5870 / 5870, 500 754 / 754, 300S 124 / 124 seats. Every door walked on foot (door, vomitory, corner
+  tunnel: the walker from a point in the aisle through the opening to the concourse): 92 of 96; the other four (221-224)
+  are the north end's, behind the stage's masking, and open on the backstage, which has no concourse here.
+  Shared code that changed: `d3-stands.js` (`doorFrames`, `cutWalls`, a plate under a vomitory's mouth when `v.bridge`),
+  `standgen.tunnel_rows` (a row lower than the roof is clipped off the tunnel's whole footprint: the rows' overlap under
+  the next row up used to leave a sliver across a tunnel). The other venues' data are as they were.
+- **To know.** The two south corners' bowls are 120-150 m2 each: the map has no seats there (block 127 has 9, block 25
+  has 37) and the walls round them are 2-8 m high because the rows beside them stand at their own heights. The
+  north end (blocks and doors behind the masking: 61, 63, 305, 221-224) is laid out like the rest but never seen.
+
 ## Round 20: the corner blocks beside the poles, one straight slope each
 - **What was wrong** (the 3B stand beside the pole, the outfield stand to the right): a band of wall faces across the crowd, and a
   change of slope in the middle of the blocks nearest the pole. Round 19's corner gave blocks 1 and 2 a steep A and a flat B
