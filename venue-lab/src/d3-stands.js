@@ -141,6 +141,25 @@ function pillars(list, ox, oz, mat) {
   return m;
 }
 
+// The doors' frames (data.frames: {x, z, yaw, w, h, y}): a post each side and a lintel across, as deep as the
+// wall is thick; the frame faces (sin yaw, cos yaw), `w` the opening, `h` its height over the floor `y`.
+function doorFrames(list, ox, oz, mat) {
+  const parts = [];
+  const T = 0.16, D = 0.34;
+  for (const f of list) {
+    const box = (bw, bh, bd, lx, ly) => {
+      const b = new THREE.BoxGeometry(bw, bh, bd);
+      b.translate(lx, ly, 0); b.rotateY(f.yaw); b.translate(f.x + ox, 0, f.z + oz);
+      parts.push(b.toNonIndexed());
+    };
+    for (const s of [-1, 1]) box(T, f.h + 0.2, D, s * (f.w / 2 + T / 2), f.y + (f.h + 0.2) / 2);
+    box(f.w + 2 * T, 0.2, D, 0, f.y + f.h + 0.1);
+  }
+  const m = new THREE.Mesh(mergeGeometries(parts), mat);
+  m.receiveShadow = true;
+  return m;
+}
+
 // A vomitory as its own solid: a straight pit through the rows too low to
 // walk under, walled either side up past the treads beside it (each wall one
 // solid, its top raked with the rows, capped; the walls sit inside the pit, so
@@ -871,6 +890,7 @@ function buildStands(data, {
   }
   if (data.signs?.length) g.add(signSheet(data.signs, ox, oz, materials.signBg, materials.signFg));
   if (data.pillars?.length) g.add(pillars(data.pillars, ox, oz, lit ? lit.inMat : wallMat));
+  if (data.frames?.length) g.add(doorFrames(data.frames, ox, oz, materials.doorFrame ?? std({ color: 0x1b1d22, roughness: 0.55, metalness: 0.35 })));
   // seats: instanced per colour, or handed to the venue's own seat
   const lights = lit ? roomLights(data, { ox, oz, lit }) : null;
   const update = (f) => lights?.update(f);
