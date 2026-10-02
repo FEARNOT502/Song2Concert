@@ -7,7 +7,7 @@ import sys, json, time, re, pickle, base64, os, numpy as np, cv2
 sys.path.insert(0,'.')
 from standlib import Grid, disk, contours, sample, STRAIGHT
 from standgen import Level, poly_out, mask_polys, edge_walls, enclose, grow_under, trim_tunnels, front_parapet, cut_tunnels, tunnel_rows, tunnels_out, tunnel_decks
-import ssa_blocks as SB
+import ssa_blocks as SB, ssa_tunnels as ST
 from scipy.spatial import cKDTree
 T0=time.time()
 G=Grid(-74,74,-68,68,0.1)
@@ -24,23 +24,26 @@ DOORS={lv:{int(g):tuple(SB.to_metres(CH,v['centre'],lv)) for g,v in CH['gates'].
 print('doors',{k:len(v) for k,v in DOORS.items()})
 LV={}
 def gap_gates(l,gates):
-    """the doors that stand in a gap of the stand's treads (a vomitory's mouth, or a notch open at the back)"""
+    """the doors that stand in a gap of the stand's treads (a vomitory's mouth, or a notch open at the back): {number: its gap}"""
     inv=((1-l.R)&(l.hull>0)&l.behind).astype(np.uint8)
     n,lab,st,_=cv2.connectedComponentsWithStats(inv,connectivity=4)
-    out=set()
+    out={}
     for g,(x,z) in gates.items():
         i_,j_=[int(round(float(c))) for c in G.g(x,z)]
         k=lab[j_,i_]
-        if k>0 and st[k,4]*G.res**2>=3.0: out.add(g)
+        if k>0 and st[k,4]*G.res**2>=3.0: out[g]=lab==k
     return out
 GAPDOOR={}
+CORNER_BAY=lambda z: abs(z)>40.0         # the 200 level's corner notches: bays with a door, not vomitories
 for lv in ('200','300','400','500'):
     S_=SB.level_seats(CH,lv,OFF)
-    l0=SB.build_level(G,lv,S_,**SEC[lv]); GAPDOOR[lv]=gap_gates(l0,DOORS[lv])
+    l0=SB.build_level(G,lv,S_,**SEC[lv]); gaps=gap_gates(l0,DOORS[lv])
+    bays={g:m for g,m in gaps.items() if lv=='200' and CORNER_BAY(DOORS[lv][g][1])}
+    GAPDOOR[lv]={g:m for g,m in gaps.items() if g not in bays}
     # a door stands at the end of a block (the stand's blocks are boxes, or pieces of one, with an aisle at each end): where
     # no block stands beyond that end the aisle is added beside it
     pts=[q for g,q in DOORS[lv].items() if g not in GAPDOOR[lv]]
-    LV[lv]=SB.build_level(G,lv,S_,strips=SB.end_aisles(S_,pts,maxdist=3.6),**SEC[lv]); LV[lv].S=S_
+    LV[lv]=SB.build_level(G,lv,S_,strips=SB.end_aisles(S_,pts,maxdist=3.6),fills=list(bays.values()),**SEC[lv]); LV[lv].S=S_
 print('doors in a gap of the treads',{k:sorted(v) for k,v in GAPDOOR.items() if v})
 L2,L3,L4,L5=LV['200'],LV['300'],LV['400'],LV['500']
 print('levels',round(time.time()-T0,1),{k:(l.nrows,len(l.seats)) for k,l in LV.items()})
@@ -70,6 +73,13 @@ print('voms',{k:len(v) for k,v in VOMS.items()},round(time.time()-T0,1))
 for k,v in VOMS.items():
     for o in sorted(v,key=lambda o:(round(o['p'][0]/5),o['p'][1])): print('  ',k,[round(c,1) for c in o['p']],'w',o['w'],'L',o['L'],'T',o['T'])
 
+# ── the floor's corner passages: the map leaves a bowl of open floor at each of the floor's south corners (the north
+# ones are behind the stage's masking), funnelling in between the fan's blocks and the end block to a throat; a tunnel
+# goes on from the throat under the concourse's storey to the building's wall. The bowls' sides are walls with their
+# tops raked with the rows beside them. ──
+CORNERS=ST.corner_tunnels(G,L2)
+BOWLWALLS,BOWLMASKS=ST.bowl_walls(G,L2,CORNERS)
+
 # ── concourses ──
 def dil(m,r): return cv2.dilate(m.astype(np.uint8),disk(r/G.res))>0
 backstage=(np.abs(X)<22)&(Z<-38)
@@ -96,6 +106,10 @@ def tidy(c,w=1.0,minarea=50):
     keep=np.zeros(n,bool); keep[1:]=st[1:,4]*G.res**2>=minarea
     return keep[lab]
 c200=tidy(c200); c300=tidy(c300,0.8,10); c400=tidy(c400,0.8,10); c500=tidy(c500,0.8,10)
+# the bowls stay open floor: no concourse storey standing in them
+bowls=np.zeros_like(c200)
+for m_ in BOWLMASKS: bowls|=m_
+c200&=~dil(bowls,0.3)
 # (the 300 level's blocks stand a 1.8 m aisle apart: the concourse runs on behind the aisles' heads)
 ext3=cv2.morphologyEx(L3.extent.astype(np.uint8),cv2.MORPH_CLOSE,disk(2.5/G.res))>0
 c300&=ext3
@@ -173,7 +187,7 @@ def snap_doors(l,gates,skip):
             last=q; t+=0.1
         out[g]=(last+v*0.05,v)
     return out
-SNAP={name:snap_doors(l,DOORS[name],GAPDOOR[name]) for name,l in (('200',L2),('300',L3),('400',L4),('500',L5))}
+SNAP={name:snap_doors(l,DOORS[name],set(GAPDOOR[name])) for name,l in (('200',L2),('300',L3),('400',L4),('500',L5))}
 print('doors snapped',{k:len(v) for k,v in SNAP.items()},'; farthest move from the badge %.1f m'%max(np.hypot(*(p-np.array(DOORS[k][g]))) for k,v in SNAP.items() for g,(p,_) in v.items()))
 
 # ── the doors' numbers on the vomitories ──
@@ -181,8 +195,20 @@ for name,vs in VOMS.items():
     gs=DOORS[name]
     for v in vs:
         k=min(gs,key=lambda g: np.hypot(gs[g][0]-v['p'][0],gs[g][1]-v['p'][1])); v['label']=str(k)
-TUN=[]
+# ── the floor's corner tunnels ──
+# The map leaves a bowl of open floor at each of the floor's south corners (the north ones are behind the stage's
+# masking), funnelling in between the fan's blocks to a throat where the rows each side stand past a tunnel's height:
+# there a tunnel goes on under the rows and the concourse's storey to the building's wall. The bowl's sides are walls
+# with their tops raked with the rows beside them.
+TUN_H=4.4
+body_=((L2.R>0)|(L2.hull>0)|c200)&(hull>0)       # what a tunnel runs under, before the cuts
+TUN=[{'p':t['p'],'u':t['u'],'w':t['w'],'h':TUN_H,'closed':True,'covered':True,'Lmax':30.0,'Lmin':8.0,'name':t['name']} for t in CORNERS]
+TUNM=cut_tunnels(G,L2,TUN,body_,back=0.0)
+print('corner tunnels',[(t['name'],[round(float(c),1) for c in t['p']],t['w'],t['L']) for t in TUN],'; bowl walls',[(w['name'],len(w['pts'])) for w in BOWLWALLS])
 slabs=[(grow_under(c,y,[L2,L3,L4,L5]),(0.0 if y==C200 else y-0.35),y) for c,y in ((c200,C200),(c300,C300),(c400,C400),(c500,C500))]
+# under the 200 concourse the tunnels run on hollow
+s0_=slabs[0][0]; slabs[0]=(s0_&~TUNM,0.0,C200)
+if (s0_&TUNM).any(): slabs.insert(1,(s0_&TUNM,TUN_H,C200))
 t=time.time()
 doors={k:[tuple(p) for p,_ in v.values()] for k,v in SNAP.items()}
 rooms=[{'name':name,'mask':cm,'y':cy,'cl':4.0,'own':[l],'doors':doors[name],'open':getattr(l,'pits',None),'toroof':name in ('400','500')}
@@ -230,6 +256,14 @@ for name,l,cm,cy in (('200',L2,c200,C200),('300',L3,c300,C300),('400',L4,c400,C4
     rails,walls=edge_walls(G,l,outside_fn(cm,cy),doors[name],skip=skip,front=fronts[name],cheek=CHEEK[name] if name in ('300','500') else False)
     rails+=front_parapet(G,l,fronts[name])
     rows_=l.rows_out()
+    if name=='200':
+        rows_=tunnel_rows(rows_,TUN); dr_,drl_=tunnel_decks(G,L2,TUN); rows_+=dr_; rails+=drl_
+        # the bowls' sides have walls of their own: no rail along the treads' edges there
+        zone=cv2.dilate(np.any(BOWLMASKS,axis=0).astype(np.uint8),disk(0.8/G.res))>0
+        def inzone(r):
+            a,b=G.g((r[0]+r[2])/2,(r[1]+r[3])/2); a=int(round(float(a))); b=int(round(float(b)))
+            return 0<=a<G.W and 0<=b<G.H and zone[b,a]
+        rails=[r for r in rails if not inzone(r)]
     levels.append({'name':name,'D':l.D,'h0':l.h0,'rise':l.rise,'rows':rows_,'steps':l.aisles_out(),'holes':[],'voms':VOMS.get(name,[]),'partitions':PART300 if name=='300' else [],
                    'seats':l.seats_out(),'rails':rails,'walls':walls})
     print(name,'rows',len(levels[-1]['rows']),'steps',len(levels[-1]['steps']),'rails',len(rails),'walls',len(walls),round(time.time()-T0,1))
@@ -337,7 +371,7 @@ print('suites',len(bx),'seats',len(Ss),'front x',round(xb,2),'z',z0s,z1s)
 floors=[{'y':y,'y0':y0,'polys':mask_polys(G,m)} for m,y0,y in slabs]
 ow=contours(G,outer.astype(np.uint8),eps=0.03,minarea=100)
 data={'levels':levels,'floors':floors,'flights':[{k:(round(float(v),3) if not isinstance(v,int) else v) for k,v in f.items()} for f in flights],
-      'outer':[poly_out(p) for p in ow],'rooms':encl,'tunnels':tunnels_out(TUN),'suites':suites,'signs':SIGNS,'frames':FRAMES}
+      'outer':[poly_out(p) for p in ow],'rooms':encl,'tunnels':tunnels_out(TUN),'suites':suites,'signs':SIGNS,'frames':FRAMES,'cutWalls':BOWLWALLS}
 data['levels'].append({'name':'300S','D':1.0,'h0':SY,'rise':SR,'rows':srows,'steps':[],'holes':[],'voms':[],'partitions':parts,
                        'seats':base64.b64encode(enc.tobytes()).decode('ascii'),'rails':glass_rail,'walls':[]})
 json.dump(data,open('ssa_stands.json','w'),separators=(',',':'))

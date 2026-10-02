@@ -90,7 +90,7 @@ def depth_field(G, S, R, D, reach=12.0):
     return d
 
 
-def build_level(G, name, S, D, h0, rise, bottom='ground', fascia=2.6, aisle=1.3, hull_close=3.0, open_w=3.0, keep_hole=3.0, centre=(0, 0), strips=()):
+def build_level(G, name, S, D, h0, rise, bottom='ground', fascia=2.6, aisle=1.3, hull_close=3.0, open_w=3.0, keep_hole=3.0, centre=(0, 0), strips=(), fills=()):
     """A `Level` (see standgen) for chart seats `S`: treads = the seats' cells with the
     aisles between blocks and the small gaps closed, depth from the rows themselves"""
     l = Level.__new__(Level)
@@ -100,6 +100,7 @@ def build_level(G, name, S, D, h0, rise, bottom='ground', fascia=2.6, aisle=1.3,
     for poly in strips:        # extra treads: the aisles beside a block's end where there is no block beyond
         gx, gz = G.g(poly[:, 0], poly[:, 1]); cv2.fillConvexPoly(cm, np.round(np.c_[gx, gz] * 16).astype(np.int32), 1, shift=4)
     # aisles between blocks and gaps of a seat or two: closed; a tunnel's mouth (wider) stays open
+    for m in fills: cm[m] = 1   # gaps given back to the treads (an entrance bay at a stand's back: a landing)
     R = cv2.morphologyEx(cm, cv2.MORPH_CLOSE, disk(aisle / G.res))
     R = cv2.morphologyEx(R, cv2.MORPH_CLOSE, disk(0.5 / G.res))
     l.hull = smooth_hull(G, M, close=hull_close)
@@ -140,26 +141,26 @@ def build_level(G, name, S, D, h0, rise, bottom='ground', fascia=2.6, aisle=1.3,
     return l
 
 
-def end_aisles(S, points, width=1.3, reach=3.0, maxdist=3.6):
-    """For each door point (a gate's badge), the aisle beside the block end it stands at: a strip `width`
-    wide along the block's end, from the front of its first row to the back of its last, on the side the
-    point is on, unless a block is beyond that end within `reach`. -> polygons (4 x 2)"""
+def end_aisles(S, points, width=1.3, gap=0.9, maxdist=3.6):
+    """For each door point (a gate's badge), the aisle beside the block end it stands at, on the side the point is on:
+    along each row of the block, a cell `width` wide beside that row's last seat (so the strip follows the block's own
+    end, a wedge's slanted one too, and never reaches out past its rows), unless a block stands beyond that row's end
+    within `gap` of the seat's edge. -> polygons (4 x 2), one for each row"""
     tree = cKDTree(S['P']); out = []
     for q in points:
         dist, i = tree.query(q); b = S['block'][i]
         if dist > maxdist: continue
         f = np.array([np.sin(S['yaw'][i]), np.cos(S['yaw'][i])]); e = np.array([-f[1], f[0]])
         sgn = 1.0 if (np.asarray(q) - S['P'][i]) @ e > 0 else -1.0
-        m = S['block'] == b; P = S['P'][m]; rows = S['row'][m]
-        # the end of this seat's row on that side
-        same = m & (S['row'] == S['row'][i]); along = (S['P'][same] - S['P'][i]) @ (e * sgn)
-        end = S['P'][i] + e * sgn * along.max(); p = S['p'][i]; qd = S['q'][i]
-        # a block beyond the end: no strip (the gap is its aisle)
-        beyond = end + e * sgn * (p / 2 + 0.9)
-        d2, j = tree.query(beyond)
-        if d2 < 0.9 and S['block'][j] != b: continue
-        r0, r1 = rows.min(), rows.max()
-        a0 = end + e * sgn * (p / 2 + 0.05); a1 = a0 + e * sgn * width
-        front = f * (qd * (S['row'][i] - r0 + 0.5)); back = -f * (qd * (r1 - S['row'][i] + 0.5))
-        out.append(np.array([a0 + front, a1 + front, a1 + back, a0 + back]))
+        m = np.nonzero(S['block'] == b)[0]
+        for r in np.unique(S['row'][m]):
+            idx = m[S['row'][m] == r]
+            j = idx[np.argmax(S['P'][idx] @ (e * sgn))]               # the row's last seat on that side
+            fj = np.array([np.sin(S['yaw'][j]), np.cos(S['yaw'][j])]); ej = np.array([-fj[1], fj[0]]) * sgn
+            p, qd = S['p'][j], S['q'][j]
+            # a block beyond the end: no strip (the gap is its aisle)
+            d2, k = tree.query(S['P'][j] + ej * (p / 2 + gap))
+            if d2 < 0.9 and S['block'][k] != b: continue
+            a0 = S['P'][j] + ej * (p / 2 + 0.05); a1 = a0 + ej * width
+            out.append(np.array([a0 + fj * qd / 2, a1 + fj * qd / 2, a1 - fj * qd / 2, a0 - fj * qd / 2]))
     return out

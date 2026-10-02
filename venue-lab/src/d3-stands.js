@@ -160,6 +160,34 @@ function doorFrames(list, ox, oz, mat) {
   return m;
 }
 
+// The walls round a bowl of open floor where it meets the stand (data.cutWalls: [{pts: [[x, z, top], ...]}]): each
+// stands from the floor and its top is raked with the rows beside it (a ribbon along the polyline, the open side
+// being the one the points lie on), shaded smooth along its length, the texture running on with it.
+function cutWalls(list, ox, oz, mat) {
+  const P = [], U = [], I = [];
+  for (const w of list) {
+    const q = w.pts, base = P.length / 3;
+    let s = 0;
+    for (let i = 0; i < q.length; i++) {
+      const [x, z, top] = q[i];
+      if (i) s += Math.hypot(x - q[i - 1][0], z - q[i - 1][1]);
+      P.push(x + ox, 0, z + oz, x + ox, top, z + oz); U.push(s, 0, s, top);
+    }
+    for (let i = 0; i + 1 < q.length; i++) {
+      const a = base + 2 * i, b = a + 1, c = a + 2, d = a + 3;
+      I.push(a, c, d, a, d, b);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2));
+  g.setIndex(I);
+  g.computeVertexNormals();
+  const m = new THREE.Mesh(g, mat);
+  m.receiveShadow = true;
+  return m;
+}
+
 // A vomitory as its own solid: a straight pit through the rows too low to
 // walk under, walled either side up past the treads beside it (each wall one
 // solid, its top raked with the rows, capped; the walls sit inside the pit, so
@@ -890,6 +918,10 @@ function buildStands(data, {
   }
   if (data.signs?.length) g.add(signSheet(data.signs, ox, oz, materials.signBg, materials.signFg));
   if (data.pillars?.length) g.add(pillars(data.pillars, ox, oz, lit ? lit.inMat : wallMat));
+  if (data.cutWalls?.length) {
+    const cw = (materials.cutWall ?? structMat).clone(); cw.side = THREE.DoubleSide;
+    g.add(cutWalls(data.cutWalls, ox, oz, cw));
+  }
   if (data.frames?.length) g.add(doorFrames(data.frames, ox, oz, materials.doorFrame ?? std({ color: 0x1b1d22, roughness: 0.55, metalness: 0.35 })));
   // seats: instanced per colour, or handed to the venue's own seat
   const lights = lit ? roomLights(data, { ox, oz, lit }) : null;
