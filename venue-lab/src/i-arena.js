@@ -50,23 +50,49 @@ function buildArena(ctx) {
 
   // ── the suites on the 3rd floor, along the left side ──
   // behind the 200s' back: a row of rooms, each behind a glass front with its
-  // balcony in front of it, the VIP room in the middle; lit warm within
+  // balcony in front of it, the VIP room in the middle; lit warm within. A
+  // door in each room's glass front opens onto its balcony, one in its back
+  // wall onto the corridor behind the rooms, which has a stair down to the
+  // 200 concourse at each end (the data's flights and floor)
   const SU = SSA_STANDS.suites;
   if (SU) {
     const g = [], glassG = [], lit = [], ox = 0, oz = OZ;
     const box = (out, x0, x1, y0, y1, z0, z1) => { const b = new THREE.BoxGeometry(Math.abs(x1 - x0), y1 - y0, Math.abs(z1 - z0)); b.translate((x0 + x1) / 2 + ox, (y0 + y1) / 2, (z0 + z1) / 2 + oz); out.push(b.toNonIndexed()); };
     const z0 = SU.boxes[0][0], z1 = SU.boxes[SU.boxes.length - 1][1];
+    const zc = SU.boxes.map((b) => (b[0] + b[1]) / 2);       // each room's door, at its middle
+    const dw = SU.doorW / 2, dh = SU.doorH;
+    // a wall across x from y0 to y1 along z0..z1, with the doors' openings (from `sill` up, `dh` high) left in it
+    const wall = (out, xa, xb, y0, y1, sill) => {
+      let z = z0 - 0.3;
+      for (const c of zc) {
+        if (c - dw > z) box(out, xa, xb, y0, y1, z, c - dw);
+        box(out, xa, xb, y0, sill, c - dw, c + dw);              // under the door (its sill)
+        box(out, xa, xb, sill + dh, y1, c - dw, c + dw);          // over it
+        z = c + dw;
+      }
+      if (z1 + 0.3 > z) box(out, xa, xb, y0, y1, z, z1 + 0.3);
+    };
     box(g, SU.xr, SU.xg, SU.y - 0.45, SU.y, z0, z1);                   // the rooms' floor
-    box(g, SU.xr, SU.xf, SU.yc, SU.yc + 0.5, z0, z1);                   // their ceiling, on over the balconies
-    box(g, SU.xr - 0.3, SU.xr, SU.y - 0.45, SU.yc + 0.5, z0, z1);       // the back wall
+    box(g, SU.xc1, SU.xr, SU.y - 0.45, SU.y, z0, z1);                  // under the back wall: the sill of its doors
+    box(g, SU.xc0, SU.xf, SU.yc, SU.yc + 0.5, z0, z1);                  // the corridor's and the rooms' ceiling, on over the balconies
+    wall(g, SU.xc1, SU.xr, SU.y, SU.yc + 0.5, SU.y);                    // the back wall, a door to each room
+    box(g, SU.xc0 - 0.25, SU.xc0, SU.y - 0.45, SU.yc + 0.5, z0 - 0.3, z1 + 0.3);   // the corridor's outer wall
     for (const zz of [z0, ...SU.boxes.map((b) => b[1])]) box(g, SU.xr, SU.xg, SU.y, SU.yc, zz - 0.1, zz + 0.1);   // walls between the rooms
     for (const [za, zb] of [[z0 - 0.3, z0], [z1, z1 + 0.3]]) box(g, SU.xr - 0.3, SU.xf, SU.y - 0.45, SU.yc + 0.5, za, zb);   // the run's ends
-    // the glass fronts, their mullions, the lit back wall of each room
-    box(glassG, SU.xg - 0.02, SU.xg + 0.02, SU.y, SU.yc, z0, z1);
+    // the glass fronts (a door to each balcony), their mullions, the lit back wall of each room, the corridor's lamps
+    wall(glassG, SU.xg - 0.02, SU.xg + 0.02, SU.y, SU.yc, SU.y);
     for (const [za, zb, n] of SU.boxes) {
-      for (let k = 1; k < (n > 8 ? 4 : 3); k++) { const zz = za + (zb - za) * k / (n > 8 ? 4 : 3); box(g, SU.xg - 0.06, SU.xg + 0.06, SU.y, SU.yc, zz - 0.04, zz + 0.04); }
-      box(lit, SU.xr + 0.02, SU.xr + 0.06, SU.y + 0.4, SU.yc - 0.3, za + 0.3, zb - 0.3);
+      const c = (za + zb) / 2, m = n > 8 ? 4 : 3;
+      for (let k = 1; k < m; k++) {
+        const zz = za + (zb - za) * k / m;
+        if (Math.abs(zz - c) < dw + 0.15) continue;
+        box(g, SU.xg - 0.06, SU.xg + 0.06, SU.y, SU.yc, zz - 0.04, zz + 0.04);
+      }
+      box(lit, SU.xr + 0.02, SU.xr + 0.06, SU.y + 0.4, SU.yc - 0.3, za + 0.3, c - dw - 0.2);
+      box(lit, SU.xr + 0.02, SU.xr + 0.06, SU.y + 0.4, SU.yc - 0.3, c + dw + 0.2, zb - 0.3);
     }
+    for (let z = z0 + 3; z < z1 - 2; z += 6) box(lit, SU.xc0 + 0.5, SU.xc1 - 0.5, SU.yc - 0.04, SU.yc, z - 0.6, z + 0.6);
+    for (const c of zc) box(lit, SU.xc1 - 0.05, SU.xc1, SU.y + dh + 0.1, SU.y + dh + 0.3, c - dw, c + dw);   // a lit panel over each room's door
     root.add(new THREE.Mesh(mergeGeometries(g), std({ color: 0x2c2d31, roughness: 0.7 })));
     root.add(new THREE.Mesh(mergeGeometries(glassG), new THREE.MeshPhysicalMaterial({ color: 0x3e4c55, roughness: 0.05, metalness: 0.3, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false })));
     root.add(new THREE.Mesh(mergeGeometries(lit), std({ color: 0x1a1612, emissive: 0xc79a6a, emissiveIntensity: 0.35 })));

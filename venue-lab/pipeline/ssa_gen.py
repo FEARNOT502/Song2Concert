@@ -121,6 +121,26 @@ c500=cv2.morphologyEx(c500.astype(np.uint8),cv2.MORPH_CLOSE,disk(2.0/G.res))>0
 c300=tidy(c300,0.8,10); c500=tidy(c500,0.8,10)
 print('concourses',round(time.time()-T0,1),{k:round(float(c.sum()*G.res**2)) for k,c in (('200',c200),('300',c300),('400',c400),('500',c500))})
 
+# ── the suites (3rd floor) along the left side, seen from the floor's desk ──
+# The VIP room and the suites (suite rooms): rooms on the 3rd floor behind the 200s' back, each with a glass front
+# and a balcony of two rows in front of it behind a glass balustrade (the VIP room 12 seats, a suite 8), boxed off
+# from each other; not on the public seating map. Each room has a door in its glass front onto its balcony and one in
+# its back wall onto a corridor that runs along the rooms (a catwalk over the 200 concourse's ceiling) and down a stair
+# at each end to the concourse.
+sel=(L2.R>0)&(X<0)&(np.abs(Z)<30)
+xb=float(X[sel].min())-0.3        # the 200s' back line on the -x side, less a gap
+SY=10.6; SR=0.4; SZ=29.0; SUY=SY+SR
+bx=[]; zz=-SZ
+for i in range(7): bx.append((zz,zz+4.0,8)); zz+=4.0
+bx.append((zz,zz+6.0,12)); zz+=6.0
+for i in range(7): bx.append((zz,zz+4.0,8)); zz+=4.0
+off=-(zz+SZ)/2-(-SZ)          # centre the run on z=0
+bx=[(round(a+off,2),round(b+off,2),n) for a,b,n in bx]
+z0s,z1s=bx[0][0],bx[-1][1]
+XR=xb-7.5; CORR_W=2.0          # the rooms' back wall, the corridor's width
+xc1=XR-0.3; xc0=xc1-CORR_W    # the corridor behind the back wall
+corr=(X>=xc0)&(X<=xc1)&(Z>=z0s-0.3)&(Z<=z1s+0.3)
+
 # ── stairs between the concourses: straight flights ──
 RISE,RUN,WID=0.19,0.28,1.6
 def fits(mask,pts):
@@ -150,6 +170,21 @@ def mark(f):
         used[gz_,gx_]=True
     used[:]=cv2.dilate(used.astype(np.uint8),np.ones((5,5),np.uint8))>0
 flights=[]
+# the corridor's stairs: down from each end, beyond the rooms' run, to the 200 concourse; the corridor's floor runs out
+# over their landings
+rooms_zone=(X>=xc0-1.0)&(X<=xb)&(Z>=z0s-0.5)&(Z<=z1s+0.5)
+for sg in (1,-1):
+    za,zb=(z1s+0.3,z1s+3.3) if sg>0 else (z0s-3.3,z0s-0.3)
+    plat=(X>=xc0)&(X<=xc0+9.0)&(Z>=za)&(Z<=zb)
+    f=find_flight(c200,plat,C200,SUY,(xc0+4.5,sg*(abs(za)+3.0)),standany|used|rooms_zone)
+    print('suites stair','south' if sg>0 else 'north',f and {k:round(float(v),1) for k,v in f.items()})
+    if not f: continue
+    flights.append(f); mark(f)
+    tx,tz=f['x']+f['dx']*f['L'],f['z']+f['dz']*f['L']
+    gx_,gz_=G.g(*footprint(tx,tz,f['dx'],f['dz'],2.0,WID+0.6,step=0.05).T)
+    land=np.zeros_like(corr); land[np.clip(np.round(gz_).astype(int),0,G.H-1),np.clip(np.round(gx_).astype(int),0,G.W-1)]=True
+    corr|=cv2.dilate(land.astype(np.uint8),disk(0.3/G.res))>0
+    corr|=(X>=xc0)&(X<=xc1)&(Z*sg>=(z1s+0.3 if sg>0 else -z0s+0.3))&(Z*sg<=abs(tz)+0.4)
 for sz in (1,-1):
     for sx in (1,-1):
         for lo,up,y0,y1,near in ((c200,c300,C200,C300,(sx*22,sz*60)),(c300,c400,C300,C400,(sx*30,sz*57)),(c400,c500,C400,C500,(sx*12,sz*59)),(c200,c400,C200,C400,(sx*52,sz*48))):
@@ -206,6 +241,7 @@ TUN=[{'p':t['p'],'u':t['u'],'w':t['w'],'h':TUN_H,'closed':True,'covered':True,'L
 TUNM=cut_tunnels(G,L2,TUN,body_,back=0.0)
 print('corner tunnels',[(t['name'],[round(float(c),1) for c in t['p']],t['w'],t['L']) for t in TUN],'; bowl walls',[(w['name'],len(w['pts'])) for w in BOWLWALLS])
 slabs=[(grow_under(c,y,[L2,L3,L4,L5]),(0.0 if y==C200 else y-0.35),y) for c,y in ((c200,C200),(c300,C300),(c400,C400),(c500,C500))]
+slabs.append((corr,SUY-0.45,SUY))        # the suites' corridor
 # under the 200 concourse the tunnels run on hollow
 s0_=slabs[0][0]; slabs[0]=(s0_&~TUNM,0.0,C200)
 if (s0_&TUNM).any(): slabs.insert(1,(s0_&TUNM,TUN_H,C200))
@@ -338,23 +374,10 @@ for dd in DOORLIST:
             blocked.append((dd['n'],kind,[round(c,2) for c in w])); break
 print('doors with something across the opening:',len(blocked),blocked[:12])
 json.dump(DOORLIST,open('/tmp/ssa_doors.json','w'))
-# ── the suites (3rd floor) along the left side, seen from the floor's desk ──
-# The VIP room and the suites (suite rooms): rooms on the 3rd floor behind the 200s' back, each with a glass front
-# and a balcony of two rows in front of it behind a glass balustrade (the VIP room 12 seats, a suite 8), boxed off
-# from each other; not on the public seating map.
-sel=(L2.R>0)&(X<0)&(np.abs(Z)<30)
-xb=float(X[sel].min())-0.3        # the 200s' back line on the -x side, less a gap
-SY=10.6; SR=0.4; SZ=29.0
-bx=[]; zz=-SZ
-for i in range(7): bx.append((zz,zz+4.0,8)); zz+=4.0
-bx.append((zz,zz+6.0,12)); zz+=6.0
-for i in range(7): bx.append((zz,zz+4.0,8)); zz+=4.0
-off=-(zz+SZ)/2-(-SZ)          # centre the run on z=0
-bx=[(round(a+off,2),round(b+off,2),n) for a,b,n in bx]
-z0s,z1s=bx[0][0],bx[-1][1]
+# (the suites' data: see above)
 rect=lambda x0,x1,za,zb: [[round(x0,2),round(za,2)],[round(x1,2),round(za,2)],[round(x1,2),round(zb,2)],[round(x0,2),round(zb,2)]]
 srows=[{'r':0,'y':SY,'y0':SY-0.45,'polys':[[rect(xb-1.0,xb,z0s,z1s)]]},
-       {'r':1,'y':SY+SR,'y0':SY-0.45,'polys':[[rect(xb-2.1,xb-1.0,z0s,z1s)]]}]
+       {'r':1,'y':SUY,'y0':SY-0.45,'polys':[[rect(xb-2.25,xb-1.0,z0s,z1s)]]}]
 Ss=[]
 for za,zb,n in bx:
     per=n//2; used_=per*0.6; z0=(za+zb)/2-used_/2+0.3
@@ -364,9 +387,10 @@ Ss=np.array(Ss)
 enc=np.c_[np.round(Ss[:,0]*10),np.round(Ss[:,1]*10),Ss[:,2],np.full(len(Ss),90)].astype('<i2')
 parts=[]
 for za,zb,n in bx[1:]:
-    parts.append([round(xb,2),round(za,2),round(xb-2.1,2),round(za,2),SY,round(SY+SR+1.1,2)])
+    parts.append([round(xb,2),round(za,2),round(xb-2.25,2),round(za,2),SY,round(SUY+1.1,2)])
 glass_rail=[[round(xb-0.05,2),round(z0s,2),round(xb-0.05,2),round(z1s,2),SY-0.45,round(SY+1.1,2)]]
-suites={'xf':round(xb,2),'xg':round(xb-2.25,2),'xr':round(xb-7.5,2),'y':SY+SR,'yc':round(SY+SR+3.0,2),'boxes':[[a,b,n] for a,b,n in bx]}
+suites={'xf':round(xb,2),'xg':round(xb-2.25,2),'xr':round(XR,2),'xc0':round(xc0,2),'xc1':round(xc1,2),'y':SUY,'yc':round(SUY+3.0,2),
+        'boxes':[[a,b,n] for a,b,n in bx],'doorW':1.2,'doorH':2.2}
 print('suites',len(bx),'seats',len(Ss),'front x',round(xb,2),'z',z0s,z1s)
 floors=[{'y':y,'y0':y0,'polys':mask_polys(G,m)} for m,y0,y in slabs]
 ow=contours(G,outer.astype(np.uint8),eps=0.03,minarea=100)
