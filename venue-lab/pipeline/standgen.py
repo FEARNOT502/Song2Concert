@@ -1193,16 +1193,20 @@ def tunnel_rows(rows, tunnels, deck_t=0.6):
                           [[[round(float(x), 2), round(float(z), 2)] for x, z in list(h.coords)[:-1]] for h in q.interiors])
         return ps
     for r in rows:
-        if all(r['y'] < th + dt or r['y0'] >= th for _, th, dt in rects): out.append(r); continue
-        keep, over = [], {}
+        keep, over, touched = [], {}, False
         for polys in r['polys']:
             g = Polygon(polys[0], polys[1:]).buffer(0)
             for rc, th, dt in rects:
-                if r['y'] < th + dt or r['y0'] >= th: continue
+                if r['y0'] >= th or not g.intersects(rc): continue         # on the roof already, or clear of the tunnel
+                if r['y'] < th + dt:
+                    # lower than the roof's top: none of it stands over the tunnel (a sliver left by the row's
+                    # overlap under the next one up goes too)
+                    g = g.difference(rc); touched = True; continue
                 i_ = g.intersection(rc)
                 if not i_.is_empty: over.setdefault(th, []).append(i_)
-                g = g.difference(rc)
+                g = g.difference(rc); touched = True
             keep.append(g)
+        if not touched: out.append(r); continue
         out.append({**r, 'polys': emit(keep)})
         for th, gs in over.items():
             ov = emit(gs)

@@ -106,7 +106,10 @@ def bowl_walls(G, l, tunnels, rail=1.0, off=0.05, step=0.3, gap=1.0):
         # the traced outline wobbles by a pixel or two: eased along its length (a wall, not a ragged edge)
         P = np.c_[gaussian_filter1d(P[:, 0], 2.0, mode='wrap'), gaussian_filter1d(P[:, 1], 2.0, mode='wrap')]
         hts = np.full(len(P), np.nan)
+        nv = np.array([-u[1], u[0]])
         for i, (x, z) in enumerate(P):
+            # the tunnel's mouth is left open: no wall across it
+            if abs((np.array([x, z]) - t['p']) @ nv) < t['w'] / 2 + 0.12 and (np.array([x, z]) - t['p']) @ u > -0.6: continue
             # the tread the open space ends against: the nearest tread cell within `gap`
             best = None
             for r in np.arange(0.1, gap + 0.01, 0.1):
@@ -123,7 +126,7 @@ def bowl_walls(G, l, tunnels, rail=1.0, off=0.05, step=0.3, gap=1.0):
         # join a run across the wrap-around
         if len(runs) > 1 and runs[0][0] == 0 and runs[-1][-1] == len(P) - 1: runs[0] = np.r_[runs[-1], runs[0]]; runs = runs[:-1]
         for run in runs:
-            if len(run) < 4: continue
+            if len(run) < 3: continue
             q = P[run]; h = hts[run] + rail
             # eased: the top a metre over the treads' envelope, smoothed along the wall (a rake, not steps)
             env = maximum_filter1d(h, size=max(3, int(2.4 / step)), mode='nearest')

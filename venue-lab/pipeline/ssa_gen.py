@@ -69,9 +69,40 @@ VOMS={}
 for name,l,floor in (('200',L2,C200),('400',L4,C400)):
     cands=notches(l,DOORS[name])
     VOMS[name]=l.make_voms(floor,head=1.9,wmax=3.0,cands=cands)
+for vs_ in VOMS.values():
+    for v_ in vs_: v_['bridge']=True     # (the renderer lays a plate over the crack between a traced pit's mouth and the last tread)
 print('voms',{k:len(v) for k,v in VOMS.items()},round(time.time()-T0,1))
 for k,v in VOMS.items():
     for o in sorted(v,key=lambda o:(round(o['p'][0]/5),o['p'][1])): print('  ',k,[round(c,1) for c in o['p']],'w',o['w'],'L',o['L'],'T',o['T'])
+
+# ── the doors: each at the head of its aisle, on the stand's back edge ──
+from scipy.ndimage import distance_transform_edt
+def snap_doors(l,gates,skip):
+    """the door of each badge (not those at a vomitory): the aisle's cell nearest the badge, out along the rake to where
+    the treads end -> {number: (point on the back edge, outward unit vector)}"""
+    seatfoot=cv2.dilate(l.seatmask,disk(1)); A=((l.R>0)&(seatfoot==0)).astype(np.uint8)
+    A=cv2.morphologyEx(A,cv2.MORPH_OPEN,disk(3))>0
+    _,(iy,ix)=distance_transform_edt(~A,return_indices=True)
+    gz_,gx_=np.gradient(cv2.GaussianBlur(np.where(l.d>-1e2,l.d,0).astype(np.float32),(0,0),8))
+    out={}
+    for g,(x,z) in gates.items():
+        if g in skip: continue
+        i_,j_=[int(round(float(c))) for c in G.g(x,z)]
+        j2,i2=iy[j_,i_],ix[j_,i_]
+        p=np.array(G.m(i2,j2)); v=np.array([gx_[j2,i2],gz_[j2,i2]]); v/=np.linalg.norm(v)+1e-9
+        t=0.0; last=p; gap=0
+        while t<12.0:
+            q=p+v*t; a_,b_=[int(round(float(c))) for c in G.g(q[0],q[1])]
+            if not (0<=a_<G.W and 0<=b_<G.H): break
+            if l.R[b_,a_]: last=q; gap=0
+            else:
+                gap+=1
+                if gap>3: break                      # (a crack of a cell or two in the treads is not their end)
+            t+=0.1
+        out[g]=(last+v*0.05,v)
+    return out
+SNAP={name:snap_doors(l,DOORS[name],set(GAPDOOR[name])) for name,l in (('200',L2),('300',L3),('400',L4),('500',L5))}
+print('doors snapped',{k:len(v) for k,v in SNAP.items()},'; farthest move from the badge %.1f m'%max(np.hypot(*(p-np.array(DOORS[k][g]))) for k,v in SNAP.items() for g,(p,_) in v.items()))
 
 # ── the floor's corner passages: the map leaves a bowl of open floor at each of the floor's south corners (the north
 # ones are behind the stage's masking), funnelling in between the fan's blocks and the end block to a throat; a tunnel
@@ -169,6 +200,16 @@ def mark(f):
         gx_,gz_=G.g(fp[:,0],fp[:,1]); gx_=np.clip(np.round(gx_).astype(int),0,G.W-1); gz_=np.clip(np.round(gz_).astype(int),0,G.H-1)
         used[gz_,gx_]=True
     used[:]=cv2.dilate(used.astype(np.uint8),np.ones((5,5),np.uint8))>0
+# nothing stands in front of a door or at the foot of a vomitory (a stair's flank across it)
+keepclear=np.zeros_like(used)
+def clear_zone(x,z,dx,dz,L,w):
+    fp=footprint(x,z,dx,dz,L,w,step=0.1)
+    gx_,gz_=G.g(fp[:,0],fp[:,1]); keepclear[np.clip(np.round(gz_).astype(int),0,G.H-1),np.clip(np.round(gx_).astype(int),0,G.W-1)]=True
+for name,sn in SNAP.items():
+    for g,(p,v) in sn.items(): clear_zone(p[0]-0.2*v[0],p[1]-0.2*v[1],v[0],v[1],2.0,2.4)
+for name,vs in VOMS.items():
+    for vm in vs:
+        e=np.array(vm['p'])+np.array(vm['u'])*(vm['L']+vm['T']-0.3); clear_zone(e[0],e[1],vm['u'][0],vm['u'][1],2.0,2.8)
 flights=[]
 # the corridor's stairs: down from each end, beyond the rooms' run, to the 200 concourse; the corridor's floor runs out
 # over their landings
@@ -176,7 +217,7 @@ rooms_zone=(X>=xc0-1.0)&(X<=xb)&(Z>=z0s-0.5)&(Z<=z1s+0.5)
 for sg in (1,-1):
     za,zb=(z1s+0.3,z1s+3.3) if sg>0 else (z0s-3.3,z0s-0.3)
     plat=(X>=xc0)&(X<=xc0+9.0)&(Z>=za)&(Z<=zb)
-    f=find_flight(c200,plat,C200,SUY,(xc0+4.5,sg*(abs(za)+3.0)),standany|used|rooms_zone)
+    f=find_flight(c200,plat,C200,SUY,(xc0+4.5,sg*(abs(za)+3.0)),standany|used|keepclear|rooms_zone)
     print('suites stair','south' if sg>0 else 'north',f and {k:round(float(v),1) for k,v in f.items()})
     if not f: continue
     flights.append(f); mark(f)
@@ -188,9 +229,24 @@ for sg in (1,-1):
 for sz in (1,-1):
     for sx in (1,-1):
         for lo,up,y0,y1,near in ((c200,c300,C200,C300,(sx*22,sz*60)),(c300,c400,C300,C400,(sx*30,sz*57)),(c400,c500,C400,C500,(sx*12,sz*59)),(c200,c400,C200,C400,(sx*52,sz*48))):
-            f=find_flight(lo,up,y0,y1,near,standany|used)
+            f=find_flight(lo,up,y0,y1,near,standany|used|keepclear)
             print('flight',sx,sz,y0,y1,f and {k:round(float(v),1) for k,v in f.items()})
             if f: flights.append(f); mark(f)
+# a door whose aisle stands well above the concourse's floor (a stand's back rows run up past it): the door's sill is
+# up at the aisle's level and a short stair goes down from it to the floor
+LVL={'200':(C200,L2),'300':(C300,L3),'400':(C400,L4),'500':(C500,L5)}
+RAISED={}
+for name,sn in SNAP.items():
+    yc_,l_=LVL[name]
+    for g,(p,v) in sn.items():
+        a_,b_=[int(round(float(c))) for c in G.g(*(p-v*0.4))]
+        if not (0<=a_<G.W and 0<=b_<G.H) or l_.band[b_,a_]<0: continue
+        yp=float(l_.h(l_.band[b_,a_]))
+        if yp-yc_<=0.3: continue
+        n=int(np.ceil((yp-yc_)/RISE)); L_=n*RUN
+        RAISED[(name,g)]=yp
+        flights.append(dict(x=float(p[0]+v[0]*L_),z=float(p[1]+v[1]*L_),dx=float(-v[0]),dz=float(-v[1]),n=n,L=L_,y0=yc_,y1=yp))
+print('raised doors',{k:round(h,2) for k,h in RAISED.items()})
 for f in flights:
     fp=footprint(f['x'],f['z'],f['dx'],f['dz'],f['L']-0.3,WID+0.4,step=0.05)
     gx_,gz_=G.g(fp[:,0],fp[:,1]); gx_=np.clip(np.round(gx_).astype(int),0,G.W-1); gz_=np.clip(np.round(gz_).astype(int),0,G.H-1)
@@ -199,31 +255,6 @@ for f in flights:
         if y==f['y1']:
             m=np.zeros_like(c); m[gz_,gx_]=True; c&=~m
 print('flights',len(flights),round(time.time()-T0,1))
-
-# ── the doors: each at the head of its aisle, on the stand's back edge ──
-from scipy.ndimage import distance_transform_edt
-def snap_doors(l,gates,skip):
-    """the door of each badge (not those at a vomitory): the aisle's cell nearest the badge, out along the rake to where
-    the treads end -> {number: (point on the back edge, outward unit vector)}"""
-    seatfoot=cv2.dilate(l.seatmask,disk(1)); A=((l.R>0)&(seatfoot==0)).astype(np.uint8)
-    A=cv2.morphologyEx(A,cv2.MORPH_OPEN,disk(3))>0
-    _,(iy,ix)=distance_transform_edt(~A,return_indices=True)
-    gz_,gx_=np.gradient(cv2.GaussianBlur(np.where(l.d>-1e2,l.d,0).astype(np.float32),(0,0),8))
-    out={}
-    for g,(x,z) in gates.items():
-        if g in skip: continue
-        i_,j_=[int(round(float(c))) for c in G.g(x,z)]
-        j2,i2=iy[j_,i_],ix[j_,i_]
-        p=np.array(G.m(i2,j2)); v=np.array([gx_[j2,i2],gz_[j2,i2]]); v/=np.linalg.norm(v)+1e-9
-        t=0.0; last=p
-        while t<12.0:
-            q=p+v*t; a_,b_=[int(round(float(c))) for c in G.g(q[0],q[1])]
-            if not (0<=a_<G.W and 0<=b_<G.H) or not l.R[b_,a_]: break
-            last=q; t+=0.1
-        out[g]=(last+v*0.05,v)
-    return out
-SNAP={name:snap_doors(l,DOORS[name],set(GAPDOOR[name])) for name,l in (('200',L2),('300',L3),('400',L4),('500',L5))}
-print('doors snapped',{k:len(v) for k,v in SNAP.items()},'; farthest move from the badge %.1f m'%max(np.hypot(*(p-np.array(DOORS[k][g]))) for k,v in SNAP.items() for g,(p,_) in v.items()))
 
 # ── the doors' numbers on the vomitories ──
 for name,vs in VOMS.items():
@@ -311,6 +342,7 @@ SIGNS=[]; FRAMES=[]; DOORLIST=[]
 for name,sn in SNAP.items():
     y0,l=FL[name]
     for g,(p,v) in sn.items():
+        y0=RAISED.get((name,g),FL[name][0])            # (the sill of a raised door)
         yaw=float(np.arctan2(v[0],v[1]))
         FRAMES.append({'x':round(float(p[0]),2),'z':round(float(p[1]),2),'yaw':round(yaw,3),'w':DOOR_W,'h':DOOR_H,'y':y0,'label':str(g)})
         for face,sg in ((0,1.0),(np.pi,-1.0)):
@@ -326,10 +358,14 @@ def cut_doors(panels,doors,keep_lintel=True):
     for pnl in panels:
         a=np.array(pnl[0:2],float); b=np.array(pnl[2:4],float); L=float(np.hypot(*(b-a)))
         if L<1e-6: out.append(list(pnl)); continue
-        u=(b-a)/L; cuts=[]
+        u=(b-a)/L; cuts=[]; drop=False
         for dd in doors:
             p=np.array(dd['p']); v=np.array(dd['v']); t=np.array([-v[1],v[0]])
-            if abs(u@v)>0.88: continue                           # runs along the aisle's axis: the aisle's side
+            if abs(u@v)>0.88:                                    # runs along the aisle's axis: the aisle's side
+                # (a stub of it left in the opening itself goes)
+                lat=[abs((q-p)@t) for q in (a,b)]; dep=[(q-p)@v for q in (a,b)]
+                if L<0.6 and max(lat)<DOOR_W/2-0.2 and min(dep)>-1.5 and max(dep)<1.5: drop=True
+                continue
             sill=None
             for yy in (dd['y'],dd['yIn']):
                 if pnl[4]<=yy+DOOR_H and pnl[5]>yy+0.2: sill=yy if sill is None else min(sill,yy)
@@ -347,6 +383,7 @@ def cut_doors(panels,doors,keep_lintel=True):
                     if t0>t1: t0,t1=t1,t0
                     lo_=max(lo_,t0); hi_=min(hi_,t1)
             if lo_<hi_-1e-6: cuts.append((lo_*L,hi_*L,sill))
+        if drop: continue
         if not cuts: out.append(list(pnl)); continue
         cuts.sort(key=lambda c:c[0]); s0=0.0
         for c0,c1,dd in cuts:   # (dd: the sill's height)

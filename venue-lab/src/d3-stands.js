@@ -252,6 +252,12 @@ function vomParts(v, ox, oz) {
     t0f = n * 0.3;
   }
   floor.push(box(t0f, v.L + v.T, -hw, hw, v.y - 0.12, v.y + 0.005));
+  // (v.bridge) a plate under the mouth's edge, out over the treads' end (a traced pit can stand a hand's breadth off the
+  // last tread, a crack to walk into): just under the floor's first step
+  if (v.bridge) {
+    const top = (t0f > 0 ? mouth + (v.y - mouth) / Math.ceil((v.y - mouth) / 0.18) : v.y) - 0.01;
+    floor.push(box(-0.35, 0.02, -hw + T, hw - T, top - 0.4, top));
+  }
   if (v.T > 0 && v.roof != null) {
     // the mouth's frame: posts as thick as the pit's walls, a lintel between them, deep enough to read as the wall's thickness
     const D = Math.max(v.T, 0.6);
