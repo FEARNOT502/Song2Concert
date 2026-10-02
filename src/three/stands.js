@@ -146,6 +146,67 @@ export function pillars(list, ox, oz, mat) {
   return m;
 }
 
+// The doors' frames (data.frames: {x, z, yaw, w, h, y}): a post each side and a lintel across, as deep as the
+// wall is thick; the frame faces (sin yaw, cos yaw), `w` the opening, `h` its height over the floor `y`.
+export function doorFrames(list, ox, oz, mat) {
+  const parts = [];
+  const T = 0.16, D = 0.34;
+  for (const f of list) {
+    const box = (bw, bh, bd, lx, ly) => {
+      const b = new THREE.BoxGeometry(bw, bh, bd);
+      b.translate(lx, ly, 0); b.rotateY(f.yaw); b.translate(f.x + ox, 0, f.z + oz);
+      parts.push(b.toNonIndexed());
+    };
+    for (const s of [-1, 1]) box(T, f.h + 0.2, D, s * (f.w / 2 + T / 2), f.y + (f.h + 0.2) / 2);
+    box(f.w + 2 * T, 0.2, D, 0, f.y + f.h + 0.1);
+  }
+  const m = new THREE.Mesh(mergeGeometries(parts), mat);
+  m.receiveShadow = true;
+  return m;
+}
+
+// The walls round a bowl of open floor where it meets the stand (data.cutWalls: [{pts: [[x, z, top], ...]}]): each
+// stands from the floor and its top is raked with the rows beside it (a ribbon along the polyline, the open side
+// being the one the points lie on), shaded smooth along its length, the texture running on with it, and a pale
+// coping along its top (`coping` high, 0 for none).
+export function cutWalls(list, ox, oz, mat, coping = 0) {
+  const P = [], U = [], I = [];
+  const C = [], CU = [], CI = [];
+  for (const w of list) {
+    const q = w.pts, base = P.length / 3, cbase = C.length / 3;
+    let s = 0;
+    for (let i = 0; i < q.length; i++) {
+      const [x, z, top] = q[i];
+      if (i) s += Math.hypot(x - q[i - 1][0], z - q[i - 1][1]);
+      P.push(x + ox, 0, z + oz, x + ox, top - coping, z + oz); U.push(s, 0, s, top - coping);
+      C.push(x + ox, top - coping, z + oz, x + ox, top, z + oz); CU.push(s, 0, s, coping);
+    }
+    for (let i = 0; i + 1 < q.length; i++) {
+      const a = base + 2 * i, b = a + 1, c = a + 2, d = a + 3;
+      I.push(a, c, d, a, d, b);
+      const ca = cbase + 2 * i, cb = ca + 1, cc = ca + 2, cd = ca + 3;
+      CI.push(ca, cc, cd, ca, cd, cb);
+    }
+  }
+  const geo = (p, u, ix) => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(u, 2));
+    g.setIndex(ix);
+    g.computeVertexNormals();
+    return g;
+  };
+  const grp = new THREE.Group();
+  const m = new THREE.Mesh(geo(P, U, I), mat);
+  m.receiveShadow = true;
+  grp.add(m);
+  if (coping > 0) {
+    const cm = mat.clone(); cm.color.setScalar(1.0);
+    grp.add(new THREE.Mesh(geo(C, CU, CI), cm));
+  }
+  return grp;
+}
+
 // A vomitory as its own solid: a straight pit through the rows too low to
 // walk under, walled either side up past the treads beside it (each wall one
 // solid, its top raked with the rows, capped; the walls sit inside the pit, so
@@ -210,6 +271,12 @@ export function vomParts(v, ox, oz) {
     t0f = n * 0.3;
   }
   floor.push(box(t0f, v.L + v.T, -hw, hw, v.y - 0.12, v.y + 0.005));
+  // (v.bridge) a plate under the mouth's edge, out over the treads' end (a traced pit can stand a hand's breadth off the
+  // last tread, a crack to walk into): just under the floor's first step
+  if (v.bridge) {
+    const top = (t0f > 0 ? mouth + (v.y - mouth) / Math.ceil((v.y - mouth) / 0.18) : v.y) - 0.01;
+    floor.push(box(-0.35, 0.02, -hw + T, hw - T, top - 0.4, top));
+  }
   if (v.T > 0 && v.roof != null) {
     // the mouth's frame: posts as thick as the pit's walls, a lintel between them, deep enough to read as the wall's thickness
     const D = Math.max(v.T, 0.6);
@@ -876,6 +943,12 @@ export function buildStands(data, {
   }
   if (data.signs?.length) g.add(signSheet(data.signs, ox, oz, materials.signBg, materials.signFg));
   if (data.pillars?.length) g.add(pillars(data.pillars, ox, oz, lit ? lit.inMat : wallMat));
+  if (data.cutWalls?.length) {
+    const cw = (materials.cutWall ?? structMat).clone(); cw.side = THREE.DoubleSide;
+    if (!materials.cutWall) cw.color.setScalar(0.4);        // dark concrete: the bowls' walls are the stands' fronts, not light panels
+    g.add(cutWalls(data.cutWalls, ox, oz, cw, 0.3));
+  }
+  if (data.frames?.length) g.add(doorFrames(data.frames, ox, oz, materials.doorFrame ?? std({ color: 0x1b1d22, roughness: 0.55, metalness: 0.35 })));
   // seats: instanced per colour, or handed to the venue's own seat
   const lights = lit ? roomLights(data, { ox, oz, lit }) : null;
   const update = (f) => lights?.update(f);
