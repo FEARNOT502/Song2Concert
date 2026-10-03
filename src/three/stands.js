@@ -165,12 +165,14 @@ export function doorFrames(list, ox, oz, mat) {
   return m;
 }
 
-// The walls round a bowl of open floor where it meets the stand (data.cutWalls: [{pts: [[x, z, top], ...], n, T}]):
-// each stands from the floor and its top is raked with the rows beside it. Along the polyline `pts` (the stand's
-// edge) the wall is `T` thick out into the open space (`n`: the unit vector out, at each point): a solid, its two
-// faces, its cap and its ends, shaded smooth along its length, the texture running on with it, and a pale coping
-// along its top (`coping` high, 0 for none). Without `T` it is a ribbon, one face, the open side the one the points
-// lie on.
+// The walls round a bowl of open floor where it meets the stand (data.cutWalls: [{pts: [[x, z, top], ...], inner, back,
+// caps}]): each stands from the floor and its top is raked with the rows beside it. Along the polyline `pts` (the stand's
+// edge) the wall's body reaches out into the open space to `inner` (a point for each, its face there; or `n`, the unit
+// vector out, and `T`, how far): a solid, its two faces, its top and its ends (`caps`: whether the start and the end of
+// the piece show, [true, true] by default, a piece that runs on into the next hiding its end), each face and the top
+// flat or smooth along its length as the polyline is, the texture running on with it. A pale coping runs along its top
+// (`coping` high on both faces, and the top between `inner` and `back`, a strip of one width all along it; the rest of
+// the top, out to the stand's edge, is the wall's own concrete). With neither `inner` nor `T` it is a ribbon, one face.
 export function cutWalls(list, ox, oz, mat, coping = 0) {
   const body = { p: [], u: [], i: [] }, cap = { p: [], u: [], i: [] };
   // a strip between two lines of points [x, y, z, u, v] of equal length (a face), into `acc`
@@ -181,20 +183,27 @@ export function cutWalls(list, ox, oz, mat, coping = 0) {
   };
   for (const w of list) {
     const q = w.pts, T = w.T ?? 0;
+    const inner = w.inner ?? (w.n && T > 0 ? q.map((p, i) => [p[0] + w.n[i][0] * T, p[1] + w.n[i][1] * T]) : null);
+    const back = w.back ?? q;                                    // the coping's other edge (default: the stand's edge)
     const s = [0];
     for (let i = 1; i < q.length; i++) s.push(s[i - 1] + Math.hypot(q[i][0] - q[i - 1][0], q[i][1] - q[i - 1][1]));
-    const at = (i, k, y, u, v) => [q[i][0] + (w.n ? w.n[i][0] : 0) * T * k + ox, y, q[i][1] + (w.n ? w.n[i][1] : 0) * T * k + oz, u, v];
+    const lineOf = (k) => (k === 1 && inner ? inner : q);
+    const at = (i, k, y, u, v, ln = lineOf(k)) => [ln[i][0] + ox, y, ln[i][1] + oz, u, v];
     const tops = q.map((pt) => pt[2]);
-    for (const k of T > 0 ? [0, 1] : [0]) {
+    const wid = (i) => (inner ? Math.hypot(inner[i][0] - q[i][0], inner[i][1] - q[i][1]) : 0);
+    for (const k of inner ? [0, 1] : [0]) {
       strip(body, q.map((_, i) => at(i, k, 0, s[i], 0)), q.map((_, i) => at(i, k, tops[i] - coping, s[i], tops[i] - coping)));
       if (coping > 0) strip(cap, q.map((_, i) => at(i, k, tops[i] - coping, s[i], 0)), q.map((_, i) => at(i, k, tops[i], s[i], coping)));
     }
-    if (T > 0) {
-      strip(cap, q.map((_, i) => at(i, 0, tops[i], s[i], 0)), q.map((_, i) => at(i, 1, tops[i], s[i], T)));       // its cap
-      for (const i of [0, q.length - 1]) {                                                                           // its ends
-        strip(body, [at(i, 0, 0, 0, 0), at(i, 1, 0, T, 0)], [at(i, 0, tops[i] - coping, 0, tops[i] - coping), at(i, 1, tops[i] - coping, T, tops[i] - coping)]);
-        if (coping > 0) strip(cap, [at(i, 0, tops[i] - coping, 0, 0), at(i, 1, tops[i] - coping, T, 0)], [at(i, 0, tops[i], 0, coping), at(i, 1, tops[i], T, coping)]);
-      }
+    if (inner) {
+      strip(body, q.map((_, i) => at(i, 0, tops[i], s[i], 0)), q.map((_, i) => at(i, 0, tops[i], s[i], 0, back)));         // the top, out to the coping
+      strip(cap, q.map((_, i) => at(i, 0, tops[i], s[i], 0, back)), q.map((_, i) => at(i, 1, tops[i], s[i], wid(i))));      // the coping's top
+      const caps = w.caps ?? [true, true];
+      [[0, caps[0]], [q.length - 1, caps[1]]].forEach(([i, show]) => {                                                  // its ends
+        if (!show) return;
+        strip(body, [at(i, 0, 0, 0, 0), at(i, 1, 0, wid(i), 0)], [at(i, 0, tops[i] - coping, 0, tops[i] - coping), at(i, 1, tops[i] - coping, wid(i), tops[i] - coping)]);
+        if (coping > 0) strip(cap, [at(i, 0, tops[i] - coping, 0, 0), at(i, 1, tops[i] - coping, wid(i), 0)], [at(i, 0, tops[i], 0, coping), at(i, 1, tops[i], wid(i), coping)]);
+      });
     }
   }
   const geo = (acc) => {

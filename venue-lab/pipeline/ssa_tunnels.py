@@ -83,11 +83,93 @@ def corner_tunnels(G, l, floor_half=(25.9, 41.3), roof=5.0, wmin=7.4, tw=(7.0, 8
     return out
 
 
-def bowl_walls(G, l, tunnels, rail=1.0, off=0.05, step=0.3, gap=1.0, T=0.5):
-    """Walls round each bowl of open floor where it meets treads, full height from the floor, each top following the
-    treads' (a metre over them) but eased along the wall, so that it rakes with the rows instead of stepping with
-    them. -> [{'name', 'pts': [(x, z, top), ...], 'n': [(nx, nz), ...], 'T'}]: each point `off` out into the open
-    space, with the unit vector out into it, and the wall `T` thick (its body between the stand's edge and `T` out)"""
+def dp_indices(P, eps):
+    """Douglas-Peucker on an open polyline (N x 2): the indices of the points kept"""
+    keep = np.zeros(len(P), bool); keep[0] = keep[-1] = True
+    stack = [(0, len(P) - 1)]
+    while stack:
+        a, b = stack.pop()
+        if b <= a + 1: continue
+        A, B = P[a], P[b]; d = B - A; L = float(np.hypot(*d))
+        seg = P[a + 1:b] - A
+        dist = np.hypot(*seg.T) if L < 1e-9 else np.abs(seg @ np.array([-d[1], d[0]])) / L
+        i = int(np.argmax(dist))
+        if dist[i] > eps: m = a + 1 + i; keep[m] = True; stack += [(a, m), (m, b)]
+    return np.nonzero(keep)[0]
+
+
+def raked_top(s, env):
+    """The top of a wall that must clear `env` (the height of whatever it guards, at each point along it, `s` the
+    distance along): one straight rake, the line over every point of `env` that lies lowest over them on the whole (the
+    least total room: a linear programme in its height and its slope), and level where the rake reaches the highest of
+    them. A trapezoid, as the stadium's cuts have, not a staircase that follows the rows."""
+    from scipy.optimize import linprog
+    s = np.asarray(s, float); env = np.asarray(env, float); s0 = s.mean()
+    r = linprog([len(s), float((s - s0).sum())], A_ub=np.c_[-np.ones(len(s)), -(s - s0)], b_ub=-env, bounds=[(None, None), (None, None)], method='highs')
+    if not r.success: return np.full(len(s), env.max())
+    a, b = r.x
+    return np.minimum(env.max(), a + b * (s - s0))
+
+
+def facets(P, nrm, top, tol=0.8, T0=0.5, off=0.03, minlen=2.5):
+    """A run of an outline as straight walls. `P` (N x 2): points along the stand's edge, `nrm`: the unit vectors out into
+    the open space there, `top`: each point's wall height. The outline is simplified within `tol` to a few straight
+    pieces (none shorter than `minlen`); each piece's wall stands on a line pushed out into the open space just far enough
+    that the stand is never cut (at least the line through the piece's ends), is `T0` thick beyond that line, and its body
+    fills whatever lies between the line and the stand's edge. The pieces meet at mitred corners. -> [{'pts': [(x, z, top),
+    ...] along the stand's edge, 'inner': [(x, z), ...] the wall's face in the open space (a point for each), 'back':
+    [(x, z), ...] the line `T0` behind that face (the width of the coping), 'caps': [start, end] whether the piece's end
+    shows}]"""
+    idx = dp_indices(P, tol)
+    while len(idx) > 2:                                   # a piece too short is merged into its neighbour
+        ln = [float(np.hypot(*(P[idx[k + 1]] - P[idx[k]]))) for k in range(len(idx) - 1)]
+        k = int(np.argmin(ln))
+        if ln[k] >= minlen: break
+        idx = np.delete(idx, k + 1 if k + 1 < len(idx) - 1 else k)
+    m = len(idx) - 1
+    A, nv, c = [], [], []
+    for k in range(m):
+        a, b = idx[k], idx[k + 1]
+        d = (P[b] - P[a]) / (np.hypot(*(P[b] - P[a])) + 1e-12)
+        n_ = np.array([-d[1], d[0]])
+        if (nrm[a:b + 1] @ n_).mean() < 0: n_ = -n_
+        A.append(P[a]); nv.append(n_)
+        c.append(max(0.0, float(((P[a:b + 1] - P[a]) @ n_).max())))      # how far out the face stands from the piece's chord
+    def corners(dist):
+        """the face's corners at `dist` beyond the chords: where two of its lines meet (the ends: straight out from the stand's edge)"""
+        V = []
+        for k in range(m + 1):
+            if k == 0: V.append(P[idx[0]] + nv[0] * (c[0] + dist - (P[idx[0]] - A[0]) @ nv[0]))
+            elif k == m: V.append(P[idx[m]] + nv[m - 1] * (c[m - 1] + dist - (P[idx[m]] - A[m - 1]) @ nv[m - 1]))
+            else:
+                n1, n2 = nv[k - 1], nv[k]; M = np.array([n1, n2]); q = None
+                if abs(float(np.linalg.det(M))) > 0.25:
+                    q = np.linalg.solve(M, np.array([c[k - 1] + dist + n1 @ A[k - 1], c[k] + dist + n2 @ A[k]]))
+                    if np.hypot(*(q - P[idx[k]])) > 2.5 + dist: q = None
+                if q is None:                              # (nearly straight on, or too sharp to mitre)
+                    q1 = P[idx[k]] + n1 * (c[k - 1] + dist - (P[idx[k]] - A[k - 1]) @ n1); q2 = P[idx[k]] + n2 * (c[k] + dist - (P[idx[k]] - A[k]) @ n2)
+                    q = (q1 + q2) / 2
+                V.append(q)
+        return V
+    V, W = corners(T0), corners(0.0)
+    out = []
+    for k in range(m):
+        a, b = idx[k], idx[k + 1]
+        def along(e0, e1):
+            L2_ = float((e1 - e0) @ (e1 - e0)) + 1e-9
+            q = [e0 + (e1 - e0) * float(np.clip(((P[i] - e0) @ (e1 - e0)) / L2_, 0, 1)) for i in range(a, b + 1)]
+            q[0], q[-1] = e0, e1
+            return np.array(q)
+        out.append({'pts': np.c_[[P[i] + nv[k] * off for i in range(a, b + 1)], top[a:b + 1]], 'inner': along(V[k], V[k + 1]),
+                    'back': along(W[k], W[k + 1]), 'caps': [k == 0, k == m - 1]})
+    return out
+
+
+def bowl_walls(G, l, tunnels, rail=1.0, off=0.03, step=0.3, gap=1.0, T=0.5, tol=0.8, minlen=2.5):
+    """Walls round each bowl of open floor where it meets treads, full height from the floor, each of a few straight
+    pieces (see `facets`) `T` thick or more, the whole run's top one raked line over the treads' (a metre over them: see
+    `raked_top`). -> [{'name', 'pts': [(x, z, top), ...], 'inner': [(x, z), ...], 'back': [(x, z), ...], 'caps': [start,
+    end]}], masks"""
     from scipy.ndimage import distance_transform_edt
     R = (l.R > 0); out = []; masks = []
     gy, gx = np.mgrid[0:G.H, 0:G.W]; X, Z = G.m(gx, gy)
@@ -105,11 +187,13 @@ def bowl_walls(G, l, tunnels, rail=1.0, off=0.05, step=0.3, gap=1.0, T=0.5):
         n = max(8, int(d[-1] / step)); s = np.linspace(0, d[-1], n)
         px = np.interp(s, d, c[:, 0]); py = np.interp(s, d, c[:, 1])
         P = np.c_[G.m(px, py)]
-        # the traced outline wobbles by a pixel or two: eased along its length (a wall, not a ragged edge)
-        P = np.c_[gaussian_filter1d(P[:, 0], 2.0, mode='wrap'), gaussian_filter1d(P[:, 1], 2.0, mode='wrap')]
-        hts = np.full(len(P), np.nan)
+        # the traced outline wobbles by a pixel or two: eased along its length (the straight pieces are fitted to it)
+        P = np.c_[gaussian_filter1d(P[:, 0], 1.0, mode='wrap'), gaussian_filter1d(P[:, 1], 1.0, mode='wrap')]
+        hts = np.full(len(P), np.nan); nrm = np.zeros_like(P)
         nv = np.array([-u[1], u[0]])
         for i, (x, z) in enumerate(P):
+            a, b = [int(round(float(v))) for v in G.g(x, z)]
+            g_ = np.array([gx_[b, a], gz_[b, a]]); nrm[i] = g_ / (np.linalg.norm(g_) + 1e-9)
             # the tunnel's mouth is left open: no wall across it
             if abs((np.array([x, z]) - t['p']) @ nv) < t['w'] / 2 + 0.12 and (np.array([x, z]) - t['p']) @ u > -0.6: continue
             # the tread the open space ends against: the nearest tread cell within `gap`
@@ -129,17 +213,12 @@ def bowl_walls(G, l, tunnels, rail=1.0, off=0.05, step=0.3, gap=1.0, T=0.5):
         if len(runs) > 1 and runs[0][0] == 0 and runs[-1][-1] == len(P) - 1: runs[0] = np.r_[runs[-1], runs[0]]; runs = runs[:-1]
         for run in runs:
             if len(run) < 3: continue
-            q = P[run]; h = hts[run] + rail
-            # eased: the top a metre over the treads' envelope, smoothed along the wall (a rake, not steps)
-            env = maximum_filter1d(h, size=max(3, int(2.4 / step)), mode='nearest')
-            top = gaussian_filter1d(env, sigma=max(1.0, 0.9 / step), mode='nearest')
-            top = np.maximum(top, h - 0.1)
-            # out into the open space
-            pts, nrm = [], []
-            for (x, z), tp in zip(q, top):
-                a, b = [int(round(float(v))) for v in G.g(x, z)]
-                gn = np.array([gx_[b, a], gz_[b, a]]); gn /= np.linalg.norm(gn) + 1e-9
-                pts.append([round(float(x + gn[0] * off), 2), round(float(z + gn[1] * off), 2), round(float(tp), 2)])
-                nrm.append([round(float(gn[0]), 3), round(float(gn[1]), 3)])
-            out.append({'name': t['name'], 'pts': pts, 'n': nrm, 'T': T})
+            q = P[run]; sl = np.r_[0, np.cumsum(np.hypot(*np.diff(q, axis=0).T))]
+            # the height to clear: a metre over the treads (the highest within a couple of metres along the wall), the wall's
+            # top one straight rake over that
+            env = maximum_filter1d(hts[run] + rail, size=max(3, int(2.4 / step)), mode='nearest')
+            top = raked_top(sl, env)
+            for f in facets(q, nrm[run], top, tol=tol, T0=T, off=off, minlen=minlen):
+                r2 = lambda v: [round(float(c), 2) for c in v]
+                out.append({'name': t['name'], 'pts': [r2(p) for p in f['pts']], 'inner': [r2(p) for p in f['inner']], 'back': [r2(p) for p in f['back']], 'caps': f['caps']})
     return out, masks

@@ -2,6 +2,34 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 23: the Saitama Super Arena's corner walls: straight faces, thick, one raked top
+- **What was wrong** (user's report on round 22: "tidy the end faces of the corner's rear and side stands as thick raked walls, like
+  Wembley's tunnel"): the walls round each corner bowl followed the map's void as it is, a wavy outline (each row's end a step,
+  smoothed), 0.5 m thick, their tops following the treads' staircase eased along (a hump, a dip), the coping a band of
+  whatever width the body happened to be. Wembley's cut has straight faces, a top that is one straight line and a coping of one width.
+- **Straight faces.** `ssa_tunnels.facets`: the outline of each run of wall (the stand's edge along the bowl) is simplified within
+  0.8 m (Douglas-Peucker, no piece shorter than 2.5 m) to 2-3 straight pieces (SE 3 + 2, SW 3 + 2, one per face of the bowl's two
+  sides); each piece's face stands on a line pushed out into the open space just far enough that no seat or tread is cut (never
+  nearer than the chord), 0.5 m of wall beyond it; the pieces meet at mitred corners. Nothing is taken from the stands (seats
+  10,752 as in round 22): the body fills whatever lies between the face and the stand's edge.
+- **One raked top.** `ssa_tunnels.raked_top`: each run's top is a single straight line over the treads' heights (a metre over
+  them), the one with the least room over them (a linear programme in height and slope, `scipy.optimize.linprog`), level where it
+  reaches the highest of them (a trapezoid, as in the stadium's cuts) instead of a staircase. The cut's own walls (`cut_side` in
+  ssa_gen.py) begin at the height the bowl's wall ends at, the least straight rake that clears the treads, level at the roof's
+  parapet (or at the bowl wall's end, if that is higher): the top runs on without a step.
+- **Coping.** `data.cutWalls` entries now carry `inner` (the face, a point for each), `back` (the line 0.5 m behind it) and `caps`
+  (whether a piece's two ends show: a piece that runs on into the next hides its end); `cutWalls()` in d3-stands.js draws the pale
+  coping (the top between `inner` and `back` and a 0.3 m band down each face) one width along the whole wall, the rest of the top out
+  to the stand's edge in the wall's own concrete. Where a bowl's wall reaches the tunnel's mouth its face, coping line and outer end
+  are those of the cut's wall.
+- **Checks.** Every level reachable on foot, 100% (200 10752 / 10752, 300 642, 400 5870, 500 754, 300S 124); 92 of 96 gates
+  walked (221-224 behind the stage as before; the corner tunnels walked to their ends); Wembley, the dome and the concert hall render
+  as before (pixel for pixel but a handful of antialiased edge pixels), the app builds and loads the arena without errors.
+- **To know.** The bowl's two sides are still the map's: the floor opening is 7.6 m wide and the bowl 14 m at its widest before it
+  narrows to the 7 m tunnel, so the corner is a funnel with a pocket, not Wembley's parallel trench (that would take out the seats of
+  the blocks round it). Faces are never cut into the stands: the body is thicker than 0.5 m (up to 1.3 m) where the stand's edge is
+  furthest behind its face; only the coping is of one width.
+
 ## Round 22: the Saitama Super Arena's corner tunnels as wide, deep cuts with thick walls; the 400 level's corner seams closed
 - **What was wrong** (user's report on round 21): the corner passage was a 3.2 m wide closet, 9-13 m long, behind walls that
   were one sheet thick; the old model's and Wembley's corner tunnels are 7 m wide, run on out to the building's wall, and have
@@ -19,7 +47,8 @@ Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
   a metre over the highest tread within 2 m beyond its edge; the tunnel's `sidesAsWalls` keeps `buildTunnels` from drawing
   them again, its `T` thickens the walls under the rows), so a bowl's wall runs on into the cut's without a step. Walls stand
   against the stand's edge and are thick into the open space: the tunnel's clear width is 6.0 m. `tunnels_out` passes `T`
-  and `sidesAsWalls` on only where a venue sets them (Wembley's and the dome's data are as they were).
+  and `sidesAsWalls` on only where a venue sets them (Wembley's and the dome's data are as they were). (Round 23 redid the bowls' walls as
+  straight faces with one raked top: see above.)
 - **The 400 level's seams.** Where the end stand's last block and the side stand's first stand apart (a diamond of 9-10 m^2,
   wider than the aisles' closing takes) the gap is given back to the treads (`corner_seams` -> `fills`: an aisle between the
   stands), so row 0, the band under it and the parapet run on round each corner: no free rail ends left in the seams.

@@ -127,8 +127,9 @@ print('doors snapped',{k:len(v) for k,v in SNAP.items()},'; farthest move from t
 # ones are behind the stage's masking), funnelling in between the fan's blocks and the end block to a throat; a wide tunnel
 # goes on from the throat under the concourse's storey to the building's wall. The bowls' sides are walls with their
 # tops raked with the rows beside them. ──
+WALL_T=0.5                                       # the corner walls' thickness at the least (the bowls' and the tunnels')
 CORNERS=ST.corner_tunnels(G,L2)
-BOWLWALLS,BOWLMASKS=ST.bowl_walls(G,L2,CORNERS)
+BOWLWALLS,BOWLMASKS=ST.bowl_walls(G,L2,CORNERS,T=WALL_T)
 
 # ── concourses ──
 def dil(m,r): return cv2.dilate(m.astype(np.uint8),disk(r/G.res))>0
@@ -286,7 +287,6 @@ for name,vs in VOMS.items():
 # on straight, an open cut through the low rows and then under the rows and the concourse's storey to the building's
 # wall. The bowl's sides and the cut's are thick walls with their tops raked with the rows beside them.
 TUN_H=4.4
-WALL_T=0.5                                       # the walls' thickness (the bowls' and the tunnels')
 body_=((L2.R>0)|(L2.hull>0)|c200)&(hull>0)       # what a tunnel runs under, before the cuts
 # a wide tunnel straight out from each bowl's throat, like a stadium's corner tunnels: an open cut through the rows
 # too low to pass under (walls raked with the rows beside it), then on under the rows and the concourse to the
@@ -301,30 +301,38 @@ def to_wall(p,u,step=0.2):
     return L
 TUN=[{'p':t['p'],'u':t['u'],'w':t['w'],'h':TUN_H,'closed':True,'Lmax':80.0,'Lmin':round(to_wall(t['p'],t['u'])-0.3,2),'name':t['name'],'T':WALL_T,'sidesAsWalls':True} for t in CORNERS]
 TUNM=cut_tunnels(G,L2,TUN,body_,back=0.6)
-# the cut's side walls are drawn like the bowls' (thick, raked, coped), one ribbon each: along the cut, from its mouth to
-# where its roof begins, each top a metre over the highest tread within two metres beyond the cut's edge there
-def cut_side(t,sg,back=0.6,reach=2.0,step=0.5):
+# the cut's side walls are drawn like the bowls' (thick, raked, coped), one wall each: along the cut, from its mouth to
+# where its roof begins. The top runs on from the end of the bowl's wall that reaches the mouth, as one straight rake
+# (the least that clears a metre over the highest tread within two metres beyond the cut's edge), level once it has
+# reached the roof's parapet
+def cut_side(t,sg,h_start,back=0.6,reach=2.0,step=0.5):
     p_,u_=np.asarray(t['p'],float),np.asarray(t['u'],float); v_=np.array([-u_[1],u_[0]])
-    aa=np.arange(-back,t['deck']+0.01,step); tops=[]
+    aa=np.arange(-back,t['deck']+0.01,step); env=[]
     for a_ in aa:
-        best=None
+        best=0.0
         for s_ in np.arange(0.05,reach+0.01,0.15):
             q_=p_+u_*a_+v_*sg*(t['w']/2+s_); i_,j_=[int(round(float(c))) for c in G.g(q_[0],q_[1])]
-            if 0<=i_<G.W and 0<=j_<G.H and L2.R[j_,i_]>0 and L2.band[j_,i_]>=0:
-                h_=float(L2.h(L2.band[j_,i_]))+1.0; best=h_ if best is None else max(best,h_)
-        tops.append(best)
-    known=[(a_,h_) for a_,h_ in zip(aa,tops) if h_ is not None]
-    if not known: return None
-    tp=np.interp(aa,[k[0] for k in known],[k[1] for k in known])          # (where no tread is beside it, the nearest value)
-    tp=np.minimum(np.maximum.accumulate(tp),t['deckY']+1.0)                 # rising with the rows, no higher than the roof's parapet
-    q_=cv2.approxPolyDP(np.c_[aa,tp].astype(np.float32).reshape(-1,1,2),0.2,False)[:,0,:]
-    e_=p_[None,:]+u_[None,:]*q_[:,:1]+v_[None,:]*sg*t['w']/2
-    return {'name':t['name']+'-cut','pts':[[round(float(x),2),round(float(z),2),round(float(h),2)] for (x,z),h in zip(e_,q_[:,1])],
-            'n':[[round(float(-v_[0]*sg),3),round(float(-v_[1]*sg),3)]]*len(q_),'T':WALL_T}
+            if 0<=i_<G.W and 0<=j_<G.H and L2.R[j_,i_]>0 and L2.band[j_,i_]>=0: best=max(best,float(L2.h(L2.band[j_,i_]))+1.0)
+        env.append(best)
+    env=np.array(env)
+    # a straight line from the bowl wall's end (at the mouth) that clears the envelope
+    k=max([0.0]+[(e-h_start)/(a_-aa[0]) for a_,e in zip(aa,env) if a_-aa[0]>0.25])
+    tp=np.minimum(h_start+k*(aa-aa[0]),max(h_start,t['deckY']+1.0))      # (no higher than the roof's parapet, or the bowl wall's end)
+    e_=p_[None,:]+u_[None,:]*aa[:,None]+v_[None,:]*sg*t['w']/2
+    n_=np.array([-v_[0]*sg,-v_[1]*sg]); i_=e_+n_[None,:]*WALL_T
+    r2=lambda v:[round(float(c),2) for c in v]
+    ends=[0,len(aa)-1]                                   # (a wall of two points: its ends and nothing between)
+    return {'name':t['name']+'-cut','pts':[r2([*e_[i],tp[i]]) for i in ends],'inner':[r2(i_[i]) for i in ends],'back':[r2(e_[i]) for i in ends],'caps':[True,True]}
 for t in TUN:
     for sg in (-1,1):
-        w_=cut_side(t,sg)
-        if w_ and len(w_['pts'])>=2: BOWLWALLS.append(w_)
+        # the bowl's wall that ends where this one begins runs on into it: its last face meets this one's, at the same height
+        start=np.asarray(t['p'],float)+np.asarray(t['u'],float)*(-0.6)+np.array([-t['u'][1],t['u'][0]])*sg*t['w']/2
+        mine=[w for w in BOWLWALLS if w['name']==t['name']]
+        best=min(((np.hypot(w['pts'][e][0]-start[0],w['pts'][e][1]-start[1]),w,e) for w in mine for e in (0,-1)),key=lambda r:r[0],default=None)
+        w_=cut_side(t,sg,best[1]['pts'][best[2]][2] if best and best[0]<1.0 else 0.0)
+        if best and best[0]<1.0:
+            _,w,e=best; w['pts'][e][:2]=w_['pts'][0][:2]; w['inner'][e]=list(w_['inner'][0]); w['back'][e]=list(w_['back'][0]); w['caps'][0 if e==0 else 1]=False; w_['caps'][0]=False
+        BOWLWALLS.append(w_)
 print('corner tunnels',[(t['name'],[round(float(c),1) for c in t['p']],t['w'],t['L'],t['deck']) for t in TUN],'; bowl walls',[(w['name'],len(w['pts'])) for w in BOWLWALLS])
 slabs=[(grow_under(c,y,[L2,L3,L4,L5]),(0.0 if y==C200 else y-0.35),y) for c,y in ((c200,C200),(c300,C300),(c400,C400),(c500,C500))]
 slabs.append((corr,SUY-0.45,SUY))        # the suites' corridor
