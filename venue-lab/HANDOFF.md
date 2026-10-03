@@ -2,6 +2,34 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 22: the Saitama Super Arena's corner tunnels as wide, deep cuts with thick walls; the 400 level's corner seams closed
+- **What was wrong** (user's report on round 21): the corner passage was a 3.2 m wide closet, 9-13 m long, behind walls that
+  were one sheet thick; the old model's and Wembley's corner tunnels are 7 m wide, run on out to the building's wall, and have
+  walls with a body. And the 400 level's front rail and the band under it broke at all four corners, where the end stand
+  meets the side stand.
+- **The tunnel.** `corner_tunnels` takes the mouth where the bowl of open floor has narrowed to 7.4 m (`wmin`) and makes the
+  tunnel as wide as the bowl there (SE 7.0 m, SW 7.2 m, 4.4 m clear): SE from (23.6, 51.5), 13.6 m long, SW from
+  (-22.5, 50.6), 14.9 m, each out to the building's outer wall (`to_wall` -> `Lmin`) and shut there by its doors. It is the
+  stadium kind again (`cut_tunnels` without `covered`): an open cut through the rows too low to pass under (3.7 / 5.1 m),
+  then on under the rows and the concourse. The cut takes the ends of the rows it passes through: 55 seats fewer on the
+  200 level (10,807 -> 10,752).
+- **Thick walls.** `data.cutWalls` entries carry `n` (the unit vector out into the open space at each point) and `T` (0.5 m):
+  `cutWalls()` in d3-stands.js then builds a solid (two faces, a cap, two ends, a pale coping on top), a ribbon as before
+  where there is no `T`. The cut's own side walls are made the same way (`cut_side` in ssa_gen.py: along the cut, each top
+  a metre over the highest tread within 2 m beyond its edge; the tunnel's `sidesAsWalls` keeps `buildTunnels` from drawing
+  them again, its `T` thickens the walls under the rows), so a bowl's wall runs on into the cut's without a step. Walls stand
+  against the stand's edge and are thick into the open space: the tunnel's clear width is 6.0 m. `tunnels_out` passes `T`
+  and `sidesAsWalls` on only where a venue sets them (Wembley's and the dome's data are as they were).
+- **The 400 level's seams.** Where the end stand's last block and the side stand's first stand apart (a diamond of 9-10 m^2,
+  wider than the aisles' closing takes) the gap is given back to the treads (`corner_seams` -> `fills`: an aisle between the
+  stands), so row 0, the band under it and the parapet run on round each corner: no free rail ends left in the seams.
+- **Checks.** Every level reachable on foot, 100% (200 10752 / 10752, 300 642, 400 5870, 500 754, 300S 124); 92 of 96 gates
+  walked (the corner tunnels now through to their ends; the four left are 221-224 behind the stage's masking, as before).
+  Shared code: `d3-stands.js` (`cutWalls`, `buildTunnels`), `standgen.tunnels_out`; Wembley, the dome, the concert hall,
+  Inspire and KSPO rendered again without errors.
+- **To know.** The bowls' own walls still follow the map's void (curved, 2-8 m high): only the tunnel is straight.
+  The north corners' seams are filled too, but lie behind the stage's backdrop.
+
 ## Round 21: the Saitama Super Arena laid out from the official seat map; doors, corner tunnels, suites
 Arena mode, end stage 2. The seats, rows and doors are read off the official map (not drawn by hand), the structure round
 them is rebuilt on that, and every level and every door is checked on foot.
@@ -32,7 +60,7 @@ them is rebuilt on that, and every level and every door is checked on foot.
   the throat (where it is no wider than 3.6 m) and puts a covered tunnel there (3.0-3.2 m wide, 4.4 m high, closed
   at its end, `cut_tunnels(covered=True)`); the concourse's block is taken out of the bowl, and the bowl's sides get walls
   whose tops rake with the rows beside them: `data.cutWalls`, one concrete ribbon per wall run, shaded smooth along its
-  length (`cutWalls()` in d3-stands.js), the tunnel's mouth left open.
+  length (`cutWalls()` in d3-stands.js), the tunnel's mouth left open. (Round 22 made the tunnel wide and deep and the walls thick.)
 - **The 300 level** (the VIP balcony, 642 seats) and **the suites** (the 300S level: 15 rooms and 124 seats along the left
   side): the balcony's blocks are boxes with a low partition at each end; the suites have a corridor behind them over the
   200 concourse's ceiling (`xc0`..`xc1`), a stair down to the concourse at each end (found like the others, the

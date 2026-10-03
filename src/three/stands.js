@@ -165,44 +165,53 @@ export function doorFrames(list, ox, oz, mat) {
   return m;
 }
 
-// The walls round a bowl of open floor where it meets the stand (data.cutWalls: [{pts: [[x, z, top], ...]}]): each
-// stands from the floor and its top is raked with the rows beside it (a ribbon along the polyline, the open side
-// being the one the points lie on), shaded smooth along its length, the texture running on with it, and a pale
-// coping along its top (`coping` high, 0 for none).
+// The walls round a bowl of open floor where it meets the stand (data.cutWalls: [{pts: [[x, z, top], ...], n, T}]):
+// each stands from the floor and its top is raked with the rows beside it. Along the polyline `pts` (the stand's
+// edge) the wall is `T` thick out into the open space (`n`: the unit vector out, at each point): a solid, its two
+// faces, its cap and its ends, shaded smooth along its length, the texture running on with it, and a pale coping
+// along its top (`coping` high, 0 for none). Without `T` it is a ribbon, one face, the open side the one the points
+// lie on.
 export function cutWalls(list, ox, oz, mat, coping = 0) {
-  const P = [], U = [], I = [];
-  const C = [], CU = [], CI = [];
+  const body = { p: [], u: [], i: [] }, cap = { p: [], u: [], i: [] };
+  // a strip between two lines of points [x, y, z, u, v] of equal length (a face), into `acc`
+  const strip = (acc, A, B) => {
+    const base = acc.p.length / 3;
+    for (let i = 0; i < A.length; i++) { acc.p.push(A[i][0], A[i][1], A[i][2], B[i][0], B[i][1], B[i][2]); acc.u.push(A[i][3], A[i][4], B[i][3], B[i][4]); }
+    for (let i = 0; i + 1 < A.length; i++) { const a = base + 2 * i, b = a + 1, c = a + 2, d = a + 3; acc.i.push(a, c, d, a, d, b); }
+  };
   for (const w of list) {
-    const q = w.pts, base = P.length / 3, cbase = C.length / 3;
-    let s = 0;
-    for (let i = 0; i < q.length; i++) {
-      const [x, z, top] = q[i];
-      if (i) s += Math.hypot(x - q[i - 1][0], z - q[i - 1][1]);
-      P.push(x + ox, 0, z + oz, x + ox, top - coping, z + oz); U.push(s, 0, s, top - coping);
-      C.push(x + ox, top - coping, z + oz, x + ox, top, z + oz); CU.push(s, 0, s, coping);
+    const q = w.pts, T = w.T ?? 0;
+    const s = [0];
+    for (let i = 1; i < q.length; i++) s.push(s[i - 1] + Math.hypot(q[i][0] - q[i - 1][0], q[i][1] - q[i - 1][1]));
+    const at = (i, k, y, u, v) => [q[i][0] + (w.n ? w.n[i][0] : 0) * T * k + ox, y, q[i][1] + (w.n ? w.n[i][1] : 0) * T * k + oz, u, v];
+    const tops = q.map((pt) => pt[2]);
+    for (const k of T > 0 ? [0, 1] : [0]) {
+      strip(body, q.map((_, i) => at(i, k, 0, s[i], 0)), q.map((_, i) => at(i, k, tops[i] - coping, s[i], tops[i] - coping)));
+      if (coping > 0) strip(cap, q.map((_, i) => at(i, k, tops[i] - coping, s[i], 0)), q.map((_, i) => at(i, k, tops[i], s[i], coping)));
     }
-    for (let i = 0; i + 1 < q.length; i++) {
-      const a = base + 2 * i, b = a + 1, c = a + 2, d = a + 3;
-      I.push(a, c, d, a, d, b);
-      const ca = cbase + 2 * i, cb = ca + 1, cc = ca + 2, cd = ca + 3;
-      CI.push(ca, cc, cd, ca, cd, cb);
+    if (T > 0) {
+      strip(cap, q.map((_, i) => at(i, 0, tops[i], s[i], 0)), q.map((_, i) => at(i, 1, tops[i], s[i], T)));       // its cap
+      for (const i of [0, q.length - 1]) {                                                                           // its ends
+        strip(body, [at(i, 0, 0, 0, 0), at(i, 1, 0, T, 0)], [at(i, 0, tops[i] - coping, 0, tops[i] - coping), at(i, 1, tops[i] - coping, T, tops[i] - coping)]);
+        if (coping > 0) strip(cap, [at(i, 0, tops[i] - coping, 0, 0), at(i, 1, tops[i] - coping, T, 0)], [at(i, 0, tops[i], 0, coping), at(i, 1, tops[i], T, coping)]);
+      }
     }
   }
-  const geo = (p, u, ix) => {
+  const geo = (acc) => {
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
-    g.setAttribute('uv', new THREE.Float32BufferAttribute(u, 2));
-    g.setIndex(ix);
+    g.setAttribute('position', new THREE.Float32BufferAttribute(acc.p, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(acc.u, 2));
+    g.setIndex(acc.i);
     g.computeVertexNormals();
     return g;
   };
   const grp = new THREE.Group();
-  const m = new THREE.Mesh(geo(P, U, I), mat);
+  const m = new THREE.Mesh(geo(body), mat);
   m.receiveShadow = true;
   grp.add(m);
-  if (coping > 0) {
+  if (cap.p.length) {
     const cm = mat.clone(); cm.color.setScalar(1.0);
-    grp.add(new THREE.Mesh(geo(C, CU, CI), cm));
+    grp.add(new THREE.Mesh(geo(cap), cm));
   }
   return grp;
 }
@@ -640,7 +649,7 @@ export function buildTunnels(data, ox, oz) {
       ex.applyMatrix4(new THREE.Matrix4().makeBasis(V3(ux, 0, uz), V3(0, 1, 0), V3(vx, 0, vz)).setPosition(ox_, 0, oz_));
       tunnelGeo.wall.push(ex.toNonIndexed());
     };
-    const hw = t.w / 2, T = 0.3;
+    const hw = t.w / 2, T = t.T ?? 0.3;
     if (t.covered) {
       // covered from its mouth: the same wall either side, the whole way, a
       // flat roof under the deck and the rows over it
@@ -651,7 +660,8 @@ export function buildTunnels(data, ox, oz) {
       const cut = (prof) => (prof?.length > 1
         ? [[prof[0][0], 0], [prof[prof.length - 1][0], 0], ...prof.slice().reverse()]
         : [[-0.4, 0], [t.deck, 0], [t.deck, t.deckY + 1.0], [-0.4, h1 + 1.0]]);
-      raked(hw - T, hw + 0.12, cut(t.sides?.[1])); raked(-hw - 0.12, -hw + T, cut(t.sides?.[0]));
+      // (or a venue draws them itself, thick and coped like its bowls' walls: data.cutWalls)
+      if (!t.sidesAsWalls) { raked(hw - T, hw + 0.12, cut(t.sides?.[1])); raked(-hw - 0.12, -hw + T, cut(t.sides?.[0])); }
       for (const sg of [-1, 1]) box(tunnelGeo.wall, t.deck, t.L, sg > 0 ? hw - T : -hw - 0.12, sg > 0 ? hw + 0.12 : -hw + T, 0, t.h + 0.02);
       box(tunnelGeo.wall, t.deck - 0.05, t.L, -hw, hw, t.h - 0.02, t.h + 0.12);      // the roof on under the rows
     }

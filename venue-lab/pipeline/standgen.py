@@ -1214,8 +1214,10 @@ def tunnel_rows(rows, tunnels, deck_t=0.6):
     return out
 
 def tunnels_out(tunnels):
+    # (`T`, the walls' thickness, and `sidesAsWalls`, the cut's side walls drawn as data.cutWalls: only where a venue sets them)
     return [{'p': [round(float(c), 3) for c in t['p']], 'u': [round(float(c), 4) for c in t['u']], 'w': t['w'], 'h': t['h'], 'L': t['L'],
-             'deck': t['deck'], 'deckY': t['deckY'], 'closed': bool(t.get('closed')), 'covered': bool(t.get('covered')), 'sides': t.get('sides')} for t in tunnels]
+             'deck': t['deck'], 'deckY': t['deckY'], 'closed': bool(t.get('closed')), 'covered': bool(t.get('covered')), 'sides': t.get('sides'),
+             **{k: t[k] for k in ('T', 'sidesAsWalls') if k in t}} for t in tunnels]
 
 def front_parapet(G, l, front, eps=0.05, minlen=1.0):
     """The parapet along a tier's front, traced whole: the front line (the

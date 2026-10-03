@@ -1,9 +1,10 @@
 """The 200 level's corner passages at floor level. The official map leaves a bowl of
 open floor at each corner of the floor, funnelling in between the fan's blocks to a
-throat where the rows beside it rise past a tunnel's height: there the passage
-goes on as a tunnel under the rows, out to the building. Here the bowl is found
-from the stand's treads, its middle line followed in to the throat (the tunnel's
-mouth), and the bowl's sides given walls whose tops are raked with the rows."""
+throat: there the passage goes on as a wide tunnel (an open cut, then under the
+rows), out to the building. Here the bowl is found from the stand's treads, its
+middle line followed in to the throat where it is no wider than the tunnel (the
+tunnel's mouth), and the bowl's sides given thick walls whose tops are raked with
+the rows."""
 import numpy as np, cv2
 from standlib import disk
 from scipy.ndimage import gaussian_filter1d, maximum_filter1d
@@ -66,26 +67,27 @@ def flank_heights(G, l, x, u, w):
     return out
 
 
-def corner_tunnels(G, l, floor_half=(25.9, 41.3), roof=5.0, tw=(3.0, 5.0)):
+def corner_tunnels(G, l, floor_half=(25.9, 41.3), roof=5.0, wmin=7.4, tw=(7.0, 8.0)):
     """The tunnels at the floor's south corners (the north corners lie behind the stage): for each, its mouth `p`
-    (the throat of the bowl of open floor in the corner, where the rows each side stand past a tunnel's height),
-    `u` out, width `w`"""
+    (where the bowl of open floor in the corner has narrowed to a tunnel's width, `wmin`: a wide one, like a
+    stadium's corner tunnels, running on straight out under the rows and the concourse), `u` out, width `w`"""
     floor, hull = floor_void(G, l)
     hx, hz = floor_half; out = []
     for name, sx in (('SE', 1), ('SW', -1)):
         corner = np.array([sx * hx, hz]); bowl, u = bowl_axis(G, floor, corner, hx, hz)
         if bowl is None: continue
-        last, pts = trace_bowl(G, floor, corner, u)
+        last, pts = trace_bowl(G, floor, corner, u, wmin=wmin)
         if last is None: continue
         p, w = last; p = p - u * 0.3
-        out.append({'name': name, 'corner': corner, 'p': p, 'u': u, 'w': float(np.clip(round(w - 0.2, 1), *tw)), 'bowl': bowl, 'axis': pts, 'floor': floor})
+        out.append({'name': name, 'corner': corner, 'p': p, 'u': u, 'w': float(np.clip(round(w, 1), *tw)), 'bowl': bowl, 'axis': pts, 'floor': floor})
     return out
 
 
-def bowl_walls(G, l, tunnels, rail=1.0, off=0.05, step=0.3, gap=1.0):
+def bowl_walls(G, l, tunnels, rail=1.0, off=0.05, step=0.3, gap=1.0, T=0.5):
     """Walls round each bowl of open floor where it meets treads, full height from the floor, each top following the
     treads' (a metre over them) but eased along the wall, so that it rakes with the rows instead of stepping with
-    them. -> [{'name', 'pts': [(x, z, top), ...]}] (each point `off` out into the open space)"""
+    them. -> [{'name', 'pts': [(x, z, top), ...], 'n': [(nx, nz), ...], 'T'}]: each point `off` out into the open
+    space, with the unit vector out into it, and the wall `T` thick (its body between the stand's edge and `T` out)"""
     from scipy.ndimage import distance_transform_edt
     R = (l.R > 0); out = []; masks = []
     gy, gx = np.mgrid[0:G.H, 0:G.W]; X, Z = G.m(gx, gy)
@@ -133,10 +135,11 @@ def bowl_walls(G, l, tunnels, rail=1.0, off=0.05, step=0.3, gap=1.0):
             top = gaussian_filter1d(env, sigma=max(1.0, 0.9 / step), mode='nearest')
             top = np.maximum(top, h - 0.1)
             # out into the open space
-            pts = []
+            pts, nrm = [], []
             for (x, z), tp in zip(q, top):
                 a, b = [int(round(float(v))) for v in G.g(x, z)]
                 gn = np.array([gx_[b, a], gz_[b, a]]); gn /= np.linalg.norm(gn) + 1e-9
                 pts.append([round(float(x + gn[0] * off), 2), round(float(z + gn[1] * off), 2), round(float(tp), 2)])
-            out.append({'name': t['name'], 'pts': pts})
+                nrm.append([round(float(gn[0]), 3), round(float(gn[1]), 3)])
+            out.append({'name': t['name'], 'pts': pts, 'n': nrm, 'T': T})
     return out, masks

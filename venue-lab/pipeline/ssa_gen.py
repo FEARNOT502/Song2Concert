@@ -35,6 +35,23 @@ def gap_gates(l,gates):
     return out
 GAPDOOR={}
 CORNER_BAY=lambda z: abs(z)>40.0         # the 200 level's corner notches: bays with a door, not vomitories
+def corner_seams(l, reach=3.0):
+    """The 400 level's four corner seams: where the end stand and the side stand meet, the map leaves a gap between
+    their last blocks, a few metres across, which the aisles' closing does not take: a hole in the ring, its front
+    rail and the band under it broken. Each is given back to the treads (as an aisle between the two stands), so the
+    ring runs on round the corner. -> boolean masks, one for each seam"""
+    gy,gx=np.mgrid[0:G.H,0:G.W]; X,Z=G.m(gx,gy)
+    R=(l.R>0).astype(np.uint8)
+    gap=(cv2.morphologyEx(R,cv2.MORPH_CLOSE,disk(reach/G.res))>0)&(R==0)&(l.hull>0)
+    out=[]
+    for sx in (1,-1):
+        for sz in (1,-1):
+            win=(np.sign(X)==sx)&(np.sign(Z)==sz)&(np.abs(X)>40.5)&(np.abs(X)<49.5)&(np.abs(Z)>35.5)&(np.abs(Z)<44.5)
+            n,lab,st,_=cv2.connectedComponentsWithStats((gap&win).astype(np.uint8),connectivity=8)
+            for i in range(1,n):
+                if 3.0<=st[i,4]*G.res**2<=20.0: out.append(lab==i)
+    print('400 corner seams filled',len(out),[round(float(m.sum()*G.res**2),1) for m in out])
+    return out
 for lv in ('200','300','400','500'):
     S_=SB.level_seats(CH,lv,OFF)
     l0=SB.build_level(G,lv,S_,**SEC[lv]); gaps=gap_gates(l0,DOORS[lv])
@@ -43,7 +60,9 @@ for lv in ('200','300','400','500'):
     # a door stands at the end of a block (the stand's blocks are boxes, or pieces of one, with an aisle at each end): where
     # no block stands beyond that end the aisle is added beside it
     pts=[q for g,q in DOORS[lv].items() if g not in GAPDOOR[lv]]
-    LV[lv]=SB.build_level(G,lv,S_,strips=SB.end_aisles(S_,pts,maxdist=3.6),fills=list(bays.values()),**SEC[lv]); LV[lv].S=S_
+    fills=list(bays.values())
+    if lv=='400': fills+=corner_seams(l0)
+    LV[lv]=SB.build_level(G,lv,S_,strips=SB.end_aisles(S_,pts,maxdist=3.6),fills=fills,**SEC[lv]); LV[lv].S=S_
 print('doors in a gap of the treads',{k:sorted(v) for k,v in GAPDOOR.items() if v})
 L2,L3,L4,L5=LV['200'],LV['300'],LV['400'],LV['500']
 print('levels',round(time.time()-T0,1),{k:(l.nrows,len(l.seats)) for k,l in LV.items()})
@@ -105,7 +124,7 @@ SNAP={name:snap_doors(l,DOORS[name],set(GAPDOOR[name])) for name,l in (('200',L2
 print('doors snapped',{k:len(v) for k,v in SNAP.items()},'; farthest move from the badge %.1f m'%max(np.hypot(*(p-np.array(DOORS[k][g]))) for k,v in SNAP.items() for g,(p,_) in v.items()))
 
 # ── the floor's corner passages: the map leaves a bowl of open floor at each of the floor's south corners (the north
-# ones are behind the stage's masking), funnelling in between the fan's blocks and the end block to a throat; a tunnel
+# ones are behind the stage's masking), funnelling in between the fan's blocks and the end block to a throat; a wide tunnel
 # goes on from the throat under the concourse's storey to the building's wall. The bowls' sides are walls with their
 # tops raked with the rows beside them. ──
 CORNERS=ST.corner_tunnels(G,L2)
@@ -263,14 +282,50 @@ for name,vs in VOMS.items():
         k=min(gs,key=lambda g: np.hypot(gs[g][0]-v['p'][0],gs[g][1]-v['p'][1])); v['label']=str(k)
 # ── the floor's corner tunnels ──
 # The map leaves a bowl of open floor at each of the floor's south corners (the north ones are behind the stage's
-# masking), funnelling in between the fan's blocks to a throat where the rows each side stand past a tunnel's height:
-# there a tunnel goes on under the rows and the concourse's storey to the building's wall. The bowl's sides are walls
-# with their tops raked with the rows beside them.
+# masking), funnelling in between the fan's blocks to a throat where it is no wider than a tunnel: there a wide tunnel goes
+# on straight, an open cut through the low rows and then under the rows and the concourse's storey to the building's
+# wall. The bowl's sides and the cut's are thick walls with their tops raked with the rows beside them.
 TUN_H=4.4
+WALL_T=0.5                                       # the walls' thickness (the bowls' and the tunnels')
 body_=((L2.R>0)|(L2.hull>0)|c200)&(hull>0)       # what a tunnel runs under, before the cuts
-TUN=[{'p':t['p'],'u':t['u'],'w':t['w'],'h':TUN_H,'closed':True,'covered':True,'Lmax':30.0,'Lmin':8.0,'name':t['name']} for t in CORNERS]
-TUNM=cut_tunnels(G,L2,TUN,body_,back=0.0)
-print('corner tunnels',[(t['name'],[round(float(c),1) for c in t['p']],t['w'],t['L']) for t in TUN],'; bowl walls',[(w['name'],len(w['pts'])) for w in BOWLWALLS])
+# a wide tunnel straight out from each bowl's throat, like a stadium's corner tunnels: an open cut through the rows
+# too low to pass under (walls raked with the rows beside it), then on under the rows and the concourse to the
+# building's wall, shut there by its doors
+def to_wall(p,u,step=0.2):
+    """how far a line out from p goes inside the building's outline"""
+    L=0.0
+    while L<80.0:
+        q=p+u*L; i_,j_=[int(round(float(c))) for c in G.g(q[0],q[1])]
+        if not (0<=i_<G.W and 0<=j_<G.H) or not hull[j_,i_]: break
+        L+=step
+    return L
+TUN=[{'p':t['p'],'u':t['u'],'w':t['w'],'h':TUN_H,'closed':True,'Lmax':80.0,'Lmin':round(to_wall(t['p'],t['u'])-0.3,2),'name':t['name'],'T':WALL_T,'sidesAsWalls':True} for t in CORNERS]
+TUNM=cut_tunnels(G,L2,TUN,body_,back=0.6)
+# the cut's side walls are drawn like the bowls' (thick, raked, coped), one ribbon each: along the cut, from its mouth to
+# where its roof begins, each top a metre over the highest tread within two metres beyond the cut's edge there
+def cut_side(t,sg,back=0.6,reach=2.0,step=0.5):
+    p_,u_=np.asarray(t['p'],float),np.asarray(t['u'],float); v_=np.array([-u_[1],u_[0]])
+    aa=np.arange(-back,t['deck']+0.01,step); tops=[]
+    for a_ in aa:
+        best=None
+        for s_ in np.arange(0.05,reach+0.01,0.15):
+            q_=p_+u_*a_+v_*sg*(t['w']/2+s_); i_,j_=[int(round(float(c))) for c in G.g(q_[0],q_[1])]
+            if 0<=i_<G.W and 0<=j_<G.H and L2.R[j_,i_]>0 and L2.band[j_,i_]>=0:
+                h_=float(L2.h(L2.band[j_,i_]))+1.0; best=h_ if best is None else max(best,h_)
+        tops.append(best)
+    known=[(a_,h_) for a_,h_ in zip(aa,tops) if h_ is not None]
+    if not known: return None
+    tp=np.interp(aa,[k[0] for k in known],[k[1] for k in known])          # (where no tread is beside it, the nearest value)
+    tp=np.minimum(np.maximum.accumulate(tp),t['deckY']+1.0)                 # rising with the rows, no higher than the roof's parapet
+    q_=cv2.approxPolyDP(np.c_[aa,tp].astype(np.float32).reshape(-1,1,2),0.2,False)[:,0,:]
+    e_=p_[None,:]+u_[None,:]*q_[:,:1]+v_[None,:]*sg*t['w']/2
+    return {'name':t['name']+'-cut','pts':[[round(float(x),2),round(float(z),2),round(float(h),2)] for (x,z),h in zip(e_,q_[:,1])],
+            'n':[[round(float(-v_[0]*sg),3),round(float(-v_[1]*sg),3)]]*len(q_),'T':WALL_T}
+for t in TUN:
+    for sg in (-1,1):
+        w_=cut_side(t,sg)
+        if w_ and len(w_['pts'])>=2: BOWLWALLS.append(w_)
+print('corner tunnels',[(t['name'],[round(float(c),1) for c in t['p']],t['w'],t['L'],t['deck']) for t in TUN],'; bowl walls',[(w['name'],len(w['pts'])) for w in BOWLWALLS])
 slabs=[(grow_under(c,y,[L2,L3,L4,L5]),(0.0 if y==C200 else y-0.35),y) for c,y in ((c200,C200),(c300,C300),(c400,C400),(c500,C500))]
 slabs.append((corr,SUY-0.45,SUY))        # the suites' corridor
 # under the 200 concourse the tunnels run on hollow
@@ -325,8 +380,8 @@ for name,l,cm,cy in (('200',L2,c200,C200),('300',L3,c300,C300),('400',L4,c400,C4
     rows_=l.rows_out()
     if name=='200':
         rows_=tunnel_rows(rows_,TUN); dr_,drl_=tunnel_decks(G,L2,TUN); rows_+=dr_; rails+=drl_
-        # the bowls' sides have walls of their own: no rail along the treads' edges there
-        zone=cv2.dilate(np.any(BOWLMASKS,axis=0).astype(np.uint8),disk(0.8/G.res))>0
+        # the bowls' sides and the tunnels' cuts have walls of their own: no rail along the treads' edges there
+        zone=cv2.dilate((np.any(BOWLMASKS,axis=0)|TUNM).astype(np.uint8),disk(0.8/G.res))>0
         def inzone(r):
             a,b=G.g((r[0]+r[2])/2,(r[1]+r[3])/2); a=int(round(float(a))); b=int(round(float(b)))
             return 0<=a<G.W and 0<=b<G.H and zone[b,a]
