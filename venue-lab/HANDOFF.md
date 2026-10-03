@@ -27,8 +27,8 @@ Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
   as before (pixel for pixel but a handful of antialiased edge pixels), the app builds and loads the arena without errors.
 - **To know.** The bowl's two sides are still the map's: the floor opening is 7.6 m wide and the bowl 14 m at its widest before it
   narrows to the 7 m tunnel, so the corner is a funnel with a pocket, not Wembley's parallel trench (that would take out the seats of
-  the blocks round it). Faces are never cut into the stands: the body is thicker than 0.5 m (up to 1.3 m) where the stand's edge is
-  furthest behind its face; only the coping is of one width.
+  the blocks round it). Faces are never cut into the stands: the body is thicker than 0.5 m (up to 1.9 m, at the two or three places where the stand's edge
+  recedes furthest behind its face) and the coping 0.5 m (0.8 at a mitred corner); only the face and the coping are straight and even.
 
 ## Round 22: the Saitama Super Arena's corner tunnels as wide, deep cuts with thick walls; the 400 level's corner seams closed
 - **What was wrong** (user's report on round 21): the corner passage was a 3.2 m wide closet, 9-13 m long, behind walls that
