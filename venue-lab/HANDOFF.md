@@ -2,7 +2,34 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 27: the Saitama Super Arena's two corner funnels mirror images, the SW step gone; the end stand's back wall straight
+- **What was asked** ("fix the SW step; SE and SW tunnels symmetric; work the corner walls from the official image; and straighten the
+  bumpy wall behind the rear seats"). The front-end line was asked for as the extension of the front line of the middle block between the
+  rear and the side seats; the lab keeps round 26's mouth plane (square to the tunnel's line through the fan's front corner: the
+  extension of blocks 127+126's front line, 24 degrees, closes the funnel's back, not its mouth, so it was not taken for the mouth).
+- **Symmetric funnels.** `corner_funnels` reads the stand's edge off the block outlines of *both* corners together (`Outlines(sym=True)`: a
+  point is stand if it is inside an outline or its mirror image is), so the edge, the pieces and the front plane come out the same on
+  both sides; each piece's clearance is the larger of the two corners' (`guard`), and each wall's top the higher of the two corners' rake
+  (`heights`). Result: the walls of SE and SW are mirror images to the millimetre (rear wall 2 pieces, 12 degrees then about 26, to
+  (+-23.1, 54.5); fan wall 2 pieces, 45 degrees to (+-27.9, 44.0) then about 64 to (+-30.7, 49.7)); open floor 107.7 m2 each; 5.7 m between
+  the walls' faces at the mouth. SW's own outline (block 26's tongue, block 24's nose) sets where the clearance is wider than SE's own
+  stand needs: those 0.5-1 m show as bare steps behind the SE walls (the bowl outside the walls is 16.0 m2 SE, 7.1 m2 SW).
+- **The SW step.** The model's treads beside block 26's end (door 211's aisle) are no part of an end face: only treads inside an outline
+  (0.3 m dilated) hold a wall off (`guard`); the others in the open space between the walls are cut (`'cut'` in the funnel's dict;
+  `ssa_gen.py` sets `L2.R`, `L2.band` there, 3.2 m2 SW, none SE, no seat among them) - they stood as a curtain of bare risers beside the
+  tunnel's frame once the wall no longer hid them.
+- **The back wall.** `ssa_tunnels.back_notches` finds where a level's last rows fall short of the end stand's straight back for a stretch
+  of a block's end or more (200: the middle block's 7 m x 2.7 m notch, wall at z 55.1 against 57.8; 400: 2.4 m2 at the middle) and
+  `fill_pocket` goes the rows on into it, bare (the map has no seats there), so the wall behind is one straight wall. Levels 300 and 500
+  are left (no notch; the 500's waves are the doors' aisles, where the doors stand).
+- **Checks.** Reachable on foot 100% (200 10,824 / 300 642 / 400 5,870 / 500 754 / 300S 124), 92 of 96 gates walked (221-224 behind the
+  stage as before) and both corner tunnels to their ends, every funnel wall stops the walker (39 tests), the app builds and loads the
+  arena; the app's other modules are byte for byte as before (`src/three/venues/ssa-data.js` the only difference).
+- **To know.** If the front end should lie elsewhere (further out, or along another line), it is `a_m` in `corner_funnels` (the argmin
+  of the fan-side edge near the cut start): a different plane is one line.
+
 ## Round 26: the Saitama Super Arena's corner walls fitted to the map's block ends (not parallel), their front ends on one plane
+*(Round 27 made the two funnels mirror images and took the door-aisle step out; the walls here are otherwise as built.)*
 - **What was wrong** (user: "fit the tunnel walls to the side seats' end face and the rear seats' end face of the official layout, and
   only match the front ends of the two walls; and the walls are not parallel to each other"): rounds 24-25 made the corner a 7 m strip
   between two parallel walls, bare steps filling what the map leaves beside it. The map's void is a funnel between the end stand's

@@ -136,9 +136,17 @@ print('corner trenches',[(t['name'],t['o'].round(2).tolist(),t['u'].round(3).tol
 POLYS=[SB.to_metres(CH,np.array(o['poly'],float),'200') for b,o in CH['blocks'].items() if o['level']=='200' and not o['lettered'] and o['seats'] and int(b) in OFF and o.get('poly')]
 FUN=ST.corner_funnels(G,L2,TREN,POLYS,T=WALL_T,cap=C200-0.1)
 print('funnels',[(f['name'],'mouth plane %.2f from the cut start'%f['a_m'],'open floor %.1f m2'%(f['mask'].sum()*G.res**2),'bowl outside the walls %.1f m2'%(f['pocket'].sum()*G.res**2)) for f in FUN])
+for f in FUN:
+    print(f['name'],'treads in the open space, cut: %.1f m2, seats among them: %d'%(f['cut'].sum()*G.res**2,int((sample(G,f['cut'].astype(np.uint8),L2.seats)>0).sum())))
+    L2.R[f['cut']]=0; L2.band[f['cut']]=-1
 POCKET=np.zeros(L2.R.shape,bool)
 for f in FUN: POCKET|=ST.fill_pocket(G,L2,f['pocket'])
 print('given back to the stand: %.1f m2'%(POCKET.sum()*G.res**2))
+# the end stand's back: a block whose rows stop short of its neighbours' (the 200s' middle block, the 400s') has the rows go on, bare,
+# to the same line, so the wall behind the stand is one straight wall (no door stands in either notch)
+for l_ in (L2,L4):
+    nm_,ref_=ST.back_notches(G,l_)
+    if nm_.any(): ST.fill_pocket(G,l_,nm_); print('back of level',l_.name,'straightened to z %.1f: %.1f m2'%(ref_,nm_.sum()*G.res**2))
 # the open floor of each funnel: no concourse storey stands in it
 BOWLMASKS=[f['mask'] for f in FUN]
 
