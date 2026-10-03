@@ -30,7 +30,7 @@ Open `out/test.html` in a browser (it loads three.js from jsDelivr), e.g.
   SSA (arena mode, end stage 2) starts from the official seat map: `ssa_chart.py`
   reads it into `ssa/ssa_chart.json` (downloads go to `ssa/raw/`, not committed),
   then, from inside `pipeline/`, `python3 ssa_gen.py` (`ssa_blocks.py` lays the
-  levels out, `ssa_tunnels.py` makes the floor's corner tunnels) writes
+  levels out, `ssa_tunnels.py` lays the floor's corner trenches) writes
   `ssa_stands.json`; `python3 pipeline/mkdata.py ssa` (from `venue-lab/`) rewrites
   `src/i0-ssa-data.js`. `SSA_DOORS_OUT=<file>` also writes the doors' list.
 - `gen.mjs` — ports `src/` to ES modules: `node gen.mjs gen-out`, then copy the

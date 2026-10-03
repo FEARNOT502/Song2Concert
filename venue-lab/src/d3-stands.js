@@ -666,7 +666,8 @@ function buildTunnels(data, ox, oz) {
         : [[-0.4, 0], [t.deck, 0], [t.deck, t.deckY + 1.0], [-0.4, h1 + 1.0]]);
       // (or a venue draws them itself, thick and coped like its bowls' walls: data.cutWalls)
       if (!t.sidesAsWalls) { raked(hw - T, hw + 0.12, cut(t.sides?.[1])); raked(-hw - 0.12, -hw + T, cut(t.sides?.[0])); }
-      for (const sg of [-1, 1]) box(tunnelGeo.wall, t.deck, t.L, sg > 0 ? hw - T : -hw - 0.12, sg > 0 ? hw + 0.12 : -hw + T, 0, t.h + 0.02);
+      // (the walls drawn by the venue end in a face of their own at `deck`: the side walls on under the rows begin a hair beyond it)
+      for (const sg of [-1, 1]) box(tunnelGeo.wall, t.deck + (t.sidesAsWalls ? 0.02 : 0), t.L, sg > 0 ? hw - T : -hw - 0.12, sg > 0 ? hw + 0.12 : -hw + T, 0, t.h + 0.02);
       box(tunnelGeo.wall, t.deck - 0.05, t.L, -hw, hw, t.h - 0.02, t.h + 0.12);      // the roof on under the rows
     }
     box(tunnelGeo.floor, -0.4, t.L + (t.closed ? 0 : 12), -hw - 0.3, hw + 0.3, -0.02, 0.04);

@@ -2,7 +2,36 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 24: the Saitama Super Arena's corners as parallel 7 m trenches, like Wembley's
+- **What was wrong** (user: "straighten it into a parallel trench like Wembley"): round 23's corner was still the map's bowl, a
+  funnel 14-16 m across at the floor narrowing to the 7 m tunnel, its sides two straight faces at an angle to each other.
+- **The trench.** `ssa_tunnels.corner_trenches`: a strip 7.0 m wide (6.0 m clear between the wall faces; Wembley's is 7.0 / 6.4),
+  its middle line leaning 25 degrees out from the end stand's line (the way doors 240 and 211 at the corridor's head face),
+  starting on the end stand's front line (z 41.5). Across, it stands where it costs least (3 for each seat under the roof's
+  height it cuts, 1 per m2 of the bowl left outside it, the middle of the places that tie): SE x = 21.75, SW x = -21.75, **no
+  seat cut**: the 200 level has all of the map's 10,824 seats (rounds 22-23 had lost 72 to the tunnel). An open cut through the
+  rows too low to pass under (9.8 m SE, 8.6 m SW from the front), then on under the rows and the concourse to the building's
+  outer wall, 22.3 m in all, shut there by its doors (`cut_tunnels`, `Lmin` from the outline, `open` from the bowl's own throat).
+- **The walls.** `trench_wall` (ssa_gen.py): a wall each side of the strip, the face `WALL_T` (0.5 m) in from its edge, the
+  rows ending flush against the back; the top one straight rake (`raked_top`: the line with the least room over a metre above
+  the highest tread within 2 m beyond the edge, level at the roof's parapet), two or three points each. Same `data.cutWalls`
+  form as round 23 (`pts`, `inner`, `back`, `caps`), drawn by `cutWalls()`. The covered tunnel's side walls begin 0.02 m beyond
+  the open cut's end face (`buildTunnels`, `sidesAsWalls`) so no two faces share a plane.
+- **What the bowl had beyond the strip** (SE 42 m2, SW 24 m2, 1.5 m slivers and wedges up to 5 m across) is **given back to the
+  stand as bare treads** (the map has no seats there): `fill_pocket` fits one plane to the depth of the stand within 2.5 m of
+  each part and pulls it to the stand's own depth at the stand's edge (1.5 m falloff), so the rows run on straight and even
+  against the walls. (The level's own depth over a void is each nearest seat's, kinked where two reaches meet: steps with ragged
+  edges, 1-3 rows off the neighbouring rows' plane; not used.) Seating them would add about 150 seats the map does not have.
+- **Gone from round 22-23:** `corner_tunnels`, `bowl_walls`, `facets`, `dp_indices` (the bowls' own walls), the throat-width
+  tunnel. Kept: `raked_top`, the `cutWalls` data and renderer, `floor_void`, `bowl_axis`, `trace_bowl`.
+- **Checks.** Every level reachable on foot, 100% (200 10824 / 10824, 300 642, 400 5870, 500 754, 300S 124); 92 of 96 gates
+  walked, the corner tunnels to their ends (221-224 are behind the stage's masking, as before); shared code touched: two lines in
+  `d3-stands.js` `buildTunnels` (only for a tunnel with `sidesAsWalls`); the app builds and loads the arena without errors.
+- **To know.** The bare steps beside each trench are a stand-in for what the map leaves void; the 25 degree lean and the 7 m width
+  are choices (the doors' direction; the stadium tunnels' width), not figures from the arena's drawings.
+
 ## Round 23: the Saitama Super Arena's corner walls: straight faces, thick, one raked top
+*(Round 24 replaced the bowls' own walls by a parallel trench: `bowl_walls` and `facets` are gone; `raked_top` and the `cutWalls` form stay.)*
 - **What was wrong** (user's report on round 22: "tidy the end faces of the corner's rear and side stands as thick raked walls, like
   Wembley's tunnel"): the walls round each corner bowl followed the map's void as it is, a wavy outline (each row's end a step,
   smoothed), 0.5 m thick, their tops following the treads' staircase eased along (a hump, a dip), the coping a band of
@@ -31,6 +60,7 @@ Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
   recedes furthest behind its face) and the coping 0.5 m (0.8 at a mitred corner); only the face and the coping are straight and even.
 
 ## Round 22: the Saitama Super Arena's corner tunnels as wide, deep cuts with thick walls; the 400 level's corner seams closed
+*(Round 24 laid the tunnels parallel from the end stand's front line: `corner_tunnels` is now `corner_trenches`; the 400 level's seams stay as here.)*
 - **What was wrong** (user's report on round 21): the corner passage was a 3.2 m wide closet, 9-13 m long, behind walls that
   were one sheet thick; the old model's and Wembley's corner tunnels are 7 m wide, run on out to the building's wall, and have
   walls with a body. And the 400 level's front rail and the band under it broke at all four corners, where the end stand

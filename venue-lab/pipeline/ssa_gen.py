@@ -123,13 +123,19 @@ def snap_doors(l,gates,skip):
 SNAP={name:snap_doors(l,DOORS[name],set(GAPDOOR[name])) for name,l in (('200',L2),('300',L3),('400',L4),('500',L5))}
 print('doors snapped',{k:len(v) for k,v in SNAP.items()},'; farthest move from the badge %.1f m'%max(np.hypot(*(p-np.array(DOORS[k][g]))) for k,v in SNAP.items() for g,(p,_) in v.items()))
 
-# ── the floor's corner passages: the map leaves a bowl of open floor at each of the floor's south corners (the north
-# ones are behind the stage's masking), funnelling in between the fan's blocks and the end block to a throat; a wide tunnel
-# goes on from the throat under the concourse's storey to the building's wall. The bowls' sides are walls with their
-# tops raked with the rows beside them. ──
-WALL_T=0.5                                       # the corner walls' thickness at the least (the bowls' and the tunnels')
-CORNERS=ST.corner_tunnels(G,L2)
-BOWLWALLS,BOWLMASKS=ST.bowl_walls(G,L2,CORNERS,T=WALL_T)
+# ── the floor's corner trenches: the map leaves a corridor of open floor at each of the floor's south corners (the north
+# ones are behind the stage's masking), between the end stand's last column and the corner fan of blocks, flaring out into
+# a bowl at the floor; a straight trench goes in along it (7 m wide, as a stadium's corner tunnel is), an open cut through
+# the stand and on, covered, under the concourse to the building's wall. What the bowl has beyond the trench is given back
+# to the stand (its rows going on into it, bare: the map has no seats there). ──
+WALL_T=0.5                                       # the walls' thickness (a wall's face stands this far in from the strip's edge)
+TREN=ST.corner_trenches(G,L2)
+print('corner trenches',[(t['name'],t['o'].round(2).tolist(),t['u'].round(3).tolist(),'across the stand\'s front %.1f m'%(7.0/abs(t['u'][1])),'cuts',t['cuts'],'bowl left outside %.1f m2'%(t['pocket'].sum()*G.res**2)) for t in TREN])
+POCKET=np.zeros(L2.R.shape,bool)
+for t in TREN: POCKET|=ST.fill_pocket(G,L2,t['pocket'])
+print('given back to the stand: %.1f m2'%(POCKET.sum()*G.res**2))
+# the part of each trench in the bowl (the open floor): no concourse storey stands in it
+BOWLMASKS=[t['strip']&(L2.R==0)&(((X-t['o'][0])*t['u'][0]+(Z-t['o'][1])*t['u'][1])<=t['am']+0.3) for t in TREN]
 
 # ── concourses ──
 def dil(m,r): return cv2.dilate(m.astype(np.uint8),disk(r/G.res))>0
@@ -282,15 +288,11 @@ for name,vs in VOMS.items():
     for v in vs:
         k=min(gs,key=lambda g: np.hypot(gs[g][0]-v['p'][0],gs[g][1]-v['p'][1])); v['label']=str(k)
 # ── the floor's corner tunnels ──
-# The map leaves a bowl of open floor at each of the floor's south corners (the north ones are behind the stage's
-# masking), funnelling in between the fan's blocks to a throat where it is no wider than a tunnel: there a wide tunnel goes
-# on straight, an open cut through the low rows and then under the rows and the concourse's storey to the building's
-# wall. The bowl's sides and the cut's are thick walls with their tops raked with the rows beside them.
+# Each trench goes on under the stand and the concourse's storey to the building's wall, shut there by its doors: an open
+# cut through the rows too low to pass under (the bowl's own length at the least), then covered. Its walls are thick,
+# their faces straight and parallel, their tops one rake over the rows beside them.
 TUN_H=4.4
 body_=((L2.R>0)|(L2.hull>0)|c200)&(hull>0)       # what a tunnel runs under, before the cuts
-# a wide tunnel straight out from each bowl's throat, like a stadium's corner tunnels: an open cut through the rows
-# too low to pass under (walls raked with the rows beside it), then on under the rows and the concourse to the
-# building's wall, shut there by its doors
 def to_wall(p,u,step=0.2):
     """how far a line out from p goes inside the building's outline"""
     L=0.0
@@ -299,41 +301,29 @@ def to_wall(p,u,step=0.2):
         if not (0<=i_<G.W and 0<=j_<G.H) or not hull[j_,i_]: break
         L+=step
     return L
-TUN=[{'p':t['p'],'u':t['u'],'w':t['w'],'h':TUN_H,'closed':True,'Lmax':80.0,'Lmin':round(to_wall(t['p'],t['u'])-0.3,2),'name':t['name'],'T':WALL_T,'sidesAsWalls':True} for t in CORNERS]
+TUN=[{'p':t['o'],'u':t['u'],'w':t['w'],'h':TUN_H,'closed':True,'Lmax':80.0,'Lmin':round(to_wall(t['o'],t['u'])-0.3,2),'open':round(t['am'],2),'name':t['name'],'T':WALL_T,'sidesAsWalls':True} for t in TREN]
 TUNM=cut_tunnels(G,L2,TUN,body_,back=0.6)
-# the cut's side walls are drawn like the bowls' (thick, raked, coped), one wall each: along the cut, from its mouth to
-# where its roof begins. The top runs on from the end of the bowl's wall that reaches the mouth, as one straight rake
-# (the least that clears a metre over the highest tread within two metres beyond the cut's edge), level once it has
-# reached the roof's parapet
-def cut_side(t,sg,h_start,back=0.6,reach=2.0,step=0.5):
+FRONT_Z=41.45                                    # (the end stand's front line: a wall starts where it reaches it)
+def trench_wall(t,sg,reach=2.0,step=0.5):
+    """one side of a trench: a wall along the strip's edge from the front line to where the roof begins, its face WALL_T
+    in from the edge, its top one straight rake over a metre above the highest tread within `reach` beyond the edge"""
     p_,u_=np.asarray(t['p'],float),np.asarray(t['u'],float); v_=np.array([-u_[1],u_[0]])
-    aa=np.arange(-back,t['deck']+0.01,step); env=[]
+    a0=(FRONT_Z-p_[1]-v_[1]*sg*t['w']/2)/u_[1]
+    aa=np.arange(a0,t['deck']+1e-6,step); aa[-1]=t['deck']; env=[]
     for a_ in aa:
-        best=0.0
+        best=float(L2.h(0))+1.0
         for s_ in np.arange(0.05,reach+0.01,0.15):
             q_=p_+u_*a_+v_*sg*(t['w']/2+s_); i_,j_=[int(round(float(c))) for c in G.g(q_[0],q_[1])]
             if 0<=i_<G.W and 0<=j_<G.H and L2.R[j_,i_]>0 and L2.band[j_,i_]>=0: best=max(best,float(L2.h(L2.band[j_,i_]))+1.0)
         env.append(best)
-    env=np.array(env)
-    # a straight line from the bowl wall's end (at the mouth) that clears the envelope
-    k=max([0.0]+[(e-h_start)/(a_-aa[0]) for a_,e in zip(aa,env) if a_-aa[0]>0.25])
-    tp=np.minimum(h_start+k*(aa-aa[0]),max(h_start,t['deckY']+1.0))      # (no higher than the roof's parapet, or the bowl wall's end)
-    e_=p_[None,:]+u_[None,:]*aa[:,None]+v_[None,:]*sg*t['w']/2
+    tp=ST.raked_top(aa,np.array(env))
+    q_=cv2.approxPolyDP(np.c_[aa,tp].astype(np.float32).reshape(-1,1,2),0.02,False)[:,0,:]       # (the rake's two or three turns)
+    e_=p_[None,:]+u_[None,:]*q_[:,:1]+v_[None,:]*sg*t['w']/2
     n_=np.array([-v_[0]*sg,-v_[1]*sg]); i_=e_+n_[None,:]*WALL_T
     r2=lambda v:[round(float(c),2) for c in v]
-    ends=[0,len(aa)-1]                                   # (a wall of two points: its ends and nothing between)
-    return {'name':t['name']+'-cut','pts':[r2([*e_[i],tp[i]]) for i in ends],'inner':[r2(i_[i]) for i in ends],'back':[r2(e_[i]) for i in ends],'caps':[True,True]}
-for t in TUN:
-    for sg in (-1,1):
-        # the bowl's wall that ends where this one begins runs on into it: its last face meets this one's, at the same height
-        start=np.asarray(t['p'],float)+np.asarray(t['u'],float)*(-0.6)+np.array([-t['u'][1],t['u'][0]])*sg*t['w']/2
-        mine=[w for w in BOWLWALLS if w['name']==t['name']]
-        best=min(((np.hypot(w['pts'][e][0]-start[0],w['pts'][e][1]-start[1]),w,e) for w in mine for e in (0,-1)),key=lambda r:r[0],default=None)
-        w_=cut_side(t,sg,best[1]['pts'][best[2]][2] if best and best[0]<1.0 else 0.0)
-        if best and best[0]<1.0:
-            _,w,e=best; w['pts'][e][:2]=w_['pts'][0][:2]; w['inner'][e]=list(w_['inner'][0]); w['back'][e]=list(w_['back'][0]); w['caps'][0 if e==0 else 1]=False; w_['caps'][0]=False
-        BOWLWALLS.append(w_)
-print('corner tunnels',[(t['name'],[round(float(c),1) for c in t['p']],t['w'],t['L'],t['deck']) for t in TUN],'; bowl walls',[(w['name'],len(w['pts'])) for w in BOWLWALLS])
+    return {'name':t['name'],'pts':[r2([*e,h]) for e,h in zip(e_,q_[:,1])],'inner':[r2(i) for i in i_],'back':[r2(e) for e in e_],'caps':[True,True]}
+TRENWALLS=[trench_wall(t,sg) for t in TUN for sg in (-1,1)]
+print('corner tunnels',[(t['name'],[round(float(c),1) for c in t['p']],t['w'],'L',t['L'],'open cut',t['deck']) for t in TUN],'; walls',[(w['name'],len(w['pts']),w['pts'][0][2],w['pts'][-1][2]) for w in TRENWALLS])
 slabs=[(grow_under(c,y,[L2,L3,L4,L5]),(0.0 if y==C200 else y-0.35),y) for c,y in ((c200,C200),(c300,C300),(c400,C400),(c500,C500))]
 slabs.append((corr,SUY-0.45,SUY))        # the suites' corridor
 # under the 200 concourse the tunnels run on hollow
@@ -495,7 +485,7 @@ print('suites',len(bx),'seats',len(Ss),'front x',round(xb,2),'z',z0s,z1s)
 floors=[{'y':y,'y0':y0,'polys':mask_polys(G,m)} for m,y0,y in slabs]
 ow=contours(G,outer.astype(np.uint8),eps=0.03,minarea=100)
 data={'levels':levels,'floors':floors,'flights':[{k:(round(float(v),3) if not isinstance(v,int) else v) for k,v in f.items()} for f in flights],
-      'outer':[poly_out(p) for p in ow],'rooms':encl,'tunnels':tunnels_out(TUN),'suites':suites,'signs':SIGNS,'frames':FRAMES,'cutWalls':BOWLWALLS}
+      'outer':[poly_out(p) for p in ow],'rooms':encl,'tunnels':tunnels_out(TUN),'suites':suites,'signs':SIGNS,'frames':FRAMES,'cutWalls':TRENWALLS}
 data['levels'].append({'name':'300S','D':1.0,'h0':SY,'rise':SR,'rows':srows,'steps':[],'holes':[],'voms':[],'partitions':parts,
                        'seats':base64.b64encode(enc.tobytes()).decode('ascii'),'rails':glass_rail,'walls':[]})
 json.dump(data,open('ssa_stands.json','w'),separators=(',',':'))
