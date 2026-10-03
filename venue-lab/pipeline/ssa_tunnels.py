@@ -1,14 +1,15 @@
-"""The 200 level's corner passages at floor level. The official map leaves a corridor
-of open floor at each of the floor's south corners, between the end stand's last
-column and the corner fan of blocks: it flares out at the floor into a bowl and narrows
-to a throat, a good 7 m across where the map's blocks stand clear of it. Here the
-corridor becomes a straight trench like a stadium's corner tunnel: 7 m wide, two
-parallel walls with a thick body, their tops raked with the rows beside them, the
-rows ending flush against them, an open cut into the stand and on, covered, under
-the concourse to the building's wall. The trench leans out along the diagonal the
-bowl lies on, as near the bowl's sides as it can be so that next to no seat is cut,
-the pair mirror images of each other, each trench's two walls alike; what the bowl
-has beyond the trench is given back to the stand (the rows that go on into it, bare)."""
+"""The 200 level's corner passages at floor level. The official map leaves a bowl of
+open floor at each of the floor's south corners, between the end stand's last block
+and the corner fan of blocks: a funnel, narrow at the floor and wider further in.
+Here it is the open part of a corner tunnel like a stadium's: walled on the two
+blocks' end faces as the map draws them (so the walls are not parallel), both
+walls beginning on one plane square to the tunnel, thick, their tops raked with the
+rows beside them; at the funnel's back the tunnel goes on, 7 m wide, covered, under
+the concourse to the building's wall. The tunnel's line leans out along the diagonal
+the bowl lies on, as near the bowl's sides as it can be so that no seat is cut, the
+pair mirror images of each other (`corner_trenches`); the walls follow the blocks
+(`corner_funnels`), so each is as the map has it; what the bowl has outside the walls
+is given back to the stand (the rows that go on into it, bare)."""
 import numpy as np, cv2
 from standlib import disk
 
@@ -78,21 +79,21 @@ def trench_cut(l, o, u, v, width, a0=0.0, open_=None, roof=5.01, along=30.0, mar
 
 
 def corner_trenches(G, l, floor_half=(25.9, 41.3), front=41.5, width=7.0, theta=32.0, wmin=7.4):
-    """The trenches at the floor's south corners (the north corners lie behind the stage), parallel and symmetric: the
-    pair are mirror images of each other about the arena's middle line, and each is a strip `width` wide with two
-    identical walls, symmetric about its own middle line, its mouth square across it. The middle line leans `theta` degrees
-    outward from the end stand's line, a diagonal as the old model's tunnels (45) ran; 0 would be straight back, a rectangle
-    in plan. The map's void at the corner (the bowl) is a funnel whose fan-side edge is a diagonal of 44 degrees and whose
-    end-stand side stands near upright; a strip leaning about 32 lies along it, between the two.
+    """The tunnels' lines at the floor's south corners (the north corners lie behind the stage), parallel and symmetric: the
+    pair are mirror images of each other about the arena's middle line, and each is a strip `width` wide, its mouth square
+    across it. The middle line leans `theta` degrees outward from the end stand's line, a diagonal as the old model's tunnels
+    (45) ran; 0 would be straight back. The map's void at the corner (the bowl) is a funnel whose fan-side edge is a diagonal
+    of 44 degrees and whose end-stand side stands near upright; a strip leaning about 32 lies along it, between the two. The
+    funnel's walls come from `corner_funnels`; the strip is the covered tunnel's width and line, and the frame the funnel is
+    laid in (its front plane, its back plane `open`).
     Across, the strip stands where it costs least, the two corners together (a seat cut counts three, a square metre of the
-    bowl left outside the strip one, that being given back to the stand, a metre of stand standing in the way of the mouth
-    sixty, a metre that a wall begins later than the stand beside it does one), the middle of the places that tie.
-    The walls begin on one plane square to the strip (`a0`): the later of the four places where a stand begins beside a
-    wall; what the stand has ahead of the plane on the other side goes on as a step edge along the wall's line. Both open
-    cuts run as far as the longer needs (the treads under the roof's height, or the bowl's own length).
+    bowl left outside the strip one, a metre of stand standing in the way of the mouth sixty, a metre that a wall would begin
+    later than the stand beside it does one), the middle of the places that tie. Its mouth plane is the later of the four
+    places where a stand begins beside it (`a0`). Both open cuts run as far as the longer needs (the treads under the roof's
+    height, or the bowl's own length).
     -> a list of {'name', 'sx', 'o' (the middle line's point where the open cut begins), 'u' (along it), 'v' (across it,
-    outward), 'w', 'open' (the open cut's length from `o`), 'a0' (where the walls begin, from `o`), 'strip' (its mask),
-    'pocket' (the bowl outside it), 'bowl', 'cuts' (seats cut), 'xc' (where its middle line meets the front line)}"""
+    outward), 'w', 'open' (the open cut's length from `o`), 'a0' (where the strip's walls would begin, from `o`), 'strip'
+    (its mask), 'pocket' (the bowl outside it), 'bowl', 'cuts' (seats cut), 'xc' (where its middle line meets the front line)}"""
     gy, gx = np.mgrid[0:G.H, 0:G.W]; X, Z = G.m(gx, gy)
     floor, _ = floor_void(G, l)
     hx, hz = floor_half
@@ -179,7 +180,8 @@ def fill_pocket(G, l, pocket, reach=2.5, lam=1.5):
         plane = c[0] * X + c[1] * Z + c[2]
         corr = (l.d[iy, ix] - plane[iy, ix]) * np.exp(-dist / lam)
         d_new = plane + corr
-        m = part & (d_new >= 0.0)
+        m = part & (d_new >= -0.35)                                  # (the first row's front edge: a hair short of the front is the front)
+        d_new = np.maximum(d_new, 0.0)
         l.d[m] = d_new[m]; l.R[m] = 1
         l.band[m] = np.clip(np.floor(d_new[m] / l.D).astype(int), 0, l.nrows - 1)
         filled |= m
@@ -197,3 +199,217 @@ def raked_top(s, env):
     if not r.success: return np.full(len(s), env.max())
     a, b = r.x
     return np.minimum(env.max(), a + b * (s - s0))
+
+
+# ── the funnel: the corner's walls fitted to the map's own block ends ──
+class Outlines:
+    """The blocks' outlines as the map draws them (metres), as a fine mask: calling it with points (x, z) tells which are inside
+    some block's outline."""
+    def __init__(self, polys, box=(-50.0, 30.0, 50.0, 70.0), res=0.02):
+        self.x0, self.z0, self.res = box[0], box[1], res
+        self.W, self.H = int((box[2] - box[0]) / res), int((box[3] - box[1]) / res)
+        self.m = np.zeros((self.H, self.W), np.uint8)
+        for P in polys:
+            cv2.fillPoly(self.m, [np.round((np.asarray(P, float) - [self.x0, self.z0]) / res * 16).astype(np.int32)], 1, shift=4)
+
+    def __call__(self, x, z):
+        i = np.round((np.asarray(x) - self.x0) / self.res).astype(int); j = np.round((np.asarray(z) - self.z0) / self.res).astype(int)
+        ok = (i >= 0) & (i < self.W) & (j >= 0) & (j < self.H); out = np.ones(np.shape(x), bool)
+        out[ok] = self.m[j[ok], i[ok]] > 0
+        return out
+
+
+def dp_indices(P, eps):
+    """Douglas-Peucker on an open polyline (N x 2): the indices of the points kept"""
+    keep = np.zeros(len(P), bool); keep[0] = keep[-1] = True
+    stack = [(0, len(P) - 1)]
+    while stack:
+        a, b = stack.pop()
+        if b <= a + 1: continue
+        A, B = P[a], P[b]; d = B - A; L = float(np.hypot(*d))
+        seg = P[a + 1:b] - A
+        dist = np.hypot(*seg.T) if L < 1e-9 else np.abs(seg @ np.array([-d[1], d[0]])) / L
+        i = int(np.argmax(dist))
+        if dist[i] > eps: m = a + 1 + i; keep[m] = True; stack += [(a, m), (m, b)]
+    return np.nonzero(keep)[0]
+
+
+def edge_scan(inside, o, u, v, side, a, reach=20.0, step=0.02):
+    """How far across the middle line (through `o` along `u`, `v` across) the open space reaches, on `side` (-1 the end
+    stand's, +1 the fan's), at each distance `a` along it: the first point `inside(x, z)` says is the stand's.
+    -> the signed distances"""
+    s = np.arange(0.0, reach, step); out = np.empty(len(a))
+    for k, a_ in enumerate(a):
+        p = o[None, :] + u[None, :] * a_ + v[None, :] * (side * s)[:, None]
+        hit = inside(p[:, 0], p[:, 1])
+        out[k] = side * (s[int(np.argmax(hit))] if hit.any() else reach)
+    return out
+
+
+def _meet(p0, d0, p1, d1):
+    """where the line p0 + t d0 meets p1 + s d1 (None if they run alike)"""
+    den = d0[0] * d1[1] - d0[1] * d1[0]
+    if abs(den) < 1e-6 * np.hypot(*d0) * np.hypot(*d1): return None
+    t = ((p1[0] - p0[0]) * d1[1] - (p1[1] - p0[1]) * d1[0]) / den
+    return p0 + d0 * t
+
+
+def edge_chain(a, l, a_front, a_back, tol=0.15, minlen=1.5, slope_max=1.0, short=0.8, zone=2.0):
+    """The straight pieces of an edge (`l` across at each `a` along) that run with the middle line, from the front plane
+    `a_front` to the back plane `a_back`: the edge is cut into pieces (Douglas-Peucker within `tol`); going in from the back,
+    the pieces are taken up to the first that begins within `zone` of the front plane and runs across the line's direction
+    (further than `slope_max` off it: the end of the block that stands before the front, seen edge-on; a piece under `short`
+    is noise and never ends the chain); a piece shorter than `minlen` is taken out, its neighbours meeting where their lines
+    do; the first and last pieces are run on to the two planes. -> vertices (n x 2) of (a, l)"""
+    P = np.c_[a, l]; V = P[dp_indices(P, tol)]
+    first = len(V) - 1
+    for k in range(len(V) - 2, -1, -1):
+        p, q = V[k], V[k + 1]
+        if p[0] < a_front + zone and np.hypot(*(q - p)) >= short and abs((q[1] - p[1]) / (q[0] - p[0] + 1e-9)) > slope_max: break
+        first = k
+    V = V[first:]
+    while len(V) > 2:
+        Ls = np.hypot(*np.diff(V, axis=0).T); k = int(np.argmin(Ls))
+        if Ls[k] >= minlen: break
+        if k == 0: V = V[1:]
+        elif k == len(Ls) - 1: V = V[:-1]
+        else:
+            m = _meet(V[k - 1], V[k] - V[k - 1], V[k + 1], V[k + 2] - V[k + 1])
+            mid = (V[k] + V[k + 1]) / 2
+            if m is None or np.hypot(*(m - mid)) > 2.5: m = mid
+            V = np.vstack([V[:k], m, V[k + 2:]])
+    i = 1
+    while i < len(V) - 1:                                                  # (a vertex the line goes straight on through)
+        d1, d2 = V[i] - V[i - 1], V[i + 1] - V[i]
+        cs = (d1 @ d2) / (np.hypot(*d1) * np.hypot(*d2) + 1e-12)
+        if cs > np.cos(np.radians(3.0)): V = np.delete(V, i, 0)
+        else: i += 1
+    s0 = (V[1, 1] - V[0, 1]) / (V[1, 0] - V[0, 0] + 1e-9); V[0] = [a_front, V[0, 1] + s0 * (a_front - V[0, 0])]
+    s1 = (V[-1, 1] - V[-2, 1]) / (V[-1, 0] - V[-2, 0] + 1e-9); V[-1] = [a_back, V[-1, 1] + s1 * (a_back - V[-1, 0])]
+    return V
+
+
+def _offset_chain(V, ns, offs):
+    """A polyline's lines each moved `offs[i]` along their unit normals `ns[i]`, the pieces meeting where their lines do"""
+    k = len(V) - 1
+    lines = [(V[i] + ns[i] * offs[i], V[i + 1] - V[i]) for i in range(k)]
+    W = [lines[0][0]]
+    for i in range(1, k):
+        m = _meet(lines[i - 1][0], lines[i - 1][1], lines[i][0], lines[i][1])
+        if m is None or np.hypot(*(m - V[i])) > 3.0: m = V[i] + (ns[i - 1] * offs[i - 1] + ns[i] * offs[i]) / 2
+        W.append(m)
+    W.append(lines[-1][0] + lines[-1][1])
+    return np.array(W)
+
+
+def _clip(W, o, u, a0, a1):
+    """a polyline's first and last pieces run to the planes a = a0 and a = a1 (a measured from `o` along `u`)"""
+    W = W.copy(); A = (W - o) @ u
+    W[0] = W[0] + (W[1] - W[0]) * ((a0 - A[0]) / (A[1] - A[0]))
+    W[-1] = W[-2] + (W[-1] - W[-2]) * ((a1 - A[-2]) / (A[-1] - A[-2]))
+    return W
+
+
+def _along(W, o, u, a):
+    """the point of a polyline (a increasing along it) at distance `a` along `u` from `o`"""
+    A = (W - o) @ u; i = int(np.clip(np.searchsorted(A, a) - 1, 0, len(W) - 2))
+    t = (a - A[i]) / (A[i + 1] - A[i] + 1e-12)
+    return W[i] + (W[i + 1] - W[i]) * t, i
+
+
+def corner_funnels(G, l, trenches, polys, T=0.5, cap=6.1, back=0.9, tol=0.15, minlen=1.5, step=0.5, reach=2.0, fence_z=41.4):
+    """Each trench's open part as the map draws it: a funnel between the end stand's block and the fan's, its two walls
+    fitted to those blocks' end faces (`polys`: the blocks' outlines, metres), so they are not parallel, and begin on one
+    plane square to the trench (through the fan's front corner), the front end of both. A wall is a few straight pieces
+    (`edge_chain`), its back against the stand (no tread of the stand is cut), `T` thick into the open space, its top one
+    straight rake over a metre above the highest tread within `reach` beyond its back (`raked_top`, no higher than `cap`),
+    running `back` metres on past the trench's open cut, into the concourse's slab.
+    -> a list, one for each trench, of {'name', 'a_m' (the front plane, from the trench's `o`), 'walls' (cutWalls pieces),
+    'mask' (the open floor between the walls), 'pocket' (what is left of the bowl outside them: given back to the stand),
+    'zone' (where the stand's edge has the walls: no rail), 'notch' ([(p, q, e)]: the stand's edge between the front fence
+    and a wall's front end, e the unit vector into the stand), 'S', 'F' (each wall's back and face lines, world)}"""
+    outline = Outlines(polys)
+    gy, gx = np.mgrid[0:G.H, 0:G.W]; X, Z = G.m(gx, gy)
+    tread = (l.R > 0) & (l.band >= 0)
+    def inside(x, z):
+        """the stand: the blocks as the map draws them, and the treads the model gives them besides (a door's aisle beside a
+        block's end)"""
+        i, j = G.g(np.asarray(x), np.asarray(z)); i = np.round(i).astype(int); j = np.round(j).astype(int)
+        ok = (i >= 0) & (i < G.W) & (j >= 0) & (j < G.H); t_ = np.zeros(np.shape(x), bool)
+        t_[ok] = tread[j[ok], i[ok]]
+        return outline(x, z) | t_
+    out = []
+    for t in trenches:
+        o, u, v = (np.asarray(t[k], float) for k in ('o', 'u', 'v'))
+        a_p = float(t['open']); a_end = a_p + back
+        a = np.arange(-2.0, a_p + 1e-9, 0.02)
+        E = {-1: edge_scan(inside, o, u, v, -1, a), 1: edge_scan(inside, o, u, v, 1, a)}
+        mm = (a >= -1.5) & (a <= 1.5)
+        a_m = float(a[mm][np.argmin(E[1][mm])])                      # (the fan's front corner: the nearest the fan's block comes)
+        S, F, N = {}, {}, {}
+        for side in (-1, 1):
+            Va = edge_chain(a, E[side], a_m, a_p, tol=tol, minlen=minlen)
+            V = o[None, :] + u[None, :] * Va[:, :1] + v[None, :] * Va[:, 1:]
+            ns = []
+            for i in range(len(V) - 1):
+                d = (V[i + 1] - V[i]) / np.hypot(*(V[i + 1] - V[i])); n = np.array([-d[1], d[0]])
+                ns.append(n if np.sign(n @ v) == -side else -n)      # (toward the middle line)
+            offs = []
+            for i in range(len(V) - 1):
+                p, q = V[i], V[i + 1]; L = float(np.hypot(*(q - p))); e = (q - p) / L
+                c0 = [int(c) for c in G.g(min(p[0], q[0]) - 1.5, min(p[1], q[1]) - 1.5)]; c1 = [int(c) for c in G.g(max(p[0], q[0]) + 1.5, max(p[1], q[1]) + 1.5)]
+                sl = (slice(max(min(c0[1], c1[1]), 0), max(c0[1], c1[1]) + 1), slice(max(min(c0[0], c1[0]), 0), max(c0[0], c1[0]) + 1))
+                Xs, Zs, Ts = X[sl], Z[sl], tread[sl]
+                along = (Xs - p[0]) * e[0] + (Zs - p[1]) * e[1]; dist = (Xs - p[0]) * ns[i][0] + (Zs - p[1]) * ns[i][1]
+                m = Ts & (along > 0.2) & (along < L - 0.2) & (dist > -1.0) & (dist < 2.0)
+                offs.append(max((float(dist[m].max()) if m.any() else -9.0) + G.res / 2, -0.05))       # (the back 5 cm into the stand)
+            S[side] = _clip(_offset_chain(V, ns, offs), o, u, a_m, a_end)
+            F[side] = _clip(_offset_chain(V, ns, [d_ + T for d_ in offs]), o, u, a_m, a_end)
+            N[side] = ns
+        # the open floor and what the bowl has outside the walls
+        al = (X - o[0]) * u[0] + (Z - o[1]) * u[1]; la = (X - o[0]) * v[0] + (Z - o[1]) * v[1]
+        def lat(W):
+            A, Lw = (W - o) @ u, (W - o) @ v
+            s0, s1 = (Lw[1] - Lw[0]) / (A[1] - A[0]), (Lw[-1] - Lw[-2]) / (A[-1] - A[-2])
+            r = np.interp(al, A, Lw); r = np.where(al < A[0], Lw[0] + s0 * (al - A[0]), r); return np.where(al > A[-1], Lw[-1] + s1 * (al - A[-1]), r)
+        lL, lR = lat(S[-1]), lat(S[1])
+        between = (la >= lL) & (la <= lR)
+        mask = between & (al >= a_m - 0.3) & (al <= a_p + 0.3) & (l.R == 0)
+        pocket = t['bowl'] & (al <= a_p + 0.3) & ~between
+        zone = (((la >= lL - 1.0) & (la <= lL + T + 0.3)) | ((la >= lR - T - 0.3) & (la <= lR + 1.0))) & (al >= a_m - 0.2) & (al <= a_end + 0.2)
+        # the walls' tops: one rake over each wall's treads
+        AA = np.arange(a_m, a_end, step); AA = np.r_[AA, a_end]
+        walls, notch = [], []
+        for side in (-1, 1):
+            env = []
+            for a_ in AA:
+                P, i = _along(S[side], o, u, a_); n = N[side][min(i, len(N[side]) - 1)]
+                best = float(l.h(0)) + 1.0
+                for s_ in np.arange(0.05, reach + 0.01, 0.15):
+                    q = P - n * s_; ii, jj = [int(round(float(c))) for c in G.g(q[0], q[1])]
+                    if 0 <= ii < G.W and 0 <= jj < G.H and tread[jj, ii]: best = max(best, float(l.h(l.band[jj, ii])) + 1.0)
+                env.append(min(best, cap))
+            top = np.minimum(raked_top(AA, env), cap)
+            br = cv2.approxPolyDP(np.c_[AA, top].astype(np.float32).reshape(-1, 1, 2), 0.02, False)[:, 0, :]
+            # the stations along the wall: (a, back point, face point, top, kink?)
+            st = []
+            As = (S[side] - o) @ u
+            for k in range(len(S[side])):
+                st.append((float(As[k]), S[side][k], F[side][k], float(np.interp(As[k], AA, top)), k not in (0, len(S[side]) - 1)))
+            for ab in br[1:-1, 0]:
+                st.append((float(ab), _along(S[side], o, u, ab)[0], _along(F[side], o, u, ab)[0], float(np.interp(ab, AA, top)), False))
+            st.sort(key=lambda s: s[0])
+            kinks = [i for i, s in enumerate(st) if s[4]]
+            cuts = [0] + kinks + [len(st) - 1]
+            r3 = lambda w: [round(float(c), 3) for c in w]
+            for pi in range(len(cuts) - 1):
+                seg = st[cuts[pi]:cuts[pi + 1] + 1]
+                walls.append({'name': t['name'], 'pts': [r3([*s[1], s[3]]) for s in seg], 'inner': [r3(s[2]) for s in seg], 'back': [r3(s[1]) for s in seg],
+                              'caps': [pi == 0, False]})
+            # the stand's edge between the front fence and the wall's front end
+            d0 = (S[side][1] - S[side][0]) / np.hypot(*(S[side][1] - S[side][0]))
+            if d0[1] > 0.2:
+                tf = (S[side][0][1] - fence_z) / d0[1]
+                if tf > 0.3: notch.append((S[side][0] - d0 * tf, S[side][0], -N[side][0]))
+        out.append({'name': t['name'], 'a_m': a_m, 'walls': walls, 'mask': mask, 'pocket': pocket, 'zone': zone, 'notch': notch, 'S': S, 'F': F})
+    return out

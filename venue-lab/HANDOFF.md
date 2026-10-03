@@ -2,7 +2,42 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 26: the Saitama Super Arena's corner walls fitted to the map's block ends (not parallel), their front ends on one plane
+- **What was wrong** (user: "fit the tunnel walls to the side seats' end face and the rear seats' end face of the official layout, and
+  only match the front ends of the two walls; and the walls are not parallel to each other"): rounds 24-25 made the corner a 7 m strip
+  between two parallel walls, bare steps filling what the map leaves beside it. The map's void is a funnel between the end stand's
+  last block and the fan's blocks, its two sides at an angle: the rear block's end (128 SE, 24 SW) about 12 degrees off the end stand's
+  line, the fan's blocks (124+125 SE, 27+28 SW) at 45 (the block outlines, `poly` in `ssa_chart.json`).
+- **The funnel.** `ssa_tunnels.corner_funnels`: on each side of the tunnel's line (round 25's, 32 degrees, x = +-21.5: kept) the stand's
+  edge is read off the block outlines and the treads the model adds beside a block's end for a door (`edge_scan`: out from the line
+  every 2 cm), cut into straight pieces (`edge_chain`: Douglas-Peucker within 0.15 m, a piece under 1.5 m taken out, its neighbours
+  meeting where their lines do, the block end that stands before the front left out). SE: rear wall 2 pieces (block 128's end, 12
+  degrees, then upright), fan wall 1 piece (blocks 124+125, 45 degrees, 11 m). SW: rear wall 2 pieces (block 24's end: 12.5, then
+  26 degrees), fan wall 3 pieces (block 27's 45 degrees, then a 0.8 m step where the aisle beside block 26's end begins). The map draws
+  the two corners differently, so the two funnels are not mirror images; the covered tunnels (strip, lean, length) still are.
+- **Front ends.** Both walls begin on one plane square to the tunnel's line, through the fan's front corner (block 124's (24.3, 39.3),
+  27's (-24.2, 39.5)): 6.9 m (SE) / 6.5 m (SW) between the walls' backs, 5.9 / 5.4 between their faces. The rear wall's line runs on
+  about 1 m past its block's front to reach it; between that and the front fence the stand's edge (the notch, bare steps by `fill_pocket`)
+  has one straight rail (`mouth_rails`) and the fence runs on to it.
+- **Walls.** Each piece stands with its back on the stand's edge (the outline, or the treads where they stand further out: no seat is
+  cut, checked: none inside a wall's body, and 0.04 m2 (SE) / 0.7 m2 (SW) of tread under one, all at a wall's kinks and ends where it runs
+  into the stand's corner or the slab), `WALL_T` (0.5 m) thick into the funnel,
+  its top one straight rake over a metre above the highest tread within 2 m (`raked_top`, no higher than 6.1 m, the concourse slab being
+  6.2), running 0.9 m on into the slab; `cutWalls` pieces, one for each straight piece (mitred at the kinks), caps at the front end only.
+- **Open floor and bare steps.** The funnels' floor (SE 121 m2, SW 103 m2) is kept clear of the concourse (`BOWLMASKS`); the covered tunnel
+  begins at the funnel's back plane (11.0 m from the cut start), the slab's front face behind the funnel the back wall with the portal in it.
+  The bowl outside the walls is 8 m2 each (the notch and slivers; round 25 had 38 and 22 m2 of bare steps); `fill_pocket` now takes a cell
+  a hair short of the first row's front as the front.
+- **Gone from round 25:** `trench_wall`, `wall_env`, the common `TOP` and the parallel cut walls; the mirror check of the walls no longer
+  applies (the tunnels' `p`, `u`, `w`, `L`, `deck` are still exact mirrors).
+- **Checks.** Every level reachable on foot, 100% (200 10,824 / 10,824, 300 642, 400 5,870, 500 754, 300S 124); 92 of 96 gates walked, both
+  corner tunnels to their ends (221-224 behind the stage as before); the app builds and loads the arena without errors; the app's other
+  modules are byte for byte as before (`src/three/venues/ssa-data.js` is the only file that differs).
+- **To know.** The walls follow the map's outlines, so a different map would give other pieces; the 32 degree lean, the 7 m tunnel width and
+  the 0.5 m thickness are choices; `SSA_TRENCH_THETA` still moves the tunnel's line (the funnel follows it).
+
 ## Round 25: the Saitama Super Arena's corner trenches on the diagonal, mirror images, each with two alike walls
+*(Round 26 replaced this round's parallel cut walls and bare steps by walls fitted to the block ends: the covered tunnel, its 32 degree lean and its place here stay.)*
 - **What was wrong** (user: "make the corner trench completely parallel and symmetric"; on a version that ran straight back, "no,
   symmetric in this form", two diagonals drawn over it; then a plan of the void with the region outlined, "go with this feel"):
   round 24's two trenches were not alike (the walls began at different points on the front line, their tops differed, the bare
