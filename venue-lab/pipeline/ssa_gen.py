@@ -125,17 +125,17 @@ print('doors snapped',{k:len(v) for k,v in SNAP.items()},'; farthest move from t
 
 # ── the floor's corner trenches: the map leaves a corridor of open floor at each of the floor's south corners (the north
 # ones are behind the stage's masking), between the end stand's last column and the corner fan of blocks, flaring out into
-# a bowl at the floor; a straight trench goes in along it (7 m wide, as a stadium's corner tunnel is), an open cut through
+# a bowl at the floor; a straight trench goes in along it, leaning out (7 m wide, as a stadium's corner tunnel is), an open cut through
 # the stand and on, covered, under the concourse to the building's wall. What the bowl has beyond the trench is given back
 # to the stand (its rows going on into it, bare: the map has no seats there). ──
 WALL_T=0.5                                       # the walls' thickness (a wall's face stands this far in from the strip's edge)
-TREN=ST.corner_trenches(G,L2)
-print('corner trenches',[(t['name'],t['o'].round(2).tolist(),t['u'].round(3).tolist(),'across the stand\'s front %.1f m'%(7.0/abs(t['u'][1])),'cuts',t['cuts'],'bowl left outside %.1f m2'%(t['pocket'].sum()*G.res**2)) for t in TREN])
+TREN=ST.corner_trenches(G,L2,theta=float(os.environ.get('SSA_TRENCH_THETA','32')))      # (SSA_TRENCH_THETA: the lean in degrees, 45 the diagonal, 0 straight back)
+print('corner trenches',[(t['name'],t['o'].round(2).tolist(),t['u'].round(3).tolist(),'cuts',t['cuts'],'bowl left outside %.1f m2'%(t['pocket'].sum()*G.res**2)) for t in TREN],'; open cut',TREN[0]['open'],'m')
 POCKET=np.zeros(L2.R.shape,bool)
 for t in TREN: POCKET|=ST.fill_pocket(G,L2,t['pocket'])
 print('given back to the stand: %.1f m2'%(POCKET.sum()*G.res**2))
-# the part of each trench in the bowl (the open floor): no concourse storey stands in it
-BOWLMASKS=[t['strip']&(L2.R==0)&(((X-t['o'][0])*t['u'][0]+(Z-t['o'][1])*t['u'][1])<=t['am']+0.3) for t in TREN]
+# the open floor in each trench's strip: no concourse storey stands in it
+BOWLMASKS=[t['strip']&(L2.R==0)&(((X-t['o'][0])*t['u'][0]+(Z-t['o'][1])*t['u'][1])<=t['open']+0.3) for t in TREN]
 
 # ── concourses ──
 def dil(m,r): return cv2.dilate(m.astype(np.uint8),disk(r/G.res))>0
@@ -301,28 +301,63 @@ def to_wall(p,u,step=0.2):
         if not (0<=i_<G.W and 0<=j_<G.H) or not hull[j_,i_]: break
         L+=step
     return L
-TUN=[{'p':t['o'],'u':t['u'],'w':t['w'],'h':TUN_H,'closed':True,'Lmax':80.0,'Lmin':round(to_wall(t['o'],t['u'])-0.3,2),'open':round(t['am'],2),'name':t['name'],'T':WALL_T,'sidesAsWalls':True} for t in TREN]
-TUNM=cut_tunnels(G,L2,TUN,body_,back=0.6)
-FRONT_Z=41.45                                    # (the end stand's front line: a wall starts where it reaches it)
-def trench_wall(t,sg,reach=2.0,step=0.5):
-    """one side of a trench: a wall along the strip's edge from the front line to where the roof begins, its face WALL_T
-    in from the edge, its top one straight rake over a metre above the highest tread within `reach` beyond the edge"""
+LTUN=min(round(to_wall(t['o'],t['u'])-0.3,2) for t in TREN)     # (the pair the same length)
+TUN=[{'p':t['o'],'u':t['u'],'w':t['w'],'h':TUN_H,'closed':True,'Lmax':80.0,'Lmin':LTUN,'open':t['open'],'name':t['name'],'T':WALL_T,'sidesAsWalls':True} for t in TREN]
+TUNM=cut_tunnels(G,L2,TUN,body_,back=0.0)
+def wall_env(t,sg,aa,reach=2.0):
+    """the height one side of a trench has to clear along it: a metre over the highest tread within `reach` beyond its edge"""
     p_,u_=np.asarray(t['p'],float),np.asarray(t['u'],float); v_=np.array([-u_[1],u_[0]])
-    a0=(FRONT_Z-p_[1]-v_[1]*sg*t['w']/2)/u_[1]
-    aa=np.arange(a0,t['deck']+1e-6,step); aa[-1]=t['deck']; env=[]
+    env=[]
     for a_ in aa:
         best=float(L2.h(0))+1.0
         for s_ in np.arange(0.05,reach+0.01,0.15):
             q_=p_+u_*a_+v_*sg*(t['w']/2+s_); i_,j_=[int(round(float(c))) for c in G.g(q_[0],q_[1])]
             if 0<=i_<G.W and 0<=j_<G.H and L2.R[j_,i_]>0 and L2.band[j_,i_]>=0: best=max(best,float(L2.h(L2.band[j_,i_]))+1.0)
         env.append(best)
-    tp=ST.raked_top(aa,np.array(env))
+    return np.array(env)
+def trench_wall(t,sg,aa,tp):
+    """one side of a trench: a wall along the strip's edge, its face WALL_T in from the edge, its top `tp` along `aa`"""
+    p_,u_=np.asarray(t['p'],float),np.asarray(t['u'],float); v_=np.array([-u_[1],u_[0]])
     q_=cv2.approxPolyDP(np.c_[aa,tp].astype(np.float32).reshape(-1,1,2),0.02,False)[:,0,:]       # (the rake's two or three turns)
     e_=p_[None,:]+u_[None,:]*q_[:,:1]+v_[None,:]*sg*t['w']/2
     n_=np.array([-v_[0]*sg,-v_[1]*sg]); i_=e_+n_[None,:]*WALL_T
-    r2=lambda v:[round(float(c),2) for c in v]
-    return {'name':t['name'],'pts':[r2([*e,h]) for e,h in zip(e_,q_[:,1])],'inner':[r2(i) for i in i_],'back':[r2(e) for e in e_],'caps':[True,True]}
-TRENWALLS=[trench_wall(t,sg) for t in TUN for sg in (-1,1)]
+    r3=lambda v:[round(float(c),3) for c in v]                 # (a millimetre: a trench that leans must keep its two walls alike)
+    return {'name':t['name'],'pts':[r3([*e,h]) for e,h in zip(e_,q_[:,1])],'inner':[r3(i) for i in i_],'back':[r3(e) for e in e_],'caps':[True,True]}
+# all four walls the same: from the walls' plane to where the roof begins (the same for both trenches), the top one straight
+# rake over the highest of what the four have to clear
+A0=TREN[0]['a0']
+AA=np.arange(A0,TUN[0]['deck']+1e-6,0.5); AA[-1]=TUN[0]['deck']
+# no rail along the treads' edges where a wall stands (the strip and a little either side, from the walls' plane on)
+WALLZONE=np.zeros(L2.R.shape,bool)
+for t in TUN:
+    p_,u_=np.asarray(t['p'],float),np.asarray(t['u'],float); v_=np.array([-u_[1],u_[0]])
+    al=(X-p_[0])*u_[0]+(Z-p_[1])*u_[1]; la=np.abs((X-p_[0])*v_[0]+(Z-p_[1])*v_[1])
+    WALLZONE|=(la<=t['w']/2+0.8)&(al>=A0-0.2)&(al<=t['L'])
+TOP=ST.raked_top(AA,np.max([wall_env(t,sg,AA) for t in TUN for sg in (-1,1)],axis=0))
+TRENWALLS=[trench_wall(t,sg,AA,TOP) for t in TUN for sg in (-1,1)]
+FENCE_Z=41.4                                     # (the end stand's front fence)
+def mouth_rails(rails,step=0.5):
+    """Where the end stand's front reaches the strip ahead of the walls' plane (the walls begin on the later of the two sides),
+    the pocket's raster edge leaves a zigzag of short rails. Along the strip's edge from the front fence to the wall's end they
+    become one straight run, a rail a metre over each tread beside it."""
+    out=list(rails)
+    for t in TUN:
+        p_,u_=np.asarray(t['p'],float),np.asarray(t['u'],float); v_=np.array([-u_[1],u_[0]])
+        for sg in (-1,1):
+            e0=p_+v_*sg*t['w']/2; af=(FENCE_Z-e0[1])/u_[1]
+            if af>=A0-0.3: continue                    # (a stand begins at the wall: nothing ahead of it)
+            def near(r):
+                m=np.array([(r[0]+r[2])/2,(r[1]+r[3])/2])-p_
+                return af+0.05<=m@u_<=A0+0.05 and abs((m@v_)*sg-t['w']/2)<=0.7
+            out=[r for r in out if not near(r)]
+            n=max(1,int(np.ceil((A0-af)/step)))
+            for k in range(n):
+                a_,b_=af+(A0-af)*k/n,af+(A0-af)*(k+1)/n
+                pa,pb=e0+u_*a_+v_*sg*0.05,e0+u_*b_+v_*sg*0.05
+                q=(pa+pb)/2+v_*sg*0.25; i_,j_=[int(round(float(c))) for c in G.g(q[0],q[1])]
+                h_=float(L2.h(L2.band[j_,i_])) if L2.band[j_,i_]>=0 else float(L2.h0)
+                out.append([round(float(c),2) for c in (*pa,*pb)]+[round(h_,2),round(h_+1.0,2)])
+    return out
 print('corner tunnels',[(t['name'],[round(float(c),1) for c in t['p']],t['w'],'L',t['L'],'open cut',t['deck']) for t in TUN],'; walls',[(w['name'],len(w['pts']),w['pts'][0][2],w['pts'][-1][2]) for w in TRENWALLS])
 slabs=[(grow_under(c,y,[L2,L3,L4,L5]),(0.0 if y==C200 else y-0.35),y) for c,y in ((c200,C200),(c300,C300),(c400,C400),(c500,C500))]
 slabs.append((corr,SUY-0.45,SUY))        # the suites' corridor
@@ -379,11 +414,11 @@ for name,l,cm,cy in (('200',L2,c200,C200),('300',L3,c300,C300),('400',L4,c400,C4
     if name=='200':
         rows_=tunnel_rows(rows_,TUN); dr_,drl_=tunnel_decks(G,L2,TUN); rows_+=dr_; rails+=drl_
         # the bowls' sides and the tunnels' cuts have walls of their own: no rail along the treads' edges there
-        zone=cv2.dilate((np.any(BOWLMASKS,axis=0)|TUNM).astype(np.uint8),disk(0.8/G.res))>0
+        zone=WALLZONE
         def inzone(r):
             a,b=G.g((r[0]+r[2])/2,(r[1]+r[3])/2); a=int(round(float(a))); b=int(round(float(b)))
             return 0<=a<G.W and 0<=b<G.H and zone[b,a]
-        rails=[r for r in rails if not inzone(r)]
+        rails=mouth_rails([r for r in rails if not inzone(r)])
     levels.append({'name':name,'D':l.D,'h0':l.h0,'rise':l.rise,'rows':rows_,'steps':l.aisles_out(),'holes':[],'voms':VOMS.get(name,[]),'partitions':PART300 if name=='300' else [],
                    'seats':l.seats_out(),'rails':rails,'walls':walls})
     print(name,'rows',len(levels[-1]['rows']),'steps',len(levels[-1]['steps']),'rails',len(rails),'walls',len(walls),round(time.time()-T0,1))

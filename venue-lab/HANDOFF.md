@@ -2,7 +2,36 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 25: the Saitama Super Arena's corner trenches on the diagonal, mirror images, each with two alike walls
+- **What was wrong** (user: "make the corner trench completely parallel and symmetric"; on a version that ran straight back, "no,
+  symmetric in this form", two diagonals drawn over it; then a plan of the void with the region outlined, "go with this feel"):
+  round 24's two trenches were not alike (the walls began at different points on the front line, their tops differed, the bare
+  steps beside them were lopsided), and a trench straight back was not wanted: it leans out, as the void does.
+- **The trench.** `ssa_tunnels.corner_trenches(theta=32)`: still a 7.0 m strip, its middle line leaning 32 degrees out from the
+  end stand's line (the mean of the two drawn lines, 44 along the fan's edge and about 19 on the end stand's side; the void's
+  own edges are 44 and near upright). `SSA_TRENCH_THETA=<deg>` changes it (0 straight back, 45 the old model's diagonal).
+  Across, it stands where it costs least, the two corners together (3 per seat cut, 1 per m2 of the bowl left outside it, 60 for
+  stand standing in the way of its mouth, 1 per metre a wall begins later than the stand beside it does): SE x = 21.5, SW
+  x = -21.5 on the front line, **no seat cut** (200 level: all 10,824 seats). Its mouth is square across it: both walls begin on one
+  plane (`a0`), the later of the four places where a stand begins beside a wall (the fan's front corner; the end stand begins
+  2.5 m before it, that stretch's steps ending along the wall's line); both open cuts run the same 11.0 m (the treads under the
+  roof, or the bowl's length), then the covered tunnel on to the building's wall, 22.9 m in all.
+- **Alike.** The four walls take one start, one end and **one raked top** (`TOP`, `raked_top` over the highest of the four
+  envelopes from `wall_env`); their coordinates go in to the millimetre. The pair are mirror images (`p`, `u`, `w`, `h`, `L`, `deck`
+  equal), the two walls of a trench mirror images about its axis; checked to 1 mm by a throwaway script (pair and wall mirror
+  tests; not in the repo).
+- **Beside the trench** the bare steps are SE 38 m2, SW 22 m2 (the map's two corners differ), as in round 24 (`fill_pocket`). Ahead of the
+  walls' plane, on the end stand's side, their edge goes on along the wall's line down to the front fence; the zigzag of short rails
+  the raster edge left there is one straight run now (`mouth_rails`: a rail a metre over each tread beside it), the same both sides.
+- **Checks.** Every level reachable on foot, 100% (200 10,824 / 10,824, 300 642, 400 5,870, 500 754, 300S 124); 92 of 96 gates walked,
+  the corner tunnels to their ends (221-224 are behind the stage's masking, as before); the app builds and loads the arena without
+  errors; the app's other modules and venues' data are byte for byte as in round 24 (`src/three/venues/ssa-data.js` is the only file
+  that differs). `standgen.cut_tunnels` has an `open` option (the cut runs at least that far); only SSA sets it.
+- **To know.** The 32 degree lean and the 7 m width are choices, not figures from the arena's drawings; the bare steps stand in for
+  what the map leaves void (seating them would add about 150 seats the map does not have); `SSA_TRENCH_THETA` re-runs it at another lean.
+
 ## Round 24: the Saitama Super Arena's corners as parallel 7 m trenches, like Wembley's
+*(Round 25 leaned the trench 32 degrees and made the pair and the walls alike: its lean, place and wall starts here are superseded.)*
 - **What was wrong** (user: "straighten it into a parallel trench like Wembley"): round 23's corner was still the map's bowl, a
   funnel 14-16 m across at the floor narrowing to the 7 m tunnel, its sides two straight faces at an angle to each other.
 - **The trench.** `ssa_tunnels.corner_trenches`: a strip 7.0 m wide (6.0 m clear between the wall faces; Wembley's is 7.0 / 6.4),

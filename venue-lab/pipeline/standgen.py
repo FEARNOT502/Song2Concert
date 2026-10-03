@@ -1108,8 +1108,9 @@ def cut_tunnels(G, l, tunnels, body, deck_t=0.6, back=3.0):
     mouth's centre on the stand's front, u: outward, w, h, closed, Lmax}. It
     runs from `back` metres in front of the mouth to where `body` ends (or
     Lmax); the rows too low to roof it are cut away over it (an open cut, its
-    deck at its end), the rows above left as its roof. Adds L, deck, rect to
-    each; returns the union of their footprints."""
+    deck at its end), the rows above left as its roof (`open`: the cut runs at
+    least that far, whatever stands in it). Adds L, deck, rect to each; returns
+    the union of their footprints."""
     gy, gx = np.mgrid[0:G.H, 0:G.W]; X, Z = G.m(gx, gy)
     allm = np.zeros((G.H, G.W), bool)
     for t in tunnels:
@@ -1126,7 +1127,12 @@ def cut_tunnels(G, l, tunnels, body, deck_t=0.6, back=3.0):
         on = m & (l.band >= 0)
         dt_ = t.get('slab', deck_t)
         low = on & (l.h(np.maximum(l.band, 0)) < t['h'] + dt_ + 0.01)
-        t['deck'] = round(max(float(al[low].max()) + 0.05 if low.any() else 0.0, min(t.get('open', 0.0), t['L'])), 2)
+        deck_ = float(al[low].max()) + 0.05 if low.any() else 0.0
+        if t.get('open'):
+            # open at least this far (a pair of tunnels alike): every tread in it goes, low or not
+            deck_ = max(deck_, min(t['open'], t['L']))
+            low |= on & (al <= deck_)
+        t['deck'] = round(deck_, 2)
         if t.get('trapezoid'):
             # the portal where the rows along the tunnel's middle clear it;
             # low rows beside it further in (a fan's side blocks) are a flat
