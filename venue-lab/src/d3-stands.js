@@ -556,6 +556,39 @@ function thickPanel(P, N, [x0, z0, x1, z1, ya0, ya1, yb0, yb1], T) {
   quad(b0, b1, o(b1), o(b0));
 }
 
+// A thin steel fence along a run [x0, z0, x1, z1, ya0, ya1, yb0, yb1] (its bottom and its top at each end, as `slopedRuns` lays
+// a raked edge): square posts about every `gap` metres (standing `sink` into the tread) and three bars along it, parallel to
+// its slope, see-through between. Every face its own flat normal.
+function fenceRun(P, N, [x0, z0, x1, z1, ya0, ya1, yb0, yb1], { gap = 1.5, post = 0.05, bar = 0.032, sink = 0.15, at = [0.36, 0.68, 0.97] } = {}) {
+  const dx = x1 - x0, dz = z1 - z0, L = Math.hypot(dx, dz);
+  if (L < 0.05) return;
+  const u = [-dz / L, 0, dx / L];                                   // across the run, level
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const beam = (a, b, wu, wv) => {
+    const d = sub(b, a);
+    let v = [d[1] * u[2] - d[2] * u[1], d[2] * u[0] - d[0] * u[2], d[0] * u[1] - d[1] * u[0]]; const vl = Math.hypot(...v) || 1; v = v.map((c) => c / vl);
+    const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
+    const ring = (c) => [[1, 1], [-1, 1], [-1, -1], [1, -1]].map(([su, sv]) => [c[0] + u[0] * su * wu / 2 + v[0] * sv * wv / 2, c[1] + u[1] * su * wu / 2 + v[1] * sv * wv / 2, c[2] + u[2] * su * wu / 2 + v[2] * sv * wv / 2]);
+    const A = ring(a), B = ring(b);
+    const quad = (p, q, r, s_) => {
+      const e1 = sub(q, p), e2 = sub(s_, p);
+      let n = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+      const c = [(p[0] + r[0]) / 2 - mid[0], (p[1] + r[1]) / 2 - mid[1], (p[2] + r[2]) / 2 - mid[2]];
+      if (n[0] * c[0] + n[1] * c[1] + n[2] * c[2] < 0) n = n.map((c_) => -c_);
+      const m = Math.hypot(...n) || 1;
+      for (const w of [p, q, r, p, r, s_]) { P.push(...w); N.push(n[0] / m, n[1] / m, n[2] / m); }
+    };
+    for (let i = 0; i < 4; i++) quad(A[i], A[(i + 1) % 4], B[(i + 1) % 4], B[i]);
+    quad(A[0], A[1], A[2], A[3]); quad(B[0], B[1], B[2], B[3]);
+  };
+  const k = Math.max(1, Math.ceil(L / gap));
+  for (let i = 0; i <= k; i++) {
+    const t = i / k, x = x0 + dx * t, z = z0 + dz * t;
+    beam([x, ya0 + (yb0 - ya0) * t - sink, z], [x, ya1 + (yb1 - ya1) * t, z], post, post);
+  }
+  for (const f of at) beam([x0, ya0 + (ya1 - ya0) * f, z0], [x1, yb0 + (yb1 - yb0) * f, z1], f > 0.9 ? post : bar, f > 0.9 ? 0.04 : bar);
+}
+
 // Thin vertical panels laid end to end (a rail, a wall round a curve) each
 // carry their own facing; where two meet at a gentle bend they share one, so
 // the run shades as one smooth surface rather than a row of facets.
@@ -804,6 +837,7 @@ function buildStands(data, {
   const mkPanels = ([p, n]) => { const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(p, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(weldNormals(p, n), 3)); return geo; };
 
   const people = [], aisleLights = [], seatSpots = [];
+  const fenceP = [], fenceN = [];
   const solid = [], floors = [], stairs = [], mouthFloors = [];
   const voms = { pit: [], cap: [], tunnel: [], floor: [], ceil: [], lamps: [], signs: [] };
   for (const L of data.levels) {
@@ -837,6 +871,8 @@ function buildStands(data, {
     // low partitions between its boxes
     const own = materials.levelRail?.[L.name];
     for (const [x0, z0, x1, z1, ya0, ya1, yb0, yb1] of slopedRuns(L.rails)) panel4(own ? 'own' : 'rail', x0, z0, x1, z1, ya0, ya1, yb0, yb1);
+    // thin steel fences (the end faces of a floor corner's funnel): posts and bars, see-through
+    for (const [x0, z0, x1, z1, ya0, ya1, yb0, yb1] of slopedRuns(L.fences ?? [])) fenceRun(fenceP, fenceN, [x0 + ox, z0 + oz, x1 + ox, z1 + oz, ya0, ya1, yb0, yb1]);
     if (own && panels.own[0].length) { g.add(new THREE.Mesh(mkPanels(panels.own), own)); panels.own = [[], []]; }
     // the partitions beside a gate's pit and its stairs' cuts: solid, `gateRailT` thick
     if (L.gateRails?.length) {
@@ -923,6 +959,12 @@ function buildStands(data, {
   }
   if (panels.wall[0].length) g.add(new THREE.Mesh(mkPanels(panels.wall), wallMat));
   if (panels.rail[0].length) g.add(new THREE.Mesh(mkPanels(panels.rail), railMat));
+  if (fenceP.length) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(fenceP, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(fenceN, 3));
+    const m = new THREE.Mesh(geo, railMat); m.receiveShadow = true; g.add(m);
+  }
   if (panels.mouth[0].length) g.add(new THREE.Mesh(mkPanels(panels.mouth), lit.mouthMat));
   if (data.rooms) g.add(buildRooms(data.rooms, { ox, oz, shapeOf, structMat, wallMat, lit }));
   if (data.tunnels?.length) g.add(buildTunnels(data, ox, oz));

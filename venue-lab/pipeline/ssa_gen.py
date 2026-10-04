@@ -125,23 +125,26 @@ print('doors snapped',{k:len(v) for k,v in SNAP.items()},'; farthest move from t
 
 # ── the floor's corner tunnels: the map leaves a bowl of open floor at each of the floor's south corners (the north ones are
 # behind the stage's masking), between the end stand's last block and the corner fan of blocks, a funnel in from the floor; a
-# tunnel goes in along it, 7 m wide as a stadium's corner tunnel is: the funnel its open part, walled on the two blocks' end
-# faces, then covered, under the concourse to the building's wall. What the bowl has outside the walls is given back to the
-# stand (its rows going on into it, bare: the map has no seats there). ──
-WALL_T=0.5                                       # the walls' thickness
+# tunnel goes in along it, 7 m wide as a stadium's corner tunnel is: the funnel its open part, bounded by the stands' own end
+# faces on the map's drawn outline (no wall of its own: a thin fence along the faces' tops), then covered, under the
+# concourse to the building's wall. What the bowl has beside the faces is given to the stand (its rows going on into it,
+# bare: the map has no seats there). ──
+WALL_T=0.5                                       # the covered tunnel's walls' thickness
 TREN=ST.corner_trenches(G,L2,theta=float(os.environ.get('SSA_TRENCH_THETA','32')))      # (SSA_TRENCH_THETA: the lean in degrees, 45 the diagonal, 0 straight back)
 print('corner trenches',[(t['name'],t['o'].round(2).tolist(),t['u'].round(3).tolist(),'cuts',t['cuts']) for t in TREN],'; open cut',TREN[0]['open'],'m')
-# the open part of each is a funnel between the end stand's block and the fan's, its walls fitted to those blocks' end faces
-# as the map draws them (not parallel), both beginning on one plane square to the trench
-POLYS=[SB.to_metres(CH,np.array(o['poly'],float),'200') for b,o in CH['blocks'].items() if o['level']=='200' and not o['lettered'] and o['seats'] and int(b) in OFF and o.get('poly')]
-FUN=ST.corner_funnels(G,L2,TREN,POLYS,T=WALL_T,cap=C200-0.1)
-print('funnels',[(f['name'],'mouth plane %.2f from the cut start'%f['a_m'],'open floor %.1f m2'%(f['mask'].sum()*G.res**2),'bowl outside the walls %.1f m2'%(f['pocket'].sum()*G.res**2)) for f in FUN])
+# the funnels follow the outline the map draws (ssa_corners.json, read off its image by ssa_outline.py): each corner as its own
+# map has it
+CORNERS=json.load(open('ssa/ssa_corners.json'))
+FUN=ST.corner_funnels(G,L2,TREN,CORNERS)
+OPEN=round(max([t['open'] for t in TREN]+[f['a_back'] for f in FUN]),2)
+for t in TREN: t['open']=OPEN                    # (the pair alike: the tunnels begin where the back faces cross their lines)
+print('funnels',[(f['name'],'faces moved in by',f['shifts'],'back face at %.2f from the cut start'%f['a_back'],'open floor %.1f m2'%(f['mask'].sum()*G.res**2)) for f in FUN])
 for f in FUN:
     print(f['name'],'treads in the open space, cut: %.1f m2, seats among them: %d'%(f['cut'].sum()*G.res**2,int((sample(G,f['cut'].astype(np.uint8),L2.seats)>0).sum())))
     L2.R[f['cut']]=0; L2.band[f['cut']]=-1
 POCKET=np.zeros(L2.R.shape,bool)
 for f in FUN: POCKET|=ST.fill_pocket(G,L2,f['pocket'])
-print('given back to the stand: %.1f m2'%(POCKET.sum()*G.res**2))
+print('given to the stand: %.1f m2'%(POCKET.sum()*G.res**2))
 # the end stand's back: a block whose rows stop short of its neighbours' (the 200s' middle block, the 400s') has the rows go on, bare,
 # to the same line, so the wall behind the stand is one straight wall (no door stands in either notch)
 for l_ in (L2,L4):
@@ -301,9 +304,9 @@ for name,vs in VOMS.items():
     for v in vs:
         k=min(gs,key=lambda g: np.hypot(gs[g][0]-v['p'][0],gs[g][1]-v['p'][1])); v['label']=str(k)
 # ── the floor's corner tunnels ──
-# Each trench goes on under the stand and the concourse's storey to the building's wall, shut there by its doors: an open
-# cut through the rows too low to pass under (the bowl's own length at the least), then covered. Its walls are thick,
-# their faces straight and parallel, their tops one rake over the rows beside them.
+# Each trench goes on under the stand and the concourse's storey to the building's wall, shut there by its doors: the funnel
+# an open cut through the rows too low to pass under (to the back face, at the least), then covered, its walls (inside, under
+# the stand) thick, their faces straight and parallel.
 TUN_H=4.4
 body_=((L2.R>0)|(L2.hull>0)|c200)&(hull>0)       # what a tunnel runs under, before the cuts
 def to_wall(p,u,step=0.2):
@@ -315,45 +318,19 @@ def to_wall(p,u,step=0.2):
         L+=step
     return L
 LTUN=min(round(to_wall(t['o'],t['u'])-0.3,2) for t in TREN)     # (the pair the same length)
-TUN=[{'p':t['o'],'u':t['u'],'w':t['w'],'h':TUN_H,'closed':True,'Lmax':80.0,'Lmin':LTUN,'open':t['open'],'name':t['name'],'T':WALL_T,'sidesAsWalls':True} for t in TREN]
+TUN=[{'p':t['o'],'u':t['u'],'w':t['w'],'h':TUN_H,'closed':True,'Lmax':80.0,'Lmin':LTUN,'open':t['open'],'name':t['name'],'T':WALL_T,'sidesAsWalls':True,'along_margin':0.0} for t in TREN]
 TUNM=cut_tunnels(G,L2,TUN,body_,back=0.0)
-# the funnels' walls (fitted to the block ends, see ST.corner_funnels); no rail along the treads' edges where a wall stands, nor
-# along the covered tunnel
+# the funnels have no wall (the stands' own faces): no rail along the treads' edges there, a fence of their own on the faces
+# (ST.funnel_fences), nor along the covered tunnel
 A0=TREN[0]['a0']
-TRENWALLS=[w for f in FUN for w in f['walls']]
 WALLZONE=np.zeros(L2.R.shape,bool)
 for t in TUN:
     p_,u_=np.asarray(t['p'],float),np.asarray(t['u'],float); v_=np.array([-u_[1],u_[0]])
     al=(X-p_[0])*u_[0]+(Z-p_[1])*u_[1]; la=np.abs((X-p_[0])*v_[0]+(Z-p_[1])*v_[1])
     WALLZONE|=(la<=t['w']/2+0.8)&(al>=A0-0.2)&(al<=t['L'])
 for f in FUN: WALLZONE|=f['zone']
-FENCE_Z=41.4                                     # (the end stand's front fence)
-def mouth_rails(rails,step=0.5):
-    """Where the end stand's front reaches the funnel ahead of the walls' front plane (the walls begin on the fan's front
-    corner, the end stand's block a little before it), the pocket's raster edge leaves a zigzag of short rails. Along the
-    stand's edge from the front fence to the wall's front end they become one straight run, a rail a metre over each tread
-    beside it."""
-    out=list(rails)
-    for f in FUN:
-        for p,q,e_ in f['notch']:
-            d=q-p; L=float(np.hypot(*d)); e=d/L; n=np.array([-e[1],e[0]])
-            def near(r):
-                m=np.array([(r[0]+r[2])/2,(r[1]+r[3])/2])-p
-                return 0.05<=m@e<=L+0.05 and abs(m@n)<=0.4
-            out=[r for r in out if not near(r)]
-            fence=[r for r in out if r[4]==0.0 and r[5]==1.2]            # (the front fence runs on to the stand's edge)
-            ends=[np.array(r[i:i+2]) for r in fence for i in (0,2) if 0.05<np.hypot(r[i]-p[0],r[i+1]-p[1])<1.5]
-            if ends:
-                pe=min(ends,key=lambda c: np.hypot(*(c-p)))
-                out.append([round(float(v),2) for v in (*pe,*p)]+[0.0,1.2])
-            k=max(1,int(np.ceil(L/step)))
-            for i in range(k):
-                pa,pb=p+e*L*i/k,p+e*L*(i+1)/k
-                c=(pa+pb)/2+e_*0.25; ii,jj=[int(round(float(v))) for v in G.g(c[0],c[1])]
-                h_=float(L2.h(L2.band[jj,ii])) if L2.band[jj,ii]>=0 else float(L2.h0)
-                out.append([round(float(v),2) for v in (*pa,*pb)]+[round(h_,2),round(h_+1.0,2)])
-    return out
-print('corner tunnels',[(t['name'],[round(float(c),1) for c in t['p']],t['w'],'L',t['L'],'open cut',t['deck']) for t in TUN],'; walls',[(w['name'],len(w['pts']),w['pts'][0][2],w['pts'][-1][2]) for w in TRENWALLS])
+FENCES=[s_ for f in FUN for s_ in ST.funnel_fences(G,L2,f,floor=C200)]
+print('corner tunnels',[(t['name'],[round(float(c),1) for c in t['p']],t['w'],'L',t['L'],'open cut',t['deck']) for t in TUN],'; funnel fences',len(FENCES),'segments')
 slabs=[(grow_under(c,y,[L2,L3,L4,L5]),(0.0 if y==C200 else y-0.35),y) for c,y in ((c200,C200),(c300,C300),(c400,C400),(c500,C500))]
 slabs.append((corr,SUY-0.45,SUY))        # the suites' corridor
 # under the 200 concourse the tunnels run on hollow
@@ -407,15 +384,16 @@ for name,l,cm,cy in (('200',L2,c200,C200),('300',L3,c300,C300),('400',L4,c400,C4
     rails+=front_parapet(G,l,fronts[name])
     rows_=l.rows_out()
     if name=='200':
+        rows_=ST.clip_rows(rows_,[f['poly'] for f in FUN])      # (the faces straight to the line)
         rows_=tunnel_rows(rows_,TUN); dr_,drl_=tunnel_decks(G,L2,TUN); rows_+=dr_; rails+=drl_
         # the bowls' sides and the tunnels' cuts have walls of their own: no rail along the treads' edges there
         zone=WALLZONE
         def inzone(r):
             a,b=G.g((r[0]+r[2])/2,(r[1]+r[3])/2); a=int(round(float(a))); b=int(round(float(b)))
             return 0<=a<G.W and 0<=b<G.H and zone[b,a]
-        rails=mouth_rails([r for r in rails if not inzone(r)])
+        rails=[r for r in rails if not inzone(r)]
     levels.append({'name':name,'D':l.D,'h0':l.h0,'rise':l.rise,'rows':rows_,'steps':l.aisles_out(),'holes':[],'voms':VOMS.get(name,[]),'partitions':PART300 if name=='300' else [],
-                   'seats':l.seats_out(),'rails':rails,'walls':walls})
+                   'seats':l.seats_out(),'rails':rails,'walls':walls,'fences':FENCES if name=='200' else []})
     print(name,'rows',len(levels[-1]['rows']),'steps',len(levels[-1]['steps']),'rails',len(rails),'walls',len(walls),round(time.time()-T0,1))
 # ── the doors' frames and number plates (one plate on each face of the wall over the opening), and a check that
 # nothing stands in an opening ──
@@ -515,7 +493,7 @@ print('suites',len(bx),'seats',len(Ss),'front x',round(xb,2),'z',z0s,z1s)
 floors=[{'y':y,'y0':y0,'polys':mask_polys(G,m)} for m,y0,y in slabs]
 ow=contours(G,outer.astype(np.uint8),eps=0.03,minarea=100)
 data={'levels':levels,'floors':floors,'flights':[{k:(round(float(v),3) if not isinstance(v,int) else v) for k,v in f.items()} for f in flights],
-      'outer':[poly_out(p) for p in ow],'rooms':encl,'tunnels':tunnels_out(TUN),'suites':suites,'signs':SIGNS,'frames':FRAMES,'cutWalls':TRENWALLS}
+      'outer':[poly_out(p) for p in ow],'rooms':encl,'tunnels':tunnels_out(TUN),'suites':suites,'signs':SIGNS,'frames':FRAMES,'cutWalls':[]}
 data['levels'].append({'name':'300S','D':1.0,'h0':SY,'rise':SR,'rows':srows,'steps':[],'holes':[],'voms':[],'partitions':parts,
                        'seats':base64.b64encode(enc.tobytes()).decode('ascii'),'rails':glass_rail,'walls':[]})
 json.dump(data,open('ssa_stands.json','w'),separators=(',',':'))

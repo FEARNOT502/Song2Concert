@@ -1151,7 +1151,7 @@ def cut_tunnels(G, l, tunnels, body, deck_t=0.6, back=3.0):
             ds_ = sample(l.G, t['deckMask'].astype(np.uint8), l.seats) > 0
             l.seats, l.row, l.yaw = l.seats[~ds_], l.row[~ds_], l.yaw[~ds_]
         q = l.seats - p
-        keep = ~((np.abs(q @ v) < t['w'] / 2 + 0.3) & (q @ u > -back) & (q @ u < t['deck'] + 0.3))
+        keep = ~((np.abs(q @ v) < t['w'] / 2 + 0.3) & (q @ u > -back) & (q @ u < t['deck'] + t.get('along_margin', 0.3)))
         l.seats, l.row, l.yaw = l.seats[keep], l.row[keep], l.yaw[keep]
         t['rect'] = [(p + u * a + v * b).round(3).tolist() for a, b in ((-back, -t['w'] / 2), (t['L'], -t['w'] / 2), (t['L'], t['w'] / 2), (-back, t['w'] / 2))]
         t['deckY'] = t['h'] + dt_

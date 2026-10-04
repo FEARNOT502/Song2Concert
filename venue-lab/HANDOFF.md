@@ -2,7 +2,41 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 28: the Saitama Super Arena's corner funnels bounded by the stands' own end faces on the map's drawn outline, a thin steel fence on top
+- **What was asked** (user, with the map crop and a red triangle drawn on it): work the funnel as that picture has it; the real tunnel is
+  the two corner blocks' end faces with a fence on top, so take the thick wall bodies out, work the blocks' faces and put a thin steel
+  fence along their tops. Answers to the questions put first: the face stepped with the rows (no wall of its own); the fence see-through
+  (posts and bars); each corner as its own map has it (not mirror images); the back along the map's line, with the fence on it too.
+- **The outline.** The thin white line the map draws round the stands is the only white in the image (seats grey, labels coloured):
+  `ssa_outline.py` fits straight lines to its pixels (RANSAC) and writes `ssa/ssa_corners.json`. SE: the end stand's side one line
+  (13.8 degrees off upright), the fan's one line (45), the back (the line blocks 127+126's front rows lie on, 25.2 degrees); SW: the end
+  stand's side two lines (12.6 then 25.2, bend (-19.7, 49.0)), the fan's two (45 then 64.8, bend (-29.1, 44.5)), the back 24.8. The SW's
+  two later pieces are parallel and square to its back, SE's are not: the two corners are not mirror images, and are not made so.
+- **The faces.** `ssa_tunnels.corner_funnels`: each line is the face; it moves into the funnel only as far as keeps every seat 0.3 m
+  behind it (SE none, SW 0.13 m on one piece); pieces meet at their lines' crossings; the front ends are where the stand begins along
+  the line. The treads in the funnel are cut (SE 0.5 m2, SW 6.1 m2: a door's aisle beside block 26's end, no seat), the gaps between the
+  faces and the stand's own edge are given to it (25 m2: bare treads, the rows going on to the line) and `clip_rows` trims every row's
+  outline along the faces' exact lines, so the faces are planar, stepped with the rows, not the raster's ripple. No `cutWalls` any more
+  (`[]`); `trench_wall`'s successors `corner_funnels` walls, `mouth_rails`, `Outlines`, `edge_chain` are gone.
+- **The back.** The funnel runs on to the map's back line: the open cut is now 12.29 m from the cut start (was 11.04: the portal
+  moves in 1.25 m); `standgen.cut_tunnels` takes `along_margin` (default 0.3, unchanged for other venues; 0 here), so the seats just
+  behind the portal stay (10,824, as the map has).
+- **The fence.** `ssa_tunnels.funnel_fences` lays segments [x0, z0, x1, z1, y0, y1] along the faces' path (a step every 0.25 m, from the
+  nearest tread behind the face up 1.1 m; over a face with the concourse behind it, from the slab's top), the data's level-200 `fences`;
+  `d3-stands.js` `fenceRun` draws each `slopedRuns` run as posts (every 1.5 m, 5 cm square, 15 cm into the tread) and three bars
+  along its slope (heights 0.36, 0.68, 0.97 of the fence), in the rail's dark steel, see-through. The solid rails along the faces'
+  tread edges are not drawn there (`WALLZONE`). Nothing else uses `fences`, so the other venues draw as before (`stands.js` is the one
+  generated module that changes, by added code only).
+- **Checks.** Every level reachable on foot, 100% (200 10,824, 300 642, 400 5,870, 500 754, 300S 124, the counts unchanged); 92 of 96
+  gates walked (221-224 behind the stage as before) and both corner tunnels to their ends; each of 20 test points on the faces higher than
+  1.6 m stops the walker; the app builds and loads the arena without errors; the app's other modules are byte for byte as before.
+- **To know.** The faces' lowest stretch (under 1.6 m, at the front ends) can be climbed like any front row (the walker's rule:
+  up to 1.5 m onto something broad; a fence does not stop it, its rays pass over); the portal is not a face, so the walker goes in
+  there. SW's door 211 aisle is cut where it ran into the funnel. The back face between the end stand's face and block 127 has the
+  podium behind it (no stand: the fence stands on the slab's top, 6.2 m).
+
 ## Round 27: the Saitama Super Arena's two corner funnels mirror images, the SW step gone; the end stand's back wall straight
+*(Round 28 replaced the funnels' walls by the stands' own end faces with a fence, each corner as its map has it, not mirror images; the end stand's back wall straightening (`back_notches`) stays.)*
 - **What was asked** ("fix the SW step; SE and SW tunnels symmetric; work the corner walls from the official image; and straighten the
   bumpy wall behind the rear seats"). The front-end line was asked for as the extension of the front line of the middle block between the
   rear and the side seats; the lab keeps round 26's mouth plane (square to the tunnel's line through the fan's front corner: the
