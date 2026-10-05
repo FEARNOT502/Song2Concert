@@ -1007,7 +1007,7 @@ export function buildStands(data, {
   if (data.pillars?.length) g.add(pillars(data.pillars, ox, oz, lit ? lit.inMat : wallMat));
   if (data.cutWalls?.length) {
     const cw = (materials.cutWall ?? structMat).clone(); cw.side = THREE.DoubleSide;
-    if (!materials.cutWall) cw.color.setScalar(0.4);        // dark concrete: the bowls' walls are the stands' fronts, not light panels
+    if (!materials.cutWall) cw.color.setScalar(data.cutWallTone ?? 0.4);        // dark concrete: the bowls' walls are the stands' fronts, not light panels (a venue's own: data.cutWallTone)
     g.add(cutWalls(data.cutWalls, ox, oz, cw, 0.3));
   }
   if (data.frames?.length) g.add(doorFrames(data.frames, ox, oz, materials.doorFrame ?? std({ color: 0x1b1d22, roughness: 0.55, metalness: 0.35 })));
