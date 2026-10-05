@@ -166,58 +166,21 @@ def section_depth(l, P):
 BAYS5, AISLES5, SEC5 = section_depth(L5, tr(o['L5']['front']))
 print('L5 bays', [round(float(np.linalg.norm(b['bridge'][-1] - b['bridge'][0])), 1) for b in BAYS5], 'aisles', len(AISLES5), 'rows', L5.nrows)
 
-# ── the gaps in the plan's seats ──
-# The seats were read off an image of the plan. Where it leaves a patch of
-# tread unseated (1.8 m or more across every way: aisles and gangways are
-# narrower) it is one of three things: a vomitory's mouth (behind Level 1's
-# walkway, a third of the way up Level 2 and Level 5, one every 12-14 m round
-# the bowl), a tunnel's mouth at pitch level, or a block's number printed
-# over its seats. The mouths are where the vomitories go; the numbers' patches
-# are seated, 0.5 m apart along their rows.
-from standlib import seat_mask
-def plan_blobs(l):
-    from scipy.ndimage import distance_transform_edt as edt
-    occ = cv2.dilate(seat_mask(G, l.raw), disk(0.25 / G.res)) > 0
-    empty = (l.R > 0) & (l.band >= 0) & ~occ
-    core = edt(empty) * G.res > 0.9
-    blob = (edt(~core) * G.res <= 0.9) & empty
-    n_, lab_, st_, _ = cv2.connectedComponentsWithStats(blob.astype(np.uint8), connectivity=8)
-    out = []
-    for k in range(1, n_):
-        area = st_[k, 4] * G.res ** 2
-        if area < 2.0: continue
-        m = lab_ == k; ys, xs = np.nonzero(m); P = np.c_[G.m(xs, ys)]; b = l.band[m]
-        out.append({'m': m, 'area': area, 'rmin': int(b.min()), 'c': P.mean(0), 'P': P, 'len': float(np.ptp(P, axis=0).max())})
-    return out
-def near_tunnel_pts(c):
-    for q in ([-37.0, -62.1], [-36.7, 62.5], [38.1, -64.0], [38.0, 64.1], [52.0, 0.0]):
-        if np.hypot(c[0] - q[0], c[1] - q[1]) < 9.0: return True
-    return False
-MOUTH_ROWS = {'L1': (27, 30), 'L2': (3, 6), 'L5': (11, 14)}
-MOUTHS = {}
+# ── the seats, row by row ──
+# The plan's seats were traced off an image of it, which left a row without
+# seats wherever a block's, a row's or a seat's number is printed over it (or
+# the watermark), and its seats crowded or spread wherever the tracing
+# wobbled. Laid out again from what the plan draws (wb_plan.py): each row of
+# each block seated end to end, one pitch apart, from aisle to aisle; the
+# aisles where the plan draws them, carried on along their lines where the
+# watermark hides them; a row only where the plan draws its line. The
+# pitches give each level its official count once the vomitories, tunnels
+# and press box are cut (34,303, 16,532 and 39,165 seats).
+from wb_reseat import plan_bits, reseat
+PITCH = {'L1': 0.551, 'L2': 0.5, 'L5': 0.521}
+PLAN = plan_bits(G)
 for name_, l_ in LV.items():
-    blobs = plan_blobs(l_); lo, hi = MOUTH_ROWS[name_]
-    small = [b for b in blobs if b['area'] <= 40 and b['len'] <= 9.6 and not near_tunnel_pts(b['c'])]
-    # the vomitories are the official maps' (below), not the plan's gaps:
-    # those are seated like the numbers' patches
-    MOUTHS[name_] = [b for b in small if lo <= b['rmin'] <= hi and b['area'] >= 3.0]
-    tree = cKDTree(l_.raw); new = []
-    for b in small:
-        for r in np.unique(l_.band[b['m']]):
-            if r < 0: continue
-            line = b['m'] & (l_.band == r) & (np.abs(l_.d - (r + 0.55) * l_.D) < 0.05)
-            yy, xx = np.nonzero(line)
-            if not len(xx): continue
-            Q = np.c_[G.m(xx, yy)]; Q = Q[np.argsort(np.arctan2(Q[:, 0], Q[:, 1]))]
-            last = None
-            for q in Q:
-                if tree.query(q)[0] < 0.45: continue
-                if last is None or np.hypot(*(q - last)) >= 0.5: new.append(q); last = q
-    if new:
-        l_.raw = np.r_[l_.raw, np.array(new)]
-        l_.seatmask = seat_mask(G, l_.raw)
-        l_.set_depth(l_.d, getattr(l_, '_grad', None))
-    print('plan gaps', name_, 'mouths', len(MOUTHS[name_]), 'seated', len(new), 'seats ->', len(l_.raw))
+    print('reseat', name_, reseat(G, l_, PLAN[name_], PITCH[name_]), round(time.time() - T0, 1))
 
 # ── the four corner tunnels ──
 # At each corner of the pitch the Level 1 front is cut square across, and
@@ -392,11 +355,14 @@ for t in TUNNELS[:4]:
         mid = lambda a_: c + (np.polyval(fr, a_) - np.polyval(fl, a_)) / 2
         t['p'] = t['p'] + v * mid(0.0); t['u'] = unit(t['u'] + v * (mid(1.0) - mid(0.0)))
     # the half-gap between the seats either side, along the axis
-    t['gap'] = ((fl + fr) / 2).tolist(); t['a_end'] = float(a_end)
+    t['gap'] = ((fl + fr) / 2).tolist(); t['gaps'] = (t['gap'], t['gap']); t['a_end'] = float(a_end)
     g_end = float(np.polyval(t['gap'], a_end))
     t['w'] = round(2 * (g_end - ROW_END), 2)          # the portal: the cut's walls run on into it
+def gap_at(t, a, b):
+    # the gap from the axis to the plan's seats on b's side of it, a along it
+    return np.where(b < 0, np.polyval(t['gaps'][0], a), np.polyval(t['gaps'][1], a))
 print('corner tunnel cuts', [(t['block'], t['p'].round(2).tolist(), t['u'].round(4).tolist(), round(t['a_end'], 1),
-                              round(2 * (np.polyval(t['gap'], 1.0) - ROW_END - WALL_T), 2), round(t['w'] - 2 * WALL_T, 2)) for t in TUNNELS[:4]])
+                              round(float(gap_at(t, 1.0, -1) + gap_at(t, 1.0, 1)) - 2 * (ROW_END + WALL_T), 2), round(t['w'] - 2 * WALL_T, 2)) for t in TUNNELS[:4]])
 H2v = np.r_[H2]
 V2 = vom_plan(H2v, 4, 0.9)
 print('vom L2 (steps, open row, concourse)', V2)
@@ -432,18 +398,20 @@ def press_box(l):
     X_, Z_ = GX, GZ
     reg = (X_ > 40) & (np.abs(Z_) > PRESS_Z[0]) & (np.abs(Z_) < PRESS_Z[1])
     add, desks = [], []
+    from skimage import measure
     for r in PRESS_ROWS:
-        m = (l.band == r) & reg & (np.abs(l.d - (r + 0.55) * l.D) < 0.05)
-        ys, xs = np.nonzero(m)
-        if not len(xs): continue
-        P = np.c_[G.m(xs, ys)]
-        for side in (-1, 1):
-            Q = P[np.sign(P[:, 1]) == side]; Q = Q[np.argsort(Q[:, 1])]
-            last = None
-            for q in Q:
-                if last is None or np.hypot(*(q - last)) >= 0.6:
-                    # not over a gap in the tread (a vomitory's pit)
-                    add.append((q[0], q[1], r)); last = q
+        # along the row's middle, 0.6 m apart, end to end of each run of it
+        # in the box (not over a gap in the tread: a vomitory's pit)
+        for C in measure.find_contours(l.d, (r + 0.55) * l.D):
+            Q = resample(np.c_[C[:, 1] * G.res + G.x0, C[:, 0] * G.res + G.z0], 0.05, closed=False)
+            gi, gj = [np.round(c).astype(int) for c in G.g(Q[:, 0], Q[:, 1])]
+            ok = inreg(Q) & (l.band[np.clip(gj, 0, G.H - 1), np.clip(gi, 0, G.W - 1)] == r)
+            for a, b in zip(*[np.nonzero(np.diff(np.r_[0, ok.astype(np.int8), 0]) == k)[0] for k in (1, -1)]):
+                L_ = (b - a - 1) * 0.05 - 0.6
+                if L_ < 0: continue
+                n = int(L_ / 0.6 + 1e-6) + 1; t0 = a * 0.05 + 0.3 + (L_ - (n - 1) * 0.6) / 2
+                for k in range(n):
+                    q = Q[min(int(round((t0 + k * 0.6) / 0.05)), len(Q) - 1)]; add.append((q[0], q[1], r))
         dm = ((l.band == r - 1) & reg & (l.d >= (r - 1) * l.D + 0.3)).astype(np.uint8)
         for poly in mask_polys(G, dm, eps=0.03, minarea=0.5):
             desks.append({'y0': round(float(l.h(r - 1)), 3), 'y': round(float(l.h(r)) + 0.72, 3), 'polys': poly})
@@ -486,7 +454,7 @@ for t in TUNNELS:
         L_ += 0.2
     t['L'] = round(float(L_ + (0.0 if t['closed'] else 1.5)), 2)
     Q_ = np.c_[GX.ravel() - p[0], GZ.ravel() - p[1]]
-    al = (Q_ @ u).reshape(G.H, G.W); la = np.abs(Q_ @ v).reshape(G.H, G.W)
+    al = (Q_ @ u).reshape(G.H, G.W); lb = (Q_ @ v).reshape(G.H, G.W); la = np.abs(lb)
     m = (la < t['w'] / 2) & (al > -3.0) & (al < t['L'])
     TUNM |= m; t['mask'] = m
     corner = 'gap' in t
@@ -497,30 +465,44 @@ for t in TUNNELS:
         r_end = int(L1.row[over].min()) if over.any() else int(np.searchsorted(L1.hs, TUN_H + LINTEL))
         t['lintel'] = LINTEL; t['h'] = round(float(L1.h(r_end)) - LINTEL, 2)
         # the cut: out to the walls, which stand a row's end out from the seats
-        e_ = np.minimum(np.polyval(t['gap'], al) - ROW_END - 0.12, t['w'] / 2)
+        e_ = np.minimum(gap_at(t, al, lb) - ROW_END - 0.12, t['w'] / 2)
         cut = (la < e_) & (al > -3.0) & (al < t['L'])
     else:
         t['lintel'] = DECK_T; cut = m
     # the deck: the rows over the mouth too low to roof it
     low = cut & (L1.band >= 0) & (L1.h(np.maximum(L1.band, 0)) < t['h'] + t['lintel'] - 0.01)
     t['deck'] = round(float(al[low].max()) + 0.05, 2) if low.any() else 0.0
-    if corner: low = cut & (al < t['deck'])
+    t['deck2'] = (t['deck'], t['deck'])
+    if corner:
+        # The portal's head is the front of the first row over it, so that
+        # the rows run straight across it: the plan's way through the rows
+        # is up to 12 degrees off square to them at the north corners, so
+        # the portal is too (its two sides as deep as that row's front is
+        # where it meets each wall), not the rows cut square to the tunnel.
+        def front_at(sg):
+            for a_ in np.arange(0.0, t['L'], 0.05):
+                pr = p + u * a_ + v * sg * (t['w'] / 2 - 0.05)
+                i_, j_ = [int(round(float(c))) for c in G.g(pr[0], pr[1])]
+                if L1.d[j_, i_] >= r_end * L1.D: return round(float(a_), 2)
+        t['deck2'] = (front_at(-1), front_at(1)); t['deck'] = round(sum(t['deck2']) / 2, 2)
+        low = cut & (L1.band >= 0) & (L1.band < r_end)
     L1.R[low] = 0; L1.band[low] = -1; TUNM |= low
     q = L1.seats - p; sa = q @ u; sb = np.abs(q @ v)
-    edge = np.minimum(np.polyval(t['gap'], sa) - ROW_END - 0.12, t['w'] / 2) if corner else t['w'] / 2 + 0.3 - 0.25
-    keep = ~((sb < edge + 0.25) & (sa > -3) & (sa < t['deck'] + 0.3))
+    edge = np.minimum(gap_at(t, sa, q @ v) - ROW_END - 0.12, t['w'] / 2) if corner else t['w'] / 2 + 0.3 - 0.25
+    keep = ~((sb < edge + 0.25) & (sa > -3) & ((L1.row < r_end) & (sa < t['L']) if corner else (sa < t['deck'] + 0.3)))
     L1.seats, L1.row, L1.yaw = L1.seats[keep], L1.row[keep], L1.yaw[keep]
     t['rect'] = [(p + u * a + v * b).round(3).tolist() for a, b in ((-3.0, -t['w'] / 2), (t['L'], -t['w'] / 2), (t['L'], t['w'] / 2), (-3.0, t['w'] / 2))]
-    t['void'] = [(p + u * a + v * b).round(3).tolist() for a, b in ((t['deck'], -t['w'] / 2), (t['L'], -t['w'] / 2), (t['L'], t['w'] / 2), (t['deck'], t['w'] / 2))]
+    t['void'] = [(p + u * a + v * b).round(3).tolist() for a, b in ((t['deck2'][0], -t['w'] / 2), (t['L'], -t['w'] / 2), (t['L'], t['w'] / 2), (t['deck2'][1], t['w'] / 2))]
     if not corner: continue
-    print('corner tunnel', t['block'], 'cut seats', int((~keep).sum()), 'portal row', r_end, 'clear', t['h'])
+    print('corner tunnel', t['block'], 'cut seats', int((~keep).sum()), 'portal row', r_end, 'clear', t['h'], 'portal sides at', t['deck2'])
     # its walls: from where the stand begins beside the cut to the portal, a
     # wall's thickness in from the treads, their tops a rail's height over the
     # rows beside them, straight
     for sg in (-1, 1):
         A, H, P0, P1 = [], [], [], []
-        for a_ in list(np.arange(-3.0, t['deck'], 0.25)) + [t['deck']]:
-            gg = float(np.polyval(t['gap'], a_))
+        dk = t['deck2'][0 if sg < 0 else 1]
+        for a_ in list(np.arange(-3.0, dk, 0.25)) + [dk]:
+            gg = float(gap_at(t, a_, sg))
             pr = p + u * a_ + v * sg * (gg - ROW_END + 0.3)
             i_, j_ = [int(round(float(c))) for c in G.g(pr[0], pr[1])]
             r = L1.band[j_, i_]
@@ -688,7 +670,7 @@ for name, l in LV.items():
     if name == 'L1': rows_ = tunnel_rows(rows_)
     levels.append({'name': name, 'D': l.D, 'h0': float(l.h(0)), 'rise': 0, 'hs': [round(float(v), 3) for v in l.hs],
                    'rows': rows_, 'steps': l.aisles_out(), 'holes': holes, 'voms': VOMS.get(name, []),
-                   'seats': l.seats_out(), 'rails': rails, 'walls': walls + extra_walls.get(name, [])})
+                   'seats': l.seats_out(scale=100), 'seatScale': 100, 'rails': rails, 'walls': walls + extra_walls.get(name, [])})
     print(name, 'rows', len(levels[-1]['rows']), 'steps', len(levels[-1]['steps']), 'holes', len(holes), 'rails', len(rails), 'walls', len(walls), 'seats', len(l.seats))
 # Level 5's aisles at the north side's steps: where the corner blocks' rows
 # and the north side's meet at different heights, a wall with a rail on it
@@ -728,7 +710,7 @@ for b in BAYS5:
                      'kind': 'screen' if abs(mid[1]) > 90 else 'box'})
 print('bays', [(b['kind'], b['depth'], b['y1']) for b in bays_out])
 tunnels_out = [{'p': t['p'].round(3).tolist(), 'u': t['u'].round(4).tolist(), 'w': t['w'], 'h': t['h'], 'L': t['L'], 'deck': t['deck'], 'deckY': round(t['h'] + t['lintel'], 2), 'closed': t['closed'],
-                **({'sidesAsWalls': True} if 'gap' in t else {})} for t in TUNNELS]
+                **({'sidesAsWalls': True, 'deck2': list(t['deck2'])} if 'gap' in t else {})} for t in TUNNELS]
 floors = [{'y': y, 'y0': y0, 'polys': mask_polys(G, m)} for m, y0, y in slabs]
 ow = contours(G, outer.astype(np.uint8), eps=0.03, minarea=100)
 fw = contours(G, inside1.astype(np.uint8), eps=0.03, minarea=100)

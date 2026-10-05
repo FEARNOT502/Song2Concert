@@ -11,7 +11,7 @@ cx,cz=450,450
 for x,y,z in N: dr.point((cx+x*sc, cz+(z-oz)*sc), fill=(60,60,90))
 for L in d['levels']:
     import base64
-    S=np.frombuffer(base64.b64decode(L['seats']),dtype='<i2').reshape(-1,4).astype(float); S[:,0]/=10; S[:,1]/=10
+    S=np.frombuffer(base64.b64decode(L['seats']),dtype='<i2').reshape(-1,4).astype(float); S[:,:2]/=L.get('seatScale',10)
     X=S[:,0]; Z=S[:,1]+oz; Y=np.array(L['hs'])[np.minimum(S[:,2].astype(int),len(L['hs'])-1)] if L.get('hs') else L['h0']+L['rise']*S[:,2]
     ok=np.zeros(len(S),bool)
     for i,(x,z,y) in enumerate(zip(X,Z,Y)):
