@@ -341,10 +341,11 @@ class Level:
             if st[i,4]<20: continue
             x,z=s.G.m(cen[i][0],cen[i][1]); out.append((float(x),float(z)))
         return out
-    def seats_out(s, sold=None):
-        # little-endian int16 quads (x dm, z dm, row, yaw in degrees), base64
+    def seats_out(s, sold=None, scale=10):
+        # little-endian int16 quads (x and z in 1/scale m: dm by default,
+        # row, yaw in degrees), base64
         import base64
-        a=np.c_[np.round(s.seats[:,0]*10),np.round(s.seats[:,1]*10),s.row,np.round(np.degrees(s.yaw))].astype('<i2')
+        a=np.c_[np.round(s.seats[:,0]*scale),np.round(s.seats[:,1]*scale),s.row,np.round(np.degrees(s.yaw))].astype('<i2')
         return base64.b64encode(a.tobytes()).decode('ascii')
 
 def mask_polys(G, m, eps=0.025, minarea=1.0):

@@ -2,6 +2,29 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 30: Wembley seated row by row from what the plan draws, the corner portals' heads along the row over them
+- **What was asked** (user): the tunnel's top is crooked, the seats have gaps in them and the spacing along the rows is odd, so lay
+  the seating out exactly as the real Wembley's.
+- **Why it was wrong.** The seats came from a tracing of the plan's image (`wb/wb_seats.pkl`), so a row lost its seats wherever a
+  block's, a row's or a seat's number, or the watermark, is printed over it, and kept them crowded or spread wherever the tracing
+  wobbled; and they were stored to a decimetre, which left 0.36-0.5 m between neighbours in one row.
+- **What the plan draws** (`wb_plan.py` -> `wb/wb_plan.png`, 16-bit, three bits a level): its aisles (the pale cyan strips and their
+  white edges), its rows' lines (a black-hat of the block's grey) and its lettering. Each level is registered to the stand by its own
+  scale, centre, stretch and turn, fitted so the lines fall on the rows' fronts (Nelder-Mead on the circular mean of the depth
+  modulo the row; the fit moved L5 by 0.5 m and halved the scatter).
+- **The seats** (`wb_reseat.py`). Each row's middle is traced through the depth field; the plan's aisles across it are kept where they
+  are drawn, carried on along their own straight line where the watermark hides them (and a fleck on one row alone dropped); the row's
+  line decides where it is seated, breaks under lettering bridged; then the seats go in end to end, one pitch apart. Pitches 0.551,
+  0.5 and 0.521 m give 34,284 / 15,619 / 39,050 against the official 34,303 / 16,532 / 39,165. The press box is seated the same way.
+  Seats are stored to a centimetre now: `seats_out(scale=100)` and `seatScale` on the level, read by both renderers and reachcheck.
+- **The corner portals.** The plan's way through the rows is up to 12 degrees off square to them at the north corners, so a portal cut
+  square to the tunnel cut the rows across at an angle: its head looked crooked. The tunnel still runs where the plan puts it, but its
+  mouth now ends on the front of the first row over it (`deck2`, the depth at each wall), and the roof is laid in strips between the
+  two, so the rows run straight across the head.
+- **Checks.** Every vomitory on all three levels walked through (148 ok, none failed); the app builds and loads the stadium with no
+  errors. `stands.js` and `d3-stands.js` stay identical bar their imports.
+- **To know.** Row and seat numbers are not read off the plan; only where a row is and how wide. The acoustics were not touched.
+
 ## Round 29: Wembley's vomitories on every level where the official maps put them; the four corner tunnels as wide, deep and high as the plan leaves them
 - **What was asked** (user): the Level 1 corner tunnels' size and position as the real stadium's, and the seating and the entrances
   where they really are; then the vomitories on every level, and the corner tunnels' size and shape exactly as the real ones. Answers

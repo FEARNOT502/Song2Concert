@@ -35,7 +35,8 @@ export function stadiumSeatGeometry() {
   return g;
 }
 
-// seats come packed: little-endian int16 quads (x dm, z dm, row, yaw°), base64
+// seats come packed: little-endian int16 quads (x, z in dm or the level's
+// 1/seatScale m, row, yaw°), base64
 export function decodeSeats(b64) {
   if (Array.isArray(b64)) return b64;
   const bin = atob(b64);
@@ -705,12 +706,19 @@ export function buildTunnels(data, ox, oz) {
       // (or a venue draws them itself, thick and coped like its bowls' walls: data.cutWalls)
       if (!t.sidesAsWalls) { raked(hw - T, hw + 0.12, cut(t.sides?.[1])); raked(-hw - 0.12, -hw + T, cut(t.sides?.[0])); }
       // (the walls drawn by the venue end in a face of their own at `deck`: the side walls on under the rows begin a hair beyond it)
-      for (const sg of [-1, 1]) box(tunnelGeo.wall, t.deck + (t.sidesAsWalls ? 0.02 : 0), t.L, sg > 0 ? hw - T : -hw - 0.12, sg > 0 ? hw + 0.12 : -hw + T, 0, t.h + 0.02);
-      box(tunnelGeo.wall, t.deck - 0.05, t.L, -hw, hw, t.h - 0.02, t.h + 0.12);      // the roof on under the rows
+      // `deck2`: the mouth's two sides, where the row over it crosses each
+      // wall, so that the portal's head follows that row rather than cutting
+      // square across it; the roof is laid in strips between them
+      const [d0, d1] = t.deck2 ?? [t.deck, t.deck];
+      for (const sg of [-1, 1]) box(tunnelGeo.wall, (sg > 0 ? d1 : d0) + (t.sidesAsWalls ? 0.02 : 0), t.L, sg > 0 ? hw - T : -hw - 0.12, sg > 0 ? hw + 0.12 : -hw + T, 0, t.h + 0.02);
+      for (let k = 0; k < 24; k++) {
+        const b0 = -hw + (2 * hw * k) / 24, b1 = -hw + (2 * hw * (k + 1)) / 24;
+        box(tunnelGeo.wall, d0 + (d1 - d0) * ((b0 + b1) / 2 + hw) / (2 * hw) - 0.05, t.L, b0, b1, t.h - 0.02, t.h + 0.12);   // the roof on under the rows
+      }
     }
     box(tunnelGeo.floor, -0.4, t.L + (t.closed ? 0 : 12), -hw - 0.3, hw + 0.3, -0.02, 0.04);
     if (t.closed) box(tunnelGeo.wall, t.L - 0.3, t.L, -hw, hw, 0, t.h);      // its doors, shut
-    for (let a = (t.covered ? 1.0 : t.deck + 1.5); a < t.L; a += 6) box(tunnelGeo.lamp, a, a + 1.4, -0.12, 0.12, t.h - 0.08, t.h - 0.02);
+    for (let a = (t.covered ? 1.0 : Math.max(t.deck2?.[0] ?? t.deck, t.deck2?.[1] ?? t.deck) + 1.5); a < t.L; a += 6) box(tunnelGeo.lamp, a, a + 1.4, -0.12, 0.12, t.h - 0.08, t.h - 0.02);
   }
   if (tunnelGeo.wall.length) g.add(new THREE.Mesh(mergeGeometries(tunnelGeo.wall), std({ color: 0x4c4a47, roughness: 0.92 })));
   if (tunnelGeo.floor.length) g.add(new THREE.Mesh(mergeGeometries(tunnelGeo.floor), std({ color: 0x2c2c2e, roughness: 0.95 })));
@@ -905,9 +913,9 @@ export function buildStands(data, {
     // the seats, and the crowd in the sold ones
     const col = seatColors[L.name] ?? seatColor;
     const spots = [], odd = new Map();
-    const S = decodeSeats(L.seats);
+    const S = decodeSeats(L.seats), sk = L.seatScale ?? 10;      // (x, z in dm, or 1/seatScale m)
     for (let i = 0; i < S.length; i += 4) {
-      const x = S[i] / 10 + ox, z = S[i + 1] / 10 + oz, yaw = S[i + 3] * DEG;
+      const x = S[i] / sk + ox, z = S[i + 1] / sk + oz, yaw = S[i + 3] * DEG;
       const y = L.hs ? L.hs[Math.min(S[i + 2], L.hs.length - 1)] : L.h0 + L.rise * S[i + 2];
       // a venue can pick out a row in another colour
       const c = seatColorAt ? seatColorAt(L.name, x - ox, z - oz, S[i + 2]) : null;
