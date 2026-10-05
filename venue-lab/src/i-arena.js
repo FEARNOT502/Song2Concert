@@ -9,6 +9,7 @@
 
 function buildArena(ctx) {
   const { pipe, q, cu } = ctx;
+  const opt = ctx.stage || 0;          // 0: the stage as built; 1–3: the samples
   const root = new THREE.Group();
   const H = 30;                        // the movable ceiling, lowered for arena mode
   const DECK = 2.2, RIG = 20;
@@ -127,7 +128,7 @@ function buildArena(ctx) {
     houseFix.push(pipe.flares.add(V3(x, H - 0.05, z), KELVIN(4200), 0.9, 0));
   }
   // the set stands on the deck; the building's stands carry on round it
-  stageSet(root, { w: 24, h: 17, z: 1.8 + SZ, deck: DECK, towerX: 13.6, backdropW: 32, backdropH: 16, wingX: 18.5, wingW: 6, wingH: 11 });
+  if (!opt) stageSet(root, { w: 24, h: 17, z: 1.8 + SZ, deck: DECK, towerX: 13.6, backdropW: 32, backdropH: 16, wingX: 18.5, wingW: 6, wingH: 11 });
   // masking across the building behind the stage, wall to wall and floor to
   // the ceiling, over the set's own backdrop in the middle, angled forward
   // either side to the sides' fronts: the end stands and the corners' blocks
@@ -139,21 +140,89 @@ function buildArena(ctx) {
   // ── stage ──
   const deck = stageDeck({ w: 34, d: 15, h: DECK, z: 8.5 + SZ });
   root.add(deck);
-  const thrust = stageDeck({ w: 3.6, d: 9, h: DECK, z: 20.5 + SZ, lip: false });
   for (const s of [-1, 1]) root.add(stageSteps({ x: s * 17.75, z: 16 + SZ, h: DECK, dir: [0, -1] }));
-  root.add(thrust);
-  const scr = bigScreens(ctx, root, { w: 24, y: DECK + 1.4 + 24 / (16 / 9) / 2, z: 1.8 + SZ, imagW: 11, imagX: 22.5, imagY: 13.5, imagZ: 11 + SZ, imagYaw: 0.3 });
-  const riser = stageDeck({ w: 10, d: 4, h: 1.0, z: 4.2 + SZ, lip: false }); riser.position.y = DECK; root.add(riser);
-  // the backline, set and waiting; no one on stage
-  for (const [x, z, col] of [[-7, 9.0 + SZ, 0x5a1a0e], [7, 9.0 + SZ, 0x1a1a1c]]) {
-    const gt = guitar({ color: col, bass: x > 0 }); gt.scale.setScalar(0.8); gt.position.set(x, DECK + 0.5, z); gt.rotation.x = -0.28; root.add(gt);
-    const m = micStand({ height: 1.5 }); m.position.set(x, DECK, z + 1.2); m.rotation.y = Math.PI; root.add(m);
+  let scr, onT = null, micZ = 13.6 + SZ;
+  if (!opt) {
+    const thrust = stageDeck({ w: 3.6, d: 9, h: DECK, z: 20.5 + SZ, lip: false });
+    root.add(thrust);
+    scr = bigScreens(ctx, root, { w: 24, y: DECK + 1.4 + 24 / (16 / 9) / 2, z: 1.8 + SZ, imagW: 11, imagX: 22.5, imagY: 13.5, imagZ: 11 + SZ, imagYaw: 0.3 });
+    const riser = stageDeck({ w: 10, d: 4, h: 1.0, z: 4.2 + SZ, lip: false }); riser.position.y = DECK; root.add(riser);
+    // the backline, set and waiting; no one on stage
+    for (const [x, z, col] of [[-7, 9.0 + SZ, 0x5a1a0e], [7, 9.0 + SZ, 0x1a1a1c]]) {
+      const gt = guitar({ color: col, bass: x > 0 }); gt.scale.setScalar(0.8); gt.position.set(x, DECK + 0.5, z); gt.rotation.x = -0.28; root.add(gt);
+      const m = micStand({ height: 1.5 }); m.position.set(x, DECK, z + 1.2); m.rotation.y = Math.PI; root.add(m);
+    }
+    const keysL = keyboardRig(); keysL.position.set(-4, DECK + 1, 4.6 + SZ); root.add(keysL);
+    const kit = drumKit({ shell: 0x1a1a1e }); kit.position.set(0, DECK + 1, 3.6 + SZ); kit.scale.setScalar(1.1); root.add(kit);
+    for (const x of [-12, 12]) { const a = ampStack({ count: 2 }); a.position.set(x, DECK, 4.5 + SZ); root.add(a); }
+  } else {
+    // every sample: the main stage and a T out onto the floor, 16 m of runway
+    // and a 14 m crossbar
+    onT = tRunway(root, { z0: 16 + SZ, z1: 32 + SZ, w: 3.6, crossW: 14, crossD: 4, h: DECK });
+    micZ = 34.6 + SZ;
+    const WZ = 2.2 + SZ;               // the wall's line, just in front of the masking
+    if (opt === 1) {
+      // LED wall + a staircase down its middle from a platform at the back;
+      // the band on tiers either side (the K-pop arena stage)
+      const W = 32, H = 15;
+      scr = { main: ledSurface(ctx, root, flatPieces([[-16, -2.4, 0, H], [2.4, 16, 0, H], [-2.4, 2.4, 4.2, H]], { W, H, y0: DECK, z: WZ }),
+        { W, H, light: { pos: V3(0, DECK + H / 2, WZ + 0.2), w: W, h: H } }), y: DECK + H / 2, h: H };
+      doorFrame(root, { w: 4.8, h: 4.2, y0: DECK, z: WZ });
+      tierDeck(root, { w: 12, d: 4, h: 3.0, z: 4.6 + SZ, y: DECK });
+      litStairs(root, { z: 11.2 + SZ, y0: DECK, y1: DECK + 3.0, width: 8 });
+      for (const sx of [-1, 1]) {
+        tierDeck(root, { w: 8, d: 5, h: 1.2, x: sx * 11.5, z: 5.0 + SZ, y: DECK });
+        riserBand(ctx, root, { w: 8, h: 1.2, x: sx * 11.5, y: DECK, z: 7.5 + SZ });
+      }
+      const kit = drumKit({ shell: 0x1a1a1e }); kit.position.set(-11.5, DECK + 1.2, 4.6 + SZ); kit.scale.setScalar(1.1); root.add(kit);
+      const keys = keyboardRig(); keys.position.set(11.5, DECK + 1.2, 5.2 + SZ); root.add(keys);
+      imagPair(ctx, root, { w: 11, x: 23.5, y: 13.5, z: 11 + SZ, yaw: 0.3 });
+    } else if (opt === 2) {
+      // a concave LED wall wrapping the stage, no steel in sight
+      const R = 24, half = Math.asin(16.5 / R), H = 13.5;
+      const W = R * half * 2;
+      scr = { main: ledSurface(ctx, root, arcPieces({ R, z: WZ + 0.4, half, y0: DECK + 0.4, h: H, n: 36 }),
+        { W, H, light: { pos: V3(0, DECK + 0.4 + H / 2, WZ + 0.8), w: 26, h: H } }), y: DECK + 0.4 + H / 2, h: H };
+      // the deck's edge follows the wall: a lit curve along the wall's foot
+      const foot = arcPieces({ R: R - 0.6, z: WZ + 1.0, half, y0: DECK, h: 0.05, n: 36 }).map((p) => {
+        const b = new THREE.BoxGeometry(p.c[0].distanceTo(p.c[1]), 0.04, 0.04);
+        b.rotateY(-Math.atan2(p.c[1].z - p.c[0].z, p.c[1].x - p.c[0].x));
+        b.translate((p.c[0].x + p.c[1].x) / 2, DECK + 0.02, (p.c[0].z + p.c[1].z) / 2); return b;
+      });
+      root.add(new THREE.Mesh(mergeGeometries(foot), glowMat(APP.accent, 1)));
+      tierDeck(root, { w: 10, d: 4, h: 1.0, z: 6.0 + SZ, y: DECK });
+      const kit = drumKit({ shell: 0x1a1a1e }); kit.position.set(0, DECK + 1, 5.6 + SZ); kit.scale.setScalar(1.1); root.add(kit);
+      const keys = keyboardRig(); keys.position.set(-8, DECK + 1, 8.0 + SZ); root.add(keys);
+      for (const x of [-11, 11]) { const a = ampStack({ count: 2 }); a.position.set(x, DECK, 9.5 + SZ); a.rotation.y = -Math.sign(x) * 0.4; root.add(a); }
+      imagPair(ctx, root, { w: 10, x: 25, y: 13.5, z: 13 + SZ, yaw: 0.35 });
+    } else {
+      // three tiers stepping up to the back, each riser a band of LED; the
+      // wall above the top tier, narrow LED columns either side
+      tierDeck(root, { w: 28, d: 6, h: 1.2, z: 8.0 + SZ, y: DECK });
+      riserBand(ctx, root, { w: 28, h: 1.2, y: DECK, z: 11.0 + SZ });
+      tierDeck(root, { w: 18, d: 3.6, h: 1.2, z: 6.8 + SZ, y: DECK + 1.2 });
+      riserBand(ctx, root, { w: 18, h: 1.2, y: DECK + 1.2, z: 8.6 + SZ });
+      litStairs(root, { z: 12.7 + SZ, y0: DECK, y1: DECK + 1.2, width: 3 });
+      litStairs(root, { z: 10.3 + SZ, y0: DECK + 1.2, y1: DECK + 2.4, width: 3 });
+      const W = 24, H = 13.5;
+      scr = { main: ledSurface(ctx, root, flatPieces([[-12, 12, 0, H]], { W, H, y0: DECK + 2.4, z: WZ + 0.6 }),
+        { W, H, light: { pos: V3(0, DECK + 2.4 + H / 2, WZ + 0.8), w: W, h: H } }), y: DECK + 2.4 + H / 2, h: H };
+      for (const sx of [-1, 1]) for (const k of [0, 1]) {
+        const col = ledScreen({ w: 1.6, h: 14 - k * 3, tex: ctx.art.cover(), pitch: 0.01, bright: 1.2, kind: 'ribbon', frame: 0.08, light: false });
+        col.position.set(sx * (14.2 + k * 2.4), DECK + (14 - k * 3) / 2, WZ + 1.2 + k * 1.2); root.add(col); ctx.addScreen(col, 1, 'ribbon');
+      }
+      const kit = drumKit({ shell: 0x1a1a1e }); kit.position.set(0, DECK + 2.4, 6.4 + SZ); kit.scale.setScalar(1.1); root.add(kit);
+      const keys = keyboardRig(); keys.position.set(-8, DECK + 1.2, 7.6 + SZ); root.add(keys);
+      for (const x of [-11, 11]) { const a = ampStack({ count: 2 }); a.position.set(x, DECK + 1.2, 6.2 + SZ); root.add(a); }
+      imagPair(ctx, root, { w: 10, x: 25, y: 13.5, z: 13 + SZ, yaw: 0.35 });
+    }
+    // the backline at the front, waiting; no one on stage
+    for (const [x, col] of [[-6, 0x5a1a0e], [6, 0x1a1a1c]]) {
+      const gt = guitar({ color: col, bass: x > 0 }); gt.scale.setScalar(0.8); gt.position.set(x, DECK + 0.5, 12.6 + SZ); gt.rotation.x = -0.28; root.add(gt);
+    }
   }
-  const keysL = keyboardRig(); keysL.position.set(-4, DECK + 1, 4.6 + SZ); root.add(keysL);
-  const kit = drumKit({ shell: 0x1a1a1e }); kit.position.set(0, DECK + 1, 3.6 + SZ); kit.scale.setScalar(1.1); root.add(kit);
-  for (const x of [-12, 12]) { const a = ampStack({ count: 2 }); a.position.set(x, DECK, 4.5 + SZ); root.add(a); }
   for (let i = 0; i < 8; i++) { const w = wedge(); w.position.set(-10.5 + i * 3, DECK, 15.4 + SZ); w.rotation.y = Math.PI; root.add(w); }
-  const mic = micStand({ height: 1.5 }); mic.position.set(0.05, DECK, 13.6 + SZ); root.add(mic);
+  const mic = micStand({ height: 1.5 }); mic.position.set(0.05, DECK, micZ); root.add(mic);
   for (const side of [-1, 1]) for (const dz of [-1.2, 1.2]) {
     const sub = subStack({ count: 3, cols: 2 }); sub.position.set(side * 10, 0, 17.5 + SZ + dz); root.add(sub);
   }
@@ -203,7 +272,7 @@ function buildArena(ctx) {
   // clear of the corners' fans)
   const clear = (x, z) => [[0, 0], [1.4, 0], [-1.4, 0], [0, 1.4], [0, -1.4], [1, 1], [1, -1], [-1, 1], [-1, -1]]
     .every(([dx, dz]) => stands.topAt(x + dx, z + dz) < 0.05);
-  const keep = (x, z) => Math.abs(x) < 29.2 && z < OZ + 39.5 && !(Math.abs(x) < 2.4 && z < 25.6 + SZ) && !(Math.abs(x - eye.x) < 4.6 && Math.abs(z - eye.z) < 4.2) && clear(x, z);
+  const keep = (x, z) => Math.abs(x) < 29.2 && z < OZ + 39.5 && !(onT ? onT(x, z, 1.6) : Math.abs(x) < 2.4 && z < 25.6 + SZ) && !(Math.abs(x - eye.x) < 4.6 && Math.abs(z - eye.z) < 4.2) && clear(x, z);
   const floorSeats = floorBlocks(blockGrid(
     [[19.5 + SZ, 29.4], [31.0, 41.8], [43.4, 54.2], [55.8, 66.6], [68.2, 79.0], [80.6, 84.8]],
     [[-29.2, -14.9], [-13.5, -1.0], [1.0, 13.5], [14.9, 29.2]],
@@ -219,7 +288,7 @@ function buildArena(ctx) {
   // ── haze ──
   const hz = pipe.haze;
   const offs = [[-0.6, 0.35], [0.6, 0.35], [-0.6, -0.35], [0.6, -0.35], [0, 0]];
-  const hzs = offs.map(([dx, dy]) => hz.add(V3(dx * 12, scr.main.position.y + dy * scr.h * 0.5, 2.6 + SZ), 0xffffff, 0));
+  const hzs = offs.map(([dx, dy]) => hz.add(V3(dx * 12, (scr.y ?? scr.main.position.y) + dy * scr.h * 0.5, 2.6 + SZ), 0xffffff, 0));
   ctx.screenHaze(scr.main, hzs, offs);
   scr.main.userData.hazePower = 90;
   const hzWash = [hz.add(V3(-10, RIG - 1, 10 + SZ), 0xffffff, 0), hz.add(V3(10, RIG - 1, 10 + SZ), 0xffffff, 0), hz.add(V3(0, DECK + 3, 12 + SZ), 0xffffff, 0)];

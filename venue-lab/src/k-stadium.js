@@ -77,6 +77,7 @@ function wembleyArch({ x0 = 50, zc = 64, span = 315 } = {}) {
 
 function buildStadium(ctx) {
   const { pipe, q, cu } = ctx;
+  const opt = ctx.stage || 0;          // 0: the stage as built; 1–3: the samples
   const root = new THREE.Group();
   const DECK = 3.2, ROOF = 52, RIG = 36;
   // FOH, and the listener there: at the back of the pitch's crowd
@@ -450,28 +451,111 @@ function buildStadium(ctx) {
   }
 
   // ── stage: a steel roof on four towers, a wall of LED under it ──
+  // (the samples: 1 the box roof, 2 an arched canopy, 3 no roof, one LED wall
+  // the width of the end; every one with the T out onto the pitch)
   // a backdrop under the stage roof, only as wide as the set, and wings
   const bv = velvet(0x040404, 'blackvel', { sheenColor: new THREE.Color(0x121212) });
-  const drop = new THREE.Mesh(drapeGeometry(70, 33, 44, 0.25), bv);
-  drop.position.set(0, DECK + 16.5, 6.2); root.add(drop);
-  for (const s of [-1, 1]) {
-    const wing = new THREE.Mesh(drapeGeometry(14, 22, 10, 0.2), bv);
-    wing.position.set(s * 37.5, DECK + 11, 6.5); wing.rotation.y = -s * 0.2; root.add(wing);
+  if (opt !== 3) {
+    const drop = new THREE.Mesh(drapeGeometry(70, 33, 44, 0.25), bv);
+    drop.position.set(0, DECK + 16.5, 6.2); root.add(drop);
+    for (const s of [-1, 1]) {
+      const wing = new THREE.Mesh(drapeGeometry(14, 22, 10, 0.2), bv);
+      wing.position.set(s * 37.5, DECK + 11, 6.5); wing.rotation.y = -s * 0.2; root.add(wing);
+    }
   }
   const deck = stageDeck({ w: 72, d: 26, h: DECK, z: 20 });
   root.add(deck);
-  const thrust = stageDeck({ w: 5, d: 22, h: DECK, z: 44, lip: false });
   for (const s of [-1, 1]) root.add(stageSteps({ x: s * 36.75, z: 33, h: DECK, dir: [0, -1] }));
-  root.add(thrust);
+  let onT = null, starZ = 53;
+  if (!opt) {
+    const thrust = stageDeck({ w: 5, d: 22, h: DECK, z: 44, lip: false });
+    root.add(thrust);
+  } else {
+    // the T: 22 m of runway, a 24 m crossbar
+    onT = tRunway(root, { z0: 33, z1: 55, w: 5, crossW: 24, crossD: 5, h: DECK });
+    starZ = 58.6;
+  }
   const towers = [];
-  for (const x of [-34, -20, 20, 34]) for (const z of [8, 30]) latticeInto(towers, V3(x, 0, z), V3(x, RIG + 6, z), 1.8, 0.08);
-  for (const z of [8, 19, 30]) latticeInto(towers, V3(-36, RIG + 5, z), V3(36, RIG + 5, z), 2.4, 0.09);
-  for (const x of [-34, 34]) latticeInto(towers, V3(x, RIG + 5, 8), V3(x, RIG + 5, 30), 2, 0.08);
+  if (opt <= 1) {
+    for (const x of [-34, -20, 20, 34]) for (const z of [8, 30]) latticeInto(towers, V3(x, 0, z), V3(x, RIG + 6, z), 1.8, 0.08);
+  }
+  if (opt === 3) {
+    // no roof: goalposts either side carry the rig over the deck, and the
+    // wall's own steel the row behind it
+    for (const x of [-46, 46]) for (const z of [19, 30]) latticeInto(towers, V3(x, 0, z), V3(x, RIG + 6, z), 1.8, 0.08);
+    for (const z of [19, 30]) latticeInto(towers, V3(-46, RIG + 5, z), V3(46, RIG + 5, z), 2.4, 0.09);
+    latticeInto(towers, V3(-36, RIG + 5, 8), V3(36, RIG + 5, 8), 2.4, 0.09);
+  } else {
+    for (const z of [8, 19, 30]) latticeInto(towers, V3(-36, RIG + 5, z), V3(36, RIG + 5, z), 2.4, 0.09);
+    for (const x of [-34, 34]) latticeInto(towers, V3(x, RIG + 5, 8), V3(x, RIG + 5, 30), 2, 0.08);
+  }
+  if (opt === 2) {
+    // arches of steel over the deck, foot to foot 92 m, 56 m high, squarer
+    // than a circle so the rig fits under them; a skin of dark membrane over
+    const A = 46, P = 56, arch = (x) => P * Math.pow(Math.max(0, 1 - Math.pow(Math.abs(x) / A, 4)), 0.25);
+    const N = 40;
+    for (const z of [6, 19, 32]) {
+      for (let i = 0; i < N; i++) {
+        const x0 = -A + (2 * A * i) / N, x1 = -A + (2 * A * (i + 1)) / N;
+        latticeInto(towers, V3(x0, arch(x0), z), V3(x1, arch(x1), z), 2.2, 0.09);
+      }
+    }
+    // hangers from the arches down to the rig's trusses
+    for (const z of [8, 19, 30]) for (const x of [-30, -15, 0, 15, 30]) latticeInto(towers, V3(x, RIG + 5.5, z), V3(x, arch(x) - 0.5, z), 0.4, 0.03);
+    const nx = 64, pos = [], idx = [];
+    for (let i = 0; i <= nx; i++) {
+      const x = -A + (2 * A * i) / nx, y = arch(x) + 1.2;
+      pos.push(x, y, 5, x, y, 33);
+      if (i < nx) { const k = i * 2; idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2); }
+    }
+    const skin = new THREE.BufferGeometry();
+    skin.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); skin.setIndex(idx); skin.computeVertexNormals();
+    root.add(new THREE.Mesh(skin, std({ color: 0x1b1c21, roughness: 0.55, metalness: 0.3, side: THREE.DoubleSide })));
+    // a lit edge along the front arch
+    const edge = [];
+    for (let i = 0; i < N; i++) {
+      const x0 = -A + (2 * A * i) / N, x1 = -A + (2 * A * (i + 1)) / N;
+      rodInto(edge, V3(x0, arch(x0) + 1.3, 33.1), V3(x1, arch(x1) + 1.3, 33.1), 0.06);
+    }
+    root.add(new THREE.Mesh(mergeGeometries(edge), glowMat(APP.accent, 1.3)));
+  }
   root.add(new THREE.Mesh(mergeGeometries(towers), mats().black));
-  const scr = bigScreens(ctx, root, { w: 46, y: DECK + 1.6 + 46 / (16 / 9) / 2, z: 8.6, imagW: 17, imagX: 36.5, imagY: 22, imagZ: 31, imagYaw: 0.32, pitch: 0.0078 });
+  let scr;
+  if (!opt) {
+    scr = bigScreens(ctx, root, { w: 46, y: DECK + 1.6 + 46 / (16 / 9) / 2, z: 8.6, imagW: 17, imagX: 36.5, imagY: 22, imagZ: 31, imagYaw: 0.32, pitch: 0.0078 });
+  } else {
+    const Y0 = DECK + 0.6, DW = 4, DH = 7;
+    const W = opt === 3 ? 84 : opt === 2 ? 60 : 56, H = opt === 3 ? 26 : opt === 2 ? 24 : 22, WZ = 9.6;
+    scr = { main: ledSurface(ctx, root, flatPieces([[-W / 2, -DW / 2, 0, H], [DW / 2, W / 2, 0, H], [-DW / 2, DW / 2, DH, H]], { W, H, y0: Y0, z: WZ }),
+      { W, H, light: { pos: V3(0, Y0 + H / 2, WZ + 0.3), w: W, h: H } }), y: Y0 + H / 2, h: H };
+    doorFrame(root, { w: DW, h: DH, y0: Y0, z: WZ });
+    if (opt === 3) {
+      wallScaffold(root, { x0: -W / 2, x1: W / 2, y0: 0, y1: RIG + 5, z: WZ - 1.2, step: 7 });
+      imagPair(ctx, root, { w: 18, x: 52, y: 26, z: 24, yaw: 0.34, legs: 1 });
+    } else {
+      imagPair(ctx, root, { w: 17, x: 36.5, y: 22, z: 31, yaw: 0.32 });
+    }
+    if (opt === 1) {
+      // the box roof's skin: pitched panels over the trusses, and a band of
+      // LED along its front edge
+      const roofM = std({ color: 0x1b1c21, roughness: 0.55, metalness: 0.3, side: THREE.DoubleSide });
+      for (const [za, zb] of [[5, 19], [33, 19]]) {
+        const g = new THREE.PlaneGeometry(76, Math.hypot(zb - za, 3.5));
+        g.rotateX(-Math.PI / 2 + Math.sign(zb - za) * Math.atan2(3.5, Math.abs(zb - za)));
+        g.translate(0, RIG + 8.2, (za + zb) / 2);
+        root.add(new THREE.Mesh(g, roofM));
+      }
+      riserBand(ctx, root, { w: 76, h: 3, y: RIG + 4, z: 33.2 });
+      // scrim panels hiding the towers' sides
+      for (const sx of [-1, 1]) {
+        const p = new THREE.Mesh(new THREE.PlaneGeometry(26, RIG + 3), std({ color: 0x0b0b0d, roughness: 0.9, side: THREE.DoubleSide }));
+        p.rotation.y = Math.PI / 2; p.position.set(sx * 35.2, (RIG + 3) / 2 + 1, 19); root.add(p);
+      }
+    }
+  }
   // no one on stage: the backline and the microphone at the end of the runway
   const star = micStand({ height: 1.6 });
-  star.position.set(0, DECK, 53); root.add(star);
+  star.position.set(0, DECK, starZ); root.add(star);
   for (const [x, z, col] of [[-14, 21, 0x5a1a0e], [14, 21, 0x1a1a1c]]) {
     const gt = guitar({ color: col, bass: x > 0 }); gt.scale.setScalar(0.8); gt.position.set(x, DECK + 0.5, z); gt.rotation.x = -0.28; root.add(gt);
     const m = micStand({ height: 1.5 }); m.position.set(x, DECK, z + 1.4); m.rotation.y = Math.PI; root.add(m);
@@ -505,7 +589,7 @@ function buildStadium(ctx) {
   const front1 = shadowSpot(KELVIN(5600), 0, { angle: 0.12, penumbra: 0.7, size: q.shadowSize, far: 200, cast: q.shadows });
   front1.position.set(-10, 34, 96); front1.target.position.set(0, DECK + 1, 20);
   const follow = shadowSpot(KELVIN(5600), 0, { angle: 0.03, penumbra: 0.5, cast: false });
-  follow.position.set(0, 40, 140); follow.target.position.set(0, DECK, 52);
+  follow.position.set(0, 40, 140); follow.target.position.set(0, DECK, starZ - 1);
   const followBeam = rig.add({ kind: 'follow', pos: V3(0, 40, 140), length: 110, body: false, beamGain: 0.5, color: KELVIN(5600) });
   const stageWash = shadowSpot(0xffffff, 0, { angle: 0.8, penumbra: 1, cast: false });
   stageWash.position.set(0, RIG + 3, 8); stageWash.target.position.set(0, DECK, 24);
@@ -547,7 +631,7 @@ function buildStadium(ctx) {
     return m;
   };
   const onPitch = (x, z) => inField(x, z) && edgeDist(x, z) > 3.5;
-  const avoid = (x, z) => (Math.abs(x) < 3.6 && z < 56.5) || (Math.abs(x - eye.x) < 5 && Math.abs(z - eye.z) < 4.5);
+  const avoid = (x, z) => (onT ? onT(x, z, 1.6) || (Math.abs(x) < 3.6 && z < 34) : Math.abs(x) < 3.6 && z < 56.5) || (Math.abs(x - eye.x) < 5 && Math.abs(z - eye.z) < 4.5);
   const standing = packFloor({ x0: -44, x1: 44, z0: 37, z1: ZC + 66, avoid, inside: onPitch, seed: 177 });
   bigCrowd(root, cu, q, standing.concat(stands.people.map((p) => ({ ...p, h: 0.97 }))), { seed: 21 });
   const aisleField = lightPoints(stands.aisleLights.map((a) => ({ ...a, white: true, size: 0.05 })), cu, { maxPx: 3 });
@@ -558,7 +642,7 @@ function buildStadium(ctx) {
   // ── haze: a stadium is open, so it is thin, but the beams still carry ──
   const hz = pipe.haze;
   const offs = [[-0.6, 0.35], [0.6, 0.35], [-0.6, -0.35], [0.6, -0.35], [0, 0]];
-  ctx.screenHaze(scr.main, offs.map(([dx, dy]) => hz.add(V3(dx * 23, scr.main.position.y + dy * scr.h * 0.5, 9.5), 0xffffff, 0)), offs);
+  ctx.screenHaze(scr.main, offs.map(([dx, dy]) => hz.add(V3(dx * 23, (scr.y ?? scr.main.position.y) + dy * scr.h * 0.5, 9.5), 0xffffff, 0)), offs);
   scr.main.userData.hazePower = 160;
   const hzWash = [hz.add(V3(-20, RIG + 2, 20), 0xffffff, 0), hz.add(V3(20, RIG + 2, 20), 0xffffff, 0), hz.add(V3(0, DECK + 5, 30), 0xffffff, 0)];
 

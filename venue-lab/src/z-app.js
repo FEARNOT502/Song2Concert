@@ -140,6 +140,7 @@ const App = {
   pipe: null, venue: null, venueId: 'club', ctx: null, retract: false,
   quality: 'high', house: 0, houseTarget: 0, mode: 'app', crowdLight: 'stick',
   pal: null, palTarget: null,
+  stageOpt: {}, venueTarget: null,
   beat: new Beat(),
   frames: 0, fps: 60, building: false, timeOffset: 0,
 
@@ -158,6 +159,7 @@ const App = {
     this.pal = appPalette(); this.palTarget = appPalette();
     UI.init(this);
     const id = (location.hash || '').slice(1);
+    if (q.get('stage') && STAGE_SAMPLES[id]) this.stageOpt[id] = +q.get('stage');
     await this.setVenue(VENUES.includes(id) ? id : 'club');
     let last = performance.now();
     const loop = (now) => {
@@ -175,7 +177,7 @@ const App = {
     const rigs = [];
     const cu = crowdUniforms();
     return {
-      pipe, q: pipe.q, cu, screens, rigs, retract: this.retract,
+      pipe, q: pipe.q, cu, screens, rigs, retract: this.retract, stage: this.stageOpt[this.venueTarget] || 0,
       art: { texture: (aspect) => Art.texture(aspect), cover: () => Art.coverTex },
       addScreen: (group, aspect, kind = 'main') => {
         screens.push({ group, aspect, kind, haze: [] });
@@ -200,6 +202,7 @@ const App = {
     pipe.beams.clear(); pipe.haze.clear(); pipe.flares.clear(); pipe.mask.clear();
     pipe.scene.remove(pipe.flares.mesh);
     await new Promise((r) => setTimeout(r, 16));
+    this.venueTarget = id;
     const ctx = this.ctxFor();
     const v = BUILDERS[id](ctx);
     for (const r of ctx.rigs) v.root.add(r.build());
@@ -383,6 +386,13 @@ const UI = {
       app.retract = r; this.pressed('#seg-retract', v);
       await app.setVenue(app.venueId);
     });
+    // the stage samples: the stage as built, or one of three
+    seg('#seg-stage', async (v) => {
+      const n = +v;
+      if (app.building || (app.stageOpt[app.venueId] || 0) === n) return;
+      app.stageOpt[app.venueId] = n; this.pressed('#seg-stage', v);
+      await app.setVenue(app.venueId);
+    });
     this.pressed('#seg-retract', app.retract ? 'in' : 'out');
     this.pressed('#seg-crowd', app.crowdLight);
     this.pressed('#seg-quality', app.quality);
@@ -490,6 +500,11 @@ const UI = {
     $('#v-refl').textContent = I.refl;
     $('#crowd-row').hidden = !['arena', 'inspire', 'kspo', 'dome', 'stadium'].includes(id);
     // the telescopic seats: Inspire's 100s, KSPO DOME's 1st floor
+    $('#stage-row').hidden = !STAGE_SAMPLES[id];
+    if (STAGE_SAMPLES[id]) {
+      $('#seg-stage').querySelectorAll('button').forEach((b) => { const n = +b.dataset.v; b.textContent = n ? `${n}. ${STAGE_SAMPLES[id][n - 1]}` : '현재'; });
+      this.pressed('#seg-stage', String(App.stageOpt[id] || 0));
+    }
     $('#retract-row').hidden = !RETRACT[id];
     if (RETRACT[id]) { $('#retract-label').textContent = RETRACT[id]; $('#seg-retract').setAttribute('aria-label', RETRACT[id]); }
   },
@@ -528,6 +543,7 @@ window.__set = async (o = {}) => {
   if (o.cam) { const c = String(o.cam).split(',').map(Number); App.debugCam = { pos: V3(c[0], c[1], c[2]), tgt: V3(c[3], c[4], c[5]) }; App.applyCamera(); }
   if (o.light) { App.crowdLight = o.light; UI.pressed('#seg-crowd', o.light); }
   if (o.retract !== undefined && !!+o.retract !== !!App.retract) { App.retract = !!+o.retract; UI.pressed('#seg-retract', App.retract ? 'in' : 'out'); await App.setVenue(App.venueId); }
+  if (o.stage !== undefined && +o.stage !== (App.stageOpt[App.venueId] || 0)) { App.stageOpt[App.venueId] = +o.stage; await App.setVenue(App.venueId); }
   if (o.yaw !== undefined) App.walker.yaw += +o.yaw;
   if (o.pitch !== undefined) App.walker.pitch += +o.pitch;
   // to: "x,z;x,z" walks to each point in turn (stops early if stuck)

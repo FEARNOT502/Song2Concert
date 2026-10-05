@@ -52,6 +52,7 @@ function membraneMaterial() {
 
 function buildDome(ctx) {
   const { pipe, q, cu } = ctx;
+  const opt = ctx.stage || 0;          // 0: the stage as built; 1–3: the samples
   const root = new THREE.Group();
   const DECK = 2.6, RIG = 32;
   // FOH, and the listener there: at the back of the field's seats
@@ -382,13 +383,14 @@ function buildDome(ctx) {
   }
 
   // ── stage ──
-  stageSet(root, { w: 38, h: 24, z: 3.6, deck: DECK, towerX: 20.4, backdropW: 50, backdropH: 23, wingX: 31, wingW: 12, wingH: 15, drapes: false });
+  if (!opt) stageSet(root, { w: 38, h: 24, z: 3.6, deck: DECK, towerX: 20.4, backdropW: 50, backdropH: 23, wingX: 31, wingW: 12, wingH: 15, drapes: false });
   const deck = stageDeck({ w: 62, d: 20, h: DECK, z: 12 });
   root.add(deck);
   // (as the photographs from the 2nd floor show it) a short runway out from
   // the stage's middle to a long stage across the field, parallel to the
   // main stage and symmetric about the middle
-  const RW0 = 22, RW1 = 47, XW = 30, XD = 5.2, XH = DECK - 0.8;
+  // the samples keep the T but with a 30 m crossbar
+  const RW0 = 22, RW1 = 47, XW = opt ? 15 : 30, XD = 5.2, XH = DECK - 0.8;
   const catwalk = stageDeck({ w: 4.4, d: RW1 - RW0, h: XH, z: (RW0 + RW1) / 2, lip: false });
   for (const s of [-1, 1]) root.add(stageSteps({ x: s * 31.75, z: 22, h: DECK, dir: [0, -1] }));
   root.add(catwalk);
@@ -399,12 +401,61 @@ function buildDome(ctx) {
     const g = new THREE.BoxGeometry(XW * 2 + 0.1, 0.05, 0.05); g.translate(0, XH, RW1 + XD + 0.02);
     const bRim = new THREE.Mesh(g, bRimM); root.add(bRim);
   }
-  const scr = bigScreens(ctx, root, { w: 38, y: DECK + 1.6 + 38 / (16 / 9) / 2, z: 3.6, imagW: 17, imagX: 36, imagY: 19, imagZ: 7, imagYaw: 0.34, pitch: 0.0059 });
-  // LED columns either side of the main wall
-  for (const side of [-1, 1]) {
-    const col = ledScreen({ w: 3.2, h: 18, tex: ctx.art.cover(), pitch: 0.012, bright: 1.2, kind: 'ribbon', frame: 0.1, light: false });
-    col.position.set(side * 22.5, DECK + 9, 5); root.add(col);
-    ctx.addScreen(col, 1, 'ribbon');
+  let scr;
+  if (!opt) {
+    scr = bigScreens(ctx, root, { w: 38, y: DECK + 1.6 + 38 / (16 / 9) / 2, z: 3.6, imagW: 17, imagX: 36, imagY: 19, imagZ: 7, imagYaw: 0.34, pitch: 0.0059 });
+    // LED columns either side of the main wall
+    for (const side of [-1, 1]) {
+      const col = ledScreen({ w: 3.2, h: 18, tex: ctx.art.cover(), pitch: 0.012, bright: 1.2, kind: 'ribbon', frame: 0.1, light: false });
+      col.position.set(side * 22.5, DECK + 9, 5); root.add(col);
+      ctx.addScreen(col, 1, 'ribbon');
+    }
+  } else {
+    // the samples: one LED wall the width of the stage, with a door in its
+    // middle the show comes through (the world-tour stage)
+    const WZ = 3.6, Y0 = DECK + 0.6, H = 20, DW = 3.2, DH = 6;
+    const light = (w) => ({ pos: V3(0, Y0 + H / 2, WZ + 0.3), w, h: H });
+    if (opt === 1) {
+      // flat: one plane 60 m across, IMAG on towers out at the sides
+      const W = 60;
+      scr = { main: ledSurface(ctx, root, flatPieces([[-W / 2, -DW / 2, 0, H], [DW / 2, W / 2, 0, H], [-DW / 2, DW / 2, DH, H]], { W, H, y0: Y0, z: WZ }), { W, H, pitch: 0.0059, light: light(W) }), y: Y0 + H / 2, h: H };
+      wallScaffold(root, { x0: -W / 2, x1: W / 2, y0: DECK, y1: Y0 + H, z: WZ - 0.9 });
+      imagPair(ctx, root, { w: 16, x: 41, y: 16, z: 10, yaw: 0.32, legs: 1 });
+    } else if (opt === 2) {
+      // wraparound: a 40 m middle and two 16 m wings swung 34 degrees
+      // forward; the wings carry the art again, square to themselves
+      const C = 20, W = 2 * C, L = 16, A = 0.6;
+      scr = { main: ledSurface(ctx, root, flatPieces([[-C, -DW / 2, 0, H], [DW / 2, C, 0, H], [-DW / 2, DW / 2, DH, H]], { W, H, y0: Y0, z: WZ }), { W, H, pitch: 0.0059, light: light(W) }), y: Y0 + H / 2, h: H };
+      for (const hx of [-C, C]) ledSurface(ctx, root, [wingPiece({ hx, hz: WZ, len: L, ang: A, y0: Y0, h: H, u0: 0, u1: 1, H })], { W: L, H, pitch: 0.0059 });
+      wallScaffold(root, { x0: -C, x1: C, y0: DECK, y1: Y0 + H, z: WZ - 0.9 });
+      for (const s of [-1, 1]) {
+        // the wings' own steel, behind them
+        const parts = [];
+        for (const t of [0.35, 0.7, 1]) {
+          const x = s * (C + L * t * Math.cos(A)) - s * 0.6 * Math.sin(A), z = WZ + L * t * Math.sin(A) - 0.6 * Math.cos(A);
+          latticeInto(parts, V3(x, 0, z), V3(x, Y0 + H, z), 0.8, 0.04);
+        }
+        root.add(new THREE.Mesh(mergeGeometries(parts), mats().black));
+      }
+    } else {
+      // skyline: twelve LED columns of different heights at different
+      // depths, split down the middle; one picture across them
+      const hs = [11, 15, 19, 13, 21, 24], dz = [2.4, 1.0, 0, 1.6, 0.5, 0];
+      const W = 62.4, HH = 24, pieces = [], tops = [];
+      for (const s of [-1, 1]) for (let i = 0; i < 6; i++) {
+        const xa = -31.2 + i * 5, xb = xa + 4.6;
+        const [x0, x1] = s < 0 ? [xa, xb] : [-xb, -xa];
+        const z = WZ + dz[i], y1 = Y0 + hs[i];
+        pieces.push({ c: [V3(x0, Y0, z), V3(x1, Y0, z), V3(x1, y1, z), V3(x0, y1, z)], u: [x0 / W + 0.5, 0, x1 / W + 0.5, hs[i] / HH] });
+        const t = new THREE.BoxGeometry(x1 - x0, 0.06, 0.06); t.translate((x0 + x1) / 2, y1 + 0.03, z + 0.06); tops.push(t);
+      }
+      scr = { main: ledSurface(ctx, root, pieces, { W, H: HH, pitch: 0.0059, light: { pos: V3(0, Y0 + 11, WZ + 0.3), w: 50, h: 22 } }), y: Y0 + 12, h: HH };
+      root.add(new THREE.Mesh(mergeGeometries(tops), glowMat(APP.accent, 1.2)));
+      wallScaffold(root, { x0: -30, x1: 30, y0: DECK, y1: Y0 + 24, z: WZ - 0.9 });
+      imagPair(ctx, root, { w: 14, x: 40, y: 15, z: 11, yaw: 0.32, legs: 1 });
+    }
+    if (opt !== 3) doorFrame(root, { w: DW, h: DH, y0: Y0, z: WZ });
+    else doorFrame(root, { w: 2.4, h: DH, y0: Y0, z: WZ });
   }
   // a microphone waiting at the front of the long stage
   const star = micStand({ height: 1.6 });
@@ -517,7 +568,7 @@ function buildDome(ctx) {
   // ── haze ──
   const hz = pipe.haze;
   const offs = [[-0.6, 0.35], [0.6, 0.35], [-0.6, -0.35], [0.6, -0.35], [0, 0]];
-  ctx.screenHaze(scr.main, offs.map(([dx, dy]) => hz.add(V3(dx * 19, scr.main.position.y + dy * scr.h * 0.5, 4.5), 0xffffff, 0)), offs);
+  ctx.screenHaze(scr.main, offs.map(([dx, dy]) => hz.add(V3(dx * 19, (scr.y ?? scr.main.position.y) + dy * scr.h * 0.5, 4.5), 0xffffff, 0)), offs);
   scr.main.userData.hazePower = 320;
   const hzWash = [hz.add(V3(-16, RIG - 1, 14), 0xffffff, 0), hz.add(V3(16, RIG - 1, 14), 0xffffff, 0), hz.add(V3(0, 22, RW1 + XD / 2), 0xffffff, 0)];
 
