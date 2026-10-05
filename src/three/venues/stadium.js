@@ -110,7 +110,9 @@ export function buildStadium(ctx) {
   // Three tiers all the way round, as the detailed plan draws them: Level 1
   // (blocks 101-144, 44 rows, a walkway behind row 28 with the tunnels up
   // from the Level 1 concourse, the players' tunnel and the four corner
-  // tunnels cut into its front), the Club Wembley tier (201-252, entered
+  // tunnels cut into its front: an open cut walled either side to a portal
+  // under the rows, as wide and as deep as the plan leaves each corner
+  // unseated), the Club Wembley tier (201-252, entered
   // through the doors at the back from the club concourse and the boxes) and
   // Level 5 (501-552, up to 45 rows down the sides, 24 at the ends where the
   // two big screens stand in bays in its front, tunnels a third of the way

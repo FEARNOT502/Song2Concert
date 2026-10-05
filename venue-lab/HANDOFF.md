@@ -2,6 +2,32 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 29: Wembley's vomitories on every level where the official maps put them; the four corner tunnels as wide, deep and high as the plan leaves them
+- **What was asked** (user): the Level 1 corner tunnels' size and position as the real stadium's, and the seating and the entrances
+  where they really are; then the vomitories on every level, and the corner tunnels' size and shape exactly as the real ones. Answers
+  to the questions put first: find the references on the web; the four pitch-corner tunnels; size and position estimated from the
+  Level 1 seating plan; all three tiers; the building's outside and the west-end stage left as they are; the acoustics not touched.
+- **Vomitories.** `wb/wb_blocks.json` holds the official Level 1, 2 and 5 maps' block boundaries; `wb_gen.py` puts a vomitory at each:
+  Level 1 44 (was 21), Level 2 52 (was 13), Level 5 52 (was 27), each labelled with its two blocks; the plan's own gaps where none
+  stands now are seated. Their steps run on 0.2 m under the walkway's edge (a crack the walker fell into at 105, 117 and 130). One
+  may stand over a corner tunnel's covered run, as the real 138/139 does; none in its open cut.
+- **The corner tunnels.** Aimed along the middle of the corner blocks 107, 116, 129 and 138, then fitted (`plan_cut`) to the corridor
+  the plan leaves unseated there (the recovered `wb_seats.pkl` predates any tunnel, so its corner gaps are the plan's): the seats'
+  lower envelope either side, a straight line each, robust to the odd seat. The open cut runs from the front to where the plan's
+  seats close over it; its walls stand 0.4 m out from the seats' middles (a row's end), 0.3 m thick, their tops a rail's height over
+  the rows beside them (`data.cutWalls`, drawn light: `data.cutWallTone` 0.85, default 0.4 elsewhere); the portal is as wide as the
+  cut there and its clear height is the plan's first row over it less a 1.0 m lintel. North (138, 107): 6.9 m clear at the front,
+  8.6-8.7 m at the portal, the cut 15.4-15.5 m long, 5.3 m high. South (129, 116): 4.6-5.4 m to 6.6-6.7 m, 10.8-10.9 m, 3.9 m. The
+  tunnel's own side walls begin at the portal (`sidesAsWalls`). Was: 7.0 x 4.5 m each, off the plan's corridor.
+- **Rows at the portal.** A row too low to stand on the tunnel's roof reaches back a little under the next one up; that sliver stood on
+  the ground inside the portal like a pillar. `tunnel_rows` now cuts every such row at the covered tunnel's outline (`t['void']`).
+- **Checks.** Seats: Level 1 28,578, Level 2 13,487, Level 5 35,977. Every vomitory walked through on all three levels (44 + 52 + 52;
+  108, 109, 115, 138/139 and 203, 207 among them); every seat reachable on foot from the pitch (100% on each level) and all
+  five tunnels walked to their ends. The app builds and loads the stadium without errors; `stands.js`
+  changes by the one tone line, `wb-data.js` is regenerated.
+- **To know.** The tunnels' sizes are estimates from the seating plan and photos, not drawings. The total is still short of the
+  official 90,000 (the plan's seat spacing is kept). The acoustics were not touched.
+
 ## Round 28: the Saitama Super Arena's corner funnels bounded by the stands' own end faces on the map's drawn outline, a thin steel fence on top
 - **What was asked** (user, with the map crop and a red triangle drawn on it): work the funnel as that picture has it; the real tunnel is
   the two corner blocks' end faces with a fence on top, so take the thick wall bodies out, work the blocks' faces and put a thin steel
