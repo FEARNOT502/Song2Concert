@@ -311,7 +311,9 @@ def add_vom(n_, l, P, bw, V, width, fl=None):
     Pf = P + nv * ((bw + 1 - (bw + 0.55)) * l.D)          # the walkway's back edge
     L_ = nsteps * RUN
     x0, z0 = Pf + nv * L_
-    (flights if fl is None else fl).append(dict(x=round(float(x0), 2), z=round(float(z0), 2), dx=round(float(-nv[0]), 4), dz=round(float(-nv[1]), 4), n=nsteps, L=round(L_, 3), y0=C, y1=float(l.h(bw)), w=min(1.8, width - 0.4)))
+    # (the top step runs 0.2 m on under the walkway's edge: traced off the
+    # grid, that edge can stop a cell short and leave a crack to fall into)
+    (flights if fl is None else fl).append(dict(x=round(float(x0), 2), z=round(float(z0), 2), dx=round(float(-nv[0]), 4), dz=round(float(-nv[1]), 4), n=nsteps, L=round(L_ + 0.2, 3), y0=C, y1=float(l.h(bw)), w=min(1.8, width - 0.4)))
     # under a slab walkway, close the face below it
     if l.bottom(bw, float(l.h(bw))) > C + 0.05:
         t = np.array([-nv[1], nv[0]]) * width / 2
