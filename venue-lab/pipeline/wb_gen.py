@@ -198,10 +198,12 @@ MOUTHS = {}
 for name_, l_ in LV.items():
     blobs = plan_blobs(l_); lo, hi = MOUTH_ROWS[name_]
     small = [b for b in blobs if b['area'] <= 40 and b['len'] <= 9.6 and not near_tunnel_pts(b['c'])]
-    MOUTHS[name_] = [b for b in small if lo <= b['rmin'] <= hi and b['area'] >= 3.0]
+    # Level 1's mouths are the official map's (below), not the plan's gaps:
+    # those are seated like the numbers' patches
+    MOUTHS[name_] = [] if name_ == 'L1' else [b for b in small if lo <= b['rmin'] <= hi and b['area'] >= 3.0]
     tree = cKDTree(l_.raw); new = []
     for b in small:
-        if lo <= b['rmin'] <= hi and b['area'] >= 3.0: continue
+        if name_ != 'L1' and lo <= b['rmin'] <= hi and b['area'] >= 3.0: continue
         for r in np.unique(l_.band[b['m']]):
             if r < 0: continue
             line = b['m'] & (l_.band == r) & (np.abs(l_.d - (r + 0.55) * l_.D) < 0.05)
@@ -325,14 +327,40 @@ def mouth_at(n_, l, b, bw):
     P = near[np.argmin(np.abs((near - c) @ t))]
     lat = (b['P'] - c) @ t
     return P, float(np.clip(np.percentile(lat, 95) - np.percentile(lat, 5), 1.8, 3.2))
+# Level 1's vomitories as the official Level 1 map draws them
+# (wb/wb_blocks.json): 44, one at each boundary between blocks 101-144. The
+# map is a diagram, so each is placed by its angle about the centre, the
+# map's ring and the walkway's line each scaled to a unit circle.
+BLK = json.load(open('wb/wb_blocks.json'))
+def official_pts(l, bw):
+    Pl, _ = band_line(l, bw)
+    phi = np.arctan2(Pl[:, 0] / np.abs(Pl[:, 0]).max(), Pl[:, 1] / np.abs(Pl[:, 1]).max())
+    r = BLK['ring']; out = []
+    for v in BLK['L1_voms']:
+        x, y = v['px']; psi = np.arctan2((r['cy'] - y) / r['b'], (x - r['cx']) / r['a'])
+        out.append(Pl[np.argmin(np.abs(np.angle(np.exp(1j * (phi - psi)))))])
+    return np.array(out)
+VOM1 = official_pts(L1, 29)
+# the corner tunnels: from their mouths in the corners of the pitch, each
+# along the middle of its corner block (107, 116, 129, 138), between the
+# vomitories either side of it, as the map's tunnel mouths point
+lab1 = [v['after'] for v in BLK['L1_voms']]
+for t in TUNNELS[:4]:
+    best = None
+    for blk in BLK['tunnels']['blocks'].values():
+        i = lab1.index(blk); j = (i - 1) % len(lab1)       # the vomitories at its two ends
+        T_ = (VOM1[i] + VOM1[j]) / 2
+        if best is None or np.linalg.norm(T_ - t['p']) < np.linalg.norm(best[1] - t['p']): best = (blk, T_)
+    t['u'] = unit(best[1] - t['p']); t['block'] = best[0]
+print('corner tunnels re-aimed', [(t['block'], t['u'].round(3).tolist()) for t in TUNNELS[:4]])
 H2v = np.r_[H2]
 V2 = vom_plan(H2v, 4, 0.9)
 print('vom L2 (steps, open row, concourse)', V2)
 n1 = n5 = n2 = 0
-for b in MOUTHS['L1']:
-    P, w = mouth_at('L1', L1, b, 29)
-    if near_tunnel(P, 3.0): continue
-    add_vom('L1', L1, P, 29, V1, max(2.4, w)); n1 += 1
+VOM1_LABEL = []
+for P, v in zip(VOM1, BLK['L1_voms']):
+    if near_tunnel(P, 0.5): print('vom by a tunnel', v['label']); continue
+    add_vom('L1', L1, P, 29, V1, 2.5); n1 += 1; VOM1_LABEL.append((P, str(v['after'])))
 for b in MOUTHS['L5']:
     P, w = mouth_at('L5', L5, b, 12)
     add_vom('L5', L5, P, 12, V5, max(2.2, w)); n5 += 1
@@ -530,6 +558,10 @@ trim_tunnels(G, VOMS['L1'], c1); trim_tunnels(G, VOMS['L5'], c5)
 # numbered round each level from the north, as Wembley's blocks are
 for name, vs in VOMS.items():
     vs.sort(key=lambda v: np.arctan2(v['p'][1], v['p'][0]) % (2 * np.pi))
+    if name == 'L1':
+        # Level 1's carry the block each serves, as the official map numbers them
+        for v in vs: v['label'] = min(VOM1_LABEL, key=lambda q: np.hypot(*(q[0] - v['p'])))[1]
+        continue
     for i, v in enumerate(vs): v['label'] = f"{name[1]}{i + 1:02d}"
 encl, roomtop = enclose(G, rooms, [L1, L2, L5], slabs, flights)
 flights += FL2
