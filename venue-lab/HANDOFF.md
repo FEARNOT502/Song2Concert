@@ -2,6 +2,22 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 33: the stadium's big LED wall, and rigging that hangs from something
+- **Asked** (user): the stadium should get the same big LED wall as the dome and the arena, and the lighting and speaker trusses
+  should stop looking like they float. **Acoustics untouched** as before.
+- `d-rig.js`: `chainInto` (a chain from a pick point up to the steel, with its motor just over the load and a clamp on the beam);
+  `hoists` draws those chains (0.028 m, not 0.012) and takes `roofY` as a number or a function of x, so a curved roof gets the
+  right length. `h-show.js`: `paHang` hangs its array on two of them (`roofY`), `screenHang` puts a header truss along a screen's
+  top edge with chains from it up to the roof.
+- Arena and dome: the main wall and the arena's IMAG now hang on `screenHang`; the dome's trusses chain up to the membrane at each
+  pick (`roofAt(x, z)`), the delay towers' arrays hang under their head truss.
+- Stadium: the Love On Tour three-piece wall is gone. One 62 x 21 m wall (`bigScreens`, no IMAG, like the dome), a cross runway
+  (walkway at z 50, +-30 m, 10 m end stage at z 84), and, since the pitch has no roof to fly from, a ground-supported stage roof:
+  four lattice towers at +-35, a roof grid at 33 m with a black skin, the wall on chains from its back beam, three lighting
+  trusses at 28.5 m on hoists under it, the mains from its front corners. The side PA stands on its own towers at +-44 (31 m),
+  bridged back to the roof; the two pitch delay towers are unchanged.
+- Checked: venue-lab renders all three (house and show), app `npm run build`, app draws arena, dome and stadium with no errors.
+
 ## Round 32: stages and PA as the big tours build them (arena, dome, stadium)
 - References: /mnt/project-files/stage-references (photos + README with sources). Asked for: dome and arena a big LED wall and a
   cross-shaped runway, IMAG only in the arena; the stadium like Harry Styles' Love On Tour at Wembley (2023); speakers and delay

@@ -6,10 +6,10 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { APP, DEG, KELVIN, V3, clamp, floorPanelTex, glowMat, noise3D, prng, std, velvet, withRepeat } from '../core.js';
+import { APP, DEG, KELVIN, V3, clamp, floorPanelTex, glowMat, noise3D, prng, std, withRepeat } from '../core.js';
 import { lightPoints } from '../people.js';
-import { ampStack, drapeGeometry, drumKit, guitar, keyboardRig, latticeInto, ledMaterial, ledScreen, mats, micStand, prismInto, rodInto, shadowSpot, stageDeck, stageSteps, wedge } from '../rig.js';
-import { bigCrowd, delayTower, fohPosition, paHang, packFloor, runLasers, runShow, subLine } from '../show.js';
+import { ampStack, drumKit, guitar, hoists, keyboardRig, latticeInto, ledScreen, mats, micStand, prismInto, rodInto, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
+import { bigCrowd, bigScreens, crossThrust, delayTower, fohPosition, paHang, packFloor, runLasers, runShow, screenHang, subLine } from '../show.js';
 import { buildStands } from '../stands.js';
 import { WB_STANDS } from './wb-data.js';
 
@@ -460,90 +460,64 @@ export function buildStadium(ctx) {
     root.add(new THREE.Mesh(mergeGeometries(deskScr), std({ color: 0x0a0b0d, roughness: 0.3, emissive: 0x28364a, emissiveIntensity: 1 })));
   }
 
-  // ── stage: as Harry Styles' Love On Tour stood at Wembley (2023) ──
-  // No roof: one LED wall the width of the pitch end, in three pieces. The
-  // middle is tall and square-topped with a triangle cut out of its foot, the
-  // band's light grid glowing through it; a wing either side, tall at the
-  // middle and sloping down to the outside; black gaps between, where the
-  // main hangs fly from the ends of a long black header over the middle.
-  // Lattice towers either side carry the side PA and a pod of lights.
+  // ── stage: one LED wall under a ground-supported roof ──
+  // As the stadium tours build it: a wide LED wall across the set (it takes the
+  // place of IMAG at this size), hung from the roof of a steel stage — four
+  // lattice towers carrying a roof grid, the lighting trusses on chains under
+  // it, the mains from its front corners — and the side PA on towers of their
+  // own, bridged to the roof. A runway out to a cross on the pitch.
   const deck = stageDeck({ w: 78, d: 26, h: DECK, z: 20 });
   root.add(deck);
   for (const s of [-1, 1]) root.add(stageSteps({ x: s * 39.75, z: 33, h: DECK, dir: [0, -1] }));
-  // a runway out from the middle to a square B-stage
-  const RW1 = 59, TIP = 9;
-  root.add(stageDeck({ w: 5, d: RW1 - 33, h: DECK, z: (33 + RW1) / 2, lip: false }));
-  root.add(stageDeck({ w: TIP, d: TIP, h: DECK, z: RW1 - TIP / 2 }));
-  const WZ = 8, Y0 = DECK + 0.6;                 // the wall's plane and foot
-  const CW = 15, GAP = 2, WO = 37, CH = 19, WIN = 18, WOUT = 10, TRI = 8, TRH = 13;
-  const LW = WO * 2, LH = CH;                    // the content spans all three pieces
-  const V2 = (x, y) => new THREE.Vector2(x, y);
-  const wallShapes = [];
+  const RW0 = 33, CZ = 50, XW = 30, XD = 5.2, RW1 = 84, TIP = 10, XH = DECK - 0.8;
+  const cross = crossThrust(root, { z0: RW0, z1: RW1, w: 5, crossZ: CZ, crossD: XD, crossW: XW, tip: TIP, h: XH });
+  const bRimM = glowMat(APP.accent, 1);
   {
-    const c = new THREE.Shape([V2(-CW, 0), V2(-TRI, 0), V2(0, TRH), V2(TRI, 0), V2(CW, 0), V2(CW, CH), V2(-CW, CH)]);
-    wallShapes.push(c);
-    for (const sd of [-1, 1]) {
-      const xi = sd * (CW + GAP), xo = sd * WO;
-      const pts = [V2(xi, 0), V2(xo, 0), V2(xo, WOUT), V2(xi, WIN)];
-      wallShapes.push(new THREE.Shape(sd > 0 ? pts : pts.reverse()));
-    }
+    const g = new THREE.BoxGeometry(XW * 2 + 0.1, 0.05, 0.05); g.translate(0, XH, CZ + XD + 0.02);
+    const g2 = new THREE.BoxGeometry(TIP + 0.1, 0.05, 0.05); g2.translate(0, XH, RW1 + 0.02);
+    root.add(new THREE.Mesh(mergeGeometries([g, g2]), bRimM));
   }
-  // each piece its own screen: the middle carries the sleeve and the title
-  // over the triangle; the wings carry the show's camera feed (the IMAG of a
-  // smaller room, here the wall itself)
-  const panel = (shape, uvOf, { w, h, aspect, kind, light }) => {
-    const geo = new THREE.ShapeGeometry(shape, 1);
-    const pos = geo.attributes.position, uv = geo.attributes.uv;
-    for (let i = 0; i < pos.count; i++) { const [u, v] = uvOf(pos.getX(i), pos.getY(i)); uv.setXY(i, u, v); }
-    const g = new THREE.Group();
-    const face = new THREE.Mesh(geo, ledMaterial({ tex: ctx.art.texture(aspect), pitch: 0.0078, w, h, bright: 1.3, kind }));
-    face.position.z = 0.06; g.add(face);
-    const back = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: 0.5, bevelEnabled: false }), mats().paint);
-    back.position.z = -0.5; g.add(back);
-    let rect = null;
-    if (light) { rect = new THREE.RectAreaLight(0xffffff, 1, LW, LH * 0.8); rect.position.set(0, LH * 0.5, 0.1); rect.lookAt(0, LH * 0.5, 10); g.add(rect); }
-    g.userData = { face, rect, w, h, lightPower: 1.2 };
-    g.position.set(0, Y0, WZ);
-    root.add(g);
-    ctx.addScreen(g, aspect, 'main');
-    return g;
-  };
-  const CV0 = TRH * 0.6, CA = (2 * CW) / (CH - CV0);
-  const wall = panel(wallShapes[0], (x, y) => [(x + CW) / (2 * CW), (y - CV0) / (CH - CV0)], { w: 2 * CW, h: CH, aspect: CA, kind: 'main', light: true });
-  const WWING = WO - CW - GAP, squeeze = (WWING / WIN) / (16 / 9);
-  for (const [k, sd] of [[1, -1], [2, 1]]) {
-    const xi = sd * (CW + GAP);
-    panel(wallShapes[k], (x, y) => [0.5 + ((Math.abs(x - xi) / WWING) * (sd > 0 ? 1 : -1) + (sd > 0 ? -0.5 : 0.5)) * squeeze, y / WIN], { w: WWING, h: WIN, aspect: 16 / 9, kind: 'imag', light: false });
-  }
-  const scr = { main: wall, h: LH };
-  // the light grid behind the triangle, and the black drop behind that
-  const triDots = [];
-  for (let y = 0.8; y < TRH - 0.5; y += 1.1) {
-    const half = TRI * (1 - y / TRH) - 0.5;
-    for (let x = -half; x <= half + 1e-6; x += 1.1) { const d = new THREE.BoxGeometry(0.18, 0.18, 0.05); d.translate(x, Y0 + y, WZ - 1.6); triDots.push(d); }
-  }
-  const dotMat = glowMat(0xffffff, 1);
-  root.add(new THREE.Mesh(mergeGeometries(triDots), dotMat));
-  const bv = velvet(0x040404, 'blackvel', { sheenColor: new THREE.Color(0x121212) });
-  const drop = new THREE.Mesh(drapeGeometry(2 * TRI + 4, TRH + 2, 12, 0.2), bv);
-  drop.position.set(0, Y0 + (TRH + 2) / 2, WZ - 3.2); root.add(drop);
-  // the steel behind the wall, the header over the middle, the PA towers
+  const WZ = 8, WW = 62, WH = 21, Y0 = DECK + 1.6;   // the wall's face, size and foot
+  const scr = bigScreens(ctx, root, { w: WW, h: WH, y: Y0 + WH / 2, z: WZ, pitch: 0.0059 });
+  // the stage's own roof: towers at the corners, beams across at each truss
+  // line and along the sides, a black skin over it
+  const TX = WW / 2 + 4, SR = 33;                    // the towers' x, the roof's height
+  const BZ = [WZ - 0.4, 14.5, 21.5, 28.5];          // the roof's beams across
   const stgSteel = [];
-  for (const x of [-(CW + GAP / 2), CW + GAP / 2]) latticeInto(stgSteel, V3(x, DECK, WZ - 1.2), V3(x, Y0 + CH + 4, WZ - 1.2), 1.6, 0.07);
-  for (const x of [-WO + 1, -WO / 2 - CW / 2, WO / 2 + CW / 2, WO - 1]) latticeInto(stgSteel, V3(x, DECK, WZ - 1.2), V3(x, Y0 + WIN - 2, WZ - 1.2), 1.0, 0.05);
-  latticeInto(stgSteel, V3(-CW - GAP, Y0 + CH + 3.6, WZ - 1.2), V3(CW + GAP, Y0 + CH + 3.6, WZ - 1.2), 1.2, 0.06);
+  for (const sx of [-TX, TX]) for (const z of [BZ[0], BZ[3]]) {
+    latticeInto(stgSteel, V3(sx, DECK, z), V3(sx, SR + 0.8, z), 1.8, 0.08);
+    // the front towers raked back to the deck
+    if (z === BZ[3]) latticeInto(stgSteel, V3(sx, DECK, z - 6), V3(sx, DECK + 12, z - 0.9), 0.6, 0.035);
+  }
+  for (const z of BZ) latticeInto(stgSteel, V3(-TX, SR, z), V3(TX, SR, z), 1.6, 0.07);
+  for (const sx of [-TX, TX]) latticeInto(stgSteel, V3(sx, SR, BZ[0]), V3(sx, SR, BZ[3]), 1.6, 0.07);
+  // the PA wings: a tower either side past the deck, bridged to the roof
+  const PX = 44, PZ = 19, PH = 31;
   for (const sd of [-1, 1]) {
-    latticeInto(stgSteel, V3(sd * 41.5, 0, 15), V3(sd * 41.5, 31, 15), 1.8, 0.08);
-    latticeInto(stgSteel, V3(sd * 39.5, 31, 15), V3(sd * 44.5, 31, 15), 1.0, 0.05);
+    latticeInto(stgSteel, V3(sd * PX, 0, PZ), V3(sd * PX, PH + 0.6, PZ), 1.8, 0.08);
+    latticeInto(stgSteel, V3(sd * (PX - 2.5), PH, PZ), V3(sd * (PX + 3), PH, PZ), 1.0, 0.05);
+    latticeInto(stgSteel, V3(sd * (PX + 2.5), PH, PZ - 1), V3(sd * (PX + 2.5), PH, PZ + 2), 0.8, 0.05);
+    latticeInto(stgSteel, V3(sd * (PX - 0.9), PH, PZ), V3(sd * (TX + 0.8), SR, BZ[2]), 1.0, 0.05);
+    for (const [dx, dz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) latticeInto(stgSteel, V3(sd * PX + dx * 3.4, 0.3, PZ + dz * 3.4), V3(sd * PX + dx * 0.7, PH * 0.3, PZ + dz * 0.7), 0.45, 0.03);
   }
   root.add(new THREE.Mesh(mergeGeometries(stgSteel), mats().black));
-  const header = new THREE.Mesh(new THREE.BoxGeometry(2 * (CW + GAP) + 2, 2.6, 2.4), std({ color: 0x0b0b0d, roughness: 0.6 }));
-  header.position.set(0, Y0 + CH + 2.6, WZ + 0.4); root.add(header);
-  const headLine = new THREE.Mesh(new THREE.BoxGeometry(2 * (CW + GAP) + 2, 0.08, 0.08), glowMat(0xffffff, 1));
-  headLine.position.set(0, Y0 + CH + 1.3, WZ + 1.6); root.add(headLine);
+  for (const sd of [-1, 1]) {
+    const base = new THREE.Mesh(new THREE.BoxGeometry(7.6, 0.3, 7.6), std({ color: 0x1a1b1e, roughness: 0.8 }));
+    base.position.set(sd * PX, 0.15, PZ); root.add(base);
+  }
+  const skin = new THREE.Mesh(new THREE.BoxGeometry(2 * TX + 3, 0.25, BZ[3] - BZ[0] + 3), std({ color: 0x0a0a0c, roughness: 0.85 }));
+  skin.position.set(0, SR + 1.0, (BZ[0] + BZ[3]) / 2); root.add(skin);
+  // the wall on its own header and chains from the roof's back beam
+  screenHang(root, { y: Y0 + WH + 0.3, z: WZ, w: WW, topY: SR - 0.8, n: 7, size: 0.76 });
+  // the lighting trusses on chains under the roof's beams
+  const LT = 28.5;
+  for (const z of BZ.slice(1)) {
+    const t = truss(2 * TX - 4, { size: 1.0, finish: 'black' }); t.position.set(0, LT, z); root.add(t);
+    root.add(hoists([-28, -14, 0, 14, 28], LT, z, SR - 0.8));
+  }
   // no one on stage: the backline in the triangle, the microphone at the B-stage
   const star = micStand({ height: 1.6 });
-  star.position.set(0, DECK, RW1 - 2); root.add(star);
+  star.position.set(0, XH, RW1 - 1.2); root.add(star);
   for (const [x, z, col] of [[-10, 18, 0x5a1a0e], [10, 18, 0x1a1a1c]]) {
     const gt = guitar({ color: col, bass: x > 0 }); gt.scale.setScalar(0.8); gt.position.set(x, DECK + 0.5, z); gt.rotation.x = -0.28; root.add(gt);
     const m = micStand({ height: 1.5 }); m.position.set(x, DECK, z + 1.4); m.rotation.y = Math.PI; root.add(m);
@@ -561,33 +535,32 @@ export function buildStadium(ctx) {
   const DT = [[-22, 80], [22, 80]];             // the delay towers, out on the pitch
   const towerLights = [];
   for (const side of [-1, 1]) {
-    // the mains from the header's ends, in front of the gaps; the flown subs
-    // behind them; on the towers the side hangs turned out to the side stands
-    // and the 270s further round
-    paHang(root, { x: side * (CW + GAP / 2), y: Y0 + CH + 1.2, z: WZ + 2.2, boxes: 20, width: 1.5, yaw: -side * 0.04 });
-    paHang(root, { x: side * (CW + GAP / 2), y: Y0 + CH + 1.2, z: WZ + 0.9, boxes: 10, width: 1.4, depth: 1.0, splay: 0.008 });
-    paHang(root, { x: side * 41.5, y: 30.2, z: 16.6, boxes: 18, width: 1.4, yaw: side * 0.45 });
-    paHang(root, { x: side * 44, y: 30.2, z: 15.4, boxes: 14, width: 1.3, yaw: side * 1.15 });
-    for (const dx of [-1.6, 0, 1.6]) towerLights.push(V3(side * 41.5 + dx, 32, 15));
+    // the mains from the roof's front corners, the flown subs behind them on
+    // the side beam; on the wing towers the side hangs turned out to the side
+    // stands and the 270s further round
+    paHang(root, { x: side * (WW / 2 + 2.6), y: SR - 2.4, z: BZ[3] + 0.2, boxes: 20, width: 1.5, yaw: -side * 0.04, roofY: SR - 0.8 });
+    paHang(root, { x: side * TX, y: SR - 2.4, z: 24.5, boxes: 10, width: 1.4, depth: 1.0, splay: 0.008, roofY: SR - 0.8 });
+    paHang(root, { x: side * (PX - 1.2), y: PH - 1.6, z: PZ + 1.0, boxes: 18, width: 1.4, yaw: side * 0.45, roofY: PH - 0.5 });
+    paHang(root, { x: side * (PX + 2.5), y: PH - 1.6, z: PZ + 0.4, boxes: 14, width: 1.3, yaw: side * 1.15, roofY: PH - 0.4 });
+    for (const dx of [-1.6, 0, 1.6]) towerLights.push(V3(side * PX + dx, PH + 1.2, PZ));
   }
   for (const [x, z] of DT) towerLights.push(...delayTower(root, { x, z, h: 26, boxes: 18, width: 1.4, yaw: -Math.sign(x) * 0.03 }));
   const spots = [], beams = [], washes = [], ups = [], lasers = [];
-  // spots along the wall's top edge, beams in the triangle, washes under the header
-  const topAt = (x) => { const a = Math.abs(x); return a <= CW ? CH : a < CW + GAP ? WIN : WIN + (WOUT - WIN) * (a - CW - GAP) / (WO - CW - GAP); };
-  for (let i = 0; i < 16; i++) { const x = -35 + i * (70 / 15); spots.push({ fx: rig.add({ kind: 'spot', pos: V3(x, Y0 + topAt(x) + 0.4, WZ + 0.4), length: 90, angle: 0.08 }), i, n: 16, group: 0 }); }
-  for (let i = 0; i < 16; i++) { const r = Math.floor(i / 4), c = i % 4; const y = 1.5 + r * 2.6, half = TRI * (1 - y / TRH) - 1; beams.push({ fx: rig.add({ kind: 'beam', pos: V3(-half + c * (2 * half / 3), Y0 + y, WZ - 1.3), length: 140, beamGain: 1.3 }), i, n: 16, group: 1 }); }
-  for (let i = 0; i < 12; i++) washes.push({ fx: rig.add({ kind: 'wash', pos: V3(-16 + i * (32 / 11), Y0 + CH + 1.1, WZ + 2.8), length: 45, beamGain: 0.4 }), i, n: 12, group: 2 });
+  // spots on the front truss, beams on the middle one, washes on the back
+  for (let i = 0; i < 16; i++) spots.push({ fx: rig.add({ kind: 'spot', pos: V3(-30 + i * 4, LT - 0.7, BZ[3]), length: 90, angle: 0.08 }), i, n: 16, group: 0 });
+  for (let i = 0; i < 16; i++) beams.push({ fx: rig.add({ kind: 'beam', pos: V3(-30 + i * 4, LT - 0.7, BZ[2]), length: 140, beamGain: 1.3 }), i, n: 16, group: 1 });
+  for (let i = 0; i < 12; i++) washes.push({ fx: rig.add({ kind: 'wash', pos: V3(-27.5 + i * 5, LT - 0.7, BZ[1]), length: 45, beamGain: 0.4 }), i, n: 12, group: 2 });
   const tw = towerLights.map((pos, i) => ({ fx: rig.add({ kind: 'beam', pos, length: 120, beamGain: 1.0 }), i, n: towerLights.length, group: 5 }));
-  for (let i = 0; i < 14; i++) ups.push({ fx: rig.add({ kind: 'beam', pos: V3(-33 + i * (66 / 13), DECK + 0.3, 32.6), hang: 'up', length: 220, beamGain: 1.4 }), i, n: 14, group: 3 });
+  for (let i = 0; i < 14; i++) ups.push({ fx: rig.add({ kind: 'beam', pos: V3(-33 + i * (66 / 13), DECK + 0.3, 32.2), hang: 'up', length: 220, beamGain: 1.4 }), i, n: 14, group: 3 });
   for (let i = 0; i < 6; i++) lasers.push({ fx: rig.add({ kind: 'laser', pos: V3(-12 + i * 4.8, DECK + 0.3, 32.8), body: false, length: 200, beamGain: 8, flareGain: 0.2, noise: 0.4 }), i, n: 6 });
   for (const k of [3, 7, 11, 14]) rig.light(spots[k].fx, shadowSpot(0xffffff, 0, { cast: false, penumbra: 0.5 }), 30000);
   const front1 = shadowSpot(KELVIN(5600), 0, { angle: 0.12, penumbra: 0.7, size: q.shadowSize, far: 200, cast: q.shadows });
   front1.position.set(-10, 34, 96); front1.target.position.set(0, DECK + 1, 20);
   const follow = shadowSpot(KELVIN(5600), 0, { angle: 0.03, penumbra: 0.5, cast: false });
-  follow.position.set(0, 40, 140); follow.target.position.set(0, DECK, RW1 - 2);
+  follow.position.set(0, 40, 140); follow.target.position.set(0, XH, RW1 - TIP / 2);
   const followBeam = rig.add({ kind: 'follow', pos: V3(0, 40, 140), length: 110, body: false, beamGain: 0.5, color: KELVIN(5600) });
   const stageWash = shadowSpot(0xffffff, 0, { angle: 0.8, penumbra: 1, cast: false });
-  stageWash.position.set(0, Y0 + CH, WZ + 3); stageWash.target.position.set(0, DECK, 24);
+  stageWash.position.set(0, LT - 1, BZ[1]); stageWash.target.position.set(0, DECK, 24);
   for (const l of [front1, follow, stageWash]) root.add(l, l.target);
   const fill = [];
   for (const [x, y, z] of [[-50, 40, 60], [50, 40, 60]]) { const l = new THREE.PointLight(0xffffff, 0, 220, 2); l.position.set(x, y, z); root.add(l); fill.push(l); }
@@ -626,7 +599,7 @@ export function buildStadium(ctx) {
     return m;
   };
   const onPitch = (x, z) => inField(x, z) && edgeDist(x, z) > 3.5;
-  const avoid = (x, z) => (Math.abs(x) < 3.6 && z < RW1 + 1) || (Math.abs(x) < TIP / 2 + 1.2 && z < RW1 + 1.2 && z > RW1 - TIP - 1.2) || DT.some(([tx, tz]) => Math.hypot(x - tx, z - tz) < 5) || (Math.abs(x - eye.x) < 5 && Math.abs(z - eye.z) < 4.5);
+  const avoid = (x, z) => cross.inside(x, z, 1.2) || DT.some(([tx, tz]) => Math.hypot(x - tx, z - tz) < 5) || (Math.abs(x - eye.x) < 5 && Math.abs(z - eye.z) < 4.5);
   const standing = packFloor({ x0: -44, x1: 44, z0: 37, z1: ZC + 66, avoid, inside: onPitch, seed: 177 });
   bigCrowd(root, cu, q, standing.concat(stands.people.map((p) => ({ ...p, h: 0.97 }))), { seed: 21 });
   const aisleField = lightPoints(stands.aisleLights.map((a) => ({ ...a, white: true, size: 0.05 })), cu, { maxPx: 3 });
@@ -637,9 +610,9 @@ export function buildStadium(ctx) {
   // ── haze: a stadium is open, so it is thin, but the beams still carry ──
   const hz = pipe.haze;
   const offs = [[-0.6, 0.35], [0.6, 0.35], [-0.6, -0.35], [0.6, -0.35], [0, 0]];
-  ctx.screenHaze(scr.main, offs.map(([dx, dy]) => hz.add(V3(dx * 30, Y0 + LH / 2 + dy * LH * 0.5, WZ + 1.5), 0xffffff, 0)), offs);
+  ctx.screenHaze(scr.main, offs.map(([dx, dy]) => hz.add(V3(dx * 30, Y0 + WH / 2 + dy * WH * 0.5, WZ + 1.5), 0xffffff, 0)), offs);
   scr.main.userData.hazePower = 160;
-  const hzWash = [hz.add(V3(-20, Y0 + CH, 20), 0xffffff, 0), hz.add(V3(20, Y0 + CH, 20), 0xffffff, 0), hz.add(V3(0, DECK + 5, 30), 0xffffff, 0)];
+  const hzWash = [hz.add(V3(-20, LT - 2, 20), 0xffffff, 0), hz.add(V3(20, LT - 2, 20), 0xffffff, 0), hz.add(V3(0, DECK + 5, 30), 0xffffff, 0)];
 
   return {
     root, eye,
@@ -650,7 +623,7 @@ export function buildStadium(ctx) {
     bloom: { strength: 0.7, radius: 0.7, threshold: 1.15 },
     grade: { exposure: 1.2, vignette: 0.38, ca: 0.005, grain: 0.04, sat: 1.08, lift: [0.004, 0.005, 0.01] },
     env: { w: 300, h: 60, d: 320, eye, wall: 0x0a0a10, floor: 0x0a0a0c, ambient: 0x06070c, emitters: [
-      { w: LW, h: LH, pos: V3(0, Y0 + LH / 2, WZ + 0.2), normal: V3(0, 0, 1), screen: true, power: 1.5, aspect: LW / LH },
+      { w: WW, h: WH, pos: V3(0, Y0 + WH / 2, WZ + 0.2), normal: V3(0, 0, 1), screen: true, power: 1.5, aspect: WW / WH },
       { w: 300, h: 300, pos: V3(0, 58, ZC), normal: V3(0, -1, 0), color: 0x18100c, power: 1 },
     ] },
     envIntensity: 0.5,
@@ -661,11 +634,10 @@ export function buildStadium(ctx) {
       runShow(rig, beams, f, { house: V3(0, 40, 120), stage: STAGE, span: 110 });
       runShow(rig, washes, f, { house: V3(0, 0, 36), stage: STAGE, span: 40, strobe: false });
       runShow(rig, tw, f, { house: V3(0, 40, 90), stage: V3(0, DECK, RW1), span: 80 });
-      dotMat.color.copy(f.pal.c).multiplyScalar((0.5 + 1.2 * f.kick) * show + 0.15);
       runShow(rig, ups, f, { house: V3(0, 120, 60), stage: STAGE, up: true });
       washes.forEach(({ fx }) => { fx.angle = 0.3; });
       runLasers(lasers, f);
-      rig.aim(followBeam, V3(star.position.x, DECK + 0.8, star.position.z)); followBeam.intensity = 1.1 * show;
+      rig.aim(followBeam, V3(star.position.x, XH + 0.8, star.position.z)); followBeam.intensity = 1.1 * show;
       front1.intensity = 60000 * show + 20000 * f.house;
       follow.intensity = 90000 * show;
       stageWash.color.copy(f.pal.a); stageWash.intensity = (26000 + 30000 * f.energy + 12000 * f.kick) * show;
@@ -678,6 +650,7 @@ export function buildStadium(ctx) {
       hzWash[0].color.copy(f.pal.a); hzWash[1].color.copy(f.pal.b); hzWash[2].color.copy(f.pal.d);
       hzWash.forEach((h) => { h.power = 260 * (0.4 + 0.6 * f.energy + 0.3 * f.kick) * show; });
       deck.userData.lip.color.setHex(APP.accent).multiplyScalar((0.6 + 0.8 * f.kick) * show + 0.2);
+      bRimM.color.setHex(APP.accent).multiplyScalar((0.6 + 0.8 * f.kick) * show + 0.2);
       cu.uRimColor.value.copy(f.pal.a).lerp(new THREE.Color(1, 1, 1), 0.3).multiplyScalar((0.2 + 0.25 * f.kick) * show);
       cu.uStage.value.set(0, 18, 16);
       cu.uWash.value.copy(f.pal.b).multiplyScalar(0.012 * show + 0.3 * f.house);

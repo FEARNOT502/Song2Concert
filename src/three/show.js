@@ -12,7 +12,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { V3, glowMat, prng, std, thin, velvet } from './core.js';
 import { crowdLights, silhouettes, withCells } from './people.js';
-import { drapeGeometry, latticeInto, ledScreen, lineArray, mats, seatField, stageDeck } from './rig.js';
+import { chainInto, drapeGeometry, latticeInto, ledScreen, lineArray, mats, seatField, stageDeck, truss } from './rig.js';
 
 // The simulated song's shape: verse, pre-chorus, chorus, break over 24 bars.
 // A real track brings its own (`f.sec`, from the beat follower).
@@ -166,16 +166,29 @@ export function paHang(root, { x, y, z, boxes, width = 1.3, yaw = 0, roofY = 0, 
   const a = lineArray({ boxes, width, splay, depth });
   a.position.set(x, y, z); a.rotation.y = yaw;
   root.add(a);
-  if (roofY > y + 0.5) {
+  if (roofY > y + 0.2) {
+    // a chain at either end of the fly bar, its motor over it, up to the steel
     const c = [];
-    for (const s of [-1, 1]) {
-      const g = new THREE.CylinderGeometry(0.012, 0.012, roofY - y, 4);
-      g.translate(x + s * Math.cos(yaw) * width * 0.45, (roofY + y) / 2, z - s * Math.sin(yaw) * width * 0.45);
-      c.push(g);
-    }
-    root.add(new THREE.Mesh(mergeGeometries(c), mats().black));
+    for (const s of [-1, 1]) chainInto(c, x + s * Math.cos(yaw) * width * 0.42, y + 0.2, z - s * Math.sin(yaw) * width * 0.42, roofY);
+    root.add(new THREE.Mesh(mergeGeometries(c), mats().chain));
   }
   return a;
+}
+
+// A screen's rigging: a truss along its top edge (`y` the top, `z` its face,
+// `w` its width, turned `yaw`) and chains from that truss up to the steel at
+// `topY` (a height, or a function of x and z), `n` of them.
+export function screenHang(root, { x = 0, y, z, w, yaw = 0, topY, n = 4, size = 0.52 }) {
+  const t = truss(w + 0.6, { size, finish: 'black' });
+  t.position.set(x, y + size / 2, z - 0.3); t.rotation.y = yaw; root.add(t);
+  const top = typeof topY === 'function' ? topY : () => topY;
+  const c = [];
+  for (let i = 0; i < n; i++) {
+    const u = n > 1 ? (i / (n - 1) - 0.5) * (w - 0.8) : 0;
+    const px = x + Math.cos(yaw) * u, pz = z - 0.3 - Math.sin(yaw) * u;
+    chainInto(c, px, y + size, pz, top(px, pz));
+  }
+  root.add(new THREE.Mesh(mergeGeometries(c), mats().chain));
 }
 
 // The floor's subwoofers: a row of cabinets along the front of the stage,
@@ -217,7 +230,7 @@ export function delayTower(root, { x, z, h, boxes = 16, width = 1.3, yaw = 0 }) 
   root.add(new THREE.Mesh(mergeGeometries(steel), M.black));
   const base = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.3, 7.2), std({ color: 0x1a1b1e, roughness: 0.8 }));
   base.position.set(x, 0.15, z); root.add(base);
-  paHang(root, { x, y: h - 0.4, z: z + 1.4, boxes, width, yaw, splay: 0.025 });
+  paHang(root, { x, y: h - 1.1, z: z + 1.4, boxes, width, yaw, splay: 0.025, roofY: h - 0.4 });
   return [-1.6, -0.55, 0.55, 1.6].map((dx) => V3(x + dx, h + 0.7, z + 0.2));
 }
 

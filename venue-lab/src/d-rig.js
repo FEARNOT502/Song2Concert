@@ -18,6 +18,9 @@ function mats() {
   MATS.pianoBlack = phys({ color: 0x050506, roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.06 });
   MATS.keysWhite = std({ color: 0xf2efe6, roughness: 0.3 });
   MATS.fabric = std({ color: 0x0a0a0a, roughness: 0.95 });
+  // chain and motors: dark steel that still catches the light, so a hang
+  // reads as hung from the house
+  MATS.chain = std({ color: 0x4c4e53, roughness: 0.4, metalness: 0.8 });
   return MATS;
 }
 
@@ -68,15 +71,27 @@ function truss(length, { size = 0.52, finish = 'alu', bays = null } = {}) {
   return mesh;
 }
 
-// Chain hoists: a motor box on the truss and a chain up to the roof.
-function hoists(xs, y, z, roofY, { finish = 'black' } = {}) {
+// A chain hoist: the chain from the pick point (x, y, z) up to the steel at
+// `topY`, the motor on it just over the load and a beam clamp where it takes
+// hold. Thick enough to read from the house, as real chain does in the haze.
+function chainInto(out, x, y, z, topY, { motor = true } = {}) {
+  const len = topY - y;
+  if (len < 0.1) return;
+  const c = new THREE.CylinderGeometry(0.028, 0.028, len, 5); c.translate(x, y + len / 2, z); out.push(c);
+  if (motor && len > 1.6) { const b = new THREE.BoxGeometry(0.36, 0.56, 0.36); b.translate(x, y + 0.75, z); out.push(b); }
+  const clamp = new THREE.BoxGeometry(0.5, 0.1, 0.32); clamp.translate(x, topY - 0.05, z); out.push(clamp);
+}
+
+// Chain hoists along a truss: a motor on the chain over each pick, the chain
+// up to the roof (`roofY` a height, or the roof's height over x).
+function hoists(xs, y, z, roofY) {
+  const top = typeof roofY === 'function' ? roofY : () => roofY;
   const parts = [];
   for (const x of xs) {
-    const b = new THREE.BoxGeometry(0.3, 0.45, 0.3); b.translate(x, y + 0.6, z); parts.push(b);
-    const len = roofY - (y + 0.8);
-    if (len > 0.2) { const c = new THREE.CylinderGeometry(0.012, 0.012, len, 4); c.translate(x, y + 0.8 + len / 2, z); parts.push(c); }
+    const s = new THREE.BoxGeometry(0.2, 0.3, 0.2); s.translate(x, y + 0.45, z); parts.push(s);   // the round sling's shackle
+    chainInto(parts, x, y + 0.55, z, top(x));
   }
-  return new THREE.Mesh(mergeGeometries(parts), finish === 'alu' ? mats().alu : mats().black);
+  return new THREE.Mesh(mergeGeometries(parts), mats().chain);
 }
 
 // A straight member from a to b: a tube, tapering from r0 to r1.
