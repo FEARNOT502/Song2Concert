@@ -2,6 +2,23 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 38: Wembley's Level 5 blocks 519 and 533 seated again
+- **What was asked** (user): a whole block by the 519 entrance has no seats; fix it.
+- **Why it was empty.** Seat data, not the crowd: the reseat (Round 30) seats a row only where the plan draws its line along the
+  row's front (`ev`, sampled 0.35-0.85 of a row ahead of the tread's middle). In 519 and its mirror 533 (the stage end's south
+  corner) the plan's lines all sit about half a row further back than the treads put them (the line found 0.1-0.2 of a row ahead
+  instead of 0.6-0.7), so under a third of each row found its line and every row was dropped (`MINCOV`). The traced seats before
+  Round 30 had them; nothing else hid them.
+- **The fix** (`wb_reseat.py`, `_late`). Each tread also looks for its line half a row back (`ev2`, -0.35..+0.15 of a row). Over a
+  6 m square (`LATE_WIN`), where under 40% of the treads find their line where it should be and over 70% find it half a row back,
+  the rows there are taken from those. Judged by the block, not the row, because elsewhere a tread between two of the plan's rows
+  finds the next one's line half a row back and is not a row of its own. It changes only Level 5: 519 and 533 seated throughout,
+  and the rows that were missing in parts of 509 and 539 (same cause, partly). Levels 1 and 2 come out seat for seat as before.
+- **The count.** Level 5's pitch goes from 0.521 to 0.547 m so it keeps its official count: 39,150 (official 39,165; 39,050
+  before). L1 33,988 and L2 15,619 unchanged.
+- **Checks.** 148 vomitories walked through, none failed; every L1 and L2 seat reachable, L5 39,147 / 39,150 (the same three front-row seats beside the 508 and 544 vomitories as before); the app builds and loads the stadium with no errors. The
+  renderers and the crowd rule did not change. The acoustics were not touched.
+
 ## Round 37: the dome's floor ends at the line 정우 drew; seats beside the cross's arms
 
 - The floor stops at the cross aisle behind the FOH desk's band (z 123.6): the band behind the desk is gone, the desk stands at the floor's back edge. From the sides it is cut in on a diagonal from (±23.5, z 106) to (±12, z 123.6), chair by chair (`inBack` in j-dome.js), read off 정우's green line over a screenshot of the floor. An estimate from a picture, not a plan.
