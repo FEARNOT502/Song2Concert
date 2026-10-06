@@ -543,6 +543,9 @@ export function buildDome(ctx) {
   const SEAT = 0.5, PITCH = 0.9, NX = 16, NZ = 15, BW = NX * SEAT, BD = NZ * PITCH, AX = 1.2, AZ = 1.6;
   const bands = [];
   for (let z = RW0 + 3.5; z + 4 * PITCH < CZ - 1.4; z += BD + AZ) bands.push([z, Math.min(z + BD, CZ - 1.6)]);
+  // beside the walkway across, past its ends, a short band fills the gap
+  // between the front blocks and the ones behind the cross
+  bands.push([bands[bands.length - 1][1] + AZ, CZ + XD + 1.8 - AZ]);
   for (let z = CZ + XD + 1.8; z < 136; z += BD + AZ) bands.push([z, z + BD]);
   const obst = [
     [-2.2 - 1.4, 2.2 + 1.4, RW0, RW1 + 1.4],                     // the runway
@@ -552,6 +555,12 @@ export function buildDome(ctx) {
   // the desk and the towers' bases only take the chairs they stand on
   const taken = [[eye.x - 4.4, eye.x + 4.4, eye.z - 3.0, eye.z + 4.4], ...DT.map(([x, z]) => [x - 4.0, x + 4.0, z - 4.0, z + 4.0])];
   const free = (x, z) => !taken.some(([x0, x1, z0, z1]) => x > x0 && x < x1 && z > z0 && z < z1);
+  // the floor ends where the dome's floor plans end it: straight across at
+  // the aisle behind the desk's band, cut in towards it from the sides
+  // along the diagonal the foul lines' corners leave (from the plan 정우
+  // drew over the floor)
+  const BACK = 123.6, DG0 = [23.5, 106], DG1 = [12, BACK];
+  const inBack = (x, z) => z < BACK && (z < DG0[1] || Math.abs(x) < DG0[0] + (z - DG0[1]) * (DG1[0] - DG0[0]) / (DG1[1] - DG0[1]));
   const blocks = [];
   bands.forEach(([z0, z1], r) => {
     // past the end stage the middle is open: a block on the centre line
@@ -580,7 +589,7 @@ export function buildDome(ctx) {
       const rows = [];
       for (let j = 0; j < nz; j++) {
         const z = b.z0 + (j + 0.5) * PITCH, row = [];
-        for (let i = 0; i < nx; i++) { const x = ox + i * SEAT; if (inField(x, z) && edgeDist(x, z) > 2.2 && free(x, z)) row.push(x); }
+        for (let i = 0; i < nx; i++) { const x = ox + i * SEAT; if (inField(x, z) && edgeDist(x, z) > 2.2 && free(x, z) && inBack(x, z)) row.push(x); }
         if (row.length >= 3) rows.push({ z, row });
       }
       if (rows.length < 2) continue;
