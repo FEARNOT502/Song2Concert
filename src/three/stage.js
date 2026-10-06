@@ -62,7 +62,7 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
   // per-venue lists, collected once rather than found by a traversal each frame
   let pointMats = [], lightMats = [], fogMats = [];
   // the venue's spot and point lights, for the eye's adaptation (see adapt)
-  let lamps = [], baseExposure = 1, adapt = 1, lux = 0;
+  let lamps = [], baseExposure = 1, baseThreshold = 0.9, adapt = 1, lux = 0;
 
   function clonePal(p) { return { a: p.a.clone(), b: p.b.clone(), c: p.c.clone(), d: p.d.clone() }; }
 
@@ -150,7 +150,7 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
     venue = v; ctx = c;
     walker.setVenue(v.root, v.camera.pos, v.camera.target);
     const b = v.bloom || {};
-    pipe.bloom.strength = b.strength ?? 0.6; pipe.bloom.radius = b.radius ?? 0.6; pipe.bloom.threshold = b.threshold ?? 0.9;
+    pipe.bloom.strength = b.strength ?? 0.6; pipe.bloom.radius = b.radius ?? 0.6; pipe.bloom.threshold = baseThreshold = b.threshold ?? 0.9;
     const G = pipe.final.material.uniforms, g = v.grade || {};
     baseExposure = g.exposure ?? 1; adapt = 1;
     G.uExposure.value = baseExposure; G.uVignette.value = g.vignette ?? 0.35; G.uCA.value = g.ca ?? 0.004;
@@ -253,10 +253,13 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
     // the level is the seat's: what the venue is graded for, under the same
     // lights at the same moment, so a seat is never adapted
     const E0 = Math.max(2, lightAt(walker.home?.eye ?? pipe.camera.position) * 1.5);
-    const want = clamp(Math.pow(E0 / Math.max(lux, E0), 0.6), 0.3, 1);
+    const want = clamp(Math.pow(E0 / Math.max(lux, E0), 0.75), 0.2, 1);
     // stopping down is quick, opening up again slower, as an eye is
     adapt += (want - adapt) * Math.min(1, dt * (want < adapt ? 3 : 1.2));
     G.uExposure.value = baseExposure * adapt;
+    // and the glow sets in where it would at the adapted level: a lit deck
+    // is not bloomed into a white cloud and then merely dimmed
+    pipe.bloom.threshold = baseThreshold / adapt;
   }
 
   // ── frame ──────────────────────────────────────────────────────────────────
