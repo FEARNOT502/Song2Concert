@@ -542,8 +542,8 @@ export function oklabToLinear(L, a, b) {
 // counter. Each is then turned into what an LED fixture can make at that hue:
 // full chroma at a bright level, gamut-clipped by chroma rather than clamped,
 // so the hue survives. A sleeve with one colour gets analogous shades of it,
-// not an invented complement; a sleeve with almost none gets warm and cool
-// white, plus its one accent if it has one.
+// not an invented complement. Only a sleeve with no colour at all gets white:
+// a small logo on black is still that logo's colour.
 export function inGamut(L, C, h) {
   const [r, g, b] = oklabToLinear(L, C * Math.cos(h), C * Math.sin(h));
   return r >= -1e-4 && g >= -1e-4 && b >= -1e-4 && r <= 1.0001 && g <= 1.0001 && b <= 1.0001;
@@ -574,51 +574,52 @@ export function extractPalette(canvas) {
   const px = g.getImageData(0, 0, T, T).data;
   const BINS = 48;
   const hist = new Float64Array(BINS), hx = new Float64Array(BINS), hy = new Float64Array(BINS), hc = new Float64Array(BINS);
-  let sumC = 0;
+  // how much of the sleeve is visibly coloured, counted by area rather than
+  // averaged over it: a red logo on black is a red sleeve, however much black
+  let coloured = 0;
   const N = T * T;
   for (let i = 0; i < px.length; i += 4) {
     const [L, a, b] = srgbToOklab(px[i] / 255, px[i + 1] / 255, px[i + 2] / 255);
     const C = Math.hypot(a, b);
-    sumC += C;
     if (C < 0.012) continue;
     const h = Math.atan2(b, a);
-    const w = Math.pow(C, 1.3) * smooth(0.1, 0.35, L) * (1 - smooth(0.93, 1.0, L));
+    const lw = smooth(0.1, 0.35, L) * (1 - smooth(0.93, 1.0, L));
+    if (C > 0.03 && lw > 0.5) coloured++;
+    const w = Math.pow(C, 1.3) * lw;
     const k = Math.floor(((h / (Math.PI * 2) + 1) % 1) * BINS) % BINS;
     hist[k] += w; hx[k] += Math.cos(h) * w; hy[k] += Math.sin(h) * w; hc[k] += C * w;
   }
-  const meanC = sumC / N;
   const sm = new Float64Array(BINS);
   for (let k = 0; k < BINS; k++) for (let d = -2; d <= 2; d++) sm[k] += hist[(k + d + BINS) % BINS] * [1, 2, 3, 2, 1][d + 2];
-  const peaks = [];
+  const all = [];
   for (let k = 0; k < BINS; k++) {
     const l = sm[(k - 1 + BINS) % BINS], r = sm[(k + 1) % BINS];
     if (sm[k] > 0 && sm[k] >= l && sm[k] > r) {
       let x = 0, y = 0, cw = 0, ww = 0;
       for (let d = -2; d <= 2; d++) { const j = (k + d + BINS) % BINS; x += hx[j]; y += hy[j]; cw += hc[j]; ww += hist[j]; }
-      peaks.push({ v: sm[k], h: Math.atan2(y, x), C: ww > 0 ? cw / ww : 0 });
+      all.push({ v: sm[k], h: Math.atan2(y, x), C: ww > 0 ? cw / ww : 0 });
     }
   }
-  peaks.sort((a, b) => b.v - a.v);
+  // a hue only counts when it is a colour you would name, not the tint of a
+  // grey or the cast of a scan
+  const peaks = all.filter((p) => p.C > 0.022).sort((a, b) => b.v - a.v);
   const dist = (a, b) => { const d = Math.abs(a - b) % (Math.PI * 2); return Math.min(d, Math.PI * 2 - d); };
-  const total = hist.reduce((s, v) => s + v, 0) / N;
-  const sat = 0.62 + 0.38 * clamp(meanC / 0.08);
+  const share = coloured / N;
   let a, b, c2, d, kind;
-  const accent = peaks.find((p) => p.C > 0.09);
-  if (!peaks.length || total < 0.0015 || meanC < 0.03) {
-    // a sleeve with next to no colour: tungsten and daylight, and its accent
+  if (!peaks.length || share < 0.004) {
+    // a black-and-white sleeve: its light is white, cool to neutral — not the
+    // app's orange, which is not on the sleeve
     kind = 'neutral';
-    const warmHue = peaks.length ? peaks[0].h : 1.2;
-    a = ledColor(0.82, warmHue, 0.45).lerp(KELVIN(3000), 0.4);
-    b = KELVIN(5200);
-    c2 = accent ? ledColor(0.66, accent.h, 0.95) : KELVIN(2600);
-    d = KELVIN(3800);
+    a = KELVIN(6500); b = KELVIN(4800); c2 = KELVIN(8000); d = KELVIN(5600);
   } else {
     const p = peaks[0];
     const q = peaks.find((x) => x !== p && dist(x.h, p.h) > 0.6 && x.v > p.v * 0.1);
     const r = peaks.find((x) => x !== p && x !== q && dist(x.h, p.h) > 0.6 && (!q || dist(x.h, q.h) > 0.6) && x.v > p.v * 0.06);
     kind = q ? 'duo' : 'mono';
-    const h2 = q ? q.h : p.h + 0.45;
-    const h3 = r ? r.h : q ? (p.h + (q.h - p.h) * 0.5) : p.h - 0.4;
+    // how vivid the light is follows how vivid the sleeve's own colour is
+    const sat = 0.7 + 0.3 * clamp(p.C / 0.12);
+    const h2 = q ? q.h : p.h + 0.2;
+    const h3 = r ? r.h : q ? (p.h + (q.h - p.h) * 0.5) : p.h - 0.2;
     a = ledColor(0.72, p.h, sat);
     b = ledColor(0.66, h2, sat);
     c2 = ledColor(0.78, h3, sat * 0.9);
@@ -641,11 +642,14 @@ export function screenContent(cover, meta, aspect, { W = 2048, frame = true } = 
   const c = document.createElement('canvas'); c.width = W; c.height = H;
   const g = c.getContext('2d');
   g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
-  // blurred bleed of the art across the whole wall
+  // blurred bleed of the art across the whole wall — kept low for a light
+  // sleeve, or a white cover sits on a white field and loses its edge
+  const sl = regionColor(cover, 0, 0, 1, 1);
+  const key = 0.2126 * sl.r + 0.7152 * sl.g + 0.0722 * sl.b;
   g.save();
   g.filter = `blur(${Math.round(W * 0.03)}px) saturate(1.3)`;
   const big = Math.max(W, H) * 1.25;
-  g.globalAlpha = 0.55;
+  g.globalAlpha = 0.55 - 0.35 * smooth(0.15, 0.7, key);
   g.drawImage(cover, (W - big) / 2, (H - big) / 2, big, big);
   g.restore();
   const vg = g.createRadialGradient(W / 2, H / 2, H * 0.2, W / 2, H / 2, Math.max(W, H) * 0.7);

@@ -175,14 +175,22 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
   // screens, their light, their haze, and the reflections, from the current art
   function applyArt() {
     if (!venue) return;
+    // a bright sleeve (white, pastel) is run lower on the walls, the way a
+    // content operator pulls a white frame down so it does not glare
+    const sl = regionColor(art.canvas, 0, 0, 1, 1);
+    const key = 0.2126 * sl.r + 0.7152 * sl.g + 0.0722 * sl.b;
+    const expo = 1 - 0.45 * THREE.MathUtils.smoothstep(key, 0.2, 0.75);
     for (const s of ctx.screens) {
       const face = s.group.userData.face;
       const tex = s.kind === 'main' ? art.texture(s.aspect) : art.cover();
-      if (face) face.material.uniforms.tArt.value = tex;
+      if (face) {
+        face.material.uniforms.tArt.value = tex;
+        if (face.material.uniforms.uExpo) face.material.uniforms.uExpo.value = expo;
+      }
       const img = s.kind === 'main' ? tex.image : art.canvas;
       const avg = regionColor(img, 0, 0, 1, 1);
       if (s.group.userData.rect) s.group.userData.rect.color.copy(avg).multiplyScalar(1 / Math.max(0.05, Math.max(avg.r, avg.g, avg.b)));
-      s.lum = Math.max(avg.r, avg.g, avg.b);
+      s.lum = Math.max(avg.r, avg.g, avg.b) * expo;
       for (const { h, o } of s.haze) h.color.copy(regionColor(img, 0.5 + o[0] * 0.5 - 0.2, 0.5 - o[1] * 0.5 - 0.2, 0.5 + o[0] * 0.5 + 0.2, 0.5 - o[1] * 0.5 + 0.2));
     }
     if (venue.env) {
