@@ -1226,22 +1226,25 @@ def tunnels_out(tunnels):
              'deck': t['deck'], 'deckY': t['deckY'], 'closed': bool(t.get('closed')), 'covered': bool(t.get('covered')), 'sides': t.get('sides'),
              **{k: t[k] for k in ('T', 'sidesAsWalls') if k in t}} for t in tunnels]
 
-def front_parapet(G, l, front, eps=0.05, minlen=1.0):
+def front_parapet(G, l, front, eps=0.05, minlen=1.0, b0=0, within=None):
     """The parapet along a tier's front, traced whole: the front line (the
     depth's zero level) wherever the front row stands behind it, drawn as one
     run at one height (the front row's, plus `front[1]`), from `front[0]`
     ('tread': the front row's tread; a number: that height) — not piece by
     piece off the raster's outline, which leaves it broken wherever the row
-    behind a piece is not the front row, and stepped."""
+    behind a piece is not the front row, and stepped. `b0`, `within`: a
+    section whose front row is row b0 (its rows numbered on from another's),
+    only within that mask."""
     from skimage import measure
-    near = cv2.dilate((l.band == 0).astype(np.uint8), disk(0.6 / G.res)) > 0
+    near = cv2.dilate((l.band == b0).astype(np.uint8), disk(0.6 / G.res)) > 0
+    if within is not None: near &= within
     pits = getattr(l, 'pits', None)
     if pits is not None and pits.any(): near &= ~(cv2.dilate(pits.astype(np.uint8), disk(0.25 / G.res)) > 0)
     ys, xs = np.nonzero(near)
     if not len(xs): return []
     y0_, y1_ = max(0, ys.min() - 2), min(G.H, ys.max() + 3); x0_, x1_ = max(0, xs.min() - 2), min(G.W, xs.max() + 3)
-    f = l.d[y0_:y1_, x0_:x1_].astype(np.float64); msk = near[y0_:y1_, x0_:x1_]
-    h = float(l.h(0))
+    f = l.d[y0_:y1_, x0_:x1_].astype(np.float64) - b0 * l.D; msk = near[y0_:y1_, x0_:x1_]
+    h = float(l.h(b0))
     if front[0] == 'tread': yb = h - 0.02
     elif front[0] is None:
         yb = float(l.bottom(0, h)) if callable(l.bottom) else (0.0 if l.bottom == 'ground' else h - l.fascia)

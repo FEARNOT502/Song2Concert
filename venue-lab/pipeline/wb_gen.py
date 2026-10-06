@@ -22,7 +22,7 @@ def sightline(D0, y0, T, n, C, eye=1.2):
 # rakes from the side stands' sightlines to the near touchline
 H1r = sightline(12.9, 1.5, 0.80, 46, 0.07)
 H2 = sightline(40.5, 17.8, 0.90, 17, 0.06)
-H5 = sightline(61.4, 29.3, 0.80, 47, 0.03)
+H5 = sightline(61.4, 29.3, 0.80, 54, 0.03)
 # Level 1 is two sections, as Wembley's lower tier is: the rows up to the
 # walkway (row 28 on it, the vomitories opening on to it) raked from the
 # front, and behind the plan's second dotted line (a barrier) the rows from 31
@@ -155,14 +155,38 @@ def section_depth(l, P):
         P_, b = bridge_bays(P_); bays += b
         P_ = extend(smooth_line(P_))
         fields[name] = signed_dist(P_, pts)
-    d = l.d.copy(); sec = np.zeros(l.d.shape, bool)
+    d = l.d.copy(); sec = np.zeros(l.d.shape, bool); K = 0
     if 'N' in fields:
-        # the aisles at the steps: square to the front, from the step's middle
+        # The north side meets the corner blocks at the aisle the plan draws
+        # back from each step (508/509, 543/544): found as the line from near
+        # the step's middle that runs along most of the plan's aisle strip.
+        ais = cv2.dilate(plan_bits(G)['L5'][0].astype(np.uint8), disk(0.3 / G.res)) > 0
+        def at(A, q):
+            i_ = np.clip(np.round((q[:, 0] - G.x0) / G.res).astype(int), 0, G.W - 1)
+            j_ = np.clip(np.round((q[:, 1] - G.z0) / G.res).astype(int), 0, G.H - 1)
+            return A[j_, i_]
+        us = np.arange(1.0, 20.0, 0.25)[:, None]
         def side(i0, i1):
-            M = (Q[i0] + Q[i1]) / 2; t = unit(Q[(i1 + 6) % len(Q)] - Q[i0 - 6]); return M, t
+            M = (Q[i0] + Q[i1]) / 2; t = unit(Q[(i1 + 6) % len(Q)] - Q[i0 - 6]); n = np.array([t[1], -t[0]])
+            best = max(((float(at(ais, M + t * s_ + us * (n * np.cos(a_) + t * np.sin(a_))).mean()), s_, a_)
+                        for s_ in np.arange(-5.0, 5.01, 0.25) for a_ in np.radians(np.arange(-30.0, 30.1, 1.0))))
+            _, s_, a_ = best; v = n * np.cos(a_) + t * np.sin(a_)
+            print('L5 north aisle', round(best[0], 2), 'offset', s_, 'turn', round(float(np.degrees(a_)), 1))
+            return M + t * s_, np.array([-v[1], v[0]])
         (Ma, ta), (Mb, tb) = side(*sorted(steps)[0]), side(*sorted(steps)[1])
-        inN = ((pts - Ma) @ ta > 0) & ((pts - Mb) @ tb < 0) & (pts[:, 0] > 20)
-        dv = np.where(inN, fields['N'], fields['R']); sec[ry, rx] = inN
+        ref = np.array([100.0, 0.0])
+        def same(M, t):
+            v = np.array([t[1], -t[0]]); c = lambda q: (q[..., 0] - M[0]) * v[1] - (q[..., 1] - M[1]) * v[0]
+            return np.sign(c(pts)) == np.sign(c(ref))
+        inN = same(Ma, ta) & same(Mb, tb) & (pts[:, 0] > 20)
+        # Its rows are numbered on from the corners' (the plan's 508 starts at
+        # row 6 beside that aisle, its front stepped back): so they stand as
+        # high as the corner blocks' across it, not from a front row of their own
+        FN, FR = (np.full(l.d.shape, np.nan, np.float32) for _ in range(2)); FN[ry, rx] = fields['N']; FR[ry, rx] = fields['R']
+        jog = np.concatenate([at(FR, M + us * np.array([t[1], -t[0]])) - at(FN, M + us * np.array([t[1], -t[0]])) for M, t in ((Ma, ta), (Mb, tb))])
+        K = int(round(float(np.nanmedian(jog)) / l.D))
+        print('L5 north rows on from the corners by', K, 'jog', np.round(np.nanpercentile(jog, [10, 50, 90]) / l.D, 2))
+        dv = np.where(inN, fields['N'] + K * l.D, fields['R']); sec[ry, rx] = inN
         # the seats' facing: each section's own smooth field
         fa = np.full(l.d.shape, np.nan, np.float32); fb = fa.copy()
         fa[ry, rx] = fields['N']; fb[ry, rx] = fields['R']
@@ -175,8 +199,9 @@ def section_depth(l, P):
     d[ry, rx] = dv
     l.set_depth(d, grad); l._grad = grad
     if aisles: l.secmap = sec.astype(np.int32)
-    return bays, aisles, sec
-BAYS5, AISLES5, SEC5 = section_depth(L5, tr(o['L5']['front']))
+    return bays, aisles, sec, K
+from wb_reseat import plan_bits
+BAYS5, AISLES5, SEC5, K5 = section_depth(L5, tr(o['L5']['front']))
 print('L5 bays', [round(float(np.linalg.norm(b['bridge'][-1] - b['bridge'][0])), 1) for b in BAYS5], 'aisles', len(AISLES5), 'rows', L5.nrows)
 
 # ── the seats, row by row ──
@@ -800,6 +825,8 @@ for name, l in LV.items():
     skip_ = (lambda ox, oy, h: skip(ox, oy, h) or NOTCH1d[oy, ox]) if name == 'L1' else skip
     rails, walls = edge_walls(G, l, outside_fn(spec[name]), l.aisle_doors() if name == 'L2' else (), flush=flushmode[name], skip=skip_, front=fronts.get(name))
     if fronts.get(name): rails += front_parapet(G, l, fronts[name])
+    # (the north side's front: its first row is row K5)
+    if name == 'L5' and K5: rails += front_parapet(G, l, fronts[name], b0=K5, within=SEC5)
     holes = []
     rows_ = l.rows_out()
     if name == 'L1': rows_ = tunnel_rows(rows_)
@@ -812,7 +839,9 @@ for name, l in LV.items():
                    **({'fences': FENCES1} if name == 'L1' else {})})
     print(name, 'rows', len(levels[-1]['rows']), 'steps', len(levels[-1]['steps']), 'holes', len(holes), 'rails', len(rails), 'walls', len(walls), 'seats', len(l.seats))
 # Level 5's aisles at the north side's steps: where the corner blocks' rows
-# and the north side's meet at different heights, a wall with a rail on it
+# and the north side's meet a row apart in height, the step's face closed
+# (flush with the higher tread, so the aisle is walked across); where they
+# meet further apart than a step, a wall with a rail on it
 def aisle_walls(l, aisles):
     out = []
     bots = np.array([l.bot(r) for r in range(l.nrows)])
@@ -826,7 +855,7 @@ def aisle_walls(l, aisles):
             q = M + n * u; a, b = at(q - t * 0.35), at(q + t * 0.35)
             seg = None
             if a and b and abs(a[0] - b[0]) > 0.05:
-                seg = (round(min(a[1], b[1]), 2), round(max(a[0], b[0]) + 1.0, 2))
+                seg = (round(min(a[1], b[1]), 2), round(max(a[0], b[0]) + (1.0 if abs(a[0] - b[0]) > 0.6 else 0.0), 2))
             if cur and seg and abs(seg[0] - cur[2][0]) < 0.02 and abs(seg[1] - cur[2][1]) < 0.02: cur[1] = u + 0.25; continue
             if cur: out.append(cur)
             cur = [u, u + 0.25, seg] if seg else None
