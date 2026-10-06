@@ -14,7 +14,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { APP, DEG, KELVIN, V3, clamp, floorPanelTex, glowMat, lerp, std } from '../core.js';
 import { lightPoints } from '../people.js';
 import { hoists, micStand, rodInto, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, blockGrid, crossThrust, delayTower, floorBlocks, floorChairs, fohPosition, paHang, runLasers, runShow, section, stageSet, subLine, wallStrip } from '../show.js';
+import { bigCrowd, bigScreens, blockGrid, crossThrust, delayTower, floorBlocks, floorChairs, fohPosition, paHang, runLasers, runShow, screenHang, section, stageSet, subLine, wallStrip } from '../show.js';
 import { buildStands } from '../stands.js';
 import { TD_STANDS } from './td-data.js';
 
@@ -410,6 +410,8 @@ export function buildDome(ctx) {
     const bRim = new THREE.Mesh(mergeGeometries([g, g2]), bRimM); root.add(bRim);
   }
   const scr = bigScreens(ctx, root, { w: WW, h: WH, y: WY, z: 3.6, pitch: 0.0059 });
+  // the wall hung from the set's header on chains
+  screenHang(root, { y: WY + WH / 2 + 0.3, z: 3.6, w: WW, topY: DECK + 21, n: 6, size: 0.76 });
   // a microphone waiting at the end of the runway
   const star = micStand({ height: 1.6 });
   star.position.set(0, XH, RW1 - 1.2); root.add(star);
@@ -419,7 +421,7 @@ export function buildDome(ctx) {
 
   // ── rig ──
   const rig = ctx.rig({ finish: 'black' });
-  for (const z of [5, 13, 21]) { const xs = [-32, -16, 0, 16, 32]; const t = truss(72, { size: 1.0, finish: 'black' }); t.position.set(0, RIG, z); root.add(t); root.add(hoists(xs, RIG, z, Math.min(...xs.map((x) => roofAt(x, z))) - 0.5)); }
+  for (const z of [5, 13, 21]) { const xs = [-32, -16, 0, 16, 32]; const t = truss(72, { size: 1.0, finish: 'black' }); t.position.set(0, RIG, z); root.add(t); root.add(hoists(xs, RIG, z, (x) => roofAt(x, z) - 0.3)); }
   // the PA flown from the roof: the mains just outside the wall, the flown
   // subs inboard of them, the side hangs turned out to the infield stands and
   // the 270 hangs further round at the stands by the poles

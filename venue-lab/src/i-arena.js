@@ -148,6 +148,9 @@ function buildArena(ctx) {
   // IMAG either side for the far end of the room
   const WW = 30, WH = 10.5;
   const scr = bigScreens(ctx, root, { w: WW, h: WH, y: DECK + 1.2 + WH / 2, z: 1.8 + SZ, imagW: 11, imagX: 23.5, imagY: 13.5, imagZ: 11 + SZ, imagYaw: 0.3 });
+  // each screen flown on a header truss and chains from the roof
+  screenHang(root, { y: DECK + 1.2 + WH + 0.3, z: 1.8 + SZ, w: WW, topY: H, n: 5 });
+  for (const side of [-1, 1]) screenHang(root, { x: side * 23.5, y: 13.5 + 11 / (16 / 9) / 2 + 0.25, z: 11 + SZ, w: 11, yaw: -side * 0.3, topY: H, n: 2, size: 0.4 });
   const riser = stageDeck({ w: 10, d: 4, h: 1.0, z: 4.2 + SZ, lip: false }); riser.position.y = DECK; root.add(riser);
   // the backline, set and waiting; no one on stage
   for (const [x, z, col] of [[-7, 9.0 + SZ, 0x5a1a0e], [7, 9.0 + SZ, 0x1a1a1c]]) {
