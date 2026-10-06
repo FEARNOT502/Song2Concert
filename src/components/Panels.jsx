@@ -18,9 +18,11 @@ function RightDataPanel({ file }) {
   return (
     <div className="absolute top-[100px] right-10 z-20 text-[12px] tracking-[0.2em] uppercase text-neutral-500 text-right max-w-[300px] font-mono">
       <div className="text-neutral-300">PLAYING</div>
+      {/* track / album / artist — a missing tag is left out, not shown empty */}
       <div className="text-white text-[22px] font-light mt-1 normal-case leading-tight font-tight truncate">{file.name}</div>
-      <div className="mt-1.5 text-[12px] truncate">{file.track}</div>
-      <div className="text-[11px] text-neutral-600 mt-1 normal-case tracking-normal truncate">{file.artist}</div>
+      {file.album && <div className="mt-1.5 text-[12px] normal-case tracking-normal truncate">{file.album}</div>}
+      {file.artist && <div className="text-[11px] text-neutral-600 mt-1 normal-case tracking-normal truncate">{file.artist}</div>}
+      {file.hint && <div className="mt-1.5 text-[12px] truncate">{file.hint}</div>}
     </div>
   );
 }
