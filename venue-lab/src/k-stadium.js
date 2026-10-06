@@ -451,66 +451,134 @@ function buildStadium(ctx) {
     root.add(new THREE.Mesh(mergeGeometries(deskScr), std({ color: 0x0a0b0d, roughness: 0.3, emissive: 0x28364a, emissiveIntensity: 1 })));
   }
 
-  // ── stage: a steel roof on four towers, a wall of LED under it ──
-  // a backdrop under the stage roof, only as wide as the set, and wings
-  const bv = velvet(0x040404, 'blackvel', { sheenColor: new THREE.Color(0x121212) });
-  const drop = new THREE.Mesh(drapeGeometry(70, 33, 44, 0.25), bv);
-  drop.position.set(0, DECK + 16.5, 6.2); root.add(drop);
-  for (const s of [-1, 1]) {
-    const wing = new THREE.Mesh(drapeGeometry(14, 22, 10, 0.2), bv);
-    wing.position.set(s * 37.5, DECK + 11, 6.5); wing.rotation.y = -s * 0.2; root.add(wing);
-  }
-  const deck = stageDeck({ w: 72, d: 26, h: DECK, z: 20 });
+  // ── stage: as Harry Styles' Love On Tour stood at Wembley (2023) ──
+  // No roof: one LED wall the width of the pitch end, in three pieces. The
+  // middle is tall and square-topped with a triangle cut out of its foot, the
+  // band's light grid glowing through it; a wing either side, tall at the
+  // middle and sloping down to the outside; black gaps between, where the
+  // main hangs fly from the ends of a long black header over the middle.
+  // Lattice towers either side carry the side PA and a pod of lights.
+  const deck = stageDeck({ w: 78, d: 26, h: DECK, z: 20 });
   root.add(deck);
-  const thrust = stageDeck({ w: 5, d: 22, h: DECK, z: 44, lip: false });
-  for (const s of [-1, 1]) root.add(stageSteps({ x: s * 36.75, z: 33, h: DECK, dir: [0, -1] }));
-  root.add(thrust);
-  const towers = [];
-  for (const x of [-34, -20, 20, 34]) for (const z of [8, 30]) latticeInto(towers, V3(x, 0, z), V3(x, RIG + 6, z), 1.8, 0.08);
-  for (const z of [8, 19, 30]) latticeInto(towers, V3(-36, RIG + 5, z), V3(36, RIG + 5, z), 2.4, 0.09);
-  for (const x of [-34, 34]) latticeInto(towers, V3(x, RIG + 5, 8), V3(x, RIG + 5, 30), 2, 0.08);
-  root.add(new THREE.Mesh(mergeGeometries(towers), mats().black));
-  const scr = bigScreens(ctx, root, { w: 46, y: DECK + 1.6 + 46 / (16 / 9) / 2, z: 8.6, imagW: 17, imagX: 36.5, imagY: 22, imagZ: 31, imagYaw: 0.32, pitch: 0.0078 });
-  // no one on stage: the backline and the microphone at the end of the runway
+  for (const s of [-1, 1]) root.add(stageSteps({ x: s * 39.75, z: 33, h: DECK, dir: [0, -1] }));
+  // a runway out from the middle to a square B-stage
+  const RW1 = 59, TIP = 9;
+  root.add(stageDeck({ w: 5, d: RW1 - 33, h: DECK, z: (33 + RW1) / 2, lip: false }));
+  root.add(stageDeck({ w: TIP, d: TIP, h: DECK, z: RW1 - TIP / 2 }));
+  const WZ = 8, Y0 = DECK + 0.6;                 // the wall's plane and foot
+  const CW = 15, GAP = 2, WO = 37, CH = 19, WIN = 18, WOUT = 10, TRI = 8, TRH = 13;
+  const LW = WO * 2, LH = CH;                    // the content spans all three pieces
+  const V2 = (x, y) => new THREE.Vector2(x, y);
+  const wallShapes = [];
+  {
+    const c = new THREE.Shape([V2(-CW, 0), V2(-TRI, 0), V2(0, TRH), V2(TRI, 0), V2(CW, 0), V2(CW, CH), V2(-CW, CH)]);
+    wallShapes.push(c);
+    for (const sd of [-1, 1]) {
+      const xi = sd * (CW + GAP), xo = sd * WO;
+      const pts = [V2(xi, 0), V2(xo, 0), V2(xo, WOUT), V2(xi, WIN)];
+      wallShapes.push(new THREE.Shape(sd > 0 ? pts : pts.reverse()));
+    }
+  }
+  // each piece its own screen: the middle carries the sleeve and the title
+  // over the triangle; the wings carry the show's camera feed (the IMAG of a
+  // smaller room, here the wall itself)
+  const panel = (shape, uvOf, { w, h, aspect, kind, light }) => {
+    const geo = new THREE.ShapeGeometry(shape, 1);
+    const pos = geo.attributes.position, uv = geo.attributes.uv;
+    for (let i = 0; i < pos.count; i++) { const [u, v] = uvOf(pos.getX(i), pos.getY(i)); uv.setXY(i, u, v); }
+    const g = new THREE.Group();
+    const face = new THREE.Mesh(geo, ledMaterial({ tex: ctx.art.texture(aspect), pitch: 0.0078, w, h, bright: 1.3, kind }));
+    face.position.z = 0.06; g.add(face);
+    const back = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: 0.5, bevelEnabled: false }), mats().paint);
+    back.position.z = -0.5; g.add(back);
+    let rect = null;
+    if (light) { rect = new THREE.RectAreaLight(0xffffff, 1, LW, LH * 0.8); rect.position.set(0, LH * 0.5, 0.1); rect.lookAt(0, LH * 0.5, 10); g.add(rect); }
+    g.userData = { face, rect, w, h, lightPower: 1.2 };
+    g.position.set(0, Y0, WZ);
+    root.add(g);
+    ctx.addScreen(g, aspect, 'main');
+    return g;
+  };
+  const CV0 = TRH * 0.6, CA = (2 * CW) / (CH - CV0);
+  const wall = panel(wallShapes[0], (x, y) => [(x + CW) / (2 * CW), (y - CV0) / (CH - CV0)], { w: 2 * CW, h: CH, aspect: CA, kind: 'main', light: true });
+  const WWING = WO - CW - GAP, squeeze = (WWING / WIN) / (16 / 9);
+  for (const [k, sd] of [[1, -1], [2, 1]]) {
+    const xi = sd * (CW + GAP);
+    panel(wallShapes[k], (x, y) => [0.5 + ((Math.abs(x - xi) / WWING) * (sd > 0 ? 1 : -1) + (sd > 0 ? -0.5 : 0.5)) * squeeze, y / WIN], { w: WWING, h: WIN, aspect: 16 / 9, kind: 'imag', light: false });
+  }
+  const scr = { main: wall, h: LH };
+  // the light grid behind the triangle, and the black drop behind that
+  const triDots = [];
+  for (let y = 0.8; y < TRH - 0.5; y += 1.1) {
+    const half = TRI * (1 - y / TRH) - 0.5;
+    for (let x = -half; x <= half + 1e-6; x += 1.1) { const d = new THREE.BoxGeometry(0.18, 0.18, 0.05); d.translate(x, Y0 + y, WZ - 1.6); triDots.push(d); }
+  }
+  const dotMat = glowMat(0xffffff, 1);
+  root.add(new THREE.Mesh(mergeGeometries(triDots), dotMat));
+  const bv = velvet(0x040404, 'blackvel', { sheenColor: new THREE.Color(0x121212) });
+  const drop = new THREE.Mesh(drapeGeometry(2 * TRI + 4, TRH + 2, 12, 0.2), bv);
+  drop.position.set(0, Y0 + (TRH + 2) / 2, WZ - 3.2); root.add(drop);
+  // the steel behind the wall, the header over the middle, the PA towers
+  const stgSteel = [];
+  for (const x of [-(CW + GAP / 2), CW + GAP / 2]) latticeInto(stgSteel, V3(x, DECK, WZ - 1.2), V3(x, Y0 + CH + 4, WZ - 1.2), 1.6, 0.07);
+  for (const x of [-WO + 1, -WO / 2 - CW / 2, WO / 2 + CW / 2, WO - 1]) latticeInto(stgSteel, V3(x, DECK, WZ - 1.2), V3(x, Y0 + WIN - 2, WZ - 1.2), 1.0, 0.05);
+  latticeInto(stgSteel, V3(-CW - GAP, Y0 + CH + 3.6, WZ - 1.2), V3(CW + GAP, Y0 + CH + 3.6, WZ - 1.2), 1.2, 0.06);
+  for (const sd of [-1, 1]) {
+    latticeInto(stgSteel, V3(sd * 41.5, 0, 15), V3(sd * 41.5, 31, 15), 1.8, 0.08);
+    latticeInto(stgSteel, V3(sd * 39.5, 31, 15), V3(sd * 44.5, 31, 15), 1.0, 0.05);
+  }
+  root.add(new THREE.Mesh(mergeGeometries(stgSteel), mats().black));
+  const header = new THREE.Mesh(new THREE.BoxGeometry(2 * (CW + GAP) + 2, 2.6, 2.4), std({ color: 0x0b0b0d, roughness: 0.6 }));
+  header.position.set(0, Y0 + CH + 2.6, WZ + 0.4); root.add(header);
+  const headLine = new THREE.Mesh(new THREE.BoxGeometry(2 * (CW + GAP) + 2, 0.08, 0.08), glowMat(0xffffff, 1));
+  headLine.position.set(0, Y0 + CH + 1.3, WZ + 1.6); root.add(headLine);
+  // no one on stage: the backline in the triangle, the microphone at the B-stage
   const star = micStand({ height: 1.6 });
-  star.position.set(0, DECK, 53); root.add(star);
-  for (const [x, z, col] of [[-14, 21, 0x5a1a0e], [14, 21, 0x1a1a1c]]) {
+  star.position.set(0, DECK, RW1 - 2); root.add(star);
+  for (const [x, z, col] of [[-10, 18, 0x5a1a0e], [10, 18, 0x1a1a1c]]) {
     const gt = guitar({ color: col, bass: x > 0 }); gt.scale.setScalar(0.8); gt.position.set(x, DECK + 0.5, z); gt.rotation.x = -0.28; root.add(gt);
     const m = micStand({ height: 1.5 }); m.position.set(x, DECK, z + 1.4); m.rotation.y = Math.PI; root.add(m);
-    const a = ampStack({ count: 2 }); a.position.set(x * 1.3, DECK, z - 6); root.add(a);
+    const a = ampStack({ count: 2 }); a.position.set(x * 1.2, DECK, z - 6); root.add(a);
   }
-  const keysS = keyboardRig(); keysS.position.set(-6, DECK + 1, 14); root.add(keysS);
-  const drumRiser = stageDeck({ w: 8, d: 5, h: 1.0, z: 13.6, lip: false }); drumRiser.position.y = DECK; root.add(drumRiser);
-  const kit = drumKit({ shell: 0x0c0c10 }); kit.position.set(0, DECK + 1, 13.6); kit.scale.setScalar(1.2); root.add(kit);
+  const keysS = keyboardRig(); keysS.position.set(-5, DECK + 1, 13); root.add(keysS);
+  const drumRiser = stageDeck({ w: 7, d: 4, h: 1.0, z: 11.5, lip: false }); drumRiser.position.y = DECK; root.add(drumRiser);
+  const kit = drumKit({ shell: 0x0c0c10 }); kit.position.set(0, DECK + 1, 11.5); kit.scale.setScalar(1.2); root.add(kit);
   for (let i = 0; i < 12; i++) { const w = wedge({ w: 0.9 }); w.position.set(-22 + i * 4, DECK, 32.4); w.rotation.y = Math.PI; root.add(w); }
-  for (const side of [-1, 1]) for (const dz of [-2.5, 2.5]) { const sub = subStack({ count: 3, cols: 3, w: 1.5 }); sub.position.set(side * 16, 0, 35 + dz); root.add(sub); }
+  // the subs in a row on the pitch under the barrier, the front fills on the lip
+  subLine(root, { x0: -32, x1: 32, z: 34.3, gap: 3.4, count: 2, fills: { xs: [-36, -29, -22, -15, -8, 8, 15, 22, 29, 36], y: DECK, z: 32.6 } });
 
   // ── rig ──
   const rig = ctx.rig({ finish: 'black' });
+  const DT = [[-22, 80], [22, 80]];             // the delay towers, out on the pitch
+  const towerLights = [];
   for (const side of [-1, 1]) {
-    const main = lineArray({ boxes: 20, width: 1.5 }); main.position.set(side * 27, RIG + 3, 30); main.rotation.y = -side * 0.05; root.add(main);
-    const out = lineArray({ boxes: 16, width: 1.4 }); out.position.set(side * 40, RIG + 2, 26); out.rotation.y = -side * 0.35; root.add(out);
-    for (const [dx, dz] of [[30, 62], [30, 100]]) {
-      const mast = [];
-      latticeInto(mast, V3(side * dx, 0, dz), V3(side * dx, 30, dz), 1.6, 0.07);
-      root.add(new THREE.Mesh(mergeGeometries(mast), mats().black));
-      const d = lineArray({ boxes: 12, width: 1.4 }); d.position.set(side * dx, 29, dz - 0.9); d.rotation.y = Math.PI * 0 - side * 0.1; d.rotation.y = side * 0.1; root.add(d);
-    }
+    // the mains from the header's ends, in front of the gaps; the flown subs
+    // behind them; on the towers the side hangs turned out to the side stands
+    // and the 270s further round
+    paHang(root, { x: side * (CW + GAP / 2), y: Y0 + CH + 1.2, z: WZ + 2.2, boxes: 20, width: 1.5, yaw: -side * 0.04 });
+    paHang(root, { x: side * (CW + GAP / 2), y: Y0 + CH + 1.2, z: WZ + 0.9, boxes: 10, width: 1.4, depth: 1.0, splay: 0.008 });
+    paHang(root, { x: side * 41.5, y: 30.2, z: 16.6, boxes: 18, width: 1.4, yaw: side * 0.45 });
+    paHang(root, { x: side * 44, y: 30.2, z: 15.4, boxes: 14, width: 1.3, yaw: side * 1.15 });
+    for (const dx of [-1.6, 0, 1.6]) towerLights.push(V3(side * 41.5 + dx, 32, 15));
   }
+  for (const [x, z] of DT) towerLights.push(...delayTower(root, { x, z, h: 26, boxes: 18, width: 1.4, yaw: -Math.sign(x) * 0.03 }));
   const spots = [], beams = [], washes = [], ups = [], lasers = [];
-  for (let i = 0; i < 16; i++) spots.push({ fx: rig.add({ kind: 'spot', pos: V3(-32 + i * (64 / 15), RIG + 3.6, 30), length: 90, angle: 0.08 }), i, n: 16, group: 0 });
-  for (let i = 0; i < 16; i++) beams.push({ fx: rig.add({ kind: 'beam', pos: V3(-32 + i * (64 / 15), RIG + 3.6, 19), length: 140, beamGain: 1.3 }), i, n: 16, group: 1 });
-  for (let i = 0; i < 12; i++) washes.push({ fx: rig.add({ kind: 'wash', pos: V3(-30 + i * (60 / 11), RIG + 3.6, 8), length: 45, beamGain: 0.4 }), i, n: 12, group: 2 });
+  // spots along the wall's top edge, beams in the triangle, washes under the header
+  const topAt = (x) => { const a = Math.abs(x); return a <= CW ? CH : a < CW + GAP ? WIN : WIN + (WOUT - WIN) * (a - CW - GAP) / (WO - CW - GAP); };
+  for (let i = 0; i < 16; i++) { const x = -35 + i * (70 / 15); spots.push({ fx: rig.add({ kind: 'spot', pos: V3(x, Y0 + topAt(x) + 0.4, WZ + 0.4), length: 90, angle: 0.08 }), i, n: 16, group: 0 }); }
+  for (let i = 0; i < 16; i++) { const r = Math.floor(i / 4), c = i % 4; const y = 1.5 + r * 2.6, half = TRI * (1 - y / TRH) - 1; beams.push({ fx: rig.add({ kind: 'beam', pos: V3(-half + c * (2 * half / 3), Y0 + y, WZ - 1.3), length: 140, beamGain: 1.3 }), i, n: 16, group: 1 }); }
+  for (let i = 0; i < 12; i++) washes.push({ fx: rig.add({ kind: 'wash', pos: V3(-16 + i * (32 / 11), Y0 + CH + 1.1, WZ + 2.8), length: 45, beamGain: 0.4 }), i, n: 12, group: 2 });
+  const tw = towerLights.map((pos, i) => ({ fx: rig.add({ kind: 'beam', pos, length: 120, beamGain: 1.0 }), i, n: towerLights.length, group: 5 }));
   for (let i = 0; i < 14; i++) ups.push({ fx: rig.add({ kind: 'beam', pos: V3(-33 + i * (66 / 13), DECK + 0.3, 32.6), hang: 'up', length: 220, beamGain: 1.4 }), i, n: 14, group: 3 });
   for (let i = 0; i < 6; i++) lasers.push({ fx: rig.add({ kind: 'laser', pos: V3(-12 + i * 4.8, DECK + 0.3, 32.8), body: false, length: 200, beamGain: 8, flareGain: 0.2, noise: 0.4 }), i, n: 6 });
   for (const k of [3, 7, 11, 14]) rig.light(spots[k].fx, shadowSpot(0xffffff, 0, { cast: false, penumbra: 0.5 }), 30000);
   const front1 = shadowSpot(KELVIN(5600), 0, { angle: 0.12, penumbra: 0.7, size: q.shadowSize, far: 200, cast: q.shadows });
   front1.position.set(-10, 34, 96); front1.target.position.set(0, DECK + 1, 20);
   const follow = shadowSpot(KELVIN(5600), 0, { angle: 0.03, penumbra: 0.5, cast: false });
-  follow.position.set(0, 40, 140); follow.target.position.set(0, DECK, 52);
+  follow.position.set(0, 40, 140); follow.target.position.set(0, DECK, RW1 - 2);
   const followBeam = rig.add({ kind: 'follow', pos: V3(0, 40, 140), length: 110, body: false, beamGain: 0.5, color: KELVIN(5600) });
   const stageWash = shadowSpot(0xffffff, 0, { angle: 0.8, penumbra: 1, cast: false });
-  stageWash.position.set(0, RIG + 3, 8); stageWash.target.position.set(0, DECK, 24);
+  stageWash.position.set(0, Y0 + CH, WZ + 3); stageWash.target.position.set(0, DECK, 24);
   for (const l of [front1, follow, stageWash]) root.add(l, l.target);
   const fill = [];
   for (const [x, y, z] of [[-50, 40, 60], [50, 40, 60]]) { const l = new THREE.PointLight(0xffffff, 0, 220, 2); l.position.set(x, y, z); root.add(l); fill.push(l); }
@@ -549,7 +617,7 @@ function buildStadium(ctx) {
     return m;
   };
   const onPitch = (x, z) => inField(x, z) && edgeDist(x, z) > 3.5;
-  const avoid = (x, z) => (Math.abs(x) < 3.6 && z < 56.5) || (Math.abs(x - eye.x) < 5 && Math.abs(z - eye.z) < 4.5);
+  const avoid = (x, z) => (Math.abs(x) < 3.6 && z < RW1 + 1) || (Math.abs(x) < TIP / 2 + 1.2 && z < RW1 + 1.2 && z > RW1 - TIP - 1.2) || DT.some(([tx, tz]) => Math.hypot(x - tx, z - tz) < 5) || (Math.abs(x - eye.x) < 5 && Math.abs(z - eye.z) < 4.5);
   const standing = packFloor({ x0: -44, x1: 44, z0: 37, z1: ZC + 66, avoid, inside: onPitch, seed: 177 });
   bigCrowd(root, cu, q, standing.concat(stands.people.map((p) => ({ ...p, h: 0.97 }))), { seed: 21 });
   const aisleField = lightPoints(stands.aisleLights.map((a) => ({ ...a, white: true, size: 0.05 })), cu, { maxPx: 3 });
@@ -560,9 +628,9 @@ function buildStadium(ctx) {
   // ── haze: a stadium is open, so it is thin, but the beams still carry ──
   const hz = pipe.haze;
   const offs = [[-0.6, 0.35], [0.6, 0.35], [-0.6, -0.35], [0.6, -0.35], [0, 0]];
-  ctx.screenHaze(scr.main, offs.map(([dx, dy]) => hz.add(V3(dx * 23, scr.main.position.y + dy * scr.h * 0.5, 9.5), 0xffffff, 0)), offs);
+  ctx.screenHaze(scr.main, offs.map(([dx, dy]) => hz.add(V3(dx * 30, Y0 + LH / 2 + dy * LH * 0.5, WZ + 1.5), 0xffffff, 0)), offs);
   scr.main.userData.hazePower = 160;
-  const hzWash = [hz.add(V3(-20, RIG + 2, 20), 0xffffff, 0), hz.add(V3(20, RIG + 2, 20), 0xffffff, 0), hz.add(V3(0, DECK + 5, 30), 0xffffff, 0)];
+  const hzWash = [hz.add(V3(-20, Y0 + CH, 20), 0xffffff, 0), hz.add(V3(20, Y0 + CH, 20), 0xffffff, 0), hz.add(V3(0, DECK + 5, 30), 0xffffff, 0)];
 
   return {
     root, eye,
@@ -573,7 +641,7 @@ function buildStadium(ctx) {
     bloom: { strength: 0.7, radius: 0.7, threshold: 1.15 },
     grade: { exposure: 1.2, vignette: 0.38, ca: 0.005, grain: 0.04, sat: 1.08, lift: [0.004, 0.005, 0.01] },
     env: { w: 300, h: 60, d: 320, eye, wall: 0x0a0a10, floor: 0x0a0a0c, ambient: 0x06070c, emitters: [
-      { w: 46, h: 26, pos: V3(0, 18, 9), normal: V3(0, 0, 1), screen: true, power: 1.5, aspect: 16 / 9 },
+      { w: LW, h: LH, pos: V3(0, Y0 + LH / 2, WZ + 0.2), normal: V3(0, 0, 1), screen: true, power: 1.5, aspect: LW / LH },
       { w: 300, h: 300, pos: V3(0, 58, ZC), normal: V3(0, -1, 0), color: 0x18100c, power: 1 },
     ] },
     envIntensity: 0.5,
@@ -583,6 +651,8 @@ function buildStadium(ctx) {
       runShow(rig, spots, f, { house: V3(0, 1, 80), stage: STAGE, span: 80 });
       runShow(rig, beams, f, { house: V3(0, 40, 120), stage: STAGE, span: 110 });
       runShow(rig, washes, f, { house: V3(0, 0, 36), stage: STAGE, span: 40, strobe: false });
+      runShow(rig, tw, f, { house: V3(0, 40, 90), stage: V3(0, DECK, RW1), span: 80 });
+      dotMat.color.copy(f.pal.c).multiplyScalar((0.5 + 1.2 * f.kick) * show + 0.15);
       runShow(rig, ups, f, { house: V3(0, 120, 60), stage: STAGE, up: true });
       washes.forEach(({ fx }) => { fx.angle = 0.3; });
       runLasers(lasers, f);

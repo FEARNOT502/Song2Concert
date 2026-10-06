@@ -109,16 +109,18 @@ function fohPosition(pipe, root, eye, { riser = 0.9 } = {}) {
   return leds;
 }
 
-// Main LED and two IMAG screens on a big stage, plus the RectAreaLights.
-function bigScreens(ctx, root, { w, y, z, imagW, imagX, imagY, imagZ, imagYaw, pitch = 0.0039, bright = 1.3 }) {
+// Main LED and two IMAG screens on a big stage, plus the RectAreaLights. The
+// main wall is 16:9 unless given its own height (a wide wall); `imagW: 0`
+// leaves the side screens out.
+function bigScreens(ctx, root, { w, h: wallH = 0, y, z, imagW = 0, imagX, imagY, imagZ, imagYaw, pitch = 0.0039, bright = 1.3 }) {
   const aspect = 16 / 9;
-  const h = w / aspect;
-  const main = ledScreen({ w, h, tex: ctx.art.texture(aspect), pitch, bright, frame: 0.3, lightPower: 1.2 });
+  const h = wallH || w / aspect;
+  const main = ledScreen({ w, h, tex: ctx.art.texture(w / h), pitch, bright, frame: 0.3, lightPower: 1.2 });
   main.position.set(0, y, z);
   root.add(main);
-  ctx.addScreen(main, aspect, 'main');
+  ctx.addScreen(main, w / h, 'main');
   const imags = [];
-  for (const side of [-1, 1]) {
+  for (const side of imagW ? [-1, 1] : []) {
     // the side screens carry the same content as the main wall
     const s = ledScreen({ w: imagW, h: imagW / aspect, tex: ctx.art.texture(aspect), pitch: pitch * 1.5, bright: bright * 0.9, kind: 'main', frame: 0.25, light: false });
     s.userData.bezel?.color.setScalar(0);
@@ -128,6 +130,89 @@ function bigScreens(ctx, root, { w, y, z, imagW, imagX, imagY, imagZ, imagYaw, p
     imags.push(s);
   }
   return { main, imags, h };
+}
+
+// ── the stage's runways and the PA, as the big tours build them ──
+
+// A runway out from the middle of the stage's front, crossed part way by a
+// walkway either side (a cross on the floor), the runway running on past it to
+// a square end stage. `inside(x, z, pad)` says whether a point of the floor is
+// under any of it, for the crowd and the seats to keep clear.
+function crossThrust(root, { z0, z1, w, crossZ, crossD, crossW, tip = 0, h }) {
+  const parts = [
+    { x: 0, z: (z0 + z1) / 2, w, d: z1 - z0 },
+    { x: 0, z: crossZ + crossD / 2, w: crossW * 2, d: crossD },
+  ];
+  if (tip) parts.push({ x: 0, z: z1 - tip / 2, w: tip, d: tip });
+  const decks = parts.map((p, i) => {
+    const d = stageDeck({ w: p.w, d: p.d, h, z: p.z, lip: i > 0 });
+    root.add(d);
+    return d;
+  });
+  const inside = (x, z, pad = 0) => parts.some((p) => Math.abs(x - p.x) < p.w / 2 + pad && Math.abs(z - p.z) < p.d / 2 + pad);
+  return { decks, inside };
+}
+
+// A flown hang with its bridle chains up to the roof (or the stage's own
+// steel): a line array of `boxes` cabinets whose top is at `y`, turned `yaw`
+// from facing the room (+z), positive towards +x.
+function paHang(root, { x, y, z, boxes, width = 1.3, yaw = 0, roofY = 0, splay = 0.035, depth = 0.7 }) {
+  const a = lineArray({ boxes, width, splay, depth });
+  a.position.set(x, y, z); a.rotation.y = yaw;
+  root.add(a);
+  if (roofY > y + 0.5) {
+    const c = [];
+    for (const s of [-1, 1]) {
+      const g = new THREE.CylinderGeometry(0.012, 0.012, roofY - y, 4);
+      g.translate(x + s * Math.cos(yaw) * width * 0.45, (roofY + y) / 2, z - s * Math.sin(yaw) * width * 0.45);
+      c.push(g);
+    }
+    root.add(new THREE.Mesh(mergeGeometries(c), mats().black));
+  }
+  return a;
+}
+
+// The floor's subwoofers: a row of cabinets along the front of the stage,
+// under the barrier line, broken where the runway leaves the stage; and the
+// front fills on the deck's lip, small boxes every few metres.
+function subLine(root, { x0, x1, z, gap = 0, pitch = 1.6, count = 2, fills = null }) {
+  const M = mats();
+  const cab = [], front = [];
+  const w = 1.3, hh = 0.55, d = 1.0;
+  for (let x = x0; x <= x1 + 1e-6; x += pitch) {
+    if (Math.abs(x) < gap) continue;
+    for (let i = 0; i < count; i++) {
+      const b = new THREE.BoxGeometry(w * 0.98, hh * 0.98, d); b.translate(x, hh / 2 + i * hh, z); cab.push(b);
+      const f = new THREE.PlaneGeometry(w * 0.9, hh * 0.82); f.translate(x, hh / 2 + i * hh, z + d / 2 + 0.003); front.push(f);
+    }
+  }
+  if (fills) {
+    for (const x of fills.xs) {
+      const b = new THREE.BoxGeometry(0.55, 0.32, 0.4); b.rotateX(-0.25); b.translate(x, fills.y + 0.17, fills.z); cab.push(b);
+      const f = new THREE.PlaneGeometry(0.5, 0.26); f.rotateX(-0.25); f.translate(x, fills.y + 0.17 + 0.05, fills.z + 0.21); front.push(f);
+    }
+  }
+  root.add(new THREE.Mesh(mergeGeometries(cab), M.cab));
+  root.add(new THREE.Mesh(mergeGeometries(front), M.grille));
+}
+
+// A delay tower on the floor: a lattice mast on a ballasted base, braced, a
+// head frame at the top carrying a line array aimed down the room (+z) at the
+// crowd behind it, and a pod of lights over it. Returns where the lights are.
+function delayTower(root, { x, z, h, boxes = 16, width = 1.3, yaw = 0 }) {
+  const M = mats();
+  const steel = [];
+  latticeInto(steel, V3(x, 0, z), V3(x, h, z), 1.6, 0.07);
+  // the outriggers to the ballast, four ways
+  for (const [dx, dz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) latticeInto(steel, V3(x + dx * 3.2, 0.3, z + dz * 3.2), V3(x + dx * 0.6, h * 0.3, z + dz * 0.6), 0.4, 0.03);
+  // the head: a short truss across the top, the array hung from its front
+  latticeInto(steel, V3(x - 2, h, z), V3(x + 2, h, z), 0.8, 0.05);
+  latticeInto(steel, V3(x, h, z - 0.8), V3(x, h, z + 1.8), 0.8, 0.05);
+  root.add(new THREE.Mesh(mergeGeometries(steel), M.black));
+  const base = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.3, 7.2), std({ color: 0x1a1b1e, roughness: 0.8 }));
+  base.position.set(x, 0.15, z); root.add(base);
+  paHang(root, { x, y: h - 0.4, z: z + 1.4, boxes, width, yaw, splay: 0.025 });
+  return [-1.6, -0.55, 0.55, 1.6].map((dx) => V3(x + dx, h + 0.7, z + 0.2));
 }
 
 // A ground-supported set for a big stage: two lattice towers carrying a header

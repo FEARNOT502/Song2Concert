@@ -13,8 +13,8 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { APP, DEG, KELVIN, V3, clamp, floorPanelTex, glowMat, lerp, std } from '../core.js';
 import { lightPoints } from '../people.js';
-import { hoists, latticeInto, ledScreen, lineArray, mats, micStand, rodInto, shadowSpot, stageDeck, stageSteps, subStack, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, blockGrid, floorBlocks, floorChairs, fohPosition, runLasers, runShow, section, stageSet, wallStrip } from '../show.js';
+import { hoists, micStand, rodInto, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
+import { bigCrowd, bigScreens, blockGrid, crossThrust, delayTower, floorBlocks, floorChairs, fohPosition, paHang, runLasers, runShow, section, stageSet, subLine, wallStrip } from '../show.js';
 import { buildStands } from '../stands.js';
 import { TD_STANDS } from './td-data.js';
 
@@ -391,52 +391,57 @@ export function buildDome(ctx) {
   }
 
   // ── stage ──
-  stageSet(root, { w: 38, h: 24, z: 3.6, deck: DECK, towerX: 20.4, backdropW: 50, backdropH: 23, wingX: 31, wingW: 12, wingH: 15, drapes: false });
-  const deck = stageDeck({ w: 62, d: 20, h: DECK, z: 12 });
+  // one LED wall across almost the whole set, as the dome tours build it (it
+  // takes the place of the IMAG screens a smaller room hangs either side)
+  const WW = 66, WH = 16, WY = DECK + 2.4 + WH / 2;
+  stageSet(root, { w: WW, h: 22, z: 3.6, deck: DECK, towerX: WW / 2 + 1.4, backdropW: 74, backdropH: 23, wingX: 40, wingW: 12, wingH: 15, drapes: false });
+  const deck = stageDeck({ w: 72, d: 20, h: DECK, z: 12 });
   root.add(deck);
-  // (as the photographs from the 2nd floor show it) a short runway out from
-  // the stage's middle to a long stage across the field, parallel to the
-  // main stage and symmetric about the middle
-  const RW0 = 22, RW1 = 47, XW = 30, XD = 5.2, XH = DECK - 0.8;
-  const catwalk = stageDeck({ w: 4.4, d: RW1 - RW0, h: XH, z: (RW0 + RW1) / 2, lip: false });
-  for (const s of [-1, 1]) root.add(stageSteps({ x: s * 31.75, z: 22, h: DECK, dir: [0, -1] }));
-  root.add(catwalk);
-  const crossDeck = stageDeck({ w: XW * 2, d: XD, h: XH, z: RW1 + XD / 2 });
-  root.add(crossDeck);
+  // (as the photographs from the 2nd floor show it) a runway out from the
+  // stage's middle, crossed a third of the way down the field by a long
+  // walkway either side, and on past it to an end stage
+  const RW0 = 22, CZ = 47, XW = 30, XD = 5.2, RW1 = 82, TIP = 10, XH = DECK - 0.8;
+  const cross = crossThrust(root, { z0: RW0, z1: RW1, w: 4.4, crossZ: CZ, crossD: XD, crossW: XW, tip: TIP, h: XH });
+  for (const s of [-1, 1]) root.add(stageSteps({ x: s * 35.75, z: 22, h: DECK, dir: [0, -1] }));
   const bRimM = glowMat(APP.accent, 1);
   {
-    const g = new THREE.BoxGeometry(XW * 2 + 0.1, 0.05, 0.05); g.translate(0, XH, RW1 + XD + 0.02);
-    const bRim = new THREE.Mesh(g, bRimM); root.add(bRim);
+    const g = new THREE.BoxGeometry(XW * 2 + 0.1, 0.05, 0.05); g.translate(0, XH, CZ + XD + 0.02);
+    const g2 = new THREE.BoxGeometry(TIP + 0.1, 0.05, 0.05); g2.translate(0, XH, RW1 + 0.02);
+    const bRim = new THREE.Mesh(mergeGeometries([g, g2]), bRimM); root.add(bRim);
   }
-  const scr = bigScreens(ctx, root, { w: 38, y: DECK + 1.6 + 38 / (16 / 9) / 2, z: 3.6, imagW: 17, imagX: 36, imagY: 19, imagZ: 7, imagYaw: 0.34, pitch: 0.0059 });
-  // LED columns either side of the main wall
-  for (const side of [-1, 1]) {
-    const col = ledScreen({ w: 3.2, h: 18, tex: ctx.art.cover(), pitch: 0.012, bright: 1.2, kind: 'ribbon', frame: 0.1, light: false });
-    col.position.set(side * 22.5, DECK + 9, 5); root.add(col);
-    ctx.addScreen(col, 1, 'ribbon');
-  }
-  // a microphone waiting at the front of the long stage
+  const scr = bigScreens(ctx, root, { w: WW, h: WH, y: WY, z: 3.6, pitch: 0.0059 });
+  // a microphone waiting at the end of the runway
   const star = micStand({ height: 1.6 });
-  star.position.set(0, XH, RW1 + XD - 0.8); root.add(star);
-  for (let i = 0; i < 10; i++) { const w = wedge({ w: 0.8 }); w.position.set(-18 + i * 4, DECK, 21.6); w.rotation.y = Math.PI; root.add(w); }
-  for (const side of [-1, 1]) for (const dz of [-2, 2]) { const sub = subStack({ count: 3, cols: 3, w: 1.4 }); sub.position.set(side * 14, 0, 24 + dz); root.add(sub); }
+  star.position.set(0, XH, RW1 - 1.2); root.add(star);
+  for (let i = 0; i < 12; i++) { const w = wedge({ w: 0.8 }); w.position.set(-22 + i * 4, DECK, 21.6); w.rotation.y = Math.PI; root.add(w); }
+  // the subs in a row on the field under the barrier, the front fills on the lip
+  subLine(root, { x0: -30, x1: 30, z: RW0 + 1.0, gap: 3.4, count: 2, fills: { xs: [-33, -26, -19, -12, -6, 6, 12, 19, 26, 33], y: DECK, z: RW0 - 0.35 } });
 
   // ── rig ──
   const rig = ctx.rig({ finish: 'black' });
-  for (const z of [5, 13, 21]) { const t = truss(52, { size: 1.0, finish: 'black' }); t.position.set(0, RIG, z); root.add(t); root.add(hoists([-22, -8, 8, 22], RIG, z, Math.min(...[-22, -8, 8, 22].map((x) => roofAt(x, z))) - 0.5)); }
+  for (const z of [5, 13, 21]) { const xs = [-32, -16, 0, 16, 32]; const t = truss(72, { size: 1.0, finish: 'black' }); t.position.set(0, RIG, z); root.add(t); root.add(hoists(xs, RIG, z, Math.min(...xs.map((x) => roofAt(x, z))) - 0.5)); }
+  // the PA flown from the roof: the mains just outside the wall, the flown
+  // subs inboard of them, the side hangs turned out to the infield stands and
+  // the 270 hangs further round at the stands by the poles
+  const paY = (x, z, drop) => Math.min(RIG - drop, roofAt(x, z) - 1.5);
+  const towerLights = [];
   for (const side of [-1, 1]) {
-    const main = lineArray({ boxes: 18, width: 1.4 }); main.position.set(side * 20, RIG - 0.8, 22); main.rotation.y = -side * 0.06; root.add(main);
-    const out = lineArray({ boxes: 14, width: 1.3 }); out.position.set(side * 30, RIG - 1.2, 20); out.rotation.y = -side * 0.35; root.add(out);
-    // delay towers on the field
-    const mast = [];
-    latticeInto(mast, V3(side * 34, 0, 58), V3(side * 34, 22, 58), 1.2, 0.05);
-    root.add(new THREE.Mesh(mergeGeometries(mast), mats().black));
-    const delay = lineArray({ boxes: 10, width: 1.2 }); delay.position.set(side * 34, 22, 57.2); delay.rotation.y = Math.PI - side * 0.1; root.add(delay);
+    for (const [x, z, boxes, width, yaw, drop, extra] of [
+      [36.4, 20, 20, 1.4, -side * 0.05, 0.8, {}],
+      [34.4, 18.6, 10, 1.4, 0, 0.8, { depth: 1.0, splay: 0.008 }],
+      [44.5, 17, 16, 1.3, side * 0.5, 1.2, {}],
+      [51.5, 14, 12, 1.2, side * 1.15, 1.6, {}],
+    ]) paHang(root, { x: side * x, y: paY(side * x, z, drop), z, boxes, width, yaw, roofY: roofAt(side * x, z) - 0.3, ...extra });
+    // the delay towers on the field, either side of the runway, past the
+    // cross: for the back of the field and the stands behind home
+    towerLights.push(...delayTower(root, { x: side * 24, z: 66, h: 20, boxes: 16, width: 1.3, yaw: -side * 0.04 }));
   }
   const spots = [], beams = [], washes = [], ups = [], ring2 = [], lasers = [], bst = [];
   for (let i = 0; i < 14; i++) spots.push({ fx: rig.add({ kind: 'spot', pos: V3(-24 + i * (48 / 13), RIG - 0.6, 21), length: 70, angle: 0.08 }), i, n: 14, group: 0 });
   for (let i = 0; i < 14; i++) beams.push({ fx: rig.add({ kind: 'beam', pos: V3(-24 + i * (48 / 13), RIG - 0.6, 13), length: 90, beamGain: 1.2 }), i, n: 14, group: 1 });
   for (let i = 0; i < 10; i++) washes.push({ fx: rig.add({ kind: 'wash', pos: V3(-22 + i * (44 / 9), RIG - 0.6, 5), length: 35, beamGain: 0.4 }), i, n: 10, group: 2 });
+  // the lights on the delay towers' heads, sweeping the field and the stands
+  const tw = towerLights.map((pos, i) => ({ fx: rig.add({ kind: 'beam', pos, length: 70, beamGain: 0.9 }), i, n: towerLights.length, group: 5 }));
   for (let i = 0; i < 12; i++) ups.push({ fx: rig.add({ kind: 'beam', pos: V3(-26 + i * (52 / 11), DECK + 0.3, 21.8), hang: 'up', length: 70 }), i, n: 12, group: 3 });
   // the ring: beams along the 2nd-floor front, pole to pole, pointing in
   {
@@ -460,7 +465,7 @@ export function buildDome(ctx) {
   const front1 = shadowSpot(KELVIN(5600), 0, { angle: 0.14, penumbra: 0.7, size: q.shadowSize, far: 140, cast: q.shadows });
   front1.position.set(-8, 30, 72); front1.target.position.set(0, DECK + 1, 15);
   const follow = shadowSpot(KELVIN(5600), 0, { angle: 0.035, penumbra: 0.5, cast: false });
-  follow.position.set(0, 36, 100); follow.target.position.set(0, XH, RW1 + XD / 2);
+  follow.position.set(0, 36, 100); follow.target.position.set(0, XH, RW1 - TIP / 2);
   const stageWash = shadowSpot(0xffffff, 0, { angle: 0.8, penumbra: 1, cast: false });
   stageWash.position.set(0, RIG - 1, 4); stageWash.target.position.set(0, DECK, 16);
   for (const l of [front1, follow, stageWash]) root.add(l, l.target);
@@ -510,10 +515,9 @@ export function buildDome(ctx) {
   for (let i = 0; i < 8; i++) { const x0 = 1.0 + i * 8.2; xs.unshift([-x0 - 7, -x0]); xs.push([x0, x0 + 7]); }
   const keep = (x, z) => onField(x, z)
     && z > RW0 + 2.4                                                     // the pit in front of the stage
-    && !(Math.abs(x) < 3.6 && z < RW1)                                   // the runway
-    && !(Math.abs(x) < XW + 1.6 && z > RW1 - 1.8 && z < RW1 + XD + 1.8)  // the long stage, seats either side of it
+    && !cross.inside(x, z, 1.8)                                          // the runway and the cross
     && !(Math.abs(x - eye.x) < 5.5 && Math.abs(z - eye.z) < 4.5)         // the desk
-    && Math.hypot(Math.abs(x) - 34, z - 58) > 1.6;
+    && Math.hypot(Math.abs(x) - 24, z - 66) > 4.6;                       // the delay towers
   const arena = floorBlocks(blockGrid([[25, 39], [41, 55], [57, 71], [73, 87], [89, 103], [105, 119], [121, 135]], xs), { keep, seed: 55 });
   root.add(floorChairs(arena.chairs));
   const fieldPeople = arena.people;
@@ -526,9 +530,9 @@ export function buildDome(ctx) {
   // ── haze ──
   const hz = pipe.haze;
   const offs = [[-0.6, 0.35], [0.6, 0.35], [-0.6, -0.35], [0.6, -0.35], [0, 0]];
-  ctx.screenHaze(scr.main, offs.map(([dx, dy]) => hz.add(V3(dx * 19, scr.main.position.y + dy * scr.h * 0.5, 4.5), 0xffffff, 0)), offs);
+  ctx.screenHaze(scr.main, offs.map(([dx, dy]) => hz.add(V3(dx * 32, scr.main.position.y + dy * scr.h * 0.5, 4.5), 0xffffff, 0)), offs);
   scr.main.userData.hazePower = 320;
-  const hzWash = [hz.add(V3(-16, RIG - 1, 14), 0xffffff, 0), hz.add(V3(16, RIG - 1, 14), 0xffffff, 0), hz.add(V3(0, 22, RW1 + XD / 2), 0xffffff, 0)];
+  const hzWash = [hz.add(V3(-16, RIG - 1, 14), 0xffffff, 0), hz.add(V3(16, RIG - 1, 14), 0xffffff, 0), hz.add(V3(0, 22, CZ + XD / 2), 0xffffff, 0)];
 
   return {
     root, eye,
@@ -539,7 +543,7 @@ export function buildDome(ctx) {
     bloom: { strength: 0.75, radius: 0.7, threshold: 1.15 },
     grade: { exposure: 1.2, vignette: 0.4, ca: 0.005, grain: 0.04, sat: 1.1, lift: [0.004, 0.004, 0.009] },
     env: { w: 236, h: 56, d: 236, eye, wall: 0x0c0c12, floor: 0x0a0a0c, emitters: [
-      { w: 38, h: 21, pos: V3(0, 14.9, 4), normal: V3(0, 0, 1), screen: true, power: 1.5, aspect: 16 / 9 },
+      { w: WW, h: WH, pos: V3(0, WY, 4), normal: V3(0, 0, 1), screen: true, power: 1.5, aspect: WW / WH },
       { w: 200, h: 200, pos: V3(0, 55, 52), normal: V3(0, -1, 0), color: 0x202028, power: 1 },
     ] },
     envIntensity: 0.55,
@@ -549,12 +553,13 @@ export function buildDome(ctx) {
       runShow(rig, spots, f, { house: V3(0, 1, 68), stage: STAGE, span: 60 });
       runShow(rig, beams, f, { house: V3(0, 22, 95), stage: STAGE, span: 80 });
       runShow(rig, washes, f, { house: V3(0, 0, 26), stage: STAGE, span: 30, strobe: false });
+      runShow(rig, tw, f, { house: V3(0, 30, 50), stage: V3(0, XH, CZ), span: 60 });
       runShow(rig, ups, f, { house: V3(0, 40, 50), stage: STAGE, up: true });
       washes.forEach(({ fx }) => { fx.angle = 0.3; });
       // the ring converges on the long stage in the chorus, spreads to the roof otherwise
       const sec = f.sec || section(f.bar);
       ring2.forEach(({ fx, i, a }) => {
-        const tgt = sec === 'chorus' ? V3(Math.sin(f.t * 0.8 + i) * 22, 26, RW1 + XD / 2 + Math.cos(f.t * 0.8 + i) * 3) : V3(Math.sin(a) * 30, 56, ZC + Math.cos(a) * 30);
+        const tgt = sec === 'chorus' ? V3(Math.sin(f.t * 0.8 + i) * 22, 26, CZ + XD / 2 + Math.cos(f.t * 0.8 + i) * 3) : V3(Math.sin(a) * 30, 56, ZC + Math.cos(a) * 30);
         fx.dir.lerp(tgt.sub(fx.pos).normalize(), Math.min(1, f.dt * 2)).normalize();
         fx.color.copy(i % 2 ? f.pal.a : f.pal.c);
         fx.intensity = (sec === 'chorus' ? 0.9 + 0.4 * f.kick : sec === 'pre' ? 0.5 : 0.18) * show;

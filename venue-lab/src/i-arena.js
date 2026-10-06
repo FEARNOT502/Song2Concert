@@ -127,7 +127,7 @@ function buildArena(ctx) {
     houseFix.push(pipe.flares.add(V3(x, H - 0.05, z), KELVIN(4200), 0.9, 0));
   }
   // the set stands on the deck; the building's stands carry on round it
-  stageSet(root, { w: 24, h: 17, z: 1.8 + SZ, deck: DECK, towerX: 13.6, backdropW: 32, backdropH: 16, wingX: 18.5, wingW: 6, wingH: 11 });
+  stageSet(root, { w: 30, h: 17, z: 1.8 + SZ, deck: DECK, towerX: 15.8, backdropW: 32, backdropH: 16, wingX: 18.5, wingW: 6, wingH: 11 });
   // masking across the building behind the stage, wall to wall and floor to
   // the ceiling, over the set's own backdrop in the middle, angled forward
   // either side to the sides' fronts: the end stands and the corners' blocks
@@ -139,10 +139,15 @@ function buildArena(ctx) {
   // ── stage ──
   const deck = stageDeck({ w: 34, d: 15, h: DECK, z: 8.5 + SZ });
   root.add(deck);
-  const thrust = stageDeck({ w: 3.6, d: 9, h: DECK, z: 20.5 + SZ, lip: false });
   for (const s of [-1, 1]) root.add(stageSteps({ x: s * 17.75, z: 16 + SZ, h: DECK, dir: [0, -1] }));
-  root.add(thrust);
-  const scr = bigScreens(ctx, root, { w: 24, y: DECK + 1.4 + 24 / (16 / 9) / 2, z: 1.8 + SZ, imagW: 11, imagX: 22.5, imagY: 13.5, imagZ: 11 + SZ, imagYaw: 0.3 });
+  // the runway out to a cross on the floor: a walkway either side two-thirds
+  // of the way, the runway on past it to a square end stage in the middle
+  const RW0 = 16 + SZ, RW1 = 52, CZ = 38;
+  const cross = crossThrust(root, { z0: RW0, z1: RW1, w: 3.6, crossZ: CZ, crossD: 3.6, crossW: 12, tip: 6, h: DECK });
+  // one wide wall across the set (an arena tour's panoramic LED), and the
+  // IMAG either side for the far end of the room
+  const WW = 30, WH = 10.5;
+  const scr = bigScreens(ctx, root, { w: WW, h: WH, y: DECK + 1.2 + WH / 2, z: 1.8 + SZ, imagW: 11, imagX: 23.5, imagY: 13.5, imagZ: 11 + SZ, imagYaw: 0.3 });
   const riser = stageDeck({ w: 10, d: 4, h: 1.0, z: 4.2 + SZ, lip: false }); riser.position.y = DECK; root.add(riser);
   // the backline, set and waiting; no one on stage
   for (const [x, z, col] of [[-7, 9.0 + SZ, 0x5a1a0e], [7, 9.0 + SZ, 0x1a1a1c]]) {
@@ -154,19 +159,25 @@ function buildArena(ctx) {
   for (const x of [-12, 12]) { const a = ampStack({ count: 2 }); a.position.set(x, DECK, 4.5 + SZ); root.add(a); }
   for (let i = 0; i < 8; i++) { const w = wedge(); w.position.set(-10.5 + i * 3, DECK, 15.4 + SZ); w.rotation.y = Math.PI; root.add(w); }
   const mic = micStand({ height: 1.5 }); mic.position.set(0.05, DECK, 13.6 + SZ); root.add(mic);
-  for (const side of [-1, 1]) for (const dz of [-1.2, 1.2]) {
-    const sub = subStack({ count: 3, cols: 2 }); sub.position.set(side * 10, 0, 17.5 + SZ + dz); root.add(sub);
-  }
+  // the subs in a row on the floor under the barrier, the front fills on the lip
+  subLine(root, { x0: -15.2, x1: 15.2, z: RW0 + 0.9, gap: 2.4, count: 2, fills: { xs: [-15, -10, -5, 5, 10, 15], y: DECK, z: RW0 - 0.35 } });
 
   // ── rig ──
   const rig = ctx.rig({ finish: 'black' });
   const trussZ = [3.2 + SZ, 9.2 + SZ, 15.2 + SZ];
   for (const z of trussZ) { const t = truss(36, { size: 0.76, finish: 'black' }); t.position.set(0, RIG, z); root.add(t); root.add(hoists([-16, -6, 6, 16], RIG, z, H)); }
+  // the PA flown from the roof: the mains just outside the wall, toed in a
+  // little; the side hangs turned out to the side stands; the 270 hangs
+  // further round, at the stands beside and behind the stage's corners; the
+  // flown subs behind the mains; and a pair of delay hangs over the middle of
+  // the floor for the far end and the 400 level, as the big arena shows hang
   const pa = [];
   for (const side of [-1, 1]) {
-    const main = lineArray({ boxes: 16, width: 1.3 }); main.position.set(side * 15.5, RIG - 0.6, 16.5 + SZ); main.rotation.y = -side * 0.08; root.add(main); pa.push(main);
-    const out = lineArray({ boxes: 12, width: 1.1 }); out.position.set(side * 23.5, RIG - 1.2, 15 + SZ); out.rotation.y = -side * 0.4; root.add(out);
-    const subs = lineArray({ boxes: 8, width: 1.3, depth: 1.0, splay: 0.01 }); subs.position.set(side * 13.4, RIG - 0.6, 15.8 + SZ); root.add(subs);
+    pa.push(paHang(root, { x: side * 17.6, y: RIG - 0.6, z: 16.5 + SZ, boxes: 16, yaw: -side * 0.06, roofY: H }));
+    paHang(root, { x: side * 15.6, y: RIG - 0.6, z: 15.4 + SZ, boxes: 8, depth: 1.0, splay: 0.008, roofY: H });
+    paHang(root, { x: side * 29.5, y: RIG - 1.0, z: 12 + SZ, boxes: 14, width: 1.2, yaw: side * 0.5, roofY: H });
+    paHang(root, { x: side * 33.5, y: RIG - 1.4, z: 15 + SZ, boxes: 10, width: 1.1, yaw: side * 1.2, roofY: H });
+    paHang(root, { x: side * 13, y: RIG - 3, z: 56, boxes: 8, width: 1.1, yaw: side * 0.06, roofY: H, splay: 0.03 });
   }
   const spots = [], beams = [], washes = [], ups = [], lasers = [];
   for (let i = 0; i < 12; i++) spots.push({ fx: rig.add({ kind: 'spot', pos: V3(-15.5 + i * (31 / 11), RIG - 0.5, 15.2 + SZ), length: 45, angle: 0.085, beamGain: 1.0 }), i, n: 12, group: 0 });
@@ -203,7 +214,7 @@ function buildArena(ctx) {
   // clear of the corners' fans)
   const clear = (x, z) => [[0, 0], [1.4, 0], [-1.4, 0], [0, 1.4], [0, -1.4], [1, 1], [1, -1], [-1, 1], [-1, -1]]
     .every(([dx, dz]) => stands.topAt(x + dx, z + dz) < 0.05);
-  const keep = (x, z) => Math.abs(x) < 29.2 && z < OZ + 39.5 && !(Math.abs(x) < 2.4 && z < 25.6 + SZ) && !(Math.abs(x - eye.x) < 4.6 && Math.abs(z - eye.z) < 4.2) && clear(x, z);
+  const keep = (x, z) => Math.abs(x) < 29.2 && z < OZ + 39.5 && !cross.inside(x, z, 1.4) && !(Math.abs(x - eye.x) < 4.6 && Math.abs(z - eye.z) < 4.2) && clear(x, z);
   const floorSeats = floorBlocks(blockGrid(
     [[19.5 + SZ, 29.4], [31.0, 41.8], [43.4, 54.2], [55.8, 66.6], [68.2, 79.0], [80.6, 84.8]],
     [[-29.2, -14.9], [-13.5, -1.0], [1.0, 13.5], [14.9, 29.2]],
@@ -233,7 +244,7 @@ function buildArena(ctx) {
     bloom: { strength: 0.7, radius: 0.65, threshold: 1.15 },
     grade: { exposure: 1.2, vignette: 0.4, ca: 0.005, grain: 0.04, sat: 1.08, lift: [0.004, 0.004, 0.008] },
     env: { w: X1 - X0, h: H, d: Z1 - Z0, eye, wall: 0x0a0a10, floor: 0x050507, emitters: [
-      { w: 24, h: 13.5, pos: V3(0, 10.35, 2 + SZ), normal: V3(0, 0, 1), screen: true, power: 1.5, aspect: 16 / 9 },
+      { w: WW, h: WH, pos: V3(0, DECK + 1.2 + WH / 2, 2 + SZ), normal: V3(0, 0, 1), screen: true, power: 1.5, aspect: WW / WH },
       { w: 30, h: 1, pos: V3(0, RIG, 12 + SZ), normal: V3(0, -1, 0), color: APP.accent, power: 4 },
     ] },
     envIntensity: 0.6,
