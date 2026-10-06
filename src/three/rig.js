@@ -330,12 +330,20 @@ export function ledMaterial({ tex, pitch = 0.0039, w, h, bright = 2.2, grid = 1,
       tArt: { value: tex }, uPix: { value: new THREE.Vector2(w / pitch, h / pitch) }, uBright: { value: bright },
       uPulse: { value: 0 }, uGrid: { value: grid }, uTime: { value: 0 }, uModule: { value: 128 },
       uKind: { value: kind === 'main' ? 0 : kind === 'imag' ? 1 : 2 }, uTint: { value: new THREE.Color(1, 1, 1) },
-      uTint2: { value: new THREE.Color(1, 1, 1) }, uHouse: { value: 0 },
+      uTint2: { value: new THREE.Color(1, 1, 1) }, uHouse: { value: 0 }, uExpo: { value: 1 },
     },
     vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
     fragmentShader: /* glsl */`
-      uniform sampler2D tArt; uniform vec2 uPix; uniform float uBright, uPulse, uGrid, uTime, uModule, uKind, uHouse;
+      uniform sampler2D tArt; uniform vec2 uPix; uniform float uBright, uPulse, uGrid, uTime, uModule, uKind, uHouse, uExpo;
       uniform vec3 uTint, uTint2;
+      // a wall is driven so its whites stop short of glare: below the knee the
+      // level is untouched, above it each channel rolls off toward a ceiling
+      // just over the bloom threshold, so a white sleeve keeps its type
+      vec3 shoulder(vec3 x) {
+        const float k = 0.75, m = 1.15;
+        vec3 o = max(x - k, 0.0);
+        return min(x, vec3(k)) + o / (1.0 + o / (m - k));
+      }
       varying vec2 vUv;
       vec3 content(vec2 uv, vec2 gx, vec2 gy) {
         if (uKind < 0.5) return textureGrad(tArt, uv, gx, gy).rgb;
@@ -368,7 +376,11 @@ export function ledMaterial({ tex, pitch = 0.0039, w, h, bright = 2.2, grid = 1,
         float mask = mix(diode * 2.4, 1.0, smoothstep(0.35, 1.2, fw));
         vec2 mcell = fract(cell / uModule);
         float seam = 1.0 - 0.35 * (step(mcell.x, 0.5 / uModule) + step(mcell.y, 0.5 / uModule)) * (1.0 - smoothstep(0.5, 2.0, fw));
-        vec3 col = c * mask * seam * uBright * (0.92 + 0.12 * uPulse);
+        vec3 lvl = c * uBright * (0.92 + 0.12 * uPulse);
+        // the art walls are graded to the sleeve (uExpo, set per sleeve) and
+        // rolled off at the top; the palette bars are left as they are
+        if (uKind < 1.5) lvl = shoulder(lvl * uExpo);
+        vec3 col = lvl * mask * seam;
         col += vec3(0.004) * (1.0 - mask * 0.5);
         gl_FragColor = vec4(col * (1.0 - uHouse * 0.45), 1.0);
       }`,

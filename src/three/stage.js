@@ -61,6 +61,8 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
   const clock = new THREE.Clock();
   // per-venue lists, collected once rather than found by a traversal each frame
   let pointMats = [], lightMats = [], fogMats = [];
+  // the venue's spot and point lights, for the eye's adaptation (see adapt)
+  let lamps = [], baseExposure = 1, baseThreshold = 0.9, adapt = 1, lux = 0;
 
   function clonePal(p) { return { a: p.a.clone(), b: p.b.clone(), c: p.c.clone(), d: p.d.clone() }; }
 
@@ -148,16 +150,20 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
     venue = v; ctx = c;
     walker.setVenue(v.root, v.camera.pos, v.camera.target);
     const b = v.bloom || {};
-    pipe.bloom.strength = b.strength ?? 0.6; pipe.bloom.radius = b.radius ?? 0.6; pipe.bloom.threshold = b.threshold ?? 0.9;
+    pipe.bloom.strength = b.strength ?? 0.6; pipe.bloom.radius = b.radius ?? 0.6; pipe.bloom.threshold = baseThreshold = b.threshold ?? 0.9;
     const G = pipe.final.material.uniforms, g = v.grade || {};
-    G.uExposure.value = g.exposure ?? 1; G.uVignette.value = g.vignette ?? 0.35; G.uCA.value = g.ca ?? 0.004;
+    baseExposure = g.exposure ?? 1; adapt = 1;
+    G.uExposure.value = baseExposure; G.uVignette.value = g.vignette ?? 0.35; G.uCA.value = g.ca ?? 0.004;
     G.uGrain.value = pipe.q.grain ? (g.grain ?? 0.035) : 0; G.uSat.value = g.sat ?? 1.05;
     G.uLift.value.setRGB(...(g.lift || [0, 0, 0]));
     pipe.haze.uniforms.uDensity.value = v.hazeDensity ?? 0.02;
     pipe.beams.uniforms.uGain.value = v.beamGain ?? 1;
     pipe.haze.uniforms.uAmb.value.copy(v.hazeAmb || new THREE.Color(0));
     pipe.haze.uniforms.uAmbDist.value = v.hazeAmbDist ?? 80;
+    lamps = [];
     v.root.traverse((o) => {
+      // the fixed lights only: a moving head's spot sweeping past would pump
+      if ((o.isSpotLight || o.isPointLight) && o.decay === 2 && !o.userData.fx) lamps.push(o);
       const U = o.material?.uniforms;
       if (!U) return;
       if (o.isPoints && U.uPal) pointMats.push(U);
@@ -175,14 +181,22 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
   // screens, their light, their haze, and the reflections, from the current art
   function applyArt() {
     if (!venue) return;
+    // a bright sleeve (white, pastel) is run lower on the walls, the way a
+    // content operator pulls a white frame down so it does not glare
+    const sl = regionColor(art.canvas, 0, 0, 1, 1);
+    const key = 0.2126 * sl.r + 0.7152 * sl.g + 0.0722 * sl.b;
+    const expo = 1 - 0.45 * THREE.MathUtils.smoothstep(key, 0.2, 0.75);
     for (const s of ctx.screens) {
       const face = s.group.userData.face;
       const tex = s.kind === 'main' ? art.texture(s.aspect) : art.cover();
-      if (face) face.material.uniforms.tArt.value = tex;
+      if (face) {
+        face.material.uniforms.tArt.value = tex;
+        if (face.material.uniforms.uExpo) face.material.uniforms.uExpo.value = expo;
+      }
       const img = s.kind === 'main' ? tex.image : art.canvas;
       const avg = regionColor(img, 0, 0, 1, 1);
       if (s.group.userData.rect) s.group.userData.rect.color.copy(avg).multiplyScalar(1 / Math.max(0.05, Math.max(avg.r, avg.g, avg.b)));
-      s.lum = Math.max(avg.r, avg.g, avg.b);
+      s.lum = Math.max(avg.r, avg.g, avg.b) * expo;
       for (const { h, o } of s.haze) h.color.copy(regionColor(img, 0.5 + o[0] * 0.5 - 0.2, 0.5 - o[1] * 0.5 - 0.2, 0.5 + o[0] * 0.5 + 0.2, 0.5 - o[1] * 0.5 + 0.2));
     }
     if (venue.env) {
@@ -203,6 +217,51 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
     walker.update(dt, cam);
   }
 
+  // ── the eye ──────────────────────────────────────────────────────────────
+  //
+  // The rigs are set for the house: from a seat the stage is a lit box at the
+  // end of the room. Walk onto the deck and you stand where every key light,
+  // spot and wash in the rig converges, and the room around you went to white.
+  // A person there does what a camera's auto-exposure does: the eye stops down
+  // for the light falling on it. So the light arriving at the camera from the
+  // venue's own spots and points is summed (inverse square, inside the cone),
+  // and above what the listener's own seat gets the picture is brought down.
+  const tmpV = new THREE.Vector3(), tmpD = new THREE.Vector3(), tmpT = new THREE.Vector3();
+  function lightAt(p) {
+    let e = 0;
+    for (const L of lamps) {
+      if (!(L.intensity > 0) || !L.visible) continue;
+      L.getWorldPosition(tmpV);
+      tmpD.copy(p).sub(tmpV);
+      const d2 = Math.max(1, tmpD.lengthSq());
+      if (L.distance > 0 && d2 > L.distance * L.distance) continue;
+      let k = 1;
+      if (L.isSpotLight) {
+        L.target.getWorldPosition(tmpT);
+        const cos = tmpD.normalize().dot(tmpT.sub(tmpV).normalize());
+        const outer = Math.cos(L.angle), inner = Math.cos(L.angle * (1 - L.penumbra));
+        k = THREE.MathUtils.smoothstep(cos, outer, Math.max(inner, outer + 1e-4));
+        if (k <= 0) continue;
+      }
+      e += L.intensity * k / d2;
+    }
+    return e;
+  }
+  function applyEye(dt) {
+    const G = pipe.final.material.uniforms;
+    lux = lightAt(pipe.camera.position);
+    // the level is the seat's: what the venue is graded for, under the same
+    // lights at the same moment, so a seat is never adapted
+    const E0 = Math.max(2, lightAt(walker.home?.eye ?? pipe.camera.position) * 1.5);
+    const want = clamp(Math.pow(E0 / Math.max(lux, E0), 0.75), 0.2, 1);
+    // stopping down is quick, opening up again slower, as an eye is
+    adapt += (want - adapt) * Math.min(1, dt * (want < adapt ? 3 : 1.2));
+    G.uExposure.value = baseExposure * adapt;
+    // and the glow sets in where it would at the adapted level: a lit deck
+    // is not bloomed into a white cloud and then merely dimmed
+    pipe.bloom.threshold = baseThreshold / adapt;
+  }
+
   // ── frame ──────────────────────────────────────────────────────────────────
 
   function frame(dt, t) {
@@ -212,6 +271,7 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
     const target = art.palette;
     for (const k of ['a', 'b', 'c', 'd']) pal[k].lerp(target[k], Math.min(1, dt * 2.2));
     applyCamera(dt);
+    applyEye(dt);
     const B = beat;
     const f = { t, dt, kick: B.kick, snare: 0, hat: 0, energy: B.energy, bar: B.bar, beat: B.beat, sec: playing ? B.sec : null, house, pal, cam: pipe.camera.position };
     const cu = ctx.cu;
@@ -331,7 +391,7 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
       raf = requestAnimationFrame(tick);
       if (venueId && !venue) setVenue(venueId);
     },
-    stats: () => ({ drawn, heavy, strain, effects: fx, frameMs: +frameBudget.toFixed(2), venue: venueId, walker: walker.feet.toArray().map((v) => +v.toFixed(2)) }),
+    stats: () => ({ drawn, heavy, strain, effects: fx, frameMs: +frameBudget.toFixed(2), venue: venueId, walker: walker.feet.toArray().map((v) => +v.toFixed(2)), lux: +lux.toFixed(2), adapt: +adapt.toFixed(3) }),
     // for tests and the walk-through: the walker and the pipeline
     debug: { walker, pipe, art, beat },
     dispose() {

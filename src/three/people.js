@@ -488,8 +488,8 @@ export function silhouettes(people, cu, { seed = 5 } = {}) {
   return mesh;
 }
 
-// One light per person: a lightstick, held steady in one of the palette's
-// colours, or a phone's torch, switched from the UI.
+// One light per person: a lightstick, all of them fading together through the
+// palette's colours, or a phone's torch, switched from the UI.
 export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
   const n = people.length;
   const pos = new Float32Array(n * 3), look = new Float32Array(n * 4);
@@ -520,8 +520,12 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
       void main() {
         vec4 mv = modelViewMatrix * vec4(position, 1.0);
         float d = -mv.z;
-        // a stick keeps its colour and its brightness: no waves, no beat
-        vec3 stick = uPal[int(aLook.y)] * 0.75;
+        // every stick is on the same central control: the whole house shows
+        // one colour of the sleeve, holds it, then fades into the next
+        float ph = uTime * 0.16;
+        float blend = smoothstep(0.45, 1.0, fract(ph));
+        float k0 = mod(floor(ph), 3.0);
+        vec3 stick = mix(uPal[int(k0)], uPal[int(mod(k0 + 1.0, 3.0))], blend) * 0.75;
         float tw = 0.75 + 0.25 * sin(uTime * 2.3 + aLook.x);
         vec3 flash = vec3(1.0, 0.95, 0.88) * tw * 1.25;
         // most hold a stick; fewer have a phone up at any moment

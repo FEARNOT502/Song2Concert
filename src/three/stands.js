@@ -361,7 +361,14 @@ export function roomLights(data, { ox, oz, lit }) {
     for (const [x, z] of ring) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
     return { rings: [ring], x0, x1, z0, z1, y0: p.y0 + 0.2, y1: p.y1 + 0.2 };
   });
-  const inside = (c, house) => inZones(house < 0.5 && showZones.length ? showZones : zones, c);
+  // ...and once someone is in, they stay up for as long as they are anywhere
+  // in the concourse, not only while they stand in that entrance
+  let on = false;
+  const inside = (c, house) => {
+    const show = house < 0.5 && showZones.length;
+    on = (show && inZones(showZones, c)) || ((on || !show) && inZones(zones, c));
+    return on;
+  };
   const mats = ['inMat', 'ceilMat', 'floorLit', 'mouthMat', 'mouthFloor', 'stairMat'].map((k) => [lit[k], lit[k].emissiveIntensity]);
   const lamp = lit.lampMat.color.clone();
   let k = -1;

@@ -221,7 +221,9 @@ export class HazeField {
             float tc = dot(P - ro, rd);
             float h = max(length(ro + rd * tc - P), 0.35);
             float F = (atan((tMax - tc) / h) - atan(-tc / h)) / h;
-            sum += uCol[i] * F;
+            // a glow stands for a lit volume of haze seen from the room; walk
+            // up into it and it is a thin veil around you, not a white-out
+            sum += uCol[i] * F * smoothstep(2.0, 14.0, length(P - ro));
           }
           vec3 amb = uAmb * (1.0 - exp(-tMax / uAmbDist));
           gl_FragColor = vec4(sum * uDensity + amb, 1.0);
