@@ -2,6 +2,38 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 39: Wembley's Level 5 north side walked across to the corners
+- **What was asked** (user, with a screenshot): something sticks out in Level 5 left of the east end's screen, so there is no
+  walking past it from left to right.
+- **What it was.** Level 5's north side (between the two steps in its front, `section_depth`) was raked from a front row of its
+  own, set back 7 m, so where it met the corner blocks it stood 5-6 rows (2.1-2.6 m) lower than them, and `aisle_walls` closed
+  the seam with a wall 1 m above the higher side, front to back, at about +-58 deg. Not the screen (Round 36).
+- **What the plan draws.** The north side's rows are the corners' rows carried on: 509's rows run on across the seam, and 508
+  starts at row 6 beside the 508/509 aisle, its front stepped back. So the heights carry on across it.
+- **The fix** (`wb_gen.py`). The seam is the aisle the plan draws back from each step (508/509, 543/544), found as the line from
+  near the step's middle that runs along most of the plan's aisle strip (both found at 99-100%). The north side's rows are
+  numbered on from the corners' by the rows its front stands back (`K5` = 5, the two fields' offset along the aisles: 4.6-6.0
+  rows), so across the seam the treads differ by 0 to one riser. `aisle_walls` closes a step of a row or less flush with the
+  higher tread (a riser, walked across) and keeps the 1 m wall only for more. The north side's front parapet is drawn at its
+  own first row (`front_parapet(..., b0=K5, within=SEC5)`). Level 5's sightline is given 54 rows, room for the north side's
+  rows numbered on (it ends at row 45, as the corners do; rows 0-46 keep their heights).
+- **What moved with it.** The north side stands about 2 m higher: seated from row 6 (31.9 m, was row 1 at 29.7 m) to row 45
+  (48.9 m, was row 41 at 47.1 m), the corners' last row. The L5 vomitories are placed by angle on the line of row 12, scaled by that line's extent, and that line on the north
+  side is now 4 m further forward, so all 52 moved: the north side's 4 m forward with their row, the rest by 0.5-2.4 m along
+  their rows. They now sit closer to the plan's aisles (distance from a vomitory to the nearest aisle of the plan: median
+  0.38 m and at most 1.3 m, from 0.71 and 2.5).
+- **The count.** Level 5 39,214 seats (official 39,165; 39,150 before), pitch unchanged. L1 33,988 and L2 15,619 unchanged.
+- **Checks.** 147 of 148 vomitories walked through from 2 m in front of the mouth; the other, 513 at the east end, from 0.8 and
+  1.2 m (it opens 1.8 m behind the screen's housing, Round 36, so the 2 m start is inside the housing; the same on the data
+  before this round). Every seat of every level reachable (L5 39,214 / 39,214; before, three front-row seats were not).
+  `rowwalk.mjs` (new: the app's walker seat to seat along a level's rows) from 40 to 75 deg and -75 to -40 deg: 6,976 steps,
+  36 blocked, all across the vomitories' pits (rows 13-16), none at the seams. (Before, the seats either side of a seam stood
+  4.4-5.3 m apart, too far to count as a step along the row, so the walk never tried the seam; the wall shut it.) Two pieces of
+  the 1 m wall remain, 0.3-0.5 m long, at rows 28-29 where the treads meet two risers apart; the walker passes them. The app builds
+  and loads. The renderers did not change. The acoustics were not touched.
+- New tools: `rowwalk.mjs` (above) and `appprobe.mjs` (what the app's walker meets at given points: the meshes there and its
+  rays at knee to head height).
+
 ## Round 38: Wembley's Level 5 blocks 519 and 533 seated again
 - **What was asked** (user): a whole block by the 519 entrance has no seats; fix it.
 - **Why it was empty.** Seat data, not the crowd: the reseat (Round 30) seats a row only where the plan draws its line along the

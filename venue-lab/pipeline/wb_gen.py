@@ -22,7 +22,7 @@ def sightline(D0, y0, T, n, C, eye=1.2):
 # rakes from the side stands' sightlines to the near touchline
 H1r = sightline(12.9, 1.5, 0.80, 46, 0.07)
 H2 = sightline(40.5, 17.8, 0.90, 17, 0.06)
-H5 = sightline(61.4, 29.3, 0.80, 54, 0.03)
+H5 = sightline(61.4, 29.3, 0.80, 54, 0.03)    # (to 54 rows: room for the north side's rows numbered on, see section_depth)
 # Level 1 is two sections, as Wembley's lower tier is: the rows up to the
 # walkway (row 28 on it, the vomitories opening on to it) raked from the
 # front, and behind the plan's second dotted line (a barrier) the rows from 31
