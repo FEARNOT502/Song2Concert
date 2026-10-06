@@ -131,8 +131,10 @@ function buildStadium(ctx) {
 
   // ── the bays in Level 5's front ──
   // At either end a bay holds a big screen (Daktronics, 23.88 m by 8.15 m,
-  // 2013) in a housing that fills it up to the rows behind and hangs below
-  // the tier's front. On the south side a bay holds the TV gantry (Level 4):
+  // 2013), moulded into the tier: its foot on the tier's front lip, its face
+  // flush with the front, the rows rising on behind it and either side, its
+  // housing filling the bay behind (as the photographs from the stands show
+  // it, a dark panel set into the front of Level 5, not a box standing out). On the south side a bay holds the TV gantry (Level 4):
   // an open platform level with the tier's front row, a glass balustrade
   // along its front, the cameras along it, the commentary desks along its
   // back, under a light canopy.
@@ -164,9 +166,12 @@ function buildStadium(ctx) {
     if (nx * (0 - mid[0]) + nz * (0 - mid[1]) < 0) { nx = -nx; nz = -nz; }
     const yaw = Math.atan2(nx, nz);
     if (screen) {
-      extrude(b.ring, 25.9, b.y1 + 0.05, housingMat);
-      const scr = ledScreen({ w: 23.88, h: 8.15, tex: ctx.art.texture(23.88 / 8.15), pitch: 0.012, bright: 1.3, kind: 'main', frame: 0.35, light: false });
-      scr.position.set(mid[0] + nx * 0.25, 25.9 + 0.5 + 8.15 / 2, mid[1] + ZC + nz * 0.25); scr.rotation.y = yaw;
+      const foot = b.y0 + 0.1, head = foot + 8.15 + 0.3;
+      extrude(b.ring, b.y0 - 0.2, head, housingMat);
+      const scr = ledScreen({ w: 23.88, h: 8.15, tex: ctx.art.texture(23.88 / 8.15), pitch: 0.012, bright: 1.3, kind: 'main', frame: 0.2, light: false });
+      // on the chord of the mouth (the tier's front bows back from it in the middle)
+      const cx = (a0[0] + a1[0]) / 2, cz = (a0[1] + a1[1]) / 2;
+      scr.position.set(cx + nx * 0.06, foot + 0.15 + 8.15 / 2, cz + ZC + nz * 0.06); scr.rotation.y = yaw;
       root.add(scr); ctx.addScreen(scr, 23.88 / 8.15, 'main');
       continue;
     }

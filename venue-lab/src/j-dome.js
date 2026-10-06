@@ -9,7 +9,7 @@
 // central control.
 // ─────────────────────────────────────────────────────────────────────────────
 
-function membraneMaterial() {
+function membraneMaterial({ zc = 0, diamond = 1e9 } = {}) {
   // The roof from inside, as it looks: a cable net in two families, one
   // along the home–centre axis and one across it, 8.5 m apart (the plan is a
   // square set corner-on to home plate, the cables parallel to its
@@ -24,6 +24,25 @@ function membraneMaterial() {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWP;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vWP; uniform vec3 uBounce;')
+      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+        {
+          // Two layers, as the real roof is built: this, the inner one, is
+          // hung in panels between the cables, the panels of the middle (a
+          // square set corner-on, |x| + |z - zc| < diamond) apart from those
+          // of the sides, so along that line, stepping panel by panel, a
+          // slit shows the outer layer; and a round opening in some panels
+          // (the lights' and the air's).
+          vec2 p = vec2(vWP.x, vWP.z) / 8.5 + 0.5;
+          vec2 cell = floor(p), d = fract(p) - 0.5;
+          float zc = ${zc.toFixed(2)}, dia = ${diamond.toFixed(2)};
+          #define INSIDE(c) (abs((c).x * 8.5) + abs((c).y * 8.5 - zc) < dia)
+          bool inC = INSIDE(cell);
+          float sw = 0.5 - 0.022;
+          if (abs(d.x) > sw && INSIDE(cell + vec2(sign(d.x), 0.0)) != inC) discard;
+          if (abs(d.y) > sw && INSIDE(cell + vec2(0.0, sign(d.y))) != inC) discard;
+          float h = fract(sin(dot(cell, vec2(12.9898, 78.233))) * 43758.5453);
+          if (h < 0.3 && length(d) < 0.04) discard;
+        }`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         {
           // the pillow's bulge tilts the normal away from its middle
@@ -39,6 +58,17 @@ function membraneMaterial() {
           vec2 w = fwidth(p);
           // the crease along each cable, soft either side
           float crease = 1.0 - min(smoothstep(0.0, 0.07 + w.x, 0.5 - d.x), smoothstep(0.0, 0.07 + w.y, 0.5 - d.y));
+          {
+            // outside the middle the panels are split corner to corner, the
+            // cables there running along the slit: triangles
+            vec2 c = floor(vec2(vWP.x, vWP.z) / 8.5 + 0.5) * 8.5;
+            if (abs(c.x) + abs(c.y - ${zc.toFixed(2)}) >= ${diamond.toFixed(2)}) {
+              vec2 q = fract(vec2(vWP.x, vWP.z) / 8.5 + 0.5) - 0.5;
+              float s = sign(c.x + 0.01) * sign(c.y - ${zc.toFixed(2)} + 0.01);
+              float dg = abs(q.x + s * q.y) * 0.7071;
+              crease = max(crease, 1.0 - smoothstep(0.0, 0.05 + w.x, dg));
+            }
+          }
           float cable = 1.0 - min(smoothstep(0.0, w.x * 1.2 + 0.004, 0.5 - d.x), smoothstep(0.0, w.y * 1.2 + 0.004, 0.5 - d.y));
           // the bulge: lighter in the middle of each pillow
           float bulge = 1.0 - 0.9 * dot(d, d);
@@ -46,7 +76,7 @@ function membraneMaterial() {
           totalEmissiveRadiance += uBounce * bulge * (1.0 - 0.4 * crease);
         }`);
   };
-  m.customProgramCacheKey = () => 'membrane3';
+  m.customProgramCacheKey = () => 'membrane4';
   return m;
 }
 
@@ -54,8 +84,9 @@ function buildDome(ctx) {
   const { pipe, q, cu } = ctx;
   const root = new THREE.Group();
   const DECK = 2.6;
-  // FOH, and the listener there: at the back of the field's seats
-  const eye = V3(0, 1.6 + 1.0, 104);
+  // FOH, and the listener there: at the very back of the field's seats,
+  // in front of the stands behind home
+  const eye = V3(0, 1.6 + 1.0, 121);
   const STAGE = V3(0, DECK, 28);
   // The ballpark as the official seating map draws it: the field is the open
   // ground inside the 1st floor's front rows; home plate is behind FOH, the
@@ -266,8 +297,11 @@ function buildDome(ctx) {
 
   // ── the membrane ──
   // (its geometry, ZC, ringY, roofAt and edge, is set out before the stands)
-  const membrane = membraneMaterial();
+  const membrane = membraneMaterial({ zc: ZC, diamond: 0.88 * RA });
   membrane.side = THREE.DoubleSide;
+  // the outer layer, 1.5 m over the inner: what the slits and the openings
+  // show, lit through from outside (and by the house lights)
+  const outerMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide, toneMapped: false, fog: false });
   {
     const I = 160, J = 28;
     const pos = [], idx = [];
@@ -284,6 +318,9 @@ function buildDome(ctx) {
     g.setIndex(idx);
     g.computeVertexNormals();
     root.add(new THREE.Mesh(g, membrane));
+    const og = g.clone(); og.translate(0, 1.5, 0);
+    const outer = new THREE.Mesh(og, outerMat); outer.userData.noCollide = true;
+    root.add(outer);
   }
   // Hung from the cables: the lights at 14 places round over the field
   // (the LED floodlights, about 700, in 14 gondolas), 21 loudspeakers round
@@ -439,7 +476,7 @@ function buildDome(ctx) {
   // behind them on its side beams; the side hangs turned out to the infield
   // stands and the 270s further round, on wing towers bridged to the roof
   const PX = 47, PZ = 32, PH = 24;
-  const DT = [[-24, 78], [24, 78]];             // the delay towers, past the cross
+  const DT = [[-21, 77], [21, 77]];             // the delay towers, past the cross
   const towerLights = [];
   for (const side of [-1, 1]) {
     paWing(root, { x: side * PX, z: PZ, h: PH, bridge: V3(side * (TX + 0.8), SR, BZ[2]) });
@@ -523,58 +560,68 @@ function buildDome(ctx) {
     return m;
   };
   const onField = (x, z) => inField(x, z) && edgeDist(x, z) > 3;
-  // the arena: lettered blocks A (at the stage) to F (towards home), the
-  // way the dome's floor plans run them — wide blocks of chairs, 16 to a row
-  // and 15 rows deep, with narrow aisles between and a cross aisle between
-  // the letters, laid out from the runway outwards. A block that meets the
-  // runway, the cross, a delay tower or the desk gives up the side that
-  // meets it, whole rows and columns at a time; one cut down to a sliver is
-  // left out, and so is a row the field's edge cuts to a few chairs.
+  // the arena: wide blocks of chairs, 16 to a row and 15 rows deep, narrow
+  // aisles between. Between the stage and the cross a straight band (A);
+  // behind the cross the blocks curve round it in bands (B on), the rows on
+  // arcs about the cross's middle, each chair turned to the stage, swinging
+  // forward at the sides towards the poles. Rows the runway, a tower, the
+  // desk or the field's edge cut to a few chairs are left out, and so is a
+  // block left with only a few rows.
   const SEAT = 0.5, PITCH = 0.9, NX = 16, NZ = 15, BW = NX * SEAT, BD = NZ * PITCH, AX = 1.2, AZ = 1.6;
-  const bands = [];
-  for (let z = RW0 + 3.5; z + 4 * PITCH < CZ - 1.4; z += BD + AZ) bands.push([z, Math.min(z + BD, CZ - 1.6)]);
-  for (let z = CZ + XD + 1.8; z < 136; z += BD + AZ) bands.push([z, z + BD]);
   const obst = [
     [-2.2 - 1.4, 2.2 + 1.4, RW0, RW1 + 1.4],                     // the runway
     [-XW - 1.4, XW + 1.4, CZ - 1.4, CZ + XD + 1.4],               // the walkway across
     [-TIP / 2 - 1.4, TIP / 2 + 1.4, RW1 - TIP - 1.4, RW1 + 1.4], // the end stage
-    [eye.x - 5.5, eye.x + 5.5, eye.z - 4.5, eye.z + 4.5],         // the desk
+    [eye.x - 5.5, eye.x + 5.5, eye.z - 4.5, eye.z + 5.5],         // the desk
     ...DT.map(([x, z]) => [x - 4.4, x + 4.4, z - 4.4, z + 4.4]), // the delay towers
   ];
-  const blocks = [];
-  bands.forEach(([z0, z1], r) => {
-    // past the end stage the middle is open: a block on the centre line
-    const open = z0 > RW1 + 1.4;
-    const x0s = [];
-    for (let x = open ? -BW / 2 : 3.6; x < 80; x += BW + AX) { x0s.push(x); if (!open || x > 0) x0s.push(-x - BW); }
-    for (const x0 of x0s) {
-      let b = { x0, x1: x0 + BW, z0, z1 };
-      for (const [ox0, ox1, oz0, oz1] of obst) {
-        if (!b || ox1 <= b.x0 || ox0 >= b.x1 || oz1 <= b.z0 || oz0 >= b.z1) continue;
-        const parts = [{ ...b, x1: ox0 }, { ...b, x0: ox1 }, { ...b, z1: oz0 }, { ...b, z0: oz1 }]
-          .filter((p) => p.x1 - p.x0 >= 6 * SEAT && p.z1 - p.z0 >= 4 * PITCH);
-        b = parts.sort((p, q2) => (q2.x1 - q2.x0) * (q2.z1 - q2.z0) - (p.x1 - p.x0) * (p.z1 - p.z0))[0] || null;
-      }
-      if (b) blocks.push({ ...b, name: String.fromCharCode(65 + r) });
-    }
-  });
+  const clear = (x, z) => onField(x, z) && !obst.some(([x0, x1, z0, z1]) => x > x0 && x < x1 && z > z0 && z < z1);
+  const face = V3(0, 0, RW0);                    // what every chair turns to
   const arena = { people: [], chairs: [] };
+  const rnd = prng(55);
+  // a block: its rows, each a list of [x, z]; kept whole or not at all
+  const place = (rows) => {
+    const kept = rows.map((r) => r.filter(([x, z]) => clear(x, z))).filter((r) => r.length >= 6);
+    if (kept.length < 4) return;
+    for (const r of kept) for (const [x, z] of r) {
+      const dx = face.x - x, dz = face.z - z, l = Math.hypot(dx, dz) || 1, ux = dx / l, uz = dz / l;
+      arena.chairs.push({ x: x - ux * 0.16, y: 0, z: z - uz * 0.16, turn: Math.atan2(ux, uz) });
+      if (rnd() < 0.97) arena.people.push({ x: x + ux * 0.16 + (rnd() - 0.5) * 0.08, y: 0, z: z + uz * 0.16 + (rnd() - 0.5) * 0.06, h: 0.92 + rnd() * 0.14, full: true });
+    }
+  };
+  // A: straight, from the runway out, between the pit and the cross
   {
-    const rnd = prng(55);
-    for (const b of blocks) {
-      const nx = Math.floor((b.x1 - b.x0) / SEAT + 1e-6), nz = Math.floor((b.z1 - b.z0) / PITCH + 1e-6);
-      // seats against the block's aisle side, rows from its front
-      const ox = (b.x0 + b.x1) / 2 - (nx - 1) * SEAT / 2;
+    const z0 = RW0 + 3.5, nz = Math.min(NZ, Math.floor((CZ - 1.6 - z0) / PITCH));
+    for (let x0 = 3.6; x0 < 80; x0 += BW + AX) for (const sd of [-1, 1]) {
       const rows = [];
-      for (let j = 0; j < nz; j++) {
-        const z = b.z0 + (j + 0.5) * PITCH, row = [];
-        for (let i = 0; i < nx; i++) { const x = ox + i * SEAT; if (onField(x, z)) row.push(x); }
-        if (row.length >= 6) rows.push({ z, row });
-      }
-      if (rows.length < 4) continue;
-      for (const { z, row } of rows) for (const x of row) {
-        arena.chairs.push({ x, y: 0, z: z + 0.16, turn: Math.PI });
-        if (rnd() < 0.97) arena.people.push({ x: x + (rnd() - 0.5) * 0.08, y: 0, z: z - 0.16 + (rnd() - 0.5) * 0.06, h: 0.92 + rnd() * 0.14, full: true });
+      for (let j = 0; j < nz; j++) { const row = []; for (let i = 0; i < NX; i++) row.push([sd * (x0 + (i + 0.5) * SEAT), z0 + (j + 0.5) * PITCH]); rows.push(row); }
+      place(rows);
+    }
+  }
+  // B on: on arcs about the cross's middle
+  {
+    const C = V3(0, 0, CZ + XD / 2), TH = 105 * DEG;
+    for (let r0 = 8; r0 < 90; r0 += BD + AZ) {
+      const rm = r0 + BD / 2;
+      let n = Math.max(2, Math.round(2 * TH * rm / (BW + AX)));
+      // a centre aisle while the runway runs through the band, a centre block past it
+      const runway = r0 < RW1 + 1.4 - C.z;
+      if (runway === (n % 2 === 1)) n++;
+      const step = 2 * TH / n;
+      for (let k = 0; k < n; k++) {
+        const t0 = -TH + k * step, t1 = t0 + step, rows = [];
+        for (let j = 0; j < NZ; j++) {
+          const r = r0 + (j + 0.5) * PITCH, gap = (AX / 2) / r;
+          const a0 = t0 + gap, a1 = t1 - gap, m = Math.floor((a1 - a0) * r / SEAT);
+          const row = [];
+          for (let i = 0; i < m; i++) {
+            const a = a0 + ((a1 - a0) - (m - 1) * SEAT / r) / 2 + i * SEAT / r;
+            const x = C.x + Math.sin(a) * r, z = C.z + Math.cos(a) * r;
+            if (z > CZ - 0.4) row.push([x, z]);
+          }
+          rows.push(row);
+        }
+        place(rows);
       }
     }
   }
@@ -635,6 +682,8 @@ function buildDome(ctx) {
       hzWash.forEach((h) => { h.power = 600 * (0.4 + 0.6 * f.energy + 0.3 * f.kick) * show; });
       bRimM.color.setHex(APP.accent).multiplyScalar((0.6 + 0.9 * f.kick) * show + 0.2);
       deck.userData.lip.color.setHex(APP.accent).multiplyScalar((0.6 + 0.8 * f.kick) * show + 0.2);
+      // daylight through the outer layer, faint in the show
+      outerMat.color.setRGB(0.95, 0.9, 0.8).multiplyScalar(0.035 + 0.75 * f.house);
       const sh = membrane.userData.shader;
       if (sh) {
         // the house lights wash the membrane warm; in the show it takes the stage's colour back
