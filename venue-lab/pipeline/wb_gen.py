@@ -2,7 +2,7 @@
 # stand data. World frame: x north, z east, about the pitch centre.
 import sys, json, time, pickle, numpy as np, cv2
 sys.path.insert(0, '.')
-from standlib import Grid, disk, contours, STRAIGHT
+from standlib import Grid, disk, contours, STRAIGHT, seat_mask
 from standgen import Level, poly_out, mask_polys, edge_walls, enclose, grow_under, trim_tunnels, front_parapet
 T0 = time.time()
 o = pickle.load(open('wb/wb_seats.pkl', 'rb'))
@@ -20,10 +20,21 @@ def sightline(D0, y0, T, n, C, eye=1.2):
         N = (D + T) * (N + C) / D; D += T; hs.append(N - eye)
     return np.round(hs, 3)
 # rakes from the side stands' sightlines to the near touchline
-H1 = sightline(12.9, 1.5, 0.80, 46, 0.07)
+H1r = sightline(12.9, 1.5, 0.80, 46, 0.07)
 H2 = sightline(40.5, 17.8, 0.90, 17, 0.06)
 H5 = sightline(61.4, 29.3, 0.80, 47, 0.03)
-print('rake L1', H1[[0, 28, 43]], 'L2', H2[[0, 15]], 'L5', H5[[0, 12, 23, 44]])
+# Level 1 is two sections, as Wembley's lower tier is: the rows up to the
+# walkway (row 28 on it, the vomitories opening on to it) raked from the
+# front, and behind the plan's second dotted line (a barrier) the rows from 31
+# on, standing on a wall up from the walkway: high enough that their front
+# row sees over someone standing on the walkway in front of it (about a metre,
+# as the photos have it), and raked again from there
+STEP1 = 31
+def stepped(H, b, D0, T, C, head=1.8, eye=1.2):
+    Dw, Db = D0 + T * (b - 1), D0 + T * b
+    return np.r_[H[:b], sightline(Db, Db / Dw * (H[b - 1] + head + C) - eye, T, len(H) - b, C)]
+H1 = stepped(H1r, STEP1, 12.9, 0.80, 0.07)
+print('rake L1', H1[[0, 28, 43]], 'step', round(float(H1[STEP1] - H1[STEP1 - 1]), 3), 'L2', H2[[0, 15]], 'L5', H5[[0, 12, 23, 44]])
 RISE, RUN = 0.19, 0.28
 
 def vom_plan(H, bw, D):
@@ -35,7 +46,9 @@ def vom_plan(H, bw, D):
         if n * RUN <= (ro - bw - 1) * D - 0.1 and (best is None or ro < best[1]):
             best = (n, ro, round(float(C), 3))
     return best
-V1 = vom_plan(H1, 29, 0.8); V5 = vom_plan(H5, 12, 0.8)
+# Level 1's vomitories as on the plain rake: their steps, the concourse's
+# floor and the rows they cut through (the back's rows over them stand higher)
+V1 = vom_plan(H1r, 29, 0.8); V5 = vom_plan(H5, 12, 0.8)
 print('vom L1 (steps, open row, concourse)', V1, 'L5', V5)
 C1, C2, C5 = V1[2], float(H2[15]), V5[2]
 
@@ -423,6 +436,125 @@ def press_box(l):
 n_press, DESKS = press_box(L1)
 print('press box seats', n_press, 'desks', len(DESKS))
 
+# ── Level 1's walkway and the wall behind it ──
+# The plan dots two barriers round Level 1: one along the front of the
+# walkway, behind row 27 (where the walkway is clear behind it), and one
+# along the top of the wall up to the back section (rows 31 on). Up the wall,
+# flights either side of each vomitory's pit, and one in any other aisle of
+# the back section's that comes down to the walkway.
+from skimage import measure
+def contour_pts(l, t, step=0.1):
+    out = []
+    for C in measure.find_contours(l.d, t * l.D):
+        if len(C) < 20: continue
+        out.append(resample(np.c_[C[:, 1] * G.res + G.x0, C[:, 0] * G.res + G.z0], step, closed=False))
+    return out
+def cells(Q):
+    i_, j_ = [np.clip(np.round(c).astype(int), 0, n - 1) for c, n in zip(G.g(Q[:, 0], Q[:, 1]), (G.W, G.H))]
+    return j_, i_
+def grads(Q):
+    j_, i_ = cells(Q); g = np.c_[gx_d['L1'][j_, i_], gz_d['L1'][j_, i_]]
+    return g / (np.linalg.norm(g, axis=1)[:, None] + 1e-9)
+def in_press(Q): return (Q[:, 0] > 40) & (np.abs(Q[:, 1]) > PRESS_Z[0] - 0.5) & (np.abs(Q[:, 1]) < PRESS_Z[1] + 0.5)
+TREE1 = {r: cKDTree(L1.seats[L1.row == r]) for r in range(L1.nrows) if (L1.row == r).any()}
+def seated(r, Q, near):
+    return TREE1[r].query(Q)[0] < near if r in TREE1 else np.zeros(len(Q), bool)
+def runs(ok):
+    d_ = np.diff(np.r_[0, ok.astype(np.int8), 0]); return list(zip(np.nonzero(d_ == 1)[0], np.nonzero(d_ == -1)[0]))
+VOID1 = dil(holes_mask['L1'], 0.6)                   # the vomitories' mouths
+h30, h31, h32 = (float(L1.h(r)) for r in (STEP1 - 1, STEP1, STEP1 + 1))
+STAIRS1, NOTCH1 = [], np.zeros_like(inside1)
+def row_gaps(r):
+    # a row's breaks wider than its seats' pitch: (the width between the
+    # seats' middles either side, the break's middle, the way up the rake)
+    out = []
+    for Q in contour_pts(L1, r + 0.55, 0.05):
+        g = grads(Q); j_, i_ = cells(Q)
+        for a, b in runs((L1.band[j_, i_] == r) & ~seated(r, Q, 0.3)):
+            out.append(((b - a) * 0.05 + 0.6, Q[(a + b) // 2], unit(g[(a + b) // 2])))
+    return out
+def flight(S0, u, v, w, L_, y0, y1):
+    # a straight flight from the walkway up into the back section, S0 the
+    # middle of its foot; the rows' treads it climbs through cut away under it
+    n = int(np.ceil((y1 - y0) / RISE)); run = L_ / n; ri = (y1 - y0) / n
+    for k in range(n):
+        P4 = [S0 + u * a_ + v * b_ for a_, b_ in ((k * run, -w / 2), ((k + 1) * run, -w / 2), ((k + 1) * run, w / 2), (k * run, w / 2))]
+        STAIRS1.append({'y': round(y0 + (k + 1) * ri, 3), 'y0': round(y0, 3), 'polys': [[[round(float(x), 2), round(float(z), 2)] for x, z in P4]]})
+    ci, cj = [int(round(float(c))) for c in G.g(S0[0], S0[1])]; r_ = int((L_ + 1.0) / G.res)
+    win = (slice(max(0, cj - r_), cj + r_), slice(max(0, ci - r_), ci + r_))
+    X_, Z_ = GX[win] - S0[0], GZ[win] - S0[1]; al_ = X_ * u[0] + Z_ * u[1]
+    m = (np.abs(X_ * v[0] + Z_ * v[1]) < w / 2) & (al_ > 0) & (al_ < L_ + 0.05) & (L1.band[win] >= STEP1)
+    L1.band[win][m] = -1; L1.R[win][m] = 0; NOTCH1[win] |= m
+# Either side of each vomitory's pit, a flight up the side of it from the
+# walkway to the row over the tunnel's roof (the back section's aisle there,
+# split round the pit): the seats packed against the pit's walls make way
+FLANK, ro1 = 0.7, V1[1]
+keep = np.ones(len(L1.seats), bool); FLANKS = []
+for vm in VOMS['L1']:
+    p0, u = np.array(vm['p']), np.array(vm['u']); v = np.array([-u[1], u[0]]); L_ = vm['L'] - 0.4
+    for sg in (-1, 1):
+        S0 = p0 + v * sg * (vm['w'] / 2 + FLANK / 2)
+        P = S0[None] + np.outer(np.linspace(0.1, L_ - 0.1, 12), u)
+        P = np.r_[P + v * FLANK * 0.3, P - v * FLANK * 0.3]; j_, i_ = cells(P)
+        b_ = L1.band[j_, i_]
+        # on the rows beside the pit, clear of anything else cut through them (and not in the press box)
+        if in_press(S0[None])[0] or ((b_ < STEP1 - 1) | (b_ >= ro1)).mean() > 0.1 or holes_mask['L1'][j_, i_].any(): continue
+        q = L1.seats - S0; al = q @ u; la = (q @ v) * sg
+        keep &= ~((al > -0.2) & (al < L_ + 0.2) & (la > -FLANK / 2 - 0.1) & (la < FLANK / 2 + 0.18))
+        flight(S0, u, v, FLANK, L_, h30, float(L1.h(ro1)))
+        FLANKS.append(S0)
+print('Level 1 flights beside the vomitories', len(FLANKS), 'seats making way', int((~keep).sum()))
+L1.seats, L1.row, L1.yaw = L1.seats[keep], L1.row[keep], L1.yaw[keep]
+L1.seatmask = seat_mask(G, L1.seats)
+TREE1 = {r: cKDTree(L1.seats[L1.row == r]) for r in range(L1.nrows) if (L1.row == r).any()}
+FLANKT = cKDTree(np.array(FLANKS)) if FLANKS else None
+GAPS2 = cKDTree(np.array([m for _, m, _ in row_gaps(STEP1 + 1)])); NAISLE = 0
+for W, M, u in row_gaps(STEP1):
+    # the plan's aisles up the back section: a break in its first row that
+    # runs on up into its second (not one row's gap, nor a stretch left
+    # unseated, nor a vomitory's mouth or the press box)
+    if not 0.8 <= W <= 3.5 or in_press(M[None])[0]: continue
+    if VOID1[cells(M[None])][0] or GAPS2.query(M + u * L1.D)[0] > 0.5: continue
+    if FLANKT is not None and FLANKT.query(M)[0] < 2.0: continue
+    v = np.array([-u[1], u[0]])
+    S0 = M - u * (STEP1 + 0.55 - (STEP1 - 1)) * L1.D       # the walkway's front edge
+    Lf = 2 * L1.D
+    # as wide as the seats either side leave it (their arms over its edges
+    # by a hand's breadth at most), and nothing seated on the walkway in its way
+    q = L1.seats - S0; al = q @ u; la = np.abs(q @ v)
+    near = (al > -0.3) & (al < Lf + 0.1)
+    w = min(1.3, 2 * (float(la[near].min()) - 0.18)) if near.any() else 1.3
+    if w < 0.45: continue
+    flight(S0, u, v, w, Lf, h30, h32); NAISLE += 1
+print('Level 1 wall', round(h31 - h30, 3), 'm; flights up it', len(FLANKS), 'beside vomitories', NAISLE, 'in aisles')
+NOTCH1f = dil(NOTCH1, 0.15)
+def fence_runs(t, rf, rb, y, ok_fn, minlen=0.6, piece=1.5):
+    out = []
+    for Q in contour_pts(L1, t, 0.1):
+        g = grads(Q); jf, if_ = cells(Q - g * 0.25); jb, ib = cells(Q + g * 0.25)
+        ok = (L1.band[jf, if_] == rf) & (L1.band[jb, ib] == rb) & ~VOID1[jb, ib] & ~NOTCH1f[jb, ib] & ok_fn(Q, g)
+        F = Q + g * 0.06
+        for a, b in runs(ok):
+            if (b - a) * 0.1 < minlen: continue
+            k = max(1, int(np.ceil((b - 1 - a) * 0.1 / piece)))
+            idx_ = np.linspace(a, b - 1, k + 1).round().astype(int)
+            for i0, i1 in zip(idx_[:-1], idx_[1:]):
+                out.append([round(float(F[i0, 0]), 2), round(float(F[i0, 1]), 2), round(float(F[i1, 0]), 2), round(float(F[i1, 1]), 2), round(y - 0.02, 2), round(y + 0.95, 2)])
+    return out
+# along the top of the wall (not over the press box's desks)
+FENCES1 = fence_runs(STEP1, STEP1 - 1, STEP1, h31, lambda Q, g: ~in_press(Q))
+# along the walkway's front, where it is clear behind (not across the front's
+# aisles, nor in front of a vomitory's mouth: the way out of it on to them)
+def at_mouth(Q):
+    out = np.zeros(len(Q), bool)
+    for vm in VOMS['L1']:
+        p0, u = np.array(vm['p']), np.array(vm['u']); q = Q - p0
+        out |= (q @ u > -3.0) & (q @ u < 0.5) & (np.abs(q @ np.array([-u[1], u[0]])) < vm['w'] / 2 + 0.3)
+    return out
+h28 = float(L1.h(28))
+FENCES1 += fence_runs(28, 27, 28, h28, lambda Q, g: seated(27, Q - g * 0.36, 0.35) & ~seated(28, Q + g * 0.44, 0.7) & ~at_mouth(Q))
+print('Level 1 barriers', len(FENCES1), 'pieces')
+
 # ── concourses ──
 foot = cv2.morphologyEx(((L1.R | L2.R | L5.R) > 0).astype(np.uint8) | inside1.astype(np.uint8), cv2.MORPH_CLOSE, disk(60))
 k_, lab_, st_, _ = cv2.connectedComponentsWithStats((1 - foot).astype(np.uint8), connectivity=4)
@@ -660,17 +792,23 @@ def tunnel_rows(rows):
             if ov: out.append({**r, 'y0': th, 'polys': ov})
     return out
 levels = []
+NOTCH1d = dil(NOTCH1, 0.5)
 spec = {'L1': ((inside1, 0.0), (c1, C1)), 'L2': ((c2, C2),), 'L5': ((c5, C5),)}
 flushmode = {'L1': 'open', 'L2': 'doors', 'L5': 'open'}
 for name, l in LV.items():
-    rails, walls = edge_walls(G, l, outside_fn(spec[name]), l.aisle_doors() if name == 'L2' else (), flush=flushmode[name], skip=skip, front=fronts.get(name))
+    skip_ = (lambda ox, oy, h: skip(ox, oy, h) or NOTCH1d[oy, ox]) if name == 'L1' else skip
+    rails, walls = edge_walls(G, l, outside_fn(spec[name]), l.aisle_doors() if name == 'L2' else (), flush=flushmode[name], skip=skip_, front=fronts.get(name))
     if fronts.get(name): rails += front_parapet(G, l, fronts[name])
     holes = []
     rows_ = l.rows_out()
     if name == 'L1': rows_ = tunnel_rows(rows_)
+    steps_ = l.aisles_out()
+    # (no half step up Level 1's wall: its flights go up it)
+    if name == 'L1': steps_ = [st for st in steps_ if abs(st['y0'] - round(h30, 3)) > 1e-3] + STAIRS1
     levels.append({'name': name, 'D': l.D, 'h0': float(l.h(0)), 'rise': 0, 'hs': [round(float(v), 3) for v in l.hs],
-                   'rows': rows_, 'steps': l.aisles_out(), 'holes': holes, 'voms': VOMS.get(name, []),
-                   'seats': l.seats_out(scale=100), 'seatScale': 100, 'rails': rails, 'walls': walls + extra_walls.get(name, [])})
+                   'rows': rows_, 'steps': steps_, 'holes': holes, 'voms': VOMS.get(name, []),
+                   'seats': l.seats_out(scale=100), 'seatScale': 100, 'rails': rails, 'walls': walls + extra_walls.get(name, []),
+                   **({'fences': FENCES1} if name == 'L1' else {})})
     print(name, 'rows', len(levels[-1]['rows']), 'steps', len(levels[-1]['steps']), 'holes', len(holes), 'rails', len(rails), 'walls', len(walls), 'seats', len(l.seats))
 # Level 5's aisles at the north side's steps: where the corner blocks' rows
 # and the north side's meet at different heights, a wall with a rail on it
