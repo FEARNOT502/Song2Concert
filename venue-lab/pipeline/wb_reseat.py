@@ -16,6 +16,8 @@ BRIDGE_TEXT = 6.0       # ... and this long, if it is mostly lettering (a block'
 MINCOV = 0.5            # a row the plan only dots (a walkway's rail, a stray of the tracing) is not seated
 AISLE_MIN = 0.2         # an aisle across a row: at least this wide
 AISLE_MAX = 2.0         # (wider: a tunnel's mouth, a bay; left as the plan draws it)
+LATE_WIN = 6.0          # a block's rows drawn half a row back: judged over this square,
+LATE_LO, LATE_HI = 0.4, 0.7   # by the share of its treads finding their line where it should be (less) and half a row back (more)
 
 def plan_bits(G, path='wb/wb_plan.png'):
     P = cv2.imread(path, cv2.IMREAD_UNCHANGED)
@@ -45,13 +47,34 @@ class Reseat:
                 if len(Q) < 10: continue
                 g = np.c_[s.at(gx, Q), s.at(gz, Q)]; g /= np.linalg.norm(g, axis=1)[:, None] + 1e-9
                 okt = s.at(l.band, Q) == r
-                # the plan draws a row as a line along its front
-                ev = np.zeros(len(Q), bool)
+                # the plan draws a row as a line along its front (and, in a few
+                # blocks, half a row further back: ev2, see _late)
+                ev, ev2 = np.zeros(len(Q), bool), np.zeros(len(Q), bool)
                 for o in np.arange(-0.85 * l.D, -0.35 * l.D + 1e-6, 0.05): ev |= s.at(s.line, Q + g * o)
-                s.rows.append(dict(r=r, Q=Q, g=g, okt=okt, ev=ev & okt, ais=s.at(s.aisle, Q) & okt,
+                for o in np.arange(-0.35 * l.D, 0.15 * l.D + 1e-6, 0.05): ev2 |= s.at(s.line, Q + g * o)
+                s.rows.append(dict(r=r, Q=Q, g=g, okt=okt, ev=ev & okt, ev2=ev2 & okt, ais=s.at(s.aisle, Q) & okt,
                                    txt=s.at(s.text, Q), tree=cKDTree(Q)))
         s.byr = {}
         for i, row in enumerate(s.rows): s.byr.setdefault(row['r'], []).append(i)
+        s._late()
+    def _late(s):
+        # Where a whole block's rows find their lines half a row further back
+        # than the treads put them (Level 5's 519 and 533 throughout, and
+        # parts of 509 and 539: the plan's rows there are drawn off by that
+        # much), its rows are taken from those; before, none of them was
+        # seated. By the block, not the row: elsewhere a tread between two
+        # of the plan's rows finds the next one's line there, and is not one.
+        G = s.G; n, e1, e2 = (np.zeros((G.H, G.W), np.float32) for _ in range(3))
+        for row in s.rows:
+            m = row['okt']; Q = row['Q'][m]
+            i = np.clip(np.round((Q[:, 0] - G.x0) / G.res).astype(int), 0, G.W - 1)
+            j = np.clip(np.round((Q[:, 1] - G.z0) / G.res).astype(int), 0, G.H - 1)
+            np.add.at(n, (j, i), 1); np.add.at(e1, (j, i), row['ev'][m]); np.add.at(e2, (j, i), row['ev2'][m])
+        k = int(round(LATE_WIN / G.res)) | 1
+        n, e1, e2 = (cv2.blur(a, (k, k)) for a in (n, e1, e2))
+        late = (n > 0) & (e1 < LATE_LO * n) & (e2 > LATE_HI * n)
+        for row in s.rows:
+            lt = s.at(late, row['Q']); row['ev'] = np.where(lt, row['ev2'], row['ev'])
     def at(s, A, Q):
         G = s.G
         i = np.clip(np.round((Q[:, 0] - G.x0) / G.res).astype(int), 0, G.W - 1)

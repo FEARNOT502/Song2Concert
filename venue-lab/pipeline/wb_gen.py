@@ -186,11 +186,12 @@ print('L5 bays', [round(float(np.linalg.norm(b['bridge'][-1] - b['bridge'][0])),
 # wobbled. Laid out again from what the plan draws (wb_plan.py): each row of
 # each block seated end to end, one pitch apart, from aisle to aisle; the
 # aisles where the plan draws them, carried on along their lines where the
-# watermark hides them; a row only where the plan draws its line. The
-# pitches give each level its official count once the vomitories, tunnels
-# and press box are cut (34,303, 16,532 and 39,165 seats).
+# watermark hides them; a row only where the plan draws its line (or, in a
+# block whose lines all sit half a row back, as Level 5's 519 and 533 do,
+# there). The pitches give each level its official count once the
+# vomitories, tunnels and press box are cut (34,303, 16,532 and 39,165 seats).
 from wb_reseat import plan_bits, reseat
-PITCH = {'L1': 0.551, 'L2': 0.5, 'L5': 0.521}
+PITCH = {'L1': 0.551, 'L2': 0.5, 'L5': 0.547}
 PLAN = plan_bits(G)
 for name_, l_ in LV.items():
     print('reseat', name_, reseat(G, l_, PLAN[name_], PITCH[name_]), round(time.time() - T0, 1))
