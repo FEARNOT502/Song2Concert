@@ -54,8 +54,9 @@ function buildDome(ctx) {
   const { pipe, q, cu } = ctx;
   const root = new THREE.Group();
   const DECK = 2.6;
-  // FOH, and the listener there: at the back of the field's seats
-  const eye = V3(0, 1.6 + 1.0, 104);
+  // FOH, and the listener there: at the very back of the field's seats, in
+  // the middle, the blocks either side of it
+  const eye = V3(0, 1.6 + 1.0, 122);
   const STAGE = V3(0, DECK, 28);
   // The ballpark as the official seating map draws it: the field is the open
   // ground inside the 1st floor's front rows; home plate is behind FOH, the
@@ -538,9 +539,10 @@ function buildDome(ctx) {
     [-2.2 - 1.4, 2.2 + 1.4, RW0, RW1 + 1.4],                     // the runway
     [-XW - 1.4, XW + 1.4, CZ - 1.4, CZ + XD + 1.4],               // the walkway across
     [-TIP / 2 - 1.4, TIP / 2 + 1.4, RW1 - TIP - 1.4, RW1 + 1.4], // the end stage
-    [eye.x - 5.5, eye.x + 5.5, eye.z - 4.5, eye.z + 4.5],         // the desk
-    ...DT.map(([x, z]) => [x - 4.4, x + 4.4, z - 4.4, z + 4.4]), // the delay towers
   ];
+  // the desk and the towers' bases only take the chairs they stand on
+  const taken = [[eye.x - 4.4, eye.x + 4.4, eye.z - 3.0, eye.z + 4.4], ...DT.map(([x, z]) => [x - 4.0, x + 4.0, z - 4.0, z + 4.0])];
+  const free = (x, z) => !taken.some(([x0, x1, z0, z1]) => x > x0 && x < x1 && z > z0 && z < z1);
   const blocks = [];
   bands.forEach(([z0, z1], r) => {
     // past the end stage the middle is open: a block on the centre line
@@ -563,15 +565,16 @@ function buildDome(ctx) {
     const rnd = prng(55);
     for (const b of blocks) {
       const nx = Math.floor((b.x1 - b.x0) / SEAT + 1e-6), nz = Math.floor((b.z1 - b.z0) / PITCH + 1e-6);
-      // seats against the block's aisle side, rows from its front
+      // rows from its front; out to the field's edge, a walkway along the
+      // fence left clear, the blocks there as many chairs as fit
       const ox = (b.x0 + b.x1) / 2 - (nx - 1) * SEAT / 2;
       const rows = [];
       for (let j = 0; j < nz; j++) {
         const z = b.z0 + (j + 0.5) * PITCH, row = [];
-        for (let i = 0; i < nx; i++) { const x = ox + i * SEAT; if (onField(x, z)) row.push(x); }
-        if (row.length >= 6) rows.push({ z, row });
+        for (let i = 0; i < nx; i++) { const x = ox + i * SEAT; if (inField(x, z) && edgeDist(x, z) > 2.2 && free(x, z)) row.push(x); }
+        if (row.length >= 3) rows.push({ z, row });
       }
-      if (rows.length < 4) continue;
+      if (rows.length < 2) continue;
       for (const { z, row } of rows) for (const x of row) {
         arena.chairs.push({ x, y: 0, z: z + 0.16, turn: Math.PI });
         if (rnd() < 0.97) arena.people.push({ x: x + (rnd() - 0.5) * 0.08, y: 0, z: z - 0.16 + (rnd() - 0.5) * 0.06, h: 0.92 + rnd() * 0.14, full: true });

@@ -2,6 +2,19 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 36: the dome's floor to its edges with FOH at the back; Wembley's end screens set into the tier; the cross without z-fighting
+- **Asked** (user): fill the dome's floor the way the real layout does (a photo of LE SSERAFIM at Tokyo Dome, the empty field at the
+  edges marked to be filled), FOH desk at the very back; Wembley's end screens stuck out unlike the real ones; the floor of the
+  cross runway flickered where the two runways overlap. (A first pass put the blocks on arcs and rebuilt the roof in two layers;
+  the user asked for both to be undone, so the roof is as before.)
+- Dome floor: the straight 16 x 15 blocks as before, now out to 2.2 m from the field's edge (rows down to 3 chairs, blocks down to 2
+  rows, so the corners fill); the desk and the delay towers' bases take only the chairs they stand on. FOH (eye) z 104 -> 122, the
+  middle of the back of the floor. The lab's info line ('56 m') is unchanged.
+- `crossThrust`: the runway is built in pieces either side of the walkway and short of the end stage, so no two deck tops share a
+  plane over the same floor (was z-fighting in arena, dome and stadium).
+- Wembley: from the photographs (Commons "Wembley Stadium interior"), the screens sit in the front of Level 5, foot on the lip,
+  face flush, rows rising behind and beside. The housing no longer hangs below the lip; the screen sits on the mouth's chord.
+
 ## Round 35: the stands sold as a concert sells them
 - **Asked** (user): fill the dome's and the stadium's stands as a sold-out show sells them, restricted-view seats included; the
   stadium's crowd went too far back, the dome's should reach a little into the outfield.
