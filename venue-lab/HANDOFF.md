@@ -34,27 +34,10 @@ Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 - New tools: `rowwalk.mjs` (above) and `appprobe.mjs` (what the app's walker meets at given points: the meshes there and its
   rays at knee to head height).
 
-## Round 38: Wembley's Level 5 blocks 519 and 533 seated again
-- **What was asked** (user): a whole block by the 519 entrance has no seats; fix it.
-- **Why it was empty.** Seat data, not the crowd: the reseat (Round 30) seats a row only where the plan draws its line along the
-  row's front (`ev`, sampled 0.35-0.85 of a row ahead of the tread's middle). In 519 and its mirror 533 (the stage end's south
-  corner) the plan's lines all sit about half a row further back than the treads put them (the line found 0.1-0.2 of a row ahead
-  instead of 0.6-0.7), so under a third of each row found its line and every row was dropped (`MINCOV`). The traced seats before
-  Round 30 had them; nothing else hid them.
-- **The fix** (`wb_reseat.py`, `_late`). Each tread also looks for its line half a row back (`ev2`, -0.35..+0.15 of a row). Over a
-  6 m square (`LATE_WIN`), where under 40% of the treads find their line where it should be and over 70% find it half a row back,
-  the rows there are taken from those. Judged by the block, not the row, because elsewhere a tread between two of the plan's rows
-  finds the next one's line half a row back and is not a row of its own. It changes only Level 5: 519 and 533 seated throughout,
-  and the rows that were missing in parts of 509 and 539 (same cause, partly). Levels 1 and 2 come out seat for seat as before.
-- **The count.** Level 5's pitch goes from 0.521 to 0.547 m so it keeps its official count: 39,150 (official 39,165; 39,050
-  before). L1 33,988 and L2 15,619 unchanged.
-- **Checks.** 148 vomitories walked through, none failed; every L1 and L2 seat reachable, L5 39,147 / 39,150 (the same three front-row seats beside the 508 and 544 vomitories as before); the app builds and loads the stadium with no errors. The
-  renderers and the crowd rule did not change. The acoustics were not touched.
+## Round 38: Wembley's end screens at the back of their notch
 
-## Round 38: Wembley's end screens set back into Level 5's front
-
-- The screen used to stand on the bay mouth's chord, but the tier's front bows back from that chord by up to 1.8 m in the middle, so from Level 2 the screen read as a panel standing out over the crowd. It now stands 0.15 m behind the front's deepest point, in a niche cut into the housing. Either side of it, the housing's face follows the front's own curve.
-- The housing is pale grey cladding (0x74777c), as in 정우's photograph, not the stands' dark front.
+- Each end screen bay is a notch in Level 5's front, 8 m deep (`bays[].ring`, which runs from the bridged front back to the rows behind). The housing used to fill the notch flush with the front, up to the screen's top: from the blocks either side it was a tall wall, and the screen stood out ahead of the curve. Now the screen stands at the back of the notch, 0.9 m in from its back edge, on a pale grey housing (0x74777c, as in 정우's photograph) only as wide as the screen. In front of it the notch is open, with a low floor at the screen's foot, so the blocks either side look past their own stepped ends straight at it.
+- The foot stays on the tier's front lip (y0 + 0.1). Set lower, the front and Level 2's back rows hid the bottom from the pitch. Its top is about 2 m above the first row behind the notch; those few rows sit behind the screen.
 - In the app, only `src/three/venues/stadium.js` was copied over from gen. The other generated modules differ from main's app copies (edits made in the app after the lab), so they were left alone.
 
 ## Round 37: the dome's floor ends at the line 정우 drew; seats beside the cross's arms
