@@ -2,6 +2,11 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 37: the dome's floor ends at the line 정우 drew; seats beside the cross's arms
+
+- The floor stops at the cross aisle behind the FOH desk's band (z 123.6): the band behind the desk is gone, the desk stands at the floor's back edge. From the sides it is cut in on a diagonal from (±23.5, z 106) to (±12, z 123.6), chair by chair (`inBack` in j-dome.js), read off 정우's green line over a screenshot of the floor. An estimate from a picture, not a plan.
+- Block size unchanged (16 × 15). A short band (6 rows, z 56.6–62.4) fills the gap beside the walkway across, past its ends at x ±31.4.
+
 ## Round 36: the dome's floor to its edges with FOH at the back; Wembley's end screens set into the tier; the cross without z-fighting
 - **Asked** (user): fill the dome's floor the way the real layout does (a photo of LE SSERAFIM at Tokyo Dome, the empty field at the
   edges marked to be filled), FOH desk at the very back; Wembley's end screens stuck out unlike the real ones; the floor of the
