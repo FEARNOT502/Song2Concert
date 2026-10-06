@@ -2,6 +2,30 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 31: Wembley's Level 1 in two sections, the back one on a wall up from the walkway
+- **What was asked** (user): find out how the real Wembley's Level 1 is built and rework it; there should be a step between its two
+  blocks of rows.
+- **What the real one is.** The detailed plan dots two barriers round the bowl (white dots at depth ~28.0 and ~30.5 rows): the front
+  of the walkway behind row 27, and the top of a wall behind row 28; the row numbers skip 29 and 30. Photos (geograph, divisare) show
+  the front section, the walkway the vomitories open on to (row 28's companion places on it) and the back section, rows 31 on, on a
+  wall of about a metre.
+- **The rake** (`wb_gen.py`, `stepped`). Bands up to 30 keep the plain sightline rake (`H1r`); from band 31 (`STEP1`) it starts again,
+  its first row's eye clearing a 1.8 m person standing on band 30 (C 0.07). The wall is 0.927 m; the back rows stand ~0.6 m higher
+  than before (row 44 at 15.6 m), so L2's rows stand at least 2.6 m over them (3.3 before).
+- **The vomitories** keep the steps, concourse floor (8.34) and cut rows they had on the plain rake (`vom_plan(H1r, ...)`: open row
+  34), so their pits and the seat count around them are as reviewed.
+- **The way up.** The plan's aisles up the back section meet the walkway where the vomitories are, so each pit gets a flight up each
+  side of it (`flight`, 0.7 m wide, 11 risers from the walkway to row 34 over the tunnel's roof), the rows' treads cut away under it
+  (`NOTCH1`) and the seats packed against the pit's walls making way: 78 flights (the press box's and two corners' sides left out),
+  296 seats, so L1 has 33,988 (official 34,303). A search for other aisles crossing the wall (`row_gaps`) finds none left once these
+  are in.
+- **The barriers** (`fence_runs`, `L.fences`, the same see-through posts and bars as the arena's corners): along the top of the wall
+  (not over the press box's desks), and along the walkway's front where row 27 is seated in front and the walkway clear behind,
+  open at each vomitory's mouth (`at_mouth`) and the aisles; 355 pieces.
+- **Checks.** 148 vomitories walked through, none failed; L1 33,988 / 33,988 seats reachable (L2 all, L5 39,047 / 39,050 as before);
+  the app builds and loads the stadium with no errors. The renderers did not change. The acoustics were not touched.
+- **To know.** Row 28's seats still run across the front of a vomitory's mouth where the plan draws them there (as before this round).
+
 ## Round 30: Wembley seated row by row from what the plan draws, the corner portals' heads along the row over them
 - **What was asked** (user): the tunnel's top is crooked, the seats have gaps in them and the spacing along the rows is odd, so lay
   the seating out exactly as the real Wembley's.
