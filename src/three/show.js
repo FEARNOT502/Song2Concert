@@ -145,13 +145,19 @@ export function bigScreens(ctx, root, { w, h: wallH = 0, y, z, imagW = 0, imagX,
 // a square end stage. `inside(x, z, pad)` says whether a point of the floor is
 // under any of it, for the crowd and the seats to keep clear.
 export function crossThrust(root, { z0, z1, w, crossZ, crossD, crossW, tip = 0, h }) {
+  // the runway in pieces either side of the walkway and short of the end
+  // stage, so no two decks lie in one plane over the same floor (their tops
+  // would fight for the pixels as the view turns)
+  const run = (a, b) => (b - a > 0.01 ? [{ x: 0, z: (a + b) / 2, w, d: b - a, lip: false }] : []);
+  const end = tip ? z1 - tip : z1;
   const parts = [
-    { x: 0, z: (z0 + z1) / 2, w, d: z1 - z0 },
-    { x: 0, z: crossZ + crossD / 2, w: crossW * 2, d: crossD },
+    ...run(z0, crossZ),
+    { x: 0, z: crossZ + crossD / 2, w: crossW * 2, d: crossD, lip: true },
+    ...run(crossZ + crossD, end),
   ];
-  if (tip) parts.push({ x: 0, z: z1 - tip / 2, w: tip, d: tip });
-  const decks = parts.map((p, i) => {
-    const d = stageDeck({ w: p.w, d: p.d, h, z: p.z, lip: i > 0 });
+  if (tip) parts.push({ x: 0, z: z1 - tip / 2, w: tip, d: tip, lip: true });
+  const decks = parts.map((p) => {
+    const d = stageDeck({ w: p.w, d: p.d, h, z: p.z, lip: p.lip });
     root.add(d);
     return d;
   });
