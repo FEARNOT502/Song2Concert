@@ -191,6 +191,42 @@ export function screenHang(root, { x = 0, y, z, w, yaw = 0, topY, n = 4, size = 
   root.add(new THREE.Mesh(mergeGeometries(c), mats().chain));
 }
 
+// A ground-supported stage roof, for a room whose own roof can't take the
+// show's weight (an open stadium, an air-supported dome): lattice towers at
+// the corners (+-tx at the first and last of `zs`) standing on `y0`, a roof
+// grid at `top` with a beam across at every z of `zs` and along each side, a
+// black skin over it, the front towers raked back. Everything else hangs from
+// it on chains to `top - 0.8`.
+export function groundRoof(root, { tx, zs, y0 = 0, top }) {
+  const steel = [];
+  const z0 = zs[0], z1 = zs[zs.length - 1];
+  for (const sx of [-tx, tx]) {
+    for (const z of [z0, z1]) latticeInto(steel, V3(sx, y0, z), V3(sx, top + 0.8, z), 1.8, 0.08);
+    latticeInto(steel, V3(sx, y0, z1 - 6), V3(sx, y0 + 12, z1 - 0.9), 0.6, 0.035);
+    latticeInto(steel, V3(sx, top, z0), V3(sx, top, z1), 1.6, 0.07);
+  }
+  for (const z of zs) latticeInto(steel, V3(-tx, top, z), V3(tx, top, z), 1.6, 0.07);
+  root.add(new THREE.Mesh(mergeGeometries(steel), mats().black));
+  const skin = new THREE.Mesh(new THREE.BoxGeometry(2 * tx + 3, 0.25, z1 - z0 + 3), std({ color: 0x0a0a0c, roughness: 0.85 }));
+  skin.position.set(0, top + 1.0, (z0 + z1) / 2); root.add(skin);
+}
+
+// A PA wing: a lattice tower on its own ballast at (x, z), `h` high, a head
+// truss across its top for the side and 270 hangs, outriggers to the base,
+// and a bridge back to the stage roof at `bridge` (a point on its side beam).
+export function paWing(root, { x, z, h, bridge = null }) {
+  const steel = [];
+  const sd = Math.sign(x) || 1;
+  latticeInto(steel, V3(x, 0, z), V3(x, h + 0.6, z), 1.8, 0.08);
+  latticeInto(steel, V3(x - sd * 2.5, h, z), V3(x + sd * 3, h, z), 1.0, 0.05);
+  latticeInto(steel, V3(x + sd * 2.5, h, z - 1), V3(x + sd * 2.5, h, z + 2), 0.8, 0.05);
+  if (bridge) latticeInto(steel, V3(x - sd * 0.9, h, z), bridge, 1.0, 0.05);
+  for (const [dx, dz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) latticeInto(steel, V3(x + dx * 3.4, 0.3, z + dz * 3.4), V3(x + dx * 0.7, h * 0.3, z + dz * 0.7), 0.45, 0.03);
+  root.add(new THREE.Mesh(mergeGeometries(steel), mats().black));
+  const base = new THREE.Mesh(new THREE.BoxGeometry(7.6, 0.3, 7.6), std({ color: 0x1a1b1e, roughness: 0.8 }));
+  base.position.set(x, 0.15, z); root.add(base);
+}
+
 // The floor's subwoofers: a row of cabinets along the front of the stage,
 // under the barrier line, broken where the runway leaves the stage; and the
 // front fills on the deck's lip, small boxes every few metres.

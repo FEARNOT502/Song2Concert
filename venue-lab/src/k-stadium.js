@@ -474,30 +474,10 @@ function buildStadium(ctx) {
   // line and along the sides, a black skin over it
   const TX = WW / 2 + 4, SR = 33;                    // the towers' x, the roof's height
   const BZ = [WZ - 0.4, 14.5, 21.5, 28.5];          // the roof's beams across
-  const stgSteel = [];
-  for (const sx of [-TX, TX]) for (const z of [BZ[0], BZ[3]]) {
-    latticeInto(stgSteel, V3(sx, DECK, z), V3(sx, SR + 0.8, z), 1.8, 0.08);
-    // the front towers raked back to the deck
-    if (z === BZ[3]) latticeInto(stgSteel, V3(sx, DECK, z - 6), V3(sx, DECK + 12, z - 0.9), 0.6, 0.035);
-  }
-  for (const z of BZ) latticeInto(stgSteel, V3(-TX, SR, z), V3(TX, SR, z), 1.6, 0.07);
-  for (const sx of [-TX, TX]) latticeInto(stgSteel, V3(sx, SR, BZ[0]), V3(sx, SR, BZ[3]), 1.6, 0.07);
+  groundRoof(root, { tx: TX, zs: BZ, y0: DECK, top: SR });
   // the PA wings: a tower either side past the deck, bridged to the roof
   const PX = 44, PZ = 19, PH = 31;
-  for (const sd of [-1, 1]) {
-    latticeInto(stgSteel, V3(sd * PX, 0, PZ), V3(sd * PX, PH + 0.6, PZ), 1.8, 0.08);
-    latticeInto(stgSteel, V3(sd * (PX - 2.5), PH, PZ), V3(sd * (PX + 3), PH, PZ), 1.0, 0.05);
-    latticeInto(stgSteel, V3(sd * (PX + 2.5), PH, PZ - 1), V3(sd * (PX + 2.5), PH, PZ + 2), 0.8, 0.05);
-    latticeInto(stgSteel, V3(sd * (PX - 0.9), PH, PZ), V3(sd * (TX + 0.8), SR, BZ[2]), 1.0, 0.05);
-    for (const [dx, dz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) latticeInto(stgSteel, V3(sd * PX + dx * 3.4, 0.3, PZ + dz * 3.4), V3(sd * PX + dx * 0.7, PH * 0.3, PZ + dz * 0.7), 0.45, 0.03);
-  }
-  root.add(new THREE.Mesh(mergeGeometries(stgSteel), mats().black));
-  for (const sd of [-1, 1]) {
-    const base = new THREE.Mesh(new THREE.BoxGeometry(7.6, 0.3, 7.6), std({ color: 0x1a1b1e, roughness: 0.8 }));
-    base.position.set(sd * PX, 0.15, PZ); root.add(base);
-  }
-  const skin = new THREE.Mesh(new THREE.BoxGeometry(2 * TX + 3, 0.25, BZ[3] - BZ[0] + 3), std({ color: 0x0a0a0c, roughness: 0.85 }));
-  skin.position.set(0, SR + 1.0, (BZ[0] + BZ[3]) / 2); root.add(skin);
+  for (const sd of [-1, 1]) paWing(root, { x: sd * PX, z: PZ, h: PH, bridge: V3(sd * (TX + 0.8), SR, BZ[2]) });
   // the wall on its own header and chains from the roof's back beam
   screenHang(root, { y: Y0 + WH + 0.3, z: WZ, w: WW, topY: SR - 0.8, n: 7, size: 0.76 });
   // the lighting trusses on chains under the roof's beams
@@ -506,7 +486,7 @@ function buildStadium(ctx) {
     const t = truss(2 * TX - 4, { size: 1.0, finish: 'black' }); t.position.set(0, LT, z); root.add(t);
     root.add(hoists([-28, -14, 0, 14, 28], LT, z, SR - 0.8));
   }
-  // no one on stage: the backline in the triangle, the microphone at the B-stage
+  // no one on stage: the backline set, the microphone at the end stage
   const star = micStand({ height: 1.6 });
   star.position.set(0, XH, RW1 - 1.2); root.add(star);
   for (const [x, z, col] of [[-10, 18, 0x5a1a0e], [10, 18, 0x1a1a1c]]) {
