@@ -2,18 +2,16 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
-## Round 36: the dome's floor on arcs, FOH at the back, its roof in two layers; Wembley's end screens set into the tier
-- **Asked** (user, with a sketch and a photo of the roof): dome floor blocks along an arc as drawn, the FOH desk to the very back;
-  Wembley's end screens stuck out unlike the real ones; the dome's roof is not a plain grid: big triangular areas left, right and
-  in the middle with a square grid, openings, and two layers.
-- Dome floor: band A straight between the pit and the cross; behind it bands (B on) of 16 x 15 blocks on arcs about the cross's
-  middle (C = (0, CZ + XD/2)), 105 degrees either side, a centre aisle while the runway runs through a band; every chair turned to
-  the stage front; rows cut below 6 chairs and blocks below 4 rows dropped. FOH (eye) z 104 -> 121, in front of the stands behind
-  home; delay towers (+-21, z 77). The lab's info line ('56 m') is unchanged.
-- Dome roof: `membraneMaterial({ zc, diamond })`: the inner layer's panels inside |x| + |z - zc| < 0.88 RA stand apart from those
-  outside, so a slit steps panel by panel along that line (discarded), the outer layer (a copy 1.5 m up, basic material, lit
-  with the house lights) showing through; 30% of panels have a round opening; outside the middle each panel has a crease corner
-  to corner along the slit (triangles). From FOH the slits read as the V in the photo.
+## Round 36: the dome's floor to its edges with FOH at the back; Wembley's end screens set into the tier; the cross without z-fighting
+- **Asked** (user): fill the dome's floor the way the real layout does (a photo of LE SSERAFIM at Tokyo Dome, the empty field at the
+  edges marked to be filled), FOH desk at the very back; Wembley's end screens stuck out unlike the real ones; the floor of the
+  cross runway flickered where the two runways overlap. (A first pass put the blocks on arcs and rebuilt the roof in two layers;
+  the user asked for both to be undone, so the roof is as before.)
+- Dome floor: the straight 16 x 15 blocks as before, now out to 2.2 m from the field's edge (rows down to 3 chairs, blocks down to 2
+  rows, so the corners fill); the desk and the delay towers' bases take only the chairs they stand on. FOH (eye) z 104 -> 122, the
+  middle of the back of the floor. The lab's info line ('56 m') is unchanged.
+- `crossThrust`: the runway is built in pieces either side of the walkway and short of the end stage, so no two deck tops share a
+  plane over the same floor (was z-fighting in arena, dome and stadium).
 - Wembley: from the photographs (Commons "Wembley Stadium interior"), the screens sit in the front of Level 5, foot on the lip,
   face flush, rows rising behind and beside. The housing no longer hangs below the lip; the screen sits on the mouth's chord.
 
