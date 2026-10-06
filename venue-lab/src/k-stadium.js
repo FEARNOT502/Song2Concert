@@ -107,10 +107,12 @@ function buildStadium(ctx) {
   // through the doors at the back from the club concourse and the boxes) and
   // Level 5 (501-552, up to 45 rows down the sides, 24 at the ends where the
   // two big screens stand in bays in its front, tunnels a third of the way
-  // up). The stand behind the stage is not sold.
+  // up). Sold out as a concert sells it: every seat that can see the face of
+  // the wall, the restricted-view ones beside the stage included; the stand
+  // behind it and the corners behind the wall's line are not sold.
   const stands = buildStands(WB_STANDS, {
     offset: OFF, stage: STAGE, seatColor: 0x9a1418, concreteTone: 0.26, seed: 600, roofY: ROOF,
-    sold: (x, z) => !(z < 14 && Math.abs(x) < 48),
+    sold: (x, z) => z - 8 > Math.max(2, 0.12 * (Math.abs(x) - 31)),   // in front of the wall (face z 8, 62 m wide)
   });
   root.add(stands.group);
   const ring = (poly) => poly[0].map(([x, z]) => ({ x, z: z + ZC }));

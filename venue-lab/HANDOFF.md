@@ -2,6 +2,13 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 35: the stands sold as a concert sells them
+- **Asked** (user): fill the dome's and the stadium's stands as a sold-out show sells them, restricted-view seats included; the
+  stadium's crowd went too far back, the dome's should reach a little into the outfield.
+- Both now sell a seat when it can see the wall's face: `z - WZ > max(m, 0.12 * (|x| - WW/2))` (about 7 degrees past the wall's
+  edge; m = 2 m stadium, 4 m dome). Stadium (face z 8, 62 m): no more corner seats behind the wall's line. Dome (face z 19.6,
+  66 m): the outfield's F stands past the poles are sold, the stand behind the set is not.
+
 ## Round 34: the dome's show on its own steel, its stage forward, its floor in wide blocks
 - **Asked** (user): nothing can hang from the dome's membrane, so build a structure; the stage is too far back, place it from real
   references; lay the floor blocks out as the real plans run them (no one-row leftovers) and bigger, filling the gaps.

@@ -119,13 +119,15 @@ export function buildDome(ctx) {
   // The 2nd floor: D (rows 1–10) and E (11 up to 33, deepest behind home)
   // with the walkway between, the passages from its concourse opening onto
   // it; its front stands out 12 m over the 1st floor. Blue seats, the
-  // balcony's (season seats) grey; the outfield unsold.
+  // balcony's (season seats) grey. Sold out as a concert sells it: every
+  // seat that can see the face of the wall, the restricted-view ones beside
+  // the stage and the outfield's ends past the poles included; the outfield
+  // behind the set not.
   const stands = buildStands(TD_STANDS, {
     offset: OFF, stage: STAGE, seed: 400, concreteTone: 0.28, roofY: (x, z) => ringY(z + ZH) + 0.3,
     seatColors: { A: 0x1d3c86, B: 0x1d3c86, F: 0x1d3c86, K: 0x1d3c86, G: 0x1d3c86, C: 0x5a5d63, D: 0x1d3c86, E: 0x1d3c86 },
     crowd: !!q.crowd,
-    // nobody behind or beside the set, nor out in the outfield stands
-    sold: (x, z, name) => z > 28 && name !== 'F',
+    sold: (x, z) => z - 19.6 > Math.max(4, 0.12 * (Math.abs(x) - 33)),   // in front of the wall (face z 19.6, 66 m wide)
     // the side walls where a stand drops away: the stands' own concrete,
     // not dark steel
     materials: { rail: std({ color: 0x77736c, roughness: 0.92, side: THREE.DoubleSide }) },
