@@ -34,10 +34,10 @@ Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 - New tools: `rowwalk.mjs` (above) and `appprobe.mjs` (what the app's walker meets at given points: the meshes there and its
   rays at knee to head height).
 
-## Round 38: Wembley's end screens at the back of their notch
+## Round 38: Wembley's end screens fill their notch, set into Level 5's front
 
-- Each end screen bay is a notch in Level 5's front, 8 m deep (`bays[].ring`, which runs from the bridged front back to the rows behind). The housing used to fill the notch flush with the front, up to the screen's top: from the blocks either side it was a tall wall, and the screen stood out ahead of the curve. Now the screen stands at the back of the notch, 0.9 m in from its back edge, on a pale grey housing (0x74777c, as in 정우's photograph) only as wide as the screen. In front of it the notch is open, with a low floor at the screen's foot, so the blocks either side look past their own stepped ends straight at it.
-- The foot stays on the tier's front lip (y0 + 0.1). Set lower, the front and Level 2's back rows hid the bottom from the pitch. Its top is about 2 m above the first row behind the notch; those few rows sit behind the screen.
+- Each end screen bay is a notch in Level 5's front, 8 m deep (`bays[].ring`). Before, the housing filled the notch up to the screen's top and the 23.9 m screen stood on the mouth's chord, ahead of the front's curve. Seen from below it stood out, and from the blocks either side the housing was a tall wall. 정우's photograph shows the board set into the bottom of the tier's front, the blocks either side coming down to its edges with only a low rail between.
+- Now (`screenBays` in k-stadium.js) the screen fills the notch from side to side, about 34 m by 9.5 m, its face 0.3 m behind the front's deepest point and its foot below the front lip. It has a pale grey housing 1.2 m deep (0x74777c, as in the photo). Behind that, the tier's own treads (L5 `hs`, 0.8 m a row) run on to the rows behind, unseated, so there is no wall beside the blocks either side. Seats within 6 m behind the notch, where the board blocks the view, are not sold.
 - In the app, only `src/three/venues/stadium.js` was copied over from gen. The other generated modules differ from main's app copies (edits made in the app after the lab), so they were left alone.
 
 ## Round 37: the dome's floor ends at the line 정우 drew; seats beside the cross's arms
