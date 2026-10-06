@@ -27,6 +27,11 @@ import { extractMetadata } from './audio/metadata.js';
 const RENDER_SHARE = 0.72;
 
 const stripExt = (name) => name.replace(/\.[^.]+$/, '');
+// a queue row: "title - artist", the file name standing in for a missing title
+const queueLabel = (file, meta) => {
+  const title = meta.title || stripExt(file.name);
+  return meta.artist ? `${title} - ${meta.artist}` : title;
+};
 
 // Tags and cover art, extracted once per File and kept until the track is
 // loaded — the read-ahead fills this, the switch drains it. A cover is an
@@ -46,8 +51,9 @@ function metadataFor(file, take = false) {
 // shown before anything is uploaded
 const PLACEHOLDER_FILE = {
   name: 'no file loaded',
-  track: 'drop a FLAC / WAV to begin',
-  artist: '—',
+  hint: 'drop a FLAC / WAV to begin',
+  album: null,
+  artist: null,
   format: '— · —',
   durSec: 0,
   cover: null, // no art before a file is loaded → plain black on the stage
@@ -70,11 +76,13 @@ export default function App() {
 
   // playback queue. The track at index 0 is ALWAYS the one currently loaded;
   // finished / skipped tracks are removed from the front. `queue` state mirrors
-  // the File[] in queueRef as lightweight display rows ({ id, name }).
+  // the File[] in queueRef as lightweight display rows ({ id, name }), where
+  // name starts as the file name and becomes "title - artist" once the tags
+  // have been read.
   const queueRef = useRef([]);             // File[] — [current, next, ...]
   const idRef = useRef(0);                 // monotonic id for stable list keys
   const [queue, setQueue] = useState([]);  // [{ id, name }] for display
-  const [upload, setUpload] = useState(null); // { name, track, artist, durSec, coverSrc, format }
+  const [upload, setUpload] = useState(null); // { name, album, tagArtist, artist, durSec, coverSrc, format }
 
   const { engine, status, duration, hasAudio, setStatus, loadFile, play, pause } = useEngine();
   const isMobile = useIsMobile();
@@ -95,7 +103,8 @@ export default function App() {
 
   const displayFile = useMemo(() => (upload
     ? {
-        name: upload.name, track: upload.track, artist: upload.artist,
+        // Missing tags are left out (null), not shown as an empty line.
+        name: upload.name, album: upload.album, artist: upload.tagArtist,
         format: upload.format, durSec: Math.round(upload.durSec || 0), cover: 'blueRoom',
       }
     : PLACEHOLDER_FILE), [upload]);
@@ -235,11 +244,14 @@ export default function App() {
     }
     const fmt = `${(f.name.split('.').pop() || 'PCM').toUpperCase()} · streaming`;
     const meta = await metadataFor(f, true);
+    setQueue((rows) => (rows.length ? [{ ...rows[0], name: queueLabel(f, meta) }, ...rows.slice(1)] : rows));
     setUpload((prev) => {
       if (prev?.coverSrc) URL.revokeObjectURL(prev.coverSrc);
       return {
         name: meta.title || stripExt(f.name),
-        track: meta.artist ? stripExt(f.name) : 'uploaded · streaming',
+        album: meta.album || null,
+        tagArtist: meta.artist || null,
+        // the stage art and lock screen keep their own stand-in for no tag
         artist: meta.artist || 'your file',
         durSec: engine.duration,
         coverSrc: meta.coverSrc,
@@ -298,6 +310,33 @@ export default function App() {
   readAheadRef.current = readAhead;
   useEffect(() => () => clearTimeout(readAheadTimer.current), []);
 
+  // Queue rows start as file names; read each new file's tags in turn and
+  // relabel its row "title - artist". One at a time, so a big drop does not
+  // read dozens of files at once. The reads land in metadataCache, so the
+  // switch to each track later reuses them.
+  const labelRows = useCallback(async (rows) => {
+    for (const { id, file } of rows) {
+      // gone, or already loaded (loadFront labels the front row itself)
+      if (!queueRef.current.includes(file) || queueRef.current[0] === file) continue;
+      let meta;
+      try { meta = await metadataFor(file); } catch { continue; }
+      // the file may have left the queue meanwhile
+      if (!queueRef.current.includes(file)) continue;
+      setQueue((q) => q.map((r) => (r.id === id ? { ...r, name: queueLabel(file, meta) } : r)));
+    }
+  }, []);
+
+  // A file leaving the queue unplayed may already have its tags read, and
+  // with them a cover object URL; let that go too.
+  const dropMetadata = useCallback((files) => {
+    for (const f of files) {
+      if (!metadataCache.has(f)) continue;
+      metadataFor(f, true)
+        .then((m) => { if (m?.coverSrc) URL.revokeObjectURL(m.coverSrc); })
+        .catch(() => {});
+    }
+  }, []);
+
   // Drop the front (finished/skipped) track, then load the new front.
   const advance = useCallback(async () => {
     queueRef.current = queueRef.current.slice(1);
@@ -312,21 +351,24 @@ export default function App() {
     const rows = queue;
     const idx = rows.findIndex((r) => r.id === id);
     if (idx <= 0) { if (idx === 0) return; else return; } // 0 is already playing
+    // the current track's tags were taken when it loaded; skipped ones were not
+    dropMetadata(queueRef.current.slice(1, idx));
     queueRef.current = queueRef.current.slice(idx);
     setQueue(rows.slice(idx));
     await loadFront(true);
-  }, [queue, loadFront]);
+  }, [queue, loadFront, dropMetadata]);
 
   // Remove a single queued track by id (cannot remove the one playing, index 0).
   const removeFromQueue = useCallback((id) => {
     const idx = queue.findIndex((r) => r.id === id);
     if (idx <= 0) return; // never remove the currently-playing front track here
+    dropMetadata([queueRef.current[idx]]);
     queueRef.current = queueRef.current.filter((_, i) => i !== idx);
     setQueue((rows) => rows.filter((r) => r.id !== id));
     // Removing the track that was queued next makes the decoded buffer waste,
     // and whatever moved up into its place is now worth having ready instead.
     if (idx === 1) readAheadRef.current(0);
-  }, [queue]);
+  }, [queue, dropMetadata]);
 
   // append dropped/selected files to the queue; start playing if idle
   const handleUpload = async (files) => {
@@ -334,12 +376,14 @@ export default function App() {
     if (!list.length) return;
     const wasEmpty = queueRef.current.length === 0;
     queueRef.current = queueRef.current.concat(list);
-    setQueue((rows) => rows.concat(list.map((f) => ({ id: ++idRef.current, name: stripExt(f.name) }))));
-    if (wasEmpty) { await loadFront(true); return; }
+    const added = list.map((f) => ({ id: ++idRef.current, file: f }));
+    setQueue((rows) => rows.concat(added.map(({ id, file }) => ({ id, name: stripExt(file.name) }))));
+    if (wasEmpty) { await loadFront(true); labelRows(added); return; }
     // Something is already playing and these went behind it. If one of them is
     // now the next track, start decoding it — the point of the read-ahead is
     // that it is done long before it is needed.
     readAhead(1500);
+    labelRows(added);
   };
 
   // next = drop the front and play the next queued track

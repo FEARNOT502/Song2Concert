@@ -149,10 +149,9 @@ export default function MobileLayout({
           {/* now playing */}
           <Card title="Playing">
             <div className="text-white text-[18px] font-light leading-snug font-tight truncate">{displayFile.name}</div>
-            <div className="text-[12px] text-neutral-500 mt-0.5 truncate">{displayFile.track}</div>
-            {upload && upload.artist && upload.artist !== '—' && (
-              <div className="text-[11px] text-neutral-600 mt-0.5 truncate">{upload.artist}</div>
-            )}
+            {displayFile.album && <div className="text-[12px] text-neutral-500 mt-0.5 truncate">{displayFile.album}</div>}
+            {displayFile.artist && <div className="text-[11px] text-neutral-600 mt-0.5 truncate">{displayFile.artist}</div>}
+            {displayFile.hint && <div className="text-[12px] text-neutral-500 mt-0.5 truncate">{displayFile.hint}</div>}
             <div className="text-[11px] text-neutral-600 mt-1.5">{displayFile.format}</div>
           </Card>
 
