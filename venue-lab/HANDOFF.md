@@ -51,6 +51,12 @@ Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 - **Checks.** 148 vomitories walked through, none failed; every L1 and L2 seat reachable, L5 39,147 / 39,150 (the same three front-row seats beside the 508 and 544 vomitories as before); the app builds and loads the stadium with no errors. The
   renderers and the crowd rule did not change. The acoustics were not touched.
 
+## Round 38: Wembley's end screens set back into Level 5's front
+
+- The screen used to stand on the bay mouth's chord, but the tier's front bows back from that chord by up to 1.8 m in the middle, so from Level 2 the screen read as a panel standing out over the crowd. It now stands 0.15 m behind the front's deepest point, in a niche cut into the housing. Either side of it, the housing's face follows the front's own curve.
+- The housing is pale grey cladding (0x74777c), as in 정우's photograph, not the stands' dark front.
+- In the app, only `src/three/venues/stadium.js` was copied over from gen. The other generated modules differ from main's app copies (edits made in the app after the lab), so they were left alone.
+
 ## Round 37: the dome's floor ends at the line 정우 drew; seats beside the cross's arms
 
 - The floor stops at the cross aisle behind the FOH desk's band (z 123.6): the band behind the desk is gone, the desk stands at the floor's back edge. From the sides it is cut in on a diagonal from (±23.5, z 106) to (±12, z 123.6), chair by chair (`inBack` in j-dome.js), read off 정우's green line over a screenshot of the floor. An estimate from a picture, not a plan.

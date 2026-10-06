@@ -141,13 +141,14 @@ export function buildStadium(ctx) {
   // ── the bays in Level 5's front ──
   // At either end a bay holds a big screen (Daktronics, 23.88 m by 8.15 m,
   // 2013), moulded into the tier: its foot on the tier's front lip, its face
-  // flush with the front, the rows rising on behind it and either side, its
+  // set back into the front, the rows rising on behind it and either side, its
   // housing filling the bay behind (as the photographs from the stands show
   // it, a dark panel set into the front of Level 5, not a box standing out). On the south side a bay holds the TV gantry (Level 4):
   // an open platform level with the tier's front row, a glass balustrade
   // along its front, the cameras along it, the commentary desks along its
   // back, under a light canopy.
   const housingMat = std({ color: 0x2a2c30, roughness: 0.7, metalness: 0.3 });
+  const cladMat = std({ color: 0x74777c, roughness: 0.75, metalness: 0.2 });
   const glassMat = new THREE.MeshPhysicalMaterial({ color: 0x9fb2bf, roughness: 0.08, metalness: 0, transmission: 0.0, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false });
   const steelDark = std({ color: 0x1a1b1e, roughness: 0.5, metalness: 0.5 });
   const L5h0 = WB_STANDS.levels.find((l) => l.name === 'L5').h0;
@@ -176,11 +177,24 @@ export function buildStadium(ctx) {
     const yaw = Math.atan2(nx, nz);
     if (screen) {
       const foot = b.y0 + 0.1, head = foot + 8.15 + 0.3;
-      extrude(b.ring, b.y0 - 0.2, head, housingMat);
-      const scr = ledScreen({ w: 23.88, h: 8.15, tex: ctx.art.texture(23.88 / 8.15), pitch: 0.012, bright: 1.3, kind: 'main', frame: 0.2, light: false });
-      // on the chord of the mouth (the tier's front bows back from it in the middle)
+      // the tier's front bows back from the mouth's chord (1.8 m in the
+      // middle): the screen stands just behind the deepest point of it, so
+      // nowhere ahead of the front, in a niche cut into the housing, whose
+      // face either side of it runs on along the front's own curve
       const cx = (a0[0] + a1[0]) / 2, cz = (a0[1] + a1[1]) / 2;
-      scr.position.set(cx + nx * 0.06, foot + 0.15 + 8.15 / 2, cz + ZC + nz * 0.06); scr.rotation.y = yaw;
+      const ux = tx / tl, uz = tz / tl;
+      const T = ([x, z]) => (x - cx) * ux + (z - cz) * uz, D = ([x, z]) => -((x - cx) * nx + (z - cz) * nz);
+      const S = Math.max(...f.map(D)) + 0.2, Wh = 23.88 / 2 + 0.3;
+      const at = (t, d) => [cx + ux * t - nx * d, cz + uz * t - nz * d];
+      const back = b.ring.slice(0, b.ring.length - f.length + 2);     // a0, round the back, to a1
+      // the front from a1 back to a0, the niche let into it where the screen is
+      const fr = f.slice().reverse(), s1 = Math.sign(T(fr[0]));
+      const dAt = (t) => { const p = f.reduce((m, q) => (Math.abs(T(q) - t) < Math.abs(T(m) - t) ? q : m)); return D(p); };
+      const hole = [...fr.filter((p) => s1 * T(p) >= Wh), at(s1 * Wh, dAt(s1 * Wh)), at(s1 * Wh, S), at(-s1 * Wh, S), at(-s1 * Wh, dAt(-s1 * Wh)), ...fr.filter((p) => -s1 * T(p) >= Wh)];
+      extrude(back.concat(hole.slice(1, -1)), b.y0 - 0.2, head, cladMat);   // pale grey cladding, as in the photographs
+      const scr = ledScreen({ w: 23.88, h: 8.15, tex: ctx.art.texture(23.88 / 8.15), pitch: 0.012, bright: 1.3, kind: 'main', frame: 0.2, light: false });
+      const [sx, sz] = at(0, S - 0.05);
+      scr.position.set(sx, foot + 0.15 + 8.15 / 2, sz + ZC); scr.rotation.y = yaw;
       root.add(scr); ctx.addScreen(scr, 23.88 / 8.15, 'main');
       continue;
     }
