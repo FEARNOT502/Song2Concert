@@ -559,6 +559,10 @@ export function buildDome(ctx) {
   // the aisle behind the desk's band, cut in towards it from the sides
   // along the diagonal the foul lines' corners leave (from the plan 정우
   // drew over the floor)
+  // the field is not quite symmetric (the excite seats' fronts differ a
+  // little side to side): a chair only where the field holds it on both
+  // sides, so the blocks along them are mirror images
+  const inBoth = (x, z) => inField(x, z) && inField(-x, z) && Math.min(edgeDist(x, z), edgeDist(-x, z)) > 2.2;
   const BACK = 123.6, DG0 = [23.5, 106], DG1 = [12, BACK];
   const inBack = (x, z) => z < BACK && (z < DG0[1] || Math.abs(x) < DG0[0] + (z - DG0[1]) * (DG1[0] - DG0[0]) / (DG1[1] - DG0[1]));
   const blocks = [];
@@ -589,7 +593,7 @@ export function buildDome(ctx) {
       const rows = [];
       for (let j = 0; j < nz; j++) {
         const z = b.z0 + (j + 0.5) * PITCH, row = [];
-        for (let i = 0; i < nx; i++) { const x = ox + i * SEAT; if (inField(x, z) && edgeDist(x, z) > 2.2 && free(x, z) && inBack(x, z)) row.push(x); }
+        for (let i = 0; i < nx; i++) { const x = ox + i * SEAT; if (inBoth(x, z) && free(x, z) && inBack(x, z)) row.push(x); }
         if (row.length >= 3) rows.push({ z, row });
       }
       if (rows.length < 2) continue;
