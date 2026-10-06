@@ -2,6 +2,23 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 34: the dome's show on its own steel, its stage forward, its floor in wide blocks
+- **Asked** (user): nothing can hang from the dome's membrane, so build a structure; the stage is too far back, place it from real
+  references; lay the floor blocks out as the real plans run them (no one-row leftovers) and bigger, filling the gaps.
+- **References**: the 2nd-floor photos in stage-references/dome (01, 02) show the stage's front about level with the foul poles
+  (100 m down the lines, z ~43 here), the set's yard behind it; ticket-site guides give the floor as lettered blocks A (front) to
+  E/F, numbered across (up to 19-20 across), about 12 seats x 15 rows each with narrow aisles.
+- Stage moved 16 m forward (`SZ`): deck z 18-38, wall face z 19.6, runway from 38, cross walkway at z 57 (+-30 m), end stage to
+  z 88, delay towers (+-24, z 78). Stands sold from z > 28.
+- New in `h-show.js`: `groundRoof` (corner towers, roof grid, skin; everything else on chains under it) and `paWing` (side PA
+  tower on ballast with head truss, bridged to the roof). The dome: roof at 27 m, trusses at 23 m, mains off its front corners,
+  wings at +-47 (24 m). The stadium uses the same two helpers now (no visual change). The dome's own gondolas and house speakers
+  (venue equipment) still hang from the cables.
+- Floor: 16 seats x 15 rows (8 x 13.5 m), aisles 1.2 m, cross aisles 1.6 m, laid from the runway out, a centre block once past
+  the end stage. A block meeting the runway/cross/towers/desk gives up that whole side; slivers (< 6 seats or < 4 rows) and rows
+  the field edge cuts to < 6 chairs are dropped.
+- Checked: venue-lab top, side and FOH shots; `npm run build`; app draws dome, arena, stadium with no errors.
+
 ## Round 33: the stadium's big LED wall, and rigging that hangs from something
 - **Asked** (user): the stadium should get the same big LED wall as the dome and the arena, and the lighting and speaker trusses
   should stop looking like they float. **Acoustics untouched** as before.
