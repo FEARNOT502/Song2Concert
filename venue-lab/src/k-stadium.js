@@ -110,9 +110,29 @@ function buildStadium(ctx) {
   // up). Sold out as a concert sells it: every seat that can see the face of
   // the wall, the restricted-view ones beside the stage included; the stand
   // behind it and the corners behind the wall's line are not sold.
+  // The end screens' bays: each a notch in Level 5's front. The screen fills
+  // the notch from side to side just behind the front's curve, its foot
+  // below the tier's front lip (as the photographs show it: the blocks
+  // either side come down to its edges, a low rail between, the fascia
+  // band under it). The few rows right behind it face its back: not sold.
+  const SCREEN_H = 9.5;
+  const screenBays = WB_STANDS.bays.filter((b) => b.kind === 'screen').map((b) => {
+    const f = b.front, mid = f[Math.floor(f.length / 2)];
+    const [a0, a1] = b.mouth;
+    const tx = a1[0] - a0[0], tz = a1[1] - a0[1], tl = Math.hypot(tx, tz);
+    let nx = -tz / tl, nz = tx / tl;
+    if (nx * (0 - mid[0]) + nz * (0 - mid[1]) < 0) { nx = -nx; nz = -nz; }
+    const cx = (a0[0] + a1[0]) / 2, cz = (a0[1] + a1[1]) / 2, ux = tx / tl, uz = tz / tl;
+    const T = ([x, z]) => (x - cx) * ux + (z - cz) * uz, D = ([x, z]) => -((x - cx) * nx + (z - cz) * nz);
+    const Sf = Math.max(...f.map(D)) + 0.3;                             // the screen's face
+    const side = (sg) => Math.max(...b.ring.filter((p) => sg * T(p) > 0 && Math.abs(D(p) - Sf) < 0.6).map((p) => sg * T(p))) - 0.1;
+    const wl = side(-1), wr = side(1), Db = Math.max(...b.ring.map(D)) + 0.1;
+    return { b, nx, nz, cx, cz, ux, uz, T, D, Sf, wl, wr, Db, yaw: Math.atan2(nx, nz) };
+  });
+  const behindScreen = (x, z) => screenBays.some((q) => { const p = [x, z - ZC], t = q.T(p), d = q.D(p); return t > -q.wl - 0.5 && t < q.wr + 0.5 && d > q.Sf && d < q.Db + 6; });
   const stands = buildStands(WB_STANDS, {
     offset: OFF, stage: STAGE, seatColor: 0x9a1418, concreteTone: 0.26, seed: 600, roofY: ROOF,
-    sold: (x, z) => z - 8 > Math.max(2, 0.12 * (Math.abs(x) - 31)),   // in front of the wall (face z 8, 62 m wide)
+    sold: (x, z, lv) => z - 8 > Math.max(2, 0.12 * (Math.abs(x) - 31)) && !(lv === 'L5' && behindScreen(x, z)),   // in front of the wall (face z 8, 62 m wide), not behind an end screen
   });
   root.add(stands.group);
   const ring = (poly) => poly[0].map(([x, z]) => ({ x, z: z + ZC }));
@@ -130,15 +150,15 @@ function buildStadium(ctx) {
   root.add(ground);
 
   // ── the bays in Level 5's front ──
-  // At either end a bay holds a big screen (Daktronics, 23.88 m by 8.15 m,
-  // 2013), set into the tier: at the back of a notch in its front, the rows
-  // rising on behind it, the blocks either side open to it (as the
-  // photographs from the stands show it, not a box standing out). On the south side a bay holds the TV gantry (Level 4):
+  // At either end a bay holds a big screen (`screenBays` above: set into the
+  // tier, filling its notch side to side, not a box standing out). On the
+  // south side a bay holds the TV gantry (Level 4):
   // an open platform level with the tier's front row, a glass balustrade
   // along its front, the cameras along it, the commentary desks along its
   // back, under a light canopy.
   const housingMat = std({ color: 0x2a2c30, roughness: 0.7, metalness: 0.3 });
   const cladMat = std({ color: 0x74777c, roughness: 0.75, metalness: 0.2 });
+  const treadMat = std({ ...withRepeat(concreteTex({ key: 'standconc0.26', tone: 0.26 }), 1 / 3, 1 / 3), color: 0xffffff, roughness: 0.95 });
   const glassMat = new THREE.MeshPhysicalMaterial({ color: 0x9fb2bf, roughness: 0.08, metalness: 0, transmission: 0.0, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false });
   const steelDark = std({ color: 0x1a1b1e, roughness: 0.5, metalness: 0.5 });
   const L5h0 = WB_STANDS.levels.find((l) => l.name === 'L5').h0;
@@ -166,31 +186,27 @@ function buildStadium(ctx) {
     if (nx * (0 - mid[0]) + nz * (0 - mid[1]) < 0) { nx = -nx; nz = -nz; }
     const yaw = Math.atan2(nx, nz);
     if (screen) {
-      // its foot at the tier's front lip, so the pitch and the lower tiers
-      // see all of it over the front
-      const foot = b.y0 + 0.1, head = foot + 8.15 + 0.3;
-      // The bay is a notch in the tier's front, 8 m deep (the rows run on
-      // straight behind it). The screen stands at its back, set well in
-      // from the front, on its own housing; in front of it the notch is
-      // open, a low deck at its floor, so the blocks either side look past
-      // their own stepped ends straight at it, no wall between (as the
-      // photographs from the stands show it)
-      const cx = (a0[0] + a1[0]) / 2, cz = (a0[1] + a1[1]) / 2;
-      const ux = tx / tl, uz = tz / tl;
-      const T = ([x, z]) => (x - cx) * ux + (z - cz) * uz, D = ([x, z]) => -((x - cx) * nx + (z - cz) * nz);
-      const at = (t, d) => [cx + ux * t - nx * d, cz + uz * t - nz * d];
-      const Wh = 23.88 / 2 + 0.3;
-      const backPts = b.ring.slice(0, b.ring.length - f.length + 2).filter((p) => Math.abs(T(p)) < Wh);
-      const Sb = Math.min(...backPts.map(D)) - 0.9;                 // the screen's face
-      // the notch's sides at that depth: how wide the housing can be
-      const side = (sg) => Math.min(...b.ring.filter((p) => sg * T(p) > 0 && Math.abs(D(p) - Sb) < 0.6).map((p) => sg * T(p)), Wh + 0.4);
-      const wl = side(-1), wr = side(1), Db = Math.max(...b.ring.map(D)) + 0.1;
-      extrude(b.ring, foot - 0.4, foot - 0.1, cladMat);             // the notch's floor
-      extrude([at(-wl, Sb), at(wr, Sb), at(wr, Db), at(-wl, Db)], foot - 0.1, head, cladMat);   // the housing behind
-      const scr = ledScreen({ w: 23.88, h: 8.15, tex: ctx.art.texture(23.88 / 8.15), pitch: 0.012, bright: 1.3, kind: 'main', frame: 0.2, light: false });
-      const [sx, sz] = at(0, Sb - 0.05);
-      scr.position.set(sx, foot + 0.15 + 8.15 / 2, sz + ZC); scr.rotation.y = yaw;
-      root.add(scr); ctx.addScreen(scr, 23.88 / 8.15, 'main');
+      const q = screenBays.find((g) => g.b === b);
+      const at = (t, d) => [q.cx + q.ux * t - q.nx * d, q.cz + q.uz * t - q.nz * d];
+      const w = q.wl + q.wr - 0.2, t0 = (q.wr - q.wl) / 2;
+      const foot = b.y0 - 0.4, head = foot + SCREEN_H + 0.3;
+      extrude(b.ring, foot - 0.4, foot - 0.1, cladMat);                                     // the sliver of floor before it
+      const HB = 1.2;                                                                       // its housing, 1.2 m deep
+      extrude([at(-q.wl, q.Sf), at(q.wr, q.Sf), at(q.wr, q.Sf + HB), at(-q.wl, q.Sf + HB)], foot - 0.1, head, cladMat);
+      // behind it the tier's own treads run on to the rows behind, unseated
+      // (no wall beside the blocks either side, their rows and these level)
+      const L5 = WB_STANDS.levels.find((l) => l.name === 'L5'), Df0 = Math.max(...b.front.map(q.D));
+      const half = (sg, d) => Math.max(...b.ring.filter((p) => sg * q.T(p) > 0 && Math.abs(q.D(p) - d) < 0.5).map((p) => sg * q.T(p)), 0);
+      for (let k = Math.floor((q.Sf + HB - Df0) / L5.D); Df0 + k * L5.D < q.Db; k++) {
+        const d0 = Math.max(q.Sf + HB, Df0 + k * L5.D), d1 = Math.min(q.Db, Df0 + (k + 1) * L5.D), dm = (d0 + d1) / 2;
+        const l = half(-1, dm), r = half(1, dm);
+        if (d1 - d0 < 0.05 || l + r < 1) continue;
+        extrude([at(-l, d0), at(r, d0), at(r, d1), at(-l, d1)], foot - 0.1, L5.hs[Math.min(k, L5.hs.length - 1)], treadMat);
+      }
+      const scr = ledScreen({ w, h: SCREEN_H, tex: ctx.art.texture(w / SCREEN_H), pitch: 0.012, bright: 1.3, kind: 'main', frame: 0.15, light: false });
+      const [sx, sz] = at(t0, q.Sf - 0.05);
+      scr.position.set(sx, foot + 0.15 + SCREEN_H / 2, sz + ZC); scr.rotation.y = q.yaw;
+      root.add(scr); ctx.addScreen(scr, w / SCREEN_H, 'main');
       continue;
     }
     // the gantry
