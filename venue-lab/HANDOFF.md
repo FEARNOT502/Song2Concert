@@ -2,6 +2,23 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 32: stages and PA as the big tours build them (arena, dome, stadium)
+- References: /mnt/project-files/stage-references (photos + README with sources). Asked for: dome and arena a big LED wall and a
+  cross-shaped runway, IMAG only in the arena; the stadium like Harry Styles' Love On Tour at Wembley (2023); speakers and delay
+  towers placed as real shows place them. **Acoustics untouched**: `src/audio/venuerooms.js` keeps its own hang/tower positions.
+- New in `h-show.js`: `crossThrust` (runway, a walkway across it, an end stage; `inside(x, z, pad)` for the crowd), `paHang`
+  (a line array with bridles to the roof; yaw positive turns it towards +x), `subLine` (floor subs under the barrier + front fills
+  on the lip), `delayTower` (lattice mast on ballast, outriggers, head truss, array, returns light positions). `bigScreens` takes
+  `h` (a wide wall) and `imagW: 0` (no side screens).
+- Arena: 30 x 10.5 m wall + IMAG; cross (runway to z 52, walkway at z 38, +-12 m); mains +-17.6, flown subs, side hangs +-29.5
+  turned out, 270s +-33.5, delay hangs +-13 at z 56.
+- Dome: 66 x 16 m wall, no IMAG, no ribbon columns; deck 72 m; cross (runway to z 82, walkway at z 47, +-30 m, 10 m end stage);
+  mains +-36.4, side +-44.5, 270 +-51.5 from the roof; two field delay towers (+-24, z 66, 20 m) with lights.
+- Stadium: no stage roof; LED in three pieces (middle 30 x 19 m with a triangle cut at its foot and a light grid behind; wings
+  20 m, 18 m high inside sloping to 10 m outside, IMAG-style content), black header over the middle; mains from the header's
+  ends, side and 270 hangs on lattice towers at +-41.5; runway to a 9 m B-stage (z 59); two pitch delay towers (+-22, z 80, 26 m).
+- Checked: venue-lab renders (FOH, show mode, aerial), app `npm run build`, app draws all three without errors.
+
 ## Round 31: Wembley's Level 1 in two sections, the back one on a wall up from the walkway
 - **What was asked** (user): find out how the real Wembley's Level 1 is built and rework it; there should be a step between its two
   blocks of rows.
