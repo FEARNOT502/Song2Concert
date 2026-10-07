@@ -34,10 +34,17 @@ Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 - New tools: `rowwalk.mjs` (above) and `appprobe.mjs` (what the app's walker meets at given points: the meshes there and its
   rays at knee to head height).
 
-## Round 38: Wembley's end screens fill their notch, set into Level 5's front
+## Round 38: Wembley's end screens rebuilt from the real board and a photograph
 
-- Each end screen bay is a notch in Level 5's front, 8 m deep (`bays[].ring`). Before, the housing filled the notch up to the screen's top and the 23.9 m screen stood on the mouth's chord, ahead of the front's curve. Seen from below it stood out, and from the blocks either side the housing was a tall wall. 정우's photograph shows the board set into the bottom of the tier's front, the blocks either side coming down to its edges with only a low rail between.
-- Now (`screenBays` in k-stadium.js) the screen fills the notch from side to side, about 34 m by 9.5 m, its face 0.3 m behind the front's deepest point and its foot below the front lip. It has a pale grey housing 1.2 m deep (0x74777c, as in the photo). Behind that, the tier's own treads (L5 `hs`, 0.8 m a row) run on to the rows behind, unseated, so there is no wall beside the blocks either side. Seats within 6 m behind the notch, where the board blocks the view, are not sold.
+- Each end screen bay is a notch in Level 5's front, about 9 m deep and 35.6 m wide at the mouth, narrowing to about 30 m at the back (`bays[].ring`, from the plan). Earlier versions either stood the board on the mouth's chord (it stuck out), or filled the notch with a 34 m board (wrong size and shape).
+- References: Daktronics (2013), two main displays 8.15 m x 23.88 m. Photograph "A Wembley Stadium TV screen" (geograph 2952295, CC BY-SA, on Commons): the board's foot just above Level 2's back rows, its top just under the Level 5 rows behind the notch (vomitories 513/514 above). The fascia stops at the notch's ends, the box level's glazing shows either side of the board's lower half, and the rows either side end along a diagonal with a grey wall or soffit under them.
+- Now (`screenBays` and the screen branch of the bays loop in k-stadium.js):
+  - The board is 23.88 x 8.15 m. Its top sits 0.6 m under the first row that runs on unbroken behind the notch. Its face is `REC` = 3 m behind the front's deepest point, in the box level's plane. It has no orange bezel.
+  - Where the rows behind come down to the board's top, the dark housing (0x2a2c30) makes up the width out to their ends. It runs back to the rows behind, and its top is a walkway.
+  - Either side, in the board's plane, a wall (0x45474c, 1.2 m thick) rises from the tier's front lip to the board's top corner along the ends of the rows over it (`rowAt`). The side blocks end on it, and nothing stands between them and the board.
+  - In front of the board, the box level's grey wall runs up to a ledge just under its foot.
+- Sold seats are as before Round 36: no behind-the-screen exclusion, since the board's top is under the rows behind.
+- Stand data is unchanged.
 - In the app, only `src/three/venues/stadium.js` was copied over from gen. The other generated modules differ from main's app copies (edits made in the app after the lab), so they were left alone.
 
 ## Round 37: the dome's floor ends at the line 정우 drew; seats beside the cross's arms
