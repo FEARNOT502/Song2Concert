@@ -2,6 +2,49 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 40: Wembley's tiers stacked as built; the end screens right behind Level 2's last row
+- **What was asked** (user, three photos of the end screens): the board should sit right behind the 2xx blocks' last row; the
+  model had a walkway between them. Fix the whole bowl's section, not only the ends. Board at its real size.
+- **What it was.** The plan draws each level to its own scale, which had left Level 5's front 1.6-3.9 m further out than Level
+  2's back (5.7-8 m on the north side): `WALK2`, a walkway open to the bowl at the last row's height, with the box level's wall
+  under Level 5's front. The board stood 3 m behind the notch's deepest front point, about 7.6 m behind Level 2's last row.
+- **References.** Commons "Wembley Stadium interior.jpg" and "A Somewhat Empty Wembley" (geograph 8222730): at both ends and on
+  the south side, Level 2's last row → the box level's glass (2.5-3 m) → Level 5's fascia → Level 5. "The Royal Box at Wembley
+  Stadium" (geograph 1866643) and the north crop of 8222730: on the north side, the Level 3 glass right behind the Royal Box and
+  club seats, a fascia over it, the Level 4 boxes' balcony seats (doors 4021, 4022), and Level 5 behind and above. So the plan's
+  7 m set-back of Level 5's north side is that balcony.
+- **Level 5 brought in** (`wb_gen.py`, before the levels are built). The gap between Level 5's front line and Level 2's back,
+  per half degree (`GAP5`), is closed by moving Level 5's inputs (seats, front, footprint, and its bits of `wb_plan.png`) in
+  along each ray from the centre (`warp5`, `warp5_mask`, the warped `plan_bits`). The heights are unchanged. Where Level 5's
+  front is not its line round the bowl (the screens' and the gantry's bays, the north side between its steps) the shift is
+  interpolated from either side, then smoothed, plus `OVER5` = 3 m all round, so Level 5 stands out over Level 2's back rows
+  (`SHIFT5`: 4.65-6.97 m). Everything downstream (rows, aisles, vomitories, the north seam's K5 = 5, the concourses, the outer
+  wall) is rebuilt from that.
+- **The overhang** (asked after a first pass: "shouldn't the two blocks beside the screen stand further forward?"). In the
+  user's photos, beside the board you see the undersides of the flanking blocks (photo 1, a grey diagonal) and the notch's side
+  face (photo 3, a dark strip). So those blocks stand in front of the board, while the board stays right behind Level 2's last
+  row. The Royal Box photo shows the same soffit over the club seats on the north side. Hence 3 m over Level 2 all round (the
+  user chose 3 m and asked for it to be judged from photographs, not the plan). Level 5's fascia underside (27.8 m) is then
+  3.6 m over row 13.
+- **No walkway.** `WALK2` is empty. The box level's wall is now right behind Level 2's last row, under Level 5's overhang, with
+  Level 2's aisle doors in it.
+- **Level 4** (new level `L4` in the data): the north balcony from 3 m out over Level 2's back (like Level 5 elsewhere) to a row
+  in under Level 5's north front (2.7-5.3 m deep). Two rows at 28.6 and 28.95 m (0.85 m), box seats at 0.55 m. A balustrade along its front, the
+  boxes' glass under Level 5 (doors 2.32 m), and a fin wall at each end on the seam aisles, a rail's height over the corner
+  blocks' rows (along the balcony's own edge where those rows reach over the seam line: `CORNER5`, kept out of it). It is closed to the walker (box seats, reached through the boxes, which are not modelled). It is a slab over
+  Level 3 for `enclose`.
+- **The boards.** The generator finds each screen bay's board plane (`board` on the bay: the furthest point of Level 2's back
+  within the board's width, +0.05 m: about 4 m behind the mouth, 3 m behind the flanks' fronts) and cuts the box level's room in front of it (`cutL2`; its edge walls too), since that
+  back curves forward under a flat board's ends. In `k-stadium.js` the board (23.88 × 8.15 m) stands on that plane with its foot
+  0.5 m over Level 2's last tread (25.68-33.83 m, under row 12 behind). Either side, in its plane: the box level's glass (0.6 m
+  recessed), Level 5's fascia carried to the board's edges, and over that the grey wall following the side rows' ends
+  (`sides`: the notch's own outline, not the front across its mouth). Housing behind, back to the rows.
+- **The count.** L5 39,138 (official 39,165; `PITCH['L5']` 0.547 → 0.515 for the shorter round). L1 33,988 and L2 15,619
+  unchanged. L4 742 (boxes, not in the official count).
+- **Checks.** `reachtest`/`reachcheck`: L1, L2, L5 every seat reachable on foot, L4 none (closed, as above). `vomtest`: 148/148
+  (513 at the east end, which in round 39 only passed from 0.8-1.2 m, now passes from 2 m). Renders before and after:
+  `shots/compare/`. The app is not updated yet (waiting on the user). The renderers and the acoustics did not change.
+
 ## Round 39: Wembley's Level 5 north side walked across to the corners
 - **What was asked** (user, with a screenshot): something sticks out in Level 5 left of the east end's screen, so there is no
   walking past it from left to right.

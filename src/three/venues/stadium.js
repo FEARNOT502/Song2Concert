@@ -120,13 +120,15 @@ export function buildStadium(ctx) {
   // the wall, the restricted-view ones beside the stage included; the stand
   // behind it and the corners behind the wall's line are not sold.
   // The end screens (Daktronics, 2013: 23.88 m by 8.15 m). Each stands in a
-  // notch cut through Level 5's front, as the photographs from the stands
-  // show it: the board's face in line with the tier's front, its top at the
-  // first full row behind the notch (row 14, so those rows see over it),
-  // its bottom down past the tier's front lip to just over Level 2's back
-  // row, in front of the box level's grey wall. Either side of it the
-  // notch is open: the blocks' rows end along its slanting sides, stepping
-  // down to the tier's front, no wall between them and the board.
+  // notch cut through Level 5's front, as the photographs from the pitch show
+  // it: the board right behind Level 2's last row, its foot just over that
+  // row, in the plane of the box level's glass, set back behind the blocks
+  // either side (Level 5 stands out over Level 2's back rows, so their
+  // undersides show beside it); Level 5's fascia runs on in the board's
+  // plane to its edges, its top under the first
+  // full row behind the notch (so those rows see over it), and the blocks'
+  // rows either side end along the notch's slanting sides, stepping down to
+  // the tier's front, no wall between them and the board.
   const SCREEN_W = 23.88, SCREEN_H = 8.15;
   const screenBays = WB_STANDS.bays.filter((b) => b.kind === 'screen').map((b) => {
     const f = b.front, mid = f[Math.floor(f.length / 2)];
@@ -169,7 +171,9 @@ export function buildStadium(ctx) {
   // back, under a light canopy.
   const housingMat = std({ color: 0x2a2c30, roughness: 0.7, metalness: 0.3 });
   const cladMat = std({ color: 0x74777c, roughness: 0.75, metalness: 0.2 });
-  const soffitMat = std({ color: 0x45474c, roughness: 0.85, metalness: 0.1 });   // the notch's sides: the stand's own concrete
+  const soffitMat = std({ color: 0x8a8d92, roughness: 0.9, metalness: 0.05 });   // the notch's sides: the stand's own concrete
+  const fasciaMat = std({ color: 0x5a5d62, roughness: 0.7, metalness: 0.2 });    // Level 5's fascia, carried across the notch
+  const glassBandMat = std({ color: 0x14181d, roughness: 0.15, metalness: 0.6 }); // the box level's glass under it
   const glassMat = new THREE.MeshPhysicalMaterial({ color: 0x9fb2bf, roughness: 0.08, metalness: 0, transmission: 0.0, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false });
   const steelDark = std({ color: 0x1a1b1e, roughness: 0.5, metalness: 0.5 });
   const L5h0 = WB_STANDS.levels.find((l) => l.name === 'L5').h0;
@@ -200,29 +204,35 @@ export function buildStadium(ctx) {
       const q = screenBays.find((g) => g.b === b);
       const at = (t, d) => [q.cx + q.ux * t - q.nx * d, q.cz + q.uz * t - q.nz * d];
       const L5 = WB_STANDS.levels.find((l) => l.name === 'L5'), L2top = WB_STANDS.concourse.L2;
-      // the first row that runs on unbroken behind the notch
-      const kBack = Math.ceil((q.Db - Math.max(...b.front.map(q.D))) / L5.D);
-      const top = L5.hs[Math.min(kBack, L5.hs.length - 1)] - 0.6, foot = top - SCREEN_H;
       const hw = SCREEN_W / 2 + 0.3;
-      // The board stands back in the notch, in the plane of the box level's
-      // glazing under the tier's front (REC behind its deepest point), so
-      // the notch's sides run back from the front's ends to it. In front
-      // of it the box level's wall carries a ledge just under its foot.
-      const REC = 3.0, Sb = q.Sf + REC;
-      extrude([at(-q.wl, q.Sf + 0.3), at(q.wr, q.Sf + 0.3), at(q.wr, Sb), at(-q.wl, Sb)], L2top, foot - 0.3, cladMat);
+      // The board stands right behind Level 2's last row (`board`: its plane,
+      // from the mouth, given by the generator, which leaves the box level's
+      // wall out in front of it), its foot half a metre over that row's
+      // tread: as the photographs from the pitch show it, the last rows of
+      // the 2xx blocks under it with nothing between.
+      const Sb = b.board;
+      // its top under the eyes of the first row that runs on unbroken
+      // behind the notch (so those rows see over it)
+      const kBack = Math.ceil((q.Db - Math.max(...b.front.map(q.D))) / L5.D);
+      const foot = L2top + 0.5, top = foot + SCREEN_H;
+      if (top > L5.hs[Math.min(kBack, L5.hs.length - 1)] + 0.6) console.warn('wembley screen: top over the eyes of the rows behind', top, L5.hs[kBack]);
+      // the notch behind it, under the rows behind
       extrude([at(-q.wl, Sb), at(q.wr, Sb), at(q.wr, q.Db), at(-q.wl, q.Db)], L2top, L5.h0 - 0.3, housingMat);
-      // In the board's plane, either side of it, a wall whose top runs down
-      // from the board's top corner to the tier's front lip along the ends
-      // of the rows over it (the slanting soffit in the photographs): the
-      // side blocks' rows end on it, nothing stands up between them and the
-      // board.
+      // Either side of the board, in its plane: the box level's glass from
+      // Level 2's back up to Level 5's front, Level 5's fascia carried on
+      // across the notch to the board's edges at the height of the tier's
+      // front, and over it a wall whose top runs down from the board's top
+      // corner along the ends of the rows over it (the side blocks' rows end
+      // on it, nothing stands up between them and the board).
+      // (the notch's own outline: its ring is that, then the front across its mouth)
+      const sides = b.ring.slice(0, b.ring.length - f.length + 2);
       const rowAt = (sg, t) => {
-        const ds = b.ring.filter((p) => sg * q.T(p) > 0 && q.D(p) > Sb && sg * q.T(p) <= t).map(q.D);
+        const ds = sides.filter((p) => sg * q.T(p) > 0 && q.D(p) > Sb && sg * q.T(p) <= t).map(q.D);
         const d = ds.length ? Math.min(...ds) : Sb;
         const k = Math.max(0, Math.ceil((d - q.Sf + 0.3) / L5.D));
         return Math.min(top + 0.3, Math.max(L5.h0, L5.hs[Math.min(k, L5.hs.length - 1)] - 0.15));
       };
-      const sideW = (sg) => Math.max(...b.ring.filter((p) => sg * q.T(p) > 0 && Math.abs(q.D(p) - Sb) < 0.6).map((p) => sg * q.T(p))) - 0.1;
+      const sideW = (sg) => Math.max(hw, ...sides.filter((p) => sg * q.T(p) > 0 && Math.abs(q.D(p) - Sb) < 0.8).map((p) => sg * q.T(p) + 0.4));
       // (where the rows behind come down to the board's top, out to the
       // ends of those rows, the board's dark housing makes up the width)
       const prof = (sg, w) => {
@@ -232,16 +242,22 @@ export function buildStadium(ctx) {
       };
       const wR = sideW(1), wL = sideW(-1);
       const pr = prof(1, wR), pl = prof(-1, wL);
-      const wpts = [[-wL, L2top], [wR, L2top], ...pr.pts, [pr.wb, top + 0.3], [pr.wb, foot - 0.3], [-pl.wb, foot - 0.3], [-pl.wb, top + 0.3], ...pl.pts.reverse()];
       const sgn = Math.sign(q.ux * Math.cos(q.yaw) - q.uz * Math.sin(q.yaw)) || 1;
-      const wsh = new THREE.Shape(wpts.map(([t, y]) => new THREE.Vector2(sgn * t, y)));
-      const wall = new THREE.Mesh(new THREE.ExtrudeGeometry(wsh, { depth: 1.2, bevelEnabled: false }), soffitMat);
-      const [wx, wz] = at(0, Sb + 1.2);
-      wall.position.set(wx, 0, wz + ZC); wall.rotation.y = q.yaw;
-      root.add(wall);
+      const inPlane = (pts, mat, d0 = 0, depth = 1.2) => {
+        const m = new THREE.Mesh(new THREE.ExtrudeGeometry(new THREE.Shape(pts.map(([t, y]) => new THREE.Vector2(sgn * t, y))), { depth, bevelEnabled: false }), mat);
+        const [wx, wz] = at(0, Sb + d0 + depth);
+        m.position.set(wx, 0, wz + ZC); m.rotation.y = q.yaw; root.add(m); return m;
+      };
+      const fasc0 = L5.h0 - 1.5, fasc1 = L5.h0 + 1.0;
+      for (const [sg, w, P] of [[1, wR, pr], [-1, wL, pl]]) {
+        inPlane([[sg * hw, L2top], [sg * w, L2top], [sg * w, fasc0], [sg * hw, fasc0]], glassBandMat, 0.6, 0.6);
+        inPlane([[sg * hw, fasc0], [sg * w, fasc0], [sg * w, fasc1], [sg * hw, fasc1]], fasciaMat, 0, 1.2);
+        const up = P.pts.filter(([, y]) => y > fasc1 + 0.02);
+        inPlane([[sg * hw, fasc1], [sg * w, fasc1], ...up, [sg * P.wb, top + 0.3], [sg * hw, top + 0.3]], soffitMat);
+      }
       // the board's housing, behind it back to the rows behind, its top a
-      // walkway level with their front
-      extrude([at(-pl.wb, Sb), at(pr.wb, Sb), at(pr.wb, q.Db), at(-pl.wb, q.Db)], foot - 0.3, top + 0.3, housingMat);
+      // walkway level with their front; a dark ledge under its foot
+      extrude([at(-pl.wb, Sb), at(pr.wb, Sb), at(pr.wb, q.Db), at(-pl.wb, q.Db)], L2top, top + 0.3, housingMat);
       const scr = ledScreen({ w: SCREEN_W, h: SCREEN_H, tex: ctx.art.texture(SCREEN_W / SCREEN_H), pitch: 0.012, bright: 1.3, kind: 'main', frame: 0.25, light: false });
       for (const c of scr.children) if (c.material && c.material === scr.userData.bezel) c.visible = false;   // a plain black frame, as the real boards
       const [sx, sz] = at(0, Sb - 0.1);
