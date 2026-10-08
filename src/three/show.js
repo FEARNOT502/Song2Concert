@@ -85,6 +85,14 @@ export function runLasers(list, f) {
   });
 }
 
+// The lasers' own housings, sat on the deck: the beam leaves the front face
+// rather than the air above the boards.
+export function laserUnits(root, list, deck) {
+  const g = [];
+  for (const { fx } of list) { const b = new THREE.BoxGeometry(0.34, 0.2, 0.42); b.translate(fx.pos.x, deck + 0.1, fx.pos.z - 0.22); g.push(b); }
+  if (g.length) root.add(new THREE.Mesh(mergeGeometries(g), mats().cab));
+}
+
 // The FOH position: a riser, a desk, the barrier round it. The camera stands on
 // the riser, so the desk is just under the frame.
 export function fohPosition(pipe, root, eye, { riser = 0.9 } = {}) {
