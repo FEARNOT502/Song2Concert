@@ -257,13 +257,19 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
     }
     const mode = crowdLight === 'flash' ? 1 : 0;
     // the lightstick operator's cue: the section, crossfaded from the last
+    // it moves on to a new scene with each section, and within one every
+    // eight bars (four in a chorus), or every twenty seconds if the bars stall
     const sec = SEC[f.sec || section(f.bar)] ?? 0;
-    if (sec !== cue.sec) { cue.prev = cue.sec; cue.sec = sec; cue.t = 0; }
-    cue.t += dt;
+    const slot = Math.floor(B.bar / (sec === 2 ? 4 : 8));
+    if (sec !== cue.sec) cue.t = 0;
+    if (sec !== cue.sec || slot !== cue.slot || cue.sceneT > 20) {
+      cue.prev = cue.sec; cue.sec = sec; cue.slot = slot; cue.scene++; cue.sceneT = 0;
+    }
+    cue.t += dt; cue.sceneT += dt;
     const look = songLook().sticks;
     for (const U of lightMats) {
       U.uMode.value = mode; U.uHouse.value = house;
-      U.uSec.value = cue.sec; U.uSecPrev.value = cue.prev; U.uSecMix.value = clamp(cue.t / 1.5); U.uSecT.value = cue.t;
+      U.uScene.value = cue.scene; U.uSec.value = cue.sec; U.uSecPrev.value = cue.prev; U.uSecMix.value = clamp(cue.sceneT / 1.2); U.uSecT.value = cue.t;
       U.uBeat.value = B.beat; U.uLook.value = look;
     }
     if (pipe.scene.fog) for (const U of fogMats) { U.fogDensity.value = pipe.scene.fog.density ?? 0; U.fogColor.value.copy(pipe.scene.fog.color); }
@@ -281,7 +287,7 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
   // the song's look: fixed by what is playing, so a song plays the house the
   // same way every time and the next one differently
   const SEC = { verse: 0, pre: 1, chorus: 2, break: 3 };
-  const cue = { sec: 0, prev: 0, t: 10 };
+  const cue = { sec: 0, prev: 0, t: 10, slot: 0, scene: 1, sceneT: 10 };
   // (the lightsticks' cut of the house in `sticks`, the rig's look in `rig`)
   let lookKey = null, lookVal = null;
   function songLook() {
