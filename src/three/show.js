@@ -21,52 +21,102 @@ export function section(bar) {
   return b < 8 ? 'verse' : b < 12 ? 'pre' : b < 20 ? 'chorus' : 'break';
 }
 
+// A song's look, as a lighting designer builds one per song: which colours go
+// where, how the movers move, how fast, and what the chorus hits with. `f.look`
+// is fixed per song by the stage (the big rooms only); without one, the rig
+// plays the house style it always has.
+//   col   0 one colour over all, the second only as an accent
+//         1 two colours traded fixture by fixture
+//         2 white beams, the colour in the washes
+//         3 the palette spread across the rig (the house style)
+//   move  0 fans out over the house (the house style)
+//         1 crossing: each side aims across to the other
+//         2 sweeping: the whole rig tilts across the room together
+//         3 ballyhoo: every head circling its own spot
+//   pace  how fast the moves run against the beat (0.6, 1, 1.5)
+//   hit   0 white strobe, 1 a colour bump, 2 the blinders (on the rig)
+export const HOUSE_LOOK = { col: 3, move: 0, pace: 1, hit: 0 };
+
 // fixtures: [{ fx, i, n, group }]. `house` is a point out in the room the rig
 // throws toward (the crowd centre); `stage` the performer area.
 // an index round a list that holds for a negative count too (the clock can
 // start a little before zero)
 export const wrap = (k, n) => ((k % n) + n) % n;
+const WHITE = new THREE.Color(1, 1, 1);
 export function runShow(rig, list, f, { house, stage, span = 30, up = false, strobe = true, lift = 1 }) {
   const sec = f.sec || section(f.bar);
   const show = 1 - f.house;
   const cols = [f.pal.a, f.pal.b, f.pal.c, f.pal.d];
-  const t = f.t;
+  const L = f.look || HOUSE_LOOK;
+  const t = f.t * L.pace;
+  const secT = f.secT ?? 10;
   const tgt = V3();
+  // the colour a fixture takes in this look; `k` turns it over with the music
+  const colour = (it, k, beam) => {
+    const { i } = it;
+    if (L.col === 0) return (i + k) % 5 === 0 ? cols[1] : cols[0];
+    if (L.col === 1) return cols[wrap(i + k, 2)];
+    if (L.col === 2) return beam ? WHITE : cols[wrap(i + k, 2)];
+    return null;
+  };
   for (const it of list) {
     const { fx, i, n } = it;
     const u = n > 1 ? i / (n - 1) - 0.5 : 0;   // -0.5 .. 0.5 across the truss
     const ph = i * 0.61 + (it.group || 0) * 1.7;
+    const beam = fx.kind === 'beam' || fx.kind === 'spot';
     let lvl = 0, col = cols[0];
     if (up) {
       // floor fixtures: beams up and out into the room
       const swing = sec === 'chorus' ? 0.55 : sec === 'pre' ? 0.35 : 0.2;
-      const sway = Math.sin(t * (sec === 'chorus' ? 1.6 : 0.5) + ph) * swing;
-      fx.dir.set(u * 1.2 + sway, 1, (sec === 'break' ? 0.1 : 0.35) + 0.2 * Math.cos(t * 0.7 + ph)).normalize();
+      const sway = L.move === 2 ? Math.sin(t * (sec === 'chorus' ? 1.6 : 0.5)) * swing * 1.4 : Math.sin(t * (sec === 'chorus' ? 1.6 : 0.5) + ph) * swing;
+      const lean = L.move === 1 ? -u * 1.4 : u * 1.2;
+      fx.dir.set(lean + sway, 1, (sec === 'break' ? 0.1 : 0.35) + 0.2 * Math.cos(t * 0.7 + ph)).normalize();
       lvl = sec === 'break' ? 0.1 : sec === 'verse' ? 0.35 : 0.6 + 0.4 * f.kick;
       col = cols[wrap(i + (sec === 'chorus' ? Math.floor(f.beat / 2) : 0), 2)];
     } else if (sec === 'verse') {
+      // a few heads on the stage, slow; the rest dark, so the chorus has
+      // somewhere to go
       tgt.set(stage.x + u * span * 0.5 + Math.sin(t * 0.35 + ph) * 3, 0, stage.z + 6 + Math.cos(t * 0.3 + ph) * 4);
-      lvl = 0.5 + 0.15 * f.energy;
+      lvl = (f.look && i % 2) ? 0 : 0.5 + 0.15 * f.energy;
       col = cols[it.group % 2 ? 3 : 0];
     } else if (sec === 'pre') {
-      const k = Math.sin(t * 0.9 + ph);
+      // the build: brighter and quicker as the section runs on
+      const build = f.look ? 0.55 + 0.45 * Math.min(1, secT / 12) : 1;
+      const k = Math.sin(t * 0.9 * (0.7 + 0.6 * build) + ph);
       tgt.set(house.x + u * span * 1.4 + k * 4, house.y, house.z - 10 + Math.cos(t * 0.6 + ph) * 12);
-      lvl = 0.55 + 0.35 * (wrap(f.beat, 2) === (i % 2) ? f.kick : 0.2);
+      lvl = (0.55 + 0.35 * (wrap(f.beat, 2) === (i % 2) ? f.kick : 0.2)) * build;
       col = cols[(i % 2) ? 1 : 0];
     } else if (sec === 'chorus') {
       const a = t * 1.25 + ph;
-      tgt.set(house.x + u * span * 1.2 + Math.sin(a) * span * 0.45, house.y + Math.abs(Math.cos(a * 0.7)) * 4, house.z + Math.cos(a) * span * 0.6);
+      if (L.move === 1) {
+        // crossing: each half of the rig throws to the far side of the house
+        tgt.set(house.x - Math.sign(u || 1) * span * (0.5 + 0.3 * Math.sin(a * 0.6)), house.y + 2, house.z + Math.cos(a * 0.8) * span * 0.4);
+      } else if (L.move === 2) {
+        // sweeping: all together, across and back
+        const sw = Math.sin(t * 1.1);
+        tgt.set(house.x + sw * span * 1.1 + u * 6, house.y + 3, house.z + Math.cos(t * 0.7) * span * 0.3);
+      } else if (L.move === 3) {
+        // ballyhoo: each circling its own spot out in the house
+        tgt.set(house.x + u * span * 1.3 + Math.cos(a * 1.6) * 7, house.y + 2, house.z + Math.sin(a * 1.6) * 7);
+      } else {
+        tgt.set(house.x + u * span * 1.2 + Math.sin(a) * span * 0.45, house.y + Math.abs(Math.cos(a * 0.7)) * 4, house.z + Math.cos(a) * span * 0.6);
+      }
       lvl = 0.75 + 0.35 * f.kick;
       col = cols[wrap(i + Math.floor(f.beat / 4), 3)];
-      if (strobe && f.kick > 0.85 && wrap(i + f.beat, 3) === 0) { lvl = 1.6; }
+      // the hit: the first moments of the chorus, then on the kick
+      const first = f.look && secT < 0.35;
+      if (L.hit === 0 && strobe && (first || (f.kick > 0.85 && wrap(i + f.beat, 3) === 0))) lvl = 1.6;
+      if (L.hit === 1 && (first || f.kick > 0.85)) lvl = 1.15 + 0.2 * f.kick;
     } else {
+      // break: a handful of heads straight down, one colour
       tgt.set(stage.x + u * span * 0.3, 0, stage.z + 2);
       lvl = i % 3 === 0 ? 0.3 : 0;
       col = cols[3];
     }
-    if (!up) fx.dir.lerp(tgt.clone().sub(fx.pos).normalize(), Math.min(1, f.dt * (sec === 'chorus' ? 5 : 2))).normalize();
+    if (!up && sec !== 'break') col = colour(it, sec === 'chorus' ? Math.floor(f.beat / 4) : 0, beam) || col;
+    if (!up) fx.dir.lerp(tgt.clone().sub(fx.pos).normalize(), Math.min(1, f.dt * (sec === 'chorus' ? 5 : 2) * (L.pace > 1 ? 1.3 : 1))).normalize();
     fx.color.copy(col);
-    if (lvl > 1.2) fx.color.lerp(new THREE.Color(1, 1, 1), 0.7);
+    if (lvl > 1.2 && L.hit === 0) fx.color.lerp(WHITE, 0.7);
     fx.intensity = lvl * show * lift;
   }
 }
@@ -220,7 +270,7 @@ export function groundRoof(root, { tx, zs, y0 = 0, top }) {
     latticeInto(steel, V3(sx, top, z0), V3(sx, top, z1), 1.6, 0.07);
   }
   for (const z of zs) latticeInto(steel, V3(-tx, top, z), V3(tx, top, z), 1.6, 0.07);
-  root.add(new THREE.Mesh(mergeGeometries(steel), mats().black));
+  root.add(new THREE.Mesh(mergeGeometries(steel), mats().trussBlack));
   const skin = new THREE.Mesh(new THREE.BoxGeometry(2 * tx + 3, 0.25, z1 - z0 + 3), std({ color: 0x0a0a0c, roughness: 0.85 }));
   skin.position.set(0, top + 1.0, (z0 + z1) / 2); root.add(skin);
 }
@@ -236,7 +286,7 @@ export function paWing(root, { x, z, h, bridge = null }) {
   latticeInto(steel, V3(x + sd * 2.5, h, z - 1), V3(x + sd * 2.5, h, z + 2), 0.8, 0.05);
   if (bridge) latticeInto(steel, V3(x - sd * 0.9, h, z), bridge, 1.0, 0.05);
   for (const [dx, dz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) latticeInto(steel, V3(x + dx * 3.4, 0.3, z + dz * 3.4), V3(x + dx * 0.7, h * 0.3, z + dz * 0.7), 0.45, 0.03);
-  root.add(new THREE.Mesh(mergeGeometries(steel), mats().black));
+  root.add(new THREE.Mesh(mergeGeometries(steel), mats().trussBlack));
   const base = new THREE.Mesh(new THREE.BoxGeometry(7.6, 0.3, 7.6), std({ color: 0x1a1b1e, roughness: 0.8 }));
   base.position.set(x, 0.15, z); root.add(base);
 }
@@ -277,7 +327,7 @@ export function delayTower(root, { x, z, h, boxes = 16, width = 1.3, yaw = 0 }) 
   // the head: a short truss across the top, the array hung from its front
   latticeInto(steel, V3(x - 2, h, z), V3(x + 2, h, z), 0.8, 0.05);
   latticeInto(steel, V3(x, h, z - 0.8), V3(x, h, z + 1.8), 0.8, 0.05);
-  root.add(new THREE.Mesh(mergeGeometries(steel), M.black));
+  root.add(new THREE.Mesh(mergeGeometries(steel), M.trussBlack));
   const base = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.3, 7.2), std({ color: 0x1a1b1e, roughness: 0.8 }));
   base.position.set(x, 0.15, z); root.add(base);
   paHang(root, { x, y: h - 1.1, z: z + 1.4, boxes, width, yaw, splay: 0.025, roofY: h - 0.4 });
@@ -295,7 +345,7 @@ export function stageSet(root, { w, h, z, deck, towerX, backdropW, backdropH, wi
   latticeInto(parts, V3(-towerX, deck + h - 0.5, z - 0.6), V3(towerX, deck + h - 0.5, z - 0.6), 1.0, 0.05);
   // raked braces back to the deck
   for (const x of [-towerX, towerX]) latticeInto(parts, V3(x, deck, z - 4.5), V3(x, deck + h * 0.6, z - 0.9), 0.5, 0.03);
-  root.add(new THREE.Mesh(mergeGeometries(parts), M.black));
+  root.add(new THREE.Mesh(mergeGeometries(parts), M.trussBlack));
   // the black drop behind the set and the wings either side (a stage out in
   // the open of a ballpark has none)
   if (drapes) {
