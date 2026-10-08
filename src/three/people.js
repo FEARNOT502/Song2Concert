@@ -516,7 +516,8 @@ export function silhouettes(people, cu, { seed = 5 } = {}) {
 // with the levels trading colours each bar in the chorus, one dim colour
 // swelling up the levels in a break; and the big rooms' other parts: lit from
 // the front back in an intro, a wave across in a post-chorus, a pulse across
-// on every beat in a bridge, a chequerboard in a dance break, the colours
+// on every beat in a bridge, the colours drifting across as one blend in an
+// interlude, a chequerboard in a dance break, the colours
 // wheeling round the house with a comet and sparkle in a solo, the house
 // breathing out in an outro. `uLook` (fixed per song) seeds which scenes it plays. With the house lights up the
 // sticks are off control: each glows on its own, softly, as before a show.
@@ -584,8 +585,9 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
         if (wht > 0.5 && mod(idx + k, 3.0) == 2.0) return col(4.0);
         return col(ci);
       }
-      // the parts, in the desk's order: 0 intro, 1 verse, 2 pre, 3 chorus,
-      // 4 post-chorus, 5 break, 6 bridge, 7 dance break, 8 solo, 9 outro.
+      // the parts (show.js PARTS): 0 intro, 1 verse, 2 pre, 3 chorus,
+      // 4 post-chorus, 5 break, 6 bridge, 7 dance break, 8 solo, 9 outro,
+      // 10 interlude.
       // Everything that moves runs on the beat (uPhase), not the clock.
       vec3 cue(float sec, float s) {
         float ph = uPhase, lv = aZone.x, u = aZone.y;
@@ -667,6 +669,15 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
           float tw = step(0.86, h1(aLook.x * 13.0 + floor(ph * 4.0)));
           c = mix(c, vec3(1.0), 0.7 * tw);
           return c + vec3(1.0) * 1.0 * uKick * uKick;
+        }
+        if (sec > 9.5) {
+          // interlude: the sleeve's colours as one blend across the house,
+          // drifting along it a bar at a time, a lift on the kick and the
+          // levels breathing gently out of step
+          float x = fract(u * 0.75 - ph / 16.0) * 4.0;
+          float k0 = floor(x);
+          vec3 c = mix(col(k0), col(mod(k0 + 1.0, 4.0)), fract(x));
+          return c * (0.5 + 0.12 * sin(ph * 0.785 + lv * 1.3) + 0.3 * uKick);
         }
         // outro: every level breathing together, once in eight beats, going
         // down as the song ends

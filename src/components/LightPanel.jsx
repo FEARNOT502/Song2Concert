@@ -5,7 +5,7 @@
 // folds away to its title, and remembers which it was. The crowd's
 // stick/torch switch lives here too.
 //
-// Keys (App.jsx): 1–9, 0 for the parts in this order, ` for AUTO.
+// Keys (App.jsx): 1–9, 0, - for the parts in this order, ` for AUTO.
 
 import { memo, useEffect, useState } from 'react';
 import { CrowdLightToggle } from './TopBar.jsx';
@@ -13,10 +13,11 @@ import { CrowdLightToggle } from './TopBar.jsx';
 const ACCENT = 'oklch(0.78 0.16 55)';
 const KEY = 's2c.lightPanel';
 
-// in the order of PARTS (src/three/show.js), with their keys
+// the parts (src/three/show.js PARTS) in the order a song runs, with their keys
 export const DESK = [
-  ['intro', 'Intro', '1'], ['verse', 'Verse', '2'], ['pre', 'Pre', '3'], ['chorus', 'Chorus', '4'], ['post', 'Post', '5'],
-  ['break', 'Break', '6'], ['bridge', 'Bridge', '7'], ['dance', 'Dance', '8'], ['solo', 'Solo', '9'], ['outro', 'Outro', '0'],
+  ['intro', 'Intro', '1'], ['verse', 'Verse', '2'], ['pre', 'Pre', '3'], ['chorus', 'Chorus', '4'],
+  ['post', 'Post', '5'], ['interlude', 'Interlude', '6'], ['break', 'Break', '7'], ['bridge', 'Bridge', '8'],
+  ['dance', 'Dance', '9'], ['solo', 'Solo', '0'], ['outro', 'Outro', '-'],
 ];
 
 function loadOpen() {
@@ -44,7 +45,7 @@ function LightPanel({ part, onPart, playing, stageRef, crowdLight, onCrowdLightC
   const btn = 'py-1.5 text-[10px] tracking-[0.18em] uppercase border transition-colors disabled:cursor-not-allowed';
 
   return (
-    <div className="absolute bottom-[128px] left-10 z-30 w-[300px] max-w-[34vw] font-mono pointer-events-auto">
+    <div className="absolute bottom-[128px] left-10 z-30 w-[320px] max-w-[36vw] font-mono pointer-events-auto">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -60,7 +61,7 @@ function LightPanel({ part, onPart, playing, stageRef, crowdLight, onCrowdLightC
 
       {open && (
         <div className="bg-black/50 backdrop-blur-sm border border-white/10 p-2.5 space-y-2">
-          <div className="grid grid-cols-5 gap-1">
+          <div className="grid grid-cols-4 gap-1">
             {DESK.map(([id, label, key]) => {
               const held = part === id;
               const now = auto && playing && live === id;

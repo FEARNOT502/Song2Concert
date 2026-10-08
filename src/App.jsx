@@ -482,8 +482,8 @@ export default function App() {
       else if (e.key === 'ArrowLeft') handleSeek(Math.max(0, now - 5));
       else if (e.key === 'f' || e.key === 'F') setFilePickerOpen(true);
       else if (e.key === 'v' || e.key === 'V') setVenuePickerOpen(true);
-      // the lighting desk: 1–9, 0 call a part, ` hands it back to the song
-      else if (deskRef.current.on && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === '`' || /^[0-9]$/.test(e.key))) {
+      // the lighting desk: 1–9, 0, - call a part, ` hands it back to the song
+      else if (deskRef.current.on && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === '`' || /^[0-9-]$/.test(e.key))) {
         if (!deskRef.current.playing) return;
         if (e.key === '`') setLightPart(null);
         else { const row = DESK.find((d) => d[2] === e.key); if (row) setLightPart(row[0]); }

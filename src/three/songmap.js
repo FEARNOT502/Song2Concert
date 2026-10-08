@@ -20,7 +20,8 @@
 //   5. the names: sections that repeat are grouped, and the groups named the
 //      way a pop song is built: the chorus is what comes back most and hits
 //      hardest, the pre-chorus is what leads into it, the verse is what comes
-//      back before it; then the intro, bridge, solo, dance break and outro
+//      back before it; then the intro, interlude, bridge, solo, dance break
+//      and outro
 //
 // Pure arithmetic on a mono Float32Array; no DOM and no audio graph, so it runs
 // in a worker (songmap.worker.js) and under node for the checks.
@@ -617,6 +618,16 @@ function name(segs, label, E, nb, F = null) {
   }
   if (verse >= 0 && groups[verse].filter((i) => !role[i]).length >= 2) for (const i of groups[verse]) if (!role[i]) role[i] = 'verse';
 
+  // an interlude: the band on its own for a few bars after a chorus, before
+  // the song goes on: not quiet, not as loud as the chorus, and either the
+  // opening riff come back (the song's first section again) or only a bar
+  // or four (a new stretch of eight after a chorus is more often a bridge)
+  for (let i = 1; i < n - 1; i++) {
+    if (role[i] || (role[i - 1] !== 'chorus' && role[i - 1] !== 'post')) continue;
+    const len = segs[i][1] - segs[i][0];
+    if (segE[i] >= eMed - 0.3 && segE[i] < chE - 0.25 && ((label[i] === label[0] && len <= 8) || len <= 4)) role[i] = 'interlude';
+  }
+
   // the ends
   // the intro: what comes before all that, within the opening stretch
   const firstMain = role.findIndex((r) => r === 'verse' || r === 'chorus' || r === 'pre');
@@ -647,7 +658,7 @@ function name(segs, label, E, nb, F = null) {
 // what the rig plays for each function
 // (the four broad states every room plays; the big rooms play each `role` as
 // its own part, see show.js PARTS)
-export const LIGHT = { intro: 'break', verse: 'verse', pre: 'pre', chorus: 'chorus', post: 'chorus', dance: 'chorus', bridge: 'chorus', solo: 'chorus', break: 'break', outro: 'break' };
+export const LIGHT = { intro: 'break', verse: 'verse', pre: 'pre', chorus: 'chorus', post: 'chorus', interlude: 'verse', dance: 'chorus', bridge: 'chorus', solo: 'chorus', break: 'break', outro: 'break' };
 
 // ── all of it ────────────────────────────────────────────────────────────────
 

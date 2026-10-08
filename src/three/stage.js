@@ -287,7 +287,7 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
     const look = songLook().sticks;
     for (const U of lightMats) {
       U.uMode.value = mode; U.uHouse.value = house;
-      U.uScene.value = cue.scene; U.uSec.value = cue.sec; U.uSecPrev.value = cue.prev; U.uSecMix.value = clamp(cue.sceneT / 1.2); U.uSecT.value = cue.t;
+      U.uScene.value = cue.scene; U.uSec.value = cue.sec; U.uSecPrev.value = cue.prev; U.uSecMix.value = smooth(cue.sceneT / 2); U.uSecT.value = cue.t;
       U.uBeat.value = B.beat; U.uLook.value = look;
       U.uPhase.value = B.phase; U.uProg.value = f.secProg ?? Math.min(1, f.secT / 16); U.uRoll.value = rollOf(f) ?? -1;
     }
@@ -307,6 +307,8 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
   // same way every time and the next one differently
   // the parts whose lightstick scenes turn over every four bars, not eight
   const QUICK = new Set(['chorus', 'post', 'bridge', 'dance', 'solo']);
+  // one scene of the lightsticks into the next over two seconds, eased
+  const smooth = (x) => { const k = clamp(x); return k * k * (3 - 2 * k); };
   const cue = { sec: 1, prev: 1, t: 10, slot: 0, scene: 1, sceneT: 10 };
   // (the lightsticks' cut of the house in `sticks`, the rig's look in `rig`)
   let lookKey = null, lookVal = null;

@@ -50,10 +50,11 @@ const buildOf = (f, secT) => (f.secProg != null ? 0.45 + 0.55 * f.secProg : 0.55
 const progOf = (f, secT) => (f.secProg != null ? f.secProg : Math.min(1, secT / 16));
 
 // The big rooms play every part of a song its own way; the rest, and the
-// rooms' own fixtures, play the four broad states (`f.sec`). In the order the
-// lighting desk lays them out.
-export const PARTS = ['intro', 'verse', 'pre', 'chorus', 'post', 'break', 'bridge', 'dance', 'solo', 'outro'];
-export const BASE = { intro: 'break', verse: 'verse', pre: 'pre', chorus: 'chorus', post: 'chorus', break: 'break', bridge: 'chorus', dance: 'chorus', solo: 'chorus', outro: 'break' };
+// rooms' own fixtures, play the four broad states (`f.sec`). (A part's place
+// here is its number in the lightsticks' shader; the desk lays them out in
+// the song's order, see LightPanel.jsx.)
+export const PARTS = ['intro', 'verse', 'pre', 'chorus', 'post', 'break', 'bridge', 'dance', 'solo', 'outro', 'interlude'];
+export const BASE = { intro: 'break', verse: 'verse', pre: 'pre', chorus: 'chorus', post: 'chorus', interlude: 'verse', break: 'break', bridge: 'chorus', dance: 'chorus', solo: 'chorus', outro: 'break' };
 // a bridge's last two bars, 0..1 through them (null before): the roll that
 // carries it into what comes next. By the time to the next section when the
 // song is mapped; else the last two of every eight bars.
@@ -65,6 +66,10 @@ export function rollOf(f) {
   return b >= 6 ? (b - 6) / 2 : null;
 }
 const WHITE = new THREE.Color(1, 1, 1);
+const _g = new THREE.Color(), _t = new THREE.Color();
+// how long one part takes to fade into the next, in seconds
+const XFADE = 1.2;
+const ease = (k) => k * k * (3 - 2 * k);
 export function runShow(rig, list, f, opts) {
   if (f.look) return runMovers(list, f, opts);
   const { house, stage, span = 30, up = false, strobe = true, lift = 1 } = opts;
@@ -231,7 +236,7 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
     // playing together rather than one light copied
     const hz = (k) => { const v = Math.sin((i + 1) * 12.9898 + (it.group || 0) * 78.233 + k * 37.719) * 43758.5453; return v - Math.floor(v); };
     const own = { p: (hz(1) - 0.5) * 0.45, t: (hz(2) - 0.5) * 0.24, a: 0.7 + 0.6 * hz(3), k: hz(4) < 0.3 ? 0.5 : 1, ph: hz(5) * Math.PI * 1.2 };
-    let p0, t0, amp = 0, beats = 8, s = 'circle', lvl, col;
+    let p0, t0, amp = 0, beats = 8, s = 'circle', lvl, col, chase = false;
     if (part === 'intro') {
       // the room waiting: the heads parked up and dark, a few on the stage
       // coming up as the intro runs
@@ -299,6 +304,16 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
       [p0, t0] = up ? [0, 0.08] : aim(stage.x, stage.y, stage.z);
       lvl = (0.85 + 0.2 * f.kick) * eS;
       col = beam && i % 3 ? WHITE : cols[0];
+    } else if (part === 'interlude') {
+      // the band on its own: spread wide over the house, a wave in pan
+      // running along the row once in two bars, the palette laid across the
+      // rig as a blend that drifts along it
+      if (up) [p0, t0] = [u * 1.6, 0.4];
+      else { const [hp, ht] = aim(house.x, house.y + 8, house.z); [p0, t0] = [hp + u * 1.5, ht]; }
+      amp = 0.3; beats = 8; s = 'panWave'; chase = true;
+      lvl = (0.6 + 0.15 * f.kick) * eS;
+      const x = wrap((u + 0.5) * 3 + beat / 8, 4), k0 = Math.floor(x);
+      col = _g.copy(cols[k0]).lerp(cols[(k0 + 1) % 4], x - k0);
     } else if (part === 'outro') {
       // gathering up over the middle of the stage, going out as it ends
       [p0, t0] = up ? [0, 0.05] : aim(stage.x, stage.y + 25, stage.z + 10);
@@ -312,7 +327,7 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
       col = cols[3];
     }
     // the effect, spread across the row, wider the louder the song runs
-    const ph = (spread === 1 ? i / Math.max(1, n) * Math.PI * 2 : spread === 2 ? Math.abs(u) * Math.PI * 2 : (i % 2) * Math.PI) + own.ph;
+    const ph = (chase || spread === 1 ? i / Math.max(1, n) * Math.PI * 2 : spread === 2 ? Math.abs(u) * Math.PI * 2 : (i % 2) * Math.PI) + own.ph;
     const mir = spread === 2 ? side : 1;
     const free = part !== 'solo' && part !== 'break';
     const a = cyc(beats, free ? own.k : 1) + ph;
@@ -324,7 +339,12 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
     else { dp = Math.sin(a * 0.73 + i * 1.9) * Math.cos(a * 0.41 + i); dtl = Math.sin(a * 0.59 + i * 2.7); }
     const A = amp * (0.75 + 0.4 * E) * (free ? own.a : 1);
     if (free) { p0 += own.p; t0 = Math.max(0, t0 + own.t); }
-    const wantP = p0 + A * dp * mir * 1.4, wantT = Math.max(0, Math.min(up ? 1.2 : 2.1, t0 + A * dtl));
+    // the position glides to a new one rather than jumping there (quicker in
+    // a dance break, which moves on the beat); the effect over it stays crisp
+    const glide = 1 - Math.exp(-dt * (part === 'dance' ? 14 : 3.5));
+    if (it.bp == null) { it.bp = p0; it.bt = t0; }
+    it.bp += angDiff(p0, it.bp) * glide; it.bt += (t0 - it.bt) * glide;
+    const wantP = it.bp + A * dp * mir * 1.4, wantT = Math.max(0, Math.min(up ? 1.2 : 2.1, it.bt + A * dtl));
     [it.pan, it.vp] = motor(it.pan, it.vp, wantP, PAN_MAX, dt, true);
     [it.tilt, it.vt] = motor(it.tilt, it.vt, wantT, TILT_MAX, dt, false);
     const st = Math.sin(it.tilt);
@@ -336,9 +356,18 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
       else if (L.col === 1) col = cols[wrap(i + k, 2)];
       else if (L.col === 2) col = beam ? WHITE : cols[wrap(i + k, 2)];
     }
-    fx.color.copy(col);
-    if (lvl > 1.2 && L.hit === 0) fx.color.lerp(WHITE, 0.7);
-    fx.intensity = lvl * show * lift;
+    // one part fades into the next over a second or so, and a colour change
+    // within one is a quick fade, not a cut; the hits (the chorus's first,
+    // the strobing kicks) still land at once
+    if (it.part !== part) { it.part = part; it.xt = 0; it.l0 = fx.intensity; }
+    it.xt = Math.min(XFADE, (it.xt ?? XFADE) + dt);
+    const xk = ease(it.xt / XFADE), hit = lvl > 1.1;
+    _t.copy(col);
+    if (lvl > 1.2 && L.hit === 0) _t.lerp(WHITE, 0.7);
+    if (hit) fx.color.copy(_t);
+    else fx.color.lerp(_t, 1 - Math.exp(-dt * (xk < 1 ? 3 : 12)));
+    const li = lvl * show * lift;
+    fx.intensity = hit || xk >= 1 ? li : it.l0 + (li - it.l0) * xk;
   }
 }
 // ── the rig on a phone ──
