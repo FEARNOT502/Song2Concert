@@ -43,7 +43,9 @@ export const HOUSE_LOOK = { col: 3, move: 0, pace: 1, hit: 0 };
 // start a little before zero)
 export const wrap = (k, n) => ((k % n) + n) % n;
 const WHITE = new THREE.Color(1, 1, 1);
-export function runShow(rig, list, f, { house, stage, span = 30, up = false, strobe = true, lift = 1 }) {
+export function runShow(rig, list, f, opts) {
+  if (f.look) return runMovers(list, f, opts);
+  const { house, stage, span = 30, up = false, strobe = true, lift = 1 } = opts;
   const sec = f.sec || section(f.bar);
   const show = 1 - f.house;
   const cols = [f.pal.a, f.pal.b, f.pal.c, f.pal.d];
@@ -122,6 +124,119 @@ export function runShow(rig, list, f, { house, stage, span = 30, up = false, str
   }
 }
 
+// ── the movers in the big rooms ──
+// A moving head is a yoke that pans and a head that tilts, each on a motor
+// with a top speed and a limit to how hard it can start and stop, so it
+// swings to a new place rather than jumping there. A programmer builds a
+// song from positions (the whole row aimed somewhere at once) and effects
+// laid over them (a circle, a figure of eight, a wave in tilt or in pan, a
+// ballyhoo), each spread across the row: all together, chasing along it,
+// mirrored from the middle, or odd against even. Positions change on the
+// music (each couple of bars in a chorus), effects by the phrase.
+const PAN_MAX = 2.4, TILT_MAX = 2.0, ACCEL = 9;      // rad/s, rad/s, rad/s²
+const SHAPES = ['circle', 'eight', 'tiltWave', 'panWave', 'bally'];
+// pan and tilt from a direction, for a head hung down (or stood up)
+function panTilt(d, up) { return [Math.atan2(d.x, d.z), Math.acos(Math.max(-1, Math.min(1, up ? d.y : -d.y)))]; }
+const angDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
+function motor(cur, vel, want, max, dt, wrapped) {
+  const err = wrapped ? angDiff(want, cur) : want - cur;
+  const v = Math.max(-max, Math.min(max, err * 7));
+  const dv = Math.max(-ACCEL * dt, Math.min(ACCEL * dt, v - vel));
+  vel += dv;
+  return [cur + vel * dt, vel];
+}
+// the floor's rows play the phrase's next effect, so they don't mirror the trusses
+const it0 = (list) => list[0]?.fx.hang === 'up';
+
+function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true, lift = 1 }) {
+  const sec = f.sec || section(f.bar);
+  const show = 1 - f.house;
+  const cols = [f.pal.a, f.pal.b, f.pal.c, f.pal.d];
+  const L = f.look;
+  const t = f.t * L.pace;
+  const secT = f.secT ?? 10;
+  const dt = Math.min(0.1, f.dt || 0.016);
+  const bar = Math.floor(f.bar), phrase = Math.floor(f.bar / 8);
+  // the phrase's effect and how it is spread, the position this couple of bars
+  const shape = SHAPES[wrap(phrase + L.move * 2 + (it0(list) ? 1 : 0), SHAPES.length)];
+  const spread = wrap(phrase + L.move, 4);
+  const pos = wrap(Math.floor(bar / 2) + L.move, 4);
+  const tmp = V3();
+  for (const it of list) {
+    const { fx, i, n } = it;
+    const u = n > 1 ? i / (n - 1) - 0.5 : 0;
+    const side = u < 0 ? -1 : 1;
+    if (it.pan == null) { [it.pan, it.tilt] = panTilt(fx.dir, up); it.vp = 0; it.vt = 0; }
+    // the base position, in pan and tilt
+    const aim = (x, y, z) => panTilt(tmp.set(x, y, z).sub(fx.pos).normalize(), up);
+    let p0, t0, amp = 0, rate = 1, lvl, col;
+    if (sec === 'verse') {
+      // the stage picked out, a few heads at a time, turning slowly
+      [p0, t0] = up ? [u * 0.8, 0.25] : aim(stage.x + u * span * 0.35, stage.y, stage.z + 6);
+      amp = 0.06; rate = 0.5;
+      lvl = i % 2 ? 0 : 0.5 + 0.15 * f.energy;
+      col = cols[it.group % 2 ? 3 : 0];
+    } else if (sec === 'pre') {
+      // fanned out over the house, a wave in tilt running along the row, quicker as it builds
+      const build = 0.55 + 0.45 * Math.min(1, secT / 12);
+      [p0, t0] = up ? [side * Math.PI / 2, 0.35 + Math.abs(u) * 0.5] : ((a) => [a[0] + u * 1.3, a[1]])(aim(house.x, house.y, house.z));
+      amp = 0.2 + 0.15 * build; rate = 0.8 + 1.4 * build;
+      lvl = (0.55 + 0.35 * (wrap(f.beat, 2) === (i % 2) ? f.kick : 0.2)) * build;
+      col = cols[(i % 2) ? 1 : 0];
+    } else if (sec === 'chorus') {
+      // a new position every two bars, the phrase's effect over it
+      if (up) {
+        [p0, t0] = [[side * Math.PI / 2, 0.55], [-side * Math.PI / 2, 0.4], [0, 0.05], [Math.PI / 2 + u * 4, 0.45]][pos];
+      } else {
+        // (each row about the point it throws to: the spots low over the
+        // floor, the beams high over the far stands)
+        const [hp, ht] = aim(house.x, house.y, house.z);
+        [p0, t0] = [
+          [hp + u * 1.4, ht],                                         // fanned out over the house
+          [hp - side * 0.5 + u * 0.4, ht - 0.2],                      // crossed
+          aim(house.x, house.y + 14, house.z - span * 0.3),           // all to one point in the air
+          [hp + u * 0.5, ht + 0.25],                                  // lifted, out to the far end
+        ][pos];
+      }
+      amp = 0.3; rate = 1.6;
+      lvl = 0.75 + 0.35 * f.kick;
+      col = cols[wrap(i + Math.floor(f.beat / 4), 3)];
+      const first = secT < 0.35;
+      if (L.hit === 0 && strobe && (first || (f.kick > 0.85 && wrap(i + f.beat, 3) === 0))) lvl = 1.6;
+      if (L.hit === 1 && (first || f.kick > 0.85)) lvl = 1.15 + 0.2 * f.kick;
+    } else {
+      // break: straight down (or up), still, one colour, a few on
+      [p0, t0] = [u * 0.2, 0.08];
+      lvl = i % 3 === 0 ? 0.3 : 0;
+      col = cols[3];
+    }
+    // the effect, spread across the row
+    const ph = spread === 0 ? 0 : spread === 1 ? i / Math.max(1, n) * Math.PI * 2 : spread === 2 ? Math.abs(u) * Math.PI * 2 : (i % 2) * Math.PI;
+    const mir = spread === 2 ? side : 1;
+    const a = t * rate * 2 + ph;
+    let dp = 0, dtl = 0;
+    const s = sec === 'pre' ? 'tiltWave' : sec === 'verse' ? 'circle' : shape;
+    if (s === 'circle') { dp = Math.cos(a); dtl = Math.sin(a); }
+    else if (s === 'eight') { dp = Math.sin(a); dtl = 0.6 * Math.sin(2 * a); }
+    else if (s === 'tiltWave') { dtl = Math.sin(a); }
+    else if (s === 'panWave') { dp = Math.sin(a); }
+    else { dp = Math.sin(a * 0.73 + i * 1.9) * Math.cos(a * 0.41 + i); dtl = Math.sin(a * 0.59 + i * 2.7); }
+    const wantP = p0 + amp * dp * mir * 1.4, wantT = Math.max(0, Math.min(up ? 1.2 : 2.1, t0 + amp * dtl));
+    [it.pan, it.vp] = motor(it.pan, it.vp, wantP, PAN_MAX, dt, true);
+    [it.tilt, it.vt] = motor(it.tilt, it.vt, wantT, TILT_MAX, dt, false);
+    const st = Math.sin(it.tilt);
+    fx.dir.set(st * Math.sin(it.pan), (up ? 1 : -1) * Math.cos(it.tilt), st * Math.cos(it.pan)).normalize();
+    if (sec !== 'break') {
+      const k = sec === 'chorus' ? Math.floor(f.beat / 4) : 0, beam = fx.kind === 'beam' || fx.kind === 'spot';
+      if (L.col === 0) col = (i + k) % 5 === 0 ? cols[1] : cols[0];
+      else if (L.col === 1) col = cols[wrap(i + k, 2)];
+      else if (L.col === 2) col = beam ? WHITE : cols[wrap(i + k, 2)];
+    }
+    fx.color.copy(col);
+    if (lvl > 1.2 && L.hit === 0) fx.color.lerp(WHITE, 0.7);
+    fx.intensity = lvl * show * lift;
+  }
+}
 // ── the rig on a phone ──
 // A phone draws every other fixture of each row (q.rig < 1), picked from
 // either end inwards so a row stays symmetric about the stage; the real
