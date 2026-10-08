@@ -90,14 +90,15 @@ export function runShow(rig, list, f, { house, stage, span = 30, up = false, str
       const a = t * 1.25 + ph;
       if (L.move === 1) {
         // crossing: each half of the rig throws to the far side of the house
-        tgt.set(house.x - Math.sign(u || 1) * span * (0.5 + 0.3 * Math.sin(a * 0.6)), house.y + 2, house.z + Math.cos(a * 0.8) * span * 0.4);
+        // (the new moves keep over the crowd's heads, into the air above them)
+        tgt.set(house.x - Math.sign(u || 1) * span * (0.5 + 0.3 * Math.sin(a * 0.6)), house.y + 10, house.z + Math.cos(a * 0.8) * span * 0.4);
       } else if (L.move === 2) {
         // sweeping: all together, across and back
         const sw = Math.sin(t * 1.1);
-        tgt.set(house.x + sw * span * 1.1 + u * 6, house.y + 3, house.z + Math.cos(t * 0.7) * span * 0.3);
+        tgt.set(house.x + sw * span * 1.1 + u * 6, house.y + 10, house.z + Math.cos(t * 0.7) * span * 0.3);
       } else if (L.move === 3) {
         // ballyhoo: each circling its own spot out in the house
-        tgt.set(house.x + u * span * 1.3 + Math.cos(a * 1.6) * 7, house.y + 2, house.z + Math.sin(a * 1.6) * 7);
+        tgt.set(house.x + u * span * 1.3 + Math.cos(a * 1.6) * 7, house.y + 8, house.z + Math.sin(a * 1.6) * 7);
       } else {
         tgt.set(house.x + u * span * 1.2 + Math.sin(a) * span * 0.45, house.y + Math.abs(Math.cos(a * 0.7)) * 4, house.z + Math.cos(a) * span * 0.6);
       }
