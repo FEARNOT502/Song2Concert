@@ -9,7 +9,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { APP, DEG, KELVIN, V3, clamp, floorPanelTex, glowMat, noise3D, prng, std, withRepeat } from '../core.js';
 import { lightPoints } from '../people.js';
 import { ampStack, drumKit, guitar, hoists, holdAtDistance, keyboardRig, ledScreen, micStand, prismInto, rodInto, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, crossThrust, delayTower, fohPosition, fixtureRow, flashOnCrowd, flashUnits, fromRow, groundRoof, laser, laserUnits, paHang, paWing, packFloor, runBlinders, runLasers, runShow, runStrobes, screenHang, subLine, thinRow } from '../show.js';
+import { bigCrowd, bigScreens, crossThrust, delayTower, fohPosition, fixtureRow, flashOnCrowd, flashUnits, fromRow, groundRoof, laser, laserUnits, paHang, paWing, packFloor, runBlinders, runLasers, runShow, runStrobes, scaffoldMasking, screenHang, subLine, thinRow } from '../show.js';
 import { buildStands } from '../stands.js';
 import { WB_STANDS } from './wb-data.js';
 
@@ -258,9 +258,22 @@ export function buildStadium(ctx) {
       // the board's housing, behind it back to the rows behind, its top a
       // walkway level with their front; a dark ledge under its foot
       extrude([at(-pl.wb, Sb), at(pr.wb, Sb), at(pr.wb, q.Db), at(-pl.wb, q.Db)], L2top, top + 0.3, housingMat);
+      const [sx, sz] = at(0, Sb - 0.1);
+      // the board behind the stage is switched off for a concert: its face
+      // dark, the set's own wall in front of it does the showing
+      if (sz + ZC < 0) {
+        const off = new THREE.Group();
+        const face = new THREE.Mesh(new THREE.PlaneGeometry(SCREEN_W, SCREEN_H), std({ color: 0x050506, roughness: 0.35, metalness: 0.2 }));
+        face.position.z = 0.06;
+        const back = new THREE.Mesh(new THREE.BoxGeometry(SCREEN_W + 0.5, SCREEN_H + 0.5, 0.12), housingMat);
+        back.position.z = -0.02;
+        off.add(face, back);
+        off.position.set(sx, foot + SCREEN_H / 2, sz + ZC); off.rotation.y = q.yaw;
+        root.add(off);
+        continue;
+      }
       const scr = ledScreen({ w: SCREEN_W, h: SCREEN_H, tex: ctx.art.texture(SCREEN_W / SCREEN_H), pitch: 0.012, bright: 1.3, kind: 'main', frame: 0.25, light: false });
       for (const c of scr.children) if (c.material && c.material === scr.userData.bezel) c.visible = false;   // a plain black frame, as the real boards
-      const [sx, sz] = at(0, Sb - 0.1);
       scr.position.set(sx, foot + SCREEN_H / 2, sz + ZC); scr.rotation.y = q.yaw;
       root.add(scr); ctx.addScreen(scr, SCREEN_W / SCREEN_H, 'main');
       continue;
@@ -577,6 +590,10 @@ export function buildStadium(ctx) {
   for (const sd of [-1, 1]) paWing(root, { x: sd * PX, z: PZ, h: PH, bridge: V3(sd * (TX + 0.8), SR, BZ[2]) });
   // the wall on its own header and chains from the roof's back beam
   screenHang(root, { y: Y0 + WH + 0.3, z: WZ, w: WW, topY: SR - 0.8, n: 7, size: 0.76 });
+  // Black masking right behind the LED wall, across the stage roof's back
+  // from tower to tower, hung from its back beam down to the ground: the end
+  // stand does not show through or round the wall.
+  scaffoldMasking(root, { line: [[-(TX + 1), BZ[0] - 0.9], [TX + 1, BZ[0] - 0.9]], tops: [SR + 0.6], front: [0, 100], bottomAt: (x, z) => (z >= 7 ? DECK : 0) });
   // the lighting trusses on chains under the roof's beams
   const LT = 28.5;
   for (const z of BZ.slice(1)) {

@@ -13,8 +13,8 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { APP, DEG, KELVIN, V3, clamp, floorPanelTex, glowMat, lerp, prng, std } from '../core.js';
 import { lightPoints } from '../people.js';
-import { hoists, micStand, rodInto, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, crossThrust, delayTower, floorChairs, fohPosition, fixtureRow, flashOnCrowd, flashUnits, fromRow, groundRoof, laser, laserUnits, paHang, paWing, runBlinders, runLasers, runShow, runStrobes, screenHang, section, subLine, thinRow, wallStrip } from '../show.js';
+import { hoists, latticeInto, micStand, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
+import { bigCrowd, bigScreens, crossThrust, delayTower, floorChairs, fohPosition, fixtureRow, flashOnCrowd, flashUnits, fromRow, groundRoof, laser, laserUnits, paHang, paWing, runBlinders, runLasers, runShow, runStrobes, scaffoldMasking, screenHang, section, subLine, thinRow, wallStrip } from '../show.js';
 import { buildStands } from '../stands.js';
 import { TD_STANDS } from './td-data.js';
 
@@ -295,46 +295,36 @@ export function buildDome(ctx) {
     g.computeVertexNormals();
     root.add(new THREE.Mesh(g, membrane));
   }
-  // Hung from the cables: the lights at 14 places round over the field
-  // (the LED floodlights, about 700, in 14 gondolas), 21 loudspeakers round
-  // the membrane's edge and one in the middle, and the TV camera there.
-  const hangY = (x, z, d) => roofAt(x, z) - d;
-  const bankM = new THREE.MeshBasicMaterial({ color: 0x000000, toneMapped: false });
-  const hungSteel = [], hungBlack = [], hangers = [], bankLamps = [];
+  // Nothing hangs from the membrane: the floodlights (about 700 LED floods)
+  // stand in banks along the ring beam round its edge, over the top of the
+  // stands, aimed down and in at the field, as the photographs show them.
+  const ringSteel = [], bankLamps = [];
   const LIGHTS = [];
-  for (let i = 0; i < 14; i++) {
-    const { x, z } = edge((i + 0.5) / 14 * Math.PI * 2, 0.72);
-    const y = hangY(x, z, 4.0), yaw = Math.atan2(-x, ZC - z);
+  // (the stands' seat rows, where their back is)
+  const rowPts = [];
+  for (const L of TD_STANDS.levels) for (const row of L.rows) for (const p of row.polys) for (const [x, z0] of p[0]) rowPts.push([x, z0 + ZH, Math.atan2(z0 + ZH - ZC, x)]);
+  for (let i = 0; i < 28; i++) {
+    // (just in front of the stands' back wall, over their top rows)
+    const t = (i + 0.5) / 28 * Math.PI * 2;
+    const e1 = edge(t, 1), a = Math.atan2(e1.z - ZC, e1.x);
+    let r = 0.9;
+    for (const [px, pz, pr] of rowPts) if (Math.abs(Math.atan2(Math.sin(pr - a), Math.cos(pr - a))) < 0.06) r = Math.max(r, norm(px, pz));
+    const { x, z } = edge(t, r - 0.012), o = edge(t, r + 0.006);
+    const y = ringY(z) - 1.0, yaw = Math.atan2(-x, ZC - z);
     LIGHTS.push(V3(x, y, z));
-    // a gondola of floods, its face tipped down and in towards the field
-    const fr = new THREE.BoxGeometry(8, 1.0, 2.6); fr.rotateX(0.45); fr.rotateY(yaw); fr.translate(x, y, z); hungSteel.push(fr.toNonIndexed());
-    for (const u of [-3.4, 3.4]) {
-      const top = V3(u, 0, 0).applyAxisAngle(V3(0, 1, 0), yaw).add(V3(x, 0, z));
-      rodInto(hangers, V3(top.x, y + 0.4, top.z), V3(top.x, roofAt(top.x, top.z), top.z), 0.04, 0.04, 4);
+    // a bank of floods on a frame off the ring, its face tipped down
+    const fr = new THREE.BoxGeometry(6, 0.9, 1.4); fr.rotateX(0.6); fr.rotateY(yaw); fr.translate(x, y, z); ringSteel.push(fr);
+    for (const u of [-2.6, 2.6]) {
+      const side = V3(u, 0, 0).applyAxisAngle(V3(0, 1, 0), yaw);
+      latticeInto(ringSteel, V3(x + side.x, y + 0.3, z + side.z), V3(o.x + side.x, ringY(o.z), o.z + side.z), 0.25, 0.03);
     }
-    for (let u = 0; u < 7; u++) for (let v = 0; v < 3; v++) {
-      const p = V3(-3.3 + u * 1.1, -0.55, -0.8 + v * 0.8).applyAxisAngle(V3(1, 0, 0), 0.45).applyAxisAngle(V3(0, 1, 0), yaw).add(V3(x, y, z));
+    for (let u = 0; u < 6; u++) for (let v = 0; v < 2; v++) {
+      const p = V3(-2.5 + u * 1.0, -0.47, -0.3 + v * 0.6).applyAxisAngle(V3(1, 0, 0), 0.6).applyAxisAngle(V3(0, 1, 0), yaw).add(V3(x, y, z));
       bankLamps.push(p);
     }
   }
-  for (let i = 0; i < 21; i++) {
-    const { x, z } = edge((i + 0.25) / 21 * Math.PI * 2, 0.9);
-    const y = hangY(x, z, 5.5), yaw = Math.atan2(-x, ZC - z);
-    const b = new THREE.BoxGeometry(1.3, 2.4, 1.1); b.rotateX(-0.3); b.rotateY(yaw); b.translate(x, y, z); hungBlack.push(b.toNonIndexed());
-    rodInto(hangers, V3(x, y + 1.2, z), V3(x, roofAt(x, z), z), 0.04, 0.04, 4);
-  }
-  {
-    const x = 0, z = ZC, y = hangY(x, z, 7.0);
-    for (let k = 0; k < 4; k++) {
-      const b = new THREE.BoxGeometry(1.4, 3.2, 1.2); b.translate(0, 0, 0.9); b.rotateY(k * Math.PI / 2); b.translate(x, y, z); hungBlack.push(b.toNonIndexed());
-    }
-    const cam = new THREE.BoxGeometry(0.7, 0.6, 1.0); cam.translate(x, y - 2.3, z); hungBlack.push(cam.toNonIndexed());
-    const lens = new THREE.CylinderGeometry(0.16, 0.2, 0.6, 12); lens.rotateX(Math.PI / 2); lens.translate(x, y - 2.3, z + 0.75); hungBlack.push(lens.toNonIndexed());
-    rodInto(hangers, V3(x, y + 1.6, z), V3(x, roofAt(x, z), z), 0.06, 0.06, 4);
-  }
-  root.add(new THREE.Mesh(mergeGeometries(hungSteel), std({ color: 0x2a2b30, roughness: 0.6, metalness: 0.4 })));
-  root.add(new THREE.Mesh(mergeGeometries(hungBlack), std({ color: 0x111114, roughness: 0.7 })));
-  root.add(new THREE.Mesh(mergeGeometries(hangers), std({ color: 0x8a8d92, roughness: 0.4, metalness: 0.7 })));
+  const bankM = new THREE.MeshBasicMaterial({ color: 0x000000, toneMapped: false });
+  root.add(new THREE.Mesh(mergeGeometries(ringSteel), std({ color: 0x2a2b30, roughness: 0.6, metalness: 0.4 })));
   const lampG = new THREE.CircleGeometry(0.3, 12);
   const lampI = new THREE.InstancedMesh(lampG, bankM, bankLamps.length);
   const lm4 = new THREE.Matrix4(), lq = new THREE.Quaternion().setFromUnitVectors(V3(0, 0, 1), V3(0, -1, 0));
@@ -421,6 +411,10 @@ export function buildDome(ctx) {
   const BZ = [WZ - 0.4, 26, 32, RW0 + 0.5];
   groundRoof(root, { tx: TX, zs: BZ, y0: 0, top: SR });
   screenHang(root, { y: WY + WH / 2 + 0.3, z: WZ, w: WW, topY: SR - 0.8, n: 6, size: 0.76 });
+  // Black masking right behind the LED wall, across the stage roof's back
+  // from tower to tower, hung from its back beam: the stands behind the
+  // stage do not show through or round the wall.
+  scaffoldMasking(root, { line: [[-(TX + 1), BZ[0] - 0.9], [TX + 1, BZ[0] - 0.9]], tops: [SR + 0.6], front: [0, 100] });
   // the road cases in the yard behind the set
   {
     const rnd = prng(17), cases = [];
@@ -510,10 +504,10 @@ export function buildDome(ctx) {
   stageWash.position.set(0, LT - 1, BZ[1]); stageWash.target.position.set(0, DECK, 16 + SZ);
   for (const l of [front1, stageWash]) root.add(l, l.target);
   const fill = [];
-  for (const [x, y, z] of [[-40, 30, 66], [40, 30, 66], [0, 40, 100]]) { const l = new THREE.PointLight(0xffffff, 0, 160, 2); l.position.set(x, y, z); root.add(l); fill.push(l); }
+  for (const [x, y, z] of [[-40, 30, 66], [40, 30, 66], [0, 26, 100]]) { const l = new THREE.PointLight(0xffffff, 0, 160, 2); l.position.set(x, y, z); root.add(l); fill.push(l); }
   const house = [];
-  // the house lights are the hung gondolas' floods: aimed down at the field
-  // and the stands, so the membrane above them only gets what bounces back up
+  // the house lights are the ring's floods: aimed down at the field and the
+  // stands, so the membrane above them only gets what bounces back up
   for (let i = 0; i < 9; i++) {
     const p = LIGHTS[Math.round(i / 8 * (LIGHTS.length - 1))];
     const l = new THREE.SpotLight(KELVIN(5200), 0, 300, 1.2, 1, 2);
