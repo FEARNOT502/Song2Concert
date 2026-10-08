@@ -145,6 +145,9 @@ export function buildStadium(ctx) {
   });
   const stands = buildStands(WB_STANDS, {
     offset: OFF, stage: STAGE, seatColor: 0x9a1418, concreteTone: 0.26, seed: 600, roofY: ROOF,
+    // the lightsticks' blocks: each level's numbered blocks, run front to
+    // back between the aisles, round the bowl from its middle
+    wedges: { x: 0, z: 0 },
     sold: (x, z) => z - 8 > Math.max(2, 0.12 * (Math.abs(x) - 31)),   // in front of the wall (face z 8, 62 m wide)
   });
   root.add(stands.group);

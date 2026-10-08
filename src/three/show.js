@@ -261,9 +261,9 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
       col = cols[(i % 2) ? 1 : 0];
     } else if (part === 'chorus') {
       // a new position every two bars, a wide circle or figure of eight over
-      // it, once round every beat (the last chorus wider still)
+      // it, once round a bar (the last chorus wider still)
       [p0, t0] = chorusPos(pos);
-      amp = f.final ? 0.58 : 0.46; beats = 1;
+      amp = f.final ? 0.58 : 0.46; beats = 4;
       // (every third head draws the other figure)
       s = i % 3 === 2 ? (big === 'circle' ? 'eight' : 'circle') : big;
       lvl = ((f.final ? 0.85 : 0.75) + 0.35 * f.kick) * eS;

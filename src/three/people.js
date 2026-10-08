@@ -552,12 +552,14 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
       // the beat's phase (beats and the way through one), how far through its
       // section the song is, and a bridge's closing roll (0..1, or -1)
       uPhase: { value: 0 }, uProg: { value: 0 }, uRoll: { value: -1 },
+      // the pre-chorus chase's step, and how far through it (0..1)
+      uStep: { value: 0 }, uStepT: { value: 0 },
       uPal: { value: [V3(1, 0.6, 0.3), V3(0.8, 0.4, 1), V3(0.5, 0.7, 1), V3(1, 0.85, 0.55)] },
       tGlow: { value: glowSprite() },
     },
     vertexShader: /* glsl */`
       attribute vec4 aLook, aZone;
-      uniform float uTime, uScale, uMax, uMode, uHouse, uKick, uEnergy, uScene, uSec, uSecPrev, uSecMix, uSecT, uBeat, uLook, uPhase, uProg, uRoll;
+      uniform float uTime, uScale, uMax, uMode, uHouse, uKick, uEnergy, uScene, uSec, uSecPrev, uSecMix, uSecT, uBeat, uLook, uPhase, uProg, uRoll, uStep, uStepT;
       uniform vec3 uPal[4], uStage;
       varying vec3 vC;
       float h1(float n) { return fract(sin(n * 127.1 + 311.7) * 43758.5453); }
@@ -606,10 +608,14 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
           return sc * (0.5 + 0.22 * sin(ph * 0.785 + lv * 1.6));
         }
         if (sec < 2.5) {
-          // pre-chorus: a chase up the levels, once in four beats, quickening
-          // to once in two as the section builds
-          float w = smoothstep(0.5, 1.0, sin(lv * 1.4 - ph * 1.571 * (1.0 + uProg)));
-          return mix(sc * 0.25, sceneCol(s, 1.0) * 1.15, w);
+          // pre-chorus: a chase up the levels, floor to the top and round
+          // again, a level a step, stepping on the beat (every other beat as
+          // it starts, every beat as it builds), each lit level fading
+          // through its step
+          float lit = mod(uStep, 4.0);
+          float on = 1.0 - step(0.5, abs(mod(lv, 4.0) - lit));
+          float glow = on * (0.4 + 0.6 * exp(-uStepT * 2.5));
+          return mix(sc * 0.3, sceneCol(s, 1.0) * 1.15, glow);
         }
         if (sec < 3.5) {
           // chorus: the whole house on the kick, the levels trading colours
