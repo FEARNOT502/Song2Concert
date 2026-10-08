@@ -19,6 +19,7 @@ import { useEngine } from './audio/useEngine.js';
 import { useAudioStrain } from './audio/useAudioStrain.js';
 import { audioBufferToFlac } from './audio/flac.js';
 import { extractMetadata } from './audio/metadata.js';
+import { songMapFor } from './songMap.js';
 
 // How the export's two halves divide the progress bar. Rendering the venue
 // offline is a convolution plus six worklets over the whole track and its tail;
@@ -97,6 +98,10 @@ export default function App() {
   // The scene reads the engine's analyser for the kick drum. A getter, because
   // the analyser is made with the audio context, after the first file loads.
   const getAnalyser = useCallback(() => engine.analyser || null, [engine]);
+  // ...and follows the song's structure, read from the whole track when it
+  // loads (src/songMap.js), against where playback is now
+  const [songMap, setSongMap] = useState(null);
+  const getClock = useCallback(() => engine.currentTime, [engine]);
 
   // derived
   const venue = findVenue(venueId);
@@ -232,9 +237,11 @@ export default function App() {
       setStatus('ready');
       setTime(0);
       pulseRef.current = 0;
+      setSongMap(null);
       return;
     }
     const f = q[0];
+    setSongMap(null);
     const ok = await loadFile(f);
     if (!ok) {
       // skip an undecodable file: drop it and try the next
@@ -262,6 +269,9 @@ export default function App() {
     engine.setWetDry(wetDry);
     engine.setVolume(volume);
     if (autoplay) { await play(); setPlaying(true); }
+    // The track's structure, for the lighting. Usually read already, with the
+    // read-ahead below during the track before; otherwise read now.
+    songMapFor(f).then((m) => { if (queueRef.current[0] === f) setSongMap(m); });
     // Now that this track is running, decode the next one — but not yet.
     //
     // Read-ahead is the largest single piece of work the app does: a hi-res file
@@ -304,6 +314,7 @@ export default function App() {
     readAheadTimer.current = setTimeout(() => {
       engine.prepareNext(next);
       metadataFor(next).catch(() => {});
+      songMapFor(next);
     }, delay);
   }, [engine]);
   const readAheadRef = useRef(readAhead);
@@ -522,6 +533,8 @@ export default function App() {
           crowdLight={crowdLight}
           onCrowdLightChange={setCrowdLight}
           analyser={getAnalyser}
+          songMap={songMap}
+          clock={getClock}
         />
         {pickers}
       </>
@@ -542,6 +555,8 @@ export default function App() {
         playing={playing}
         crowdLight={crowdLight}
         analyser={getAnalyser}
+        songMap={songMap}
+        clock={getClock}
       />
 
       <TopBar

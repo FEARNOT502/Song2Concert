@@ -55,6 +55,7 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
   let venue = null, ctx = null, venueId = null, envRT = null;
   let buildGen = 0;
   let pulse = 0, pulseRef = null, analyser = null;
+  let songMap = null, songClock = null;
   let playing = false;
   // Before anything plays the house lights are up — the room as you find it
   // walking in — and they go down when the music starts.
@@ -220,7 +221,7 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
 
   function frame(dt, t) {
     const level = pulseRef ? (pulseRef.current || 0) : pulse;
-    beat.update(dt, { level, analyser: playing ? analyser?.() : null, playing });
+    beat.update(dt, { level, analyser: playing ? analyser?.() : null, playing, map: songMap, time: songMap && songClock ? songClock() : NaN });
     house += (houseTarget - house) * Math.min(1, dt * 1.4);
     const target = art.palette;
     for (const k of ['a', 'b', 'c', 'd']) pal[k].lerp(target[k], Math.min(1, dt * 2.2));
@@ -228,7 +229,7 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
     // the angle one pixel covers, for the members held a pixel wide far off
     LOD.uPxAng.value = 2 * Math.tan(pipe.camera.fov * 0.5 * DEG) / Math.max(1, pipe.size.h * pipe.renderer.getPixelRatio());
     const B = beat;
-    const f = { t, dt, kick: B.kick, snare: 0, hat: 0, energy: B.energy, bar: B.bar, beat: B.beat, sec: playing ? B.sec : null, secT: B.secT, house, pal, cam: pipe.camera.position, look: LOOK_ROOMS.has(venueId) ? songLook().rig : null };
+    const f = { t, dt, kick: B.kick, snare: 0, hat: 0, energy: B.energy, bar: B.bar, beat: B.beat, sec: playing ? B.sec : null, secT: B.secT, secProg: playing ? B.secProg : null, secBar: B.secBar, next: B.next, toNext: B.toNext, final: B.final, role: B.role, bpm: songMap?.bpm, house, pal, cam: pipe.camera.position, look: LOOK_ROOMS.has(venueId) ? songLook().rig : null };
     const cu = ctx.cu;
     cu.uTime.value = t; cu.uKick.value = B.kick * (1 - house); cu.uEnergy.value = B.energy * (1 - house * 0.8);
     cu.uFlick.value = B.kick * (1 - house);
@@ -260,7 +261,8 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
     // it moves on to a new scene with each section, and within one every
     // eight bars (four in a chorus), or every twenty seconds if the bars stall
     const sec = SEC[f.sec || section(f.bar)] ?? 0;
-    const slot = Math.floor(B.bar / (sec === 2 ? 4 : 8));
+    // (counted from the section's own first bar when the song is mapped)
+    const slot = Math.floor((f.secBar ?? B.bar) / (sec === 2 ? 4 : 8));
     if (sec !== cue.sec) cue.t = 0;
     if (sec !== cue.sec || slot !== cue.slot || cue.sceneT > 20) {
       cue.prev = cue.sec; cue.sec = sec; cue.slot = slot; cue.scene++; cue.sceneT = 0;
@@ -352,6 +354,8 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
     setPulseRef: (ref) => { pulseRef = ref || null; },
     // () => AnalyserNode | null — read for the kick, never connected to
     setAnalyser: (get) => { analyser = typeof get === 'function' ? get : null; },
+    // the song's structure (songmap.js) and a getter for the playback position
+    setSongMap: (map, get) => { songMap = map || null; songClock = typeof get === 'function' ? get : null; },
     setArt: (want) => { art.set(want); },
     setPlaying: (on) => { playing = !!on; houseTarget = playing ? 0 : 1; },
     setCrowdLight: (mode) => { crowdLight = mode === 'flash' ? 'flash' : 'stick'; },

@@ -87,7 +87,7 @@ export default function MobileLayout({
   onFileClick, onVenueClick,
   strain = 0,
   effects = true, onEffectsChange,
-  crowdLight = 'stick', onCrowdLightChange, analyser = null,
+  crowdLight = 'stick', onCrowdLightChange, analyser = null, songMap = null, clock = null,
 }) {
   const [showMixer, setShowMixer] = useState(false);
   const exportPct = Math.round(exportProgress * 100);
@@ -127,6 +127,8 @@ export default function MobileLayout({
             playing={playing}
             crowdLight={crowdLight}
             analyser={analyser}
+            songMap={songMap}
+            clock={clock}
           />
           {/* the crowd-light switch sits on the scene it changes; the header has no room */}
           {onCrowdLightChange && CROWD_LIGHT_VENUES.includes(venue.id) && (

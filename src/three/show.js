@@ -42,6 +42,12 @@ export const HOUSE_LOOK = { col: 3, move: 0, pace: 1, hit: 0 };
 // an index round a list that holds for a negative count too (the clock can
 // start a little before zero)
 export const wrap = (k, n) => ((k % n) + n) % n;
+// how far a pre-chorus has built: through the section when the song is
+// mapped, else over its first twelve seconds
+const buildOf = (f, secT) => (f.secProg != null ? 0.45 + 0.55 * f.secProg : 0.55 + 0.45 * Math.min(1, secT / 12));
+// the beat before a drop: the rig pulled out, so the chorus lands out of the
+// dark (only when the song is mapped and the chorus is known to be next)
+export const dropGap = (f) => f.next === 'chorus' && f.sec !== 'chorus' && f.toNext != null && f.toNext < 60 / Math.max(60, f.bpm || 120) * 0.9;
 const WHITE = new THREE.Color(1, 1, 1);
 export function runShow(rig, list, f, opts) {
   if (f.look) return runMovers(list, f, opts);
@@ -83,7 +89,7 @@ export function runShow(rig, list, f, opts) {
       col = cols[it.group % 2 ? 3 : 0];
     } else if (sec === 'pre') {
       // the build: brighter and quicker as the section runs on
-      const build = f.look ? 0.55 + 0.45 * Math.min(1, secT / 12) : 1;
+      const build = f.look ? buildOf(f, secT) : 1;
       const k = Math.sin(t * 0.9 * (0.7 + 0.6 * build) + ph);
       tgt.set(house.x + u * span * 1.4 + k * 4, house.y, house.z - 10 + Math.cos(t * 0.6 + ph) * 12);
       lvl = (0.55 + 0.35 * (wrap(f.beat, 2) === (i % 2) ? f.kick : 0.2)) * build;
@@ -156,7 +162,10 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
   const t = f.t * L.pace;
   const secT = f.secT ?? 10;
   const dt = Math.min(0.1, f.dt || 0.016);
-  const bar = Math.floor(f.bar), phrase = Math.floor(f.bar / 8);
+  // (bars counted from the section's start when the song is mapped, so the
+  // positions turn over on its phrases)
+  const bar = Math.floor(f.secBar ?? f.bar), phrase = Math.floor(f.bar / 8);
+  const gap = dropGap(f);
   // the phrase's effect and how it is spread, the position this couple of bars
   const shape = SHAPES[wrap(phrase + L.move * 2 + (it0(list) ? 1 : 0), SHAPES.length)];
   const spread = wrap(phrase + L.move, 4);
@@ -178,7 +187,7 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
       col = cols[it.group % 2 ? 3 : 0];
     } else if (sec === 'pre') {
       // fanned out over the house, a wave in tilt running along the row, quicker as it builds
-      const build = 0.55 + 0.45 * Math.min(1, secT / 12);
+      const build = buildOf(f, secT);
       [p0, t0] = up ? [side * Math.PI / 2, 0.35 + Math.abs(u) * 0.5] : ((a) => [a[0] + u * 1.3, a[1]])(aim(house.x, house.y, house.z));
       amp = 0.2 + 0.15 * build; rate = 0.8 + 1.4 * build;
       lvl = (0.55 + 0.35 * (wrap(f.beat, 2) === (i % 2) ? f.kick : 0.2)) * build;
@@ -198,8 +207,8 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
           [hp + u * 0.5, ht + 0.25],                                  // lifted, out to the far end
         ][pos];
       }
-      amp = 0.3; rate = 1.6;
-      lvl = 0.75 + 0.35 * f.kick;
+      amp = f.final ? 0.38 : 0.3; rate = f.final ? 1.9 : 1.6;
+      lvl = (f.final ? 0.85 : 0.75) + 0.35 * f.kick;
       col = cols[wrap(i + Math.floor(f.beat / 4), 3)];
       const first = secT < 0.35;
       if (L.hit === 0 && strobe && (first || (f.kick > 0.85 && wrap(i + f.beat, 3) === 0))) lvl = 1.6;
@@ -232,6 +241,7 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
       else if (L.col === 1) col = cols[wrap(i + k, 2)];
       else if (L.col === 2) col = beam ? WHITE : cols[wrap(i + k, 2)];
     }
+    if (gap) lvl *= 0.05;
     fx.color.copy(col);
     if (lvl > 1.2 && L.hit === 0) fx.color.lerp(WHITE, 0.7);
     fx.intensity = lvl * show * lift;

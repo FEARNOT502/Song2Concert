@@ -18,6 +18,7 @@ import { createStage } from '../three/stage.js';
 function Scene({
   venueId, coverId, coverSrc, pulse = 0, pulseRef = null, title, artist,
   strain = 0, effects = true, playing = false, crowdLight = 'stick', analyser = null,
+  songMap = null, clock = null,
 }) {
   const hostRef = useRef(null);
   const canvasRef = useRef(null);
@@ -64,6 +65,8 @@ function Scene({
   useEffect(() => { stageRef.current?.setCrowdLight(crowdLight); }, [crowdLight]);
   // The engine's analyser, read for the kick drum — nothing is connected to it.
   useEffect(() => { stageRef.current?.setAnalyser(analyser); }, [analyser]);
+  // The song's structure (src/songMap.js) and the playback clock to read it by.
+  useEffect(() => { stageRef.current?.setSongMap(songMap, clock); }, [songMap, clock]);
   // How hard the audio thread is finding it — see stage.js setStrain. The scene
   // gives frames back when the sound needs them.
   useEffect(() => { stageRef.current?.setStrain(strain); }, [strain]);
