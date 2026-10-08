@@ -698,7 +698,7 @@ export function buildStadium(ctx) {
   const hzWash = [hz.add(V3(-20, LT - 2, 20), 0xffffff, 0), hz.add(V3(20, LT - 2, 20), 0xffffff, 0), hz.add(V3(0, DECK + 5, 30), 0xffffff, 0)];
 
   return {
-    root, eye,
+    root, eye, seatNear: stands.seatNear,
     camera: { pos: eye, target: V3(0, DECK + 13.5, 10), fov: 62, near: 0.2, far: 2000 },
     background: new THREE.Color(0x020306),
     fog: new THREE.FogExp2(0x090708, 0.0015),

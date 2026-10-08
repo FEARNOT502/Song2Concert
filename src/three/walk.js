@@ -18,6 +18,8 @@ import { DEG, V3, clamp } from './core.js';
 
 export const WALK = {
   eye: 1.6,        // standing eye height above the floor
+  sit: 1.2,        // seated, above the tread the seat stands on
+  sitAfter: 3,     // seconds stood still in the stands before sitting down
   step: 0.85,      // a step: a stand's row, a stair, a kerb
   drop: 1.5,       // the most that is stepped down: a stage's front edge, a
                    // balcony's or the pit's is a place to stop, not to fall from
@@ -70,6 +72,9 @@ export class Walker {
     this.ray = new THREE.Ray();
     this.drag = null;
     this.onLook = null;
+    this.seatNear = null;       // the venue's stand seats, if it has any
+    this.stillSince = 0;        // when the last step was taken (ms, wall clock: a slow frame rate must not stretch the wait)
+    this.sitting = false;
     const down = (e) => {
       if (e.target.closest?.('input, textarea, select, [contenteditable]') || e.ctrlKey || e.metaKey || e.altKey) return;
       const k = e.key.toLowerCase();
@@ -108,8 +113,9 @@ export class Walker {
   }
 
   // a new room: stand at its seat, facing its stage
-  setVenue(root, eye, target) {
+  setVenue(root, eye, target, seatNear = null) {
     this.root = root;
+    this.seatNear = seatNear;
     this.geo?.dispose(); this.geo = null; this.bvh = null;
     this.home = { eye: eye.clone(), target: target.clone() };
     this.reset();
@@ -127,6 +133,8 @@ export class Walker {
     this.seated = eye.y;        // the seat's own eye, kept until the first step
     this.grounded = false;
     this.vy = 0;
+    this.stillSince = performance.now();
+    this.sitting = false;
   }
 
   get moving() { return this.held.has('w') || this.held.has('a') || this.held.has('s') || this.held.has('d'); }
@@ -231,6 +239,8 @@ export class Walker {
       }
       this.feet.x += move.x; this.feet.z += move.z;
       this.seated = null;
+      this.stillSince = performance.now();
+      this.sitting = false;
     }
     if (this.bvh && this.grounded) {
       const g = this.ground(this.feet.x, this.feet.z, this.gy + WALK.climb);
@@ -246,8 +256,16 @@ export class Walker {
           if (this.feet.y <= g + 1e-3) this.vy = 0;
         }
       }
-      // stand up out of the seat on the first step
-      if (this.seated === null) this.eyeH += (WALK.eye - this.eyeH) * Math.min(1, dt * 3);
+      // Stood still among the seats of a stand for a few seconds, sit down;
+      // on the next step stand up again (out of the venue's own seat too).
+      // The pitch, the floor and the concourses are stood on whatever the wait.
+      if (this.vy !== 0) this.stillSince = performance.now();
+      else if (!this.sitting && !this.moving && performance.now() - this.stillSince >= WALK.sitAfter * 1000
+        && this.seatNear?.(this.feet.x, this.feet.z, this.gy)) this.sitting = true;
+      if (this.seated === null) {
+        const to = this.sitting ? WALK.sit : WALK.eye;
+        this.eyeH += (to - this.eyeH) * Math.min(1, dt * (this.sitting ? 2 : 3));
+      }
     }
     if (camera) {
       const y = this.seated != null && !this.grounded ? this.seated : this.feet.y + this.eyeH;

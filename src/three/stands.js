@@ -1055,9 +1055,35 @@ export function buildStands(data, {
     }
     return y;
   };
+  // the stand seat nearest (x, z), within `r` across, on the tread `y` is
+  // standing on or a little below it (the next row down, from an aisle's half
+  // step), or null: what the walker sits down in. Not from the floor in front
+  // of a stand: its first row is above that. Indexed in
+  // 2 m cells the first time it is asked, not when the stand is built.
+  let seatCells = null;
+  const seatNear = (x, z, y, r = 0.9) => {
+    if (!seatCells) {
+      seatCells = new Map();
+      for (const { spots } of seatSpots) for (const sp of spots) {
+        const k = `${Math.floor(sp.x / 2)},${Math.floor(sp.z / 2)}`;
+        if (!seatCells.has(k)) seatCells.set(k, []);
+        seatCells.get(k).push(sp);
+      }
+    }
+    const cx = Math.floor(x / 2), cz = Math.floor(z / 2);
+    let best = null, bd = r;
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+      for (const sp of seatCells.get(`${cx + i},${cz + j}`) ?? []) {
+        if (y < sp.y - 0.05 || y > sp.y + 0.5) continue;
+        const d = Math.hypot(sp.x - x, sp.z - z);
+        if (d < bd) { bd = d; best = sp; }
+      }
+    }
+    return best;
+  };
   if (seatMesh) {
     g.add(seatMesh(seatSpots.flatMap(({ spots }) => spots.map((sp) => ({ x: sp.x, y: sp.y, z: sp.z, turn: sp.yaw })))));
-    return { group: g, people, aisleLights, update, topAt };
+    return { group: g, people, aisleLights, update, topAt, seatNear };
   }
   const seatGeo = stadiumSeatGeometry();
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion();
@@ -1067,5 +1093,5 @@ export function buildStands(data, {
     inst.receiveShadow = true;
     g.add(inst);
   }
-  return { group: g, people, aisleLights, update, topAt };
+  return { group: g, people, aisleLights, update, topAt, seatNear };
 }

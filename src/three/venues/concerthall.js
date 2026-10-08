@@ -223,7 +223,7 @@ export function buildConcertHall(ctx) {
   const hzStage = hz.add(V3(0, DECK + 2, 4), warm, 0);
 
   return {
-    root, eye,
+    root, eye, seatNear: stands.seatNear,
     camera: { pos: eye, target: V3(0, 6.4, -3), fov: 54, near: 0.1, far: 200 },
     background: new THREE.Color(0),
     fog: new THREE.FogExp2(0x0a0706, 0.004),

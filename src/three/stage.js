@@ -151,7 +151,7 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
     cam.fov = v.camera.fov; cam.near = v.camera.near ?? 0.1; cam.far = v.camera.far ?? 2000;
     cam.updateProjectionMatrix();
     venue = v; ctx = c;
-    walker.setVenue(v.root, v.camera.pos, v.camera.target);
+    walker.setVenue(v.root, v.camera.pos, v.camera.target, v.seatNear);
     const b = v.bloom || {};
     pipe.bloom.strength = b.strength ?? 0.6; pipe.bloom.radius = b.radius ?? 0.6; pipe.bloom.threshold = b.threshold ?? 0.9;
     const G = pipe.final.material.uniforms, g = v.grade || {};

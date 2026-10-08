@@ -650,7 +650,7 @@ export function buildDome(ctx) {
   const hzWash = [hz.add(V3(-16, LT - 1, 14 + SZ), 0xffffff, 0), hz.add(V3(16, LT - 1, 14 + SZ), 0xffffff, 0), hz.add(V3(0, 22, CZ + XD / 2), 0xffffff, 0)];
 
   return {
-    root, eye,
+    root, eye, seatNear: stands.seatNear,
     camera: { pos: eye, target: V3(0, DECK + 10, 6 + SZ), fov: 60, near: 0.2, far: 800 },
     background: new THREE.Color(0),
     fog: new THREE.FogExp2(0x07070b, 0.002),
