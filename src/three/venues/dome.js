@@ -490,12 +490,9 @@ export function buildDome(ctx) {
   for (const k of [3, 6, 9, 12]) moverLights.push(rig.light(spots[k].fx, shadowSpot(0xffffff, 0, { cast: false, penumbra: 0.5 }), 14000));
   const front1 = shadowSpot(KELVIN(5600), 0, { angle: 0.14, penumbra: 0.7, size: q.shadowSize, far: 140, cast: q.shadows });
   front1.position.set(-8, 30, 88); front1.target.position.set(0, DECK + 1, 15 + SZ);
-  const follow = shadowSpot(KELVIN(5600), 0, { angle: 0.035, penumbra: 0.5, cast: false });
-  follow.position.set(0, 36, 112); follow.target.position.set(0, XH, RW1 - TIP / 2);
   const stageWash = shadowSpot(0xffffff, 0, { angle: 0.8, penumbra: 1, cast: false });
   stageWash.position.set(0, LT - 1, BZ[1]); stageWash.target.position.set(0, DECK, 16 + SZ);
-  for (const l of [front1, follow, stageWash]) root.add(l, l.target);
-  const followBeam = rig.add({ kind: 'follow', pos: V3(0, 36, 112), length: 70, body: false, beamGain: 0.5, flareGain: 0.5, color: KELVIN(5600) });
+  for (const l of [front1, stageWash]) root.add(l, l.target);
   const fill = [];
   for (const [x, y, z] of [[-40, 30, 66], [40, 30, 66], [0, 40, 100]]) { const l = new THREE.PointLight(0xffffff, 0, 160, 2); l.position.set(x, y, z); root.add(l); fill.push(l); }
   const house = [];
@@ -650,9 +647,7 @@ export function buildDome(ctx) {
       });
       bankM.color.copy(KELVIN(5200)).multiplyScalar(0.02 + 2.2 * f.house);
       runLasers(lasers, f);
-      rig.aim(followBeam, V3(star.position.x, DECK + 0.6, star.position.z)); followBeam.intensity = 1.2 * show;
       front1.intensity = 90000 * show + 9000 * f.house;
-      follow.intensity = 50000 * show;
       stageWash.color.copy(f.pal.a); stageWash.intensity = (12000 + 14000 * f.energy + 6000 * f.kick) * show;
       fill.forEach((l, i) => { l.color.copy(i ? f.pal.b : f.pal.a); l.intensity = (200 + 500 * f.energy) * show; });
       house.forEach((l) => { l.intensity = 30000 * f.house; });
