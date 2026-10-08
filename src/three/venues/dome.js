@@ -128,6 +128,10 @@ export function buildDome(ctx) {
     offset: OFF, stage: STAGE, seed: 400, concreteTone: 0.28, roofY: (x, z) => ringY(z + ZH) + 0.3,
     seatColors: { A: 0x1d3c86, B: 0x1d3c86, F: 0x1d3c86, K: 0x1d3c86, G: 0x1d3c86, C: 0x5a5d63, D: 0x1d3c86, E: 0x1d3c86 },
     crowd: !!q.crowd,
+    // the lightsticks' floors as the building counts them, [floor, band from
+    // the front]: the 1st floor (the field-level seats, A, B behind it, and
+    // the outfield's F beside them), the balcony, the 2nd floor (D, E behind)
+    tiers: { G: [1, 0], A: [1, 1], B: [1, 2], F: [1, 1], C: [2, 0], D: [3, 0], E: [3, 1] },
     sold: (x, z) => z - 19.6 > Math.max(4, 0.12 * (Math.abs(x) - 33)),   // in front of the wall (face z 19.6, 66 m wide)
     // the side walls where a stand drops away: the stands' own concrete,
     // not dark steel
@@ -642,7 +646,8 @@ export function buildDome(ctx) {
         fx.color.copy(i % 2 ? f.pal.a : f.pal.c);
         fx.intensity = (sec === 'chorus' ? 0.9 + 0.4 * f.kick : sec === 'pre' ? 0.5 : 0.18) * show;
       });
-      front1.intensity = 90000 * show + 9000 * f.house;
+      // (idle, at half what it was: it glared off the deck)
+      front1.intensity = 90000 * show + 4500 * f.house;
       stageWash.color.copy(f.pal.a); stageWash.intensity = (12000 + 14000 * f.energy + 6000 * f.kick) * show;
       fill.forEach((l, i) => { l.color.copy(i ? f.pal.b : f.pal.a); l.intensity = (200 + 500 * f.energy) * show; });
       // (half what they were: at full the deck, the trusses and the roof threw

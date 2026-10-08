@@ -516,9 +516,9 @@ export function silhouettes(people, cu, { seed = 5 } = {}) {
 // with the levels trading colours each bar in the chorus, one dim colour
 // swelling up the levels in a break; and the big rooms' other parts: lit from
 // the front back in an intro, a wave across in a post-chorus, a pulse across
-// on every beat in a bridge, a chequerboard in a dance break, sparkle and
-// white on the kick in a solo, the house breathing out in an outro. `uLook`
-// (fixed per song) seeds which scenes it plays. With the house lights up the
+// on every beat in a bridge, a chequerboard in a dance break, the colours
+// wheeling round the house with a comet and sparkle in a solo, the house
+// breathing out in an outro. `uLook` (fixed per song) seeds which scenes it plays. With the house lights up the
 // sticks are off control: each glows on its own, softly, as before a show.
 // `p.zone` is { lv (0 the floor, 1 up the levels), u (the block's place
 // across its level, 0..1), block (its number), row (a floor block's row) }.
@@ -652,14 +652,21 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
           return mix(c, vec3(1.0), 0.6 * uKick * uKick);
         }
         if (sec < 8.5) {
-          // solo: low, sticks sparkling on their own on the sixteenths, the
-          // house going up white on the kick, a sweep up the levels each bar
-          float tw = step(0.82, h1(aLook.x * 13.0 + floor(ph * 4.0)));
-          float fb = fract(ph / 4.0) * 4.0;
-          float dl = (fb - lv) * 1.5;
-          float sw = exp(-dl * dl);
-          vec3 c = uPal[0] * (0.14 + 0.5 * sw) + mix(uPal[0], vec3(1.0), 0.6) * tw * 0.9;
-          return c + vec3(1.0) * 1.2 * uKick * uKick;
+          // solo: the house is the show. The sleeve's colours in stripes round
+          // each level, turning a stripe a beat, the levels turning against
+          // each other; a white comet running round every bar with its tail;
+          // a sweep up the levels on the beat; sticks sparkling on the
+          // sixteenths; the whole house going up white on the kick
+          float dir = mod(lv, 2.0) < 0.5 ? 1.0 : -1.0;
+          float uu = dir > 0.0 ? u : 1.0 - u;
+          vec3 c = col(mod(floor(uu * 8.0 - ph), 4.0)) * 0.6;
+          float x = fract(uu - ph / 4.0);
+          c += mix(uPal[0], vec3(1.0), 0.7) * 1.3 * exp(-x * 12.0);
+          float dl = (fract(ph) * 4.0 - lv) * 1.6;
+          c *= 0.75 + 0.6 * exp(-dl * dl);
+          float tw = step(0.86, h1(aLook.x * 13.0 + floor(ph * 4.0)));
+          c = mix(c, vec3(1.0), 0.7 * tw);
+          return c + vec3(1.0) * 1.0 * uKick * uKick;
         }
         // outro: every level breathing together, once in eight beats, going
         // down as the song ends

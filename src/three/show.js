@@ -155,14 +155,15 @@ export function runShow(rig, list, f, opts) {
 // ballyhoo), each spread across the row: all together, chasing along it,
 // mirrored from the middle, or odd against even. Positions change on the
 // music (each couple of bars in a chorus), effects by the phrase.
-const PAN_MAX = 2.4, TILT_MAX = 2.0, ACCEL = 9;      // rad/s, rad/s, rad/s²
-const SHAPES = ['circle', 'eight', 'tiltWave', 'panWave', 'bally'];
+// (a current beam-spot: a half turn of pan in well under a second)
+const PAN_MAX = 4.5, TILT_MAX = 3.8, ACCEL = 30;     // rad/s, rad/s, rad/s²
 // pan and tilt from a direction, for a head hung down (or stood up)
 function panTilt(d, up) { return [Math.atan2(d.x, d.z), Math.acos(Math.max(-1, Math.min(1, up ? d.y : -d.y)))]; }
 const angDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
 function motor(cur, vel, want, max, dt, wrapped) {
   const err = wrapped ? angDiff(want, cur) : want - cur;
-  const v = Math.max(-max, Math.min(max, err * 7));
+  // (held tight, so a wide circle on the beat is drawn wide, not cut short)
+  const v = Math.max(-max, Math.min(max, err * 16));
   const dv = Math.max(-ACCEL * dt, Math.min(ACCEL * dt, v - vel));
   vel += dv;
   return [cur + vel * dt, vel];
@@ -181,7 +182,10 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
   // the beat, not the clock: every move below turns over in beats, so a
   // faster song moves faster and each move lands with the music
   const beat = f.phase ?? f.t * 2;
-  const cyc = (beats) => beat / beats * L.pace * Math.PI * 2;
+  // (halved, still on the beat, past a little over a turn a second: a head
+  // asked to circle faster only shrinks the circle it can keep up with)
+  const bps = Math.max(60, f.bpm || 120) / 60;
+  const cyc = (beats, k = 1) => { let r = L.pace * k / beats; while (r * bps > 1.2) r /= 2; return beat * r * Math.PI * 2; };
   // the song's energy now (0.25 quiet .. 1 its loudest): brightness and size
   const E = f.energy ?? 0.5;
   const eS = 0.65 + 0.5 * E;
@@ -191,8 +195,12 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
   const prog = progOf(f, secT);
   const roll = rollOf(f);
   // the phrase's effect and how it is spread, the position this couple of bars
-  const shape = SHAPES[wrap(phrase + L.move * 2 + (it0(list) ? 1 : 0), SHAPES.length)];
-  const spread = wrap(phrase + L.move, 4);
+  // the chorus keeps to the big ones: circles and figures of eight, traded
+  // by the phrase (the floor's rows on the other)
+  const big = ['circle', 'eight'][wrap(phrase + L.move + (it0(list) ? 1 : 0), 2)];
+  // (never all together: chasing along the row, mirrored from the middle,
+  // or odd against even)
+  const spread = 1 + wrap(phrase + L.move, 3);
   const pos = wrap(Math.floor(bar / 2) + L.move, 4);
   const tmp = V3();
   for (const it of list) {
@@ -213,11 +221,17 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
       return [
         [hp + u * 1.4, ht],
         [hp - side * 0.5 + u * 0.4, ht - 0.2],
-        aim(house.x, house.y + 14, house.z - span * 0.3),
+        ((a) => [a[0] + u * 0.7, a[1]])(aim(house.x, house.y + 14, house.z - span * 0.3)),
         [hp + u * 0.5, ht + 0.25],
       ][k];
     };
-    let p0, t0, amp = 0, beats = 8, s = 'circle', lvl, col, burst = 0;
+    // each head its own: where it sits off the row's aim, how wide it swings,
+    // whether it runs at the row's speed or half of it (still on the beat),
+    // and where in the turn it starts; so the rig reads as many lights
+    // playing together rather than one light copied
+    const hz = (k) => { const v = Math.sin((i + 1) * 12.9898 + (it.group || 0) * 78.233 + k * 37.719) * 43758.5453; return v - Math.floor(v); };
+    const own = { p: (hz(1) - 0.5) * 0.45, t: (hz(2) - 0.5) * 0.24, a: 0.7 + 0.6 * hz(3), k: hz(4) < 0.3 ? 0.5 : 1, ph: hz(5) * Math.PI * 1.2 };
+    let p0, t0, amp = 0, beats = 8, s = 'circle', lvl, col;
     if (part === 'intro') {
       // the room waiting: the heads parked up and dark, a few on the stage
       // coming up as the intro runs
@@ -241,10 +255,12 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
       lvl = (0.55 + 0.35 * (wrap(f.beat, 2) === (i % 2) ? f.kick : 0.2)) * build * eS;
       col = cols[(i % 2) ? 1 : 0];
     } else if (part === 'chorus') {
-      // a new position every two bars, the phrase's effect over it, once
-      // round every two beats (the last chorus quicker and wider)
+      // a new position every two bars, a wide circle or figure of eight over
+      // it, once round every beat (the last chorus wider still)
       [p0, t0] = chorusPos(pos);
-      amp = f.final ? 0.38 : 0.3; beats = f.final ? 1.5 : 2; s = shape;
+      amp = f.final ? 0.58 : 0.46; beats = 1;
+      // (every third head draws the other figure)
+      s = i % 3 === 2 ? (big === 'circle' ? 'eight' : 'circle') : big;
       lvl = ((f.final ? 0.85 : 0.75) + 0.35 * f.kick) * eS;
       col = cols[wrap(i + Math.floor(f.beat / 4), 3)];
       const first = secT < 0.35;
@@ -278,11 +294,10 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
       col = (side < 0) !== (bar % 2 === 1) ? cols[2] : cols[3];
       if (roll != null) lvl *= 0.8 + 0.4 * roll;
     } else if (part === 'solo') {
-      // every head on one point, white, thrown open on each kick and drawn
-      // back in
+      // every head held on the middle of the stage, white, steady, a little
+      // brighter on the kick: the player lit, the house left to the sticks
       [p0, t0] = up ? [0, 0.08] : aim(stage.x, stage.y, stage.z);
-      burst = f.kick;
-      lvl = (0.85 + 0.5 * f.kick) * eS;
+      lvl = (0.85 + 0.2 * f.kick) * eS;
       col = beam && i % 3 ? WHITE : cols[0];
     } else if (part === 'outro') {
       // gathering up over the middle of the stage, going out as it ends
@@ -297,24 +312,23 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
       col = cols[3];
     }
     // the effect, spread across the row, wider the louder the song runs
-    const ph = spread === 0 ? 0 : spread === 1 ? i / Math.max(1, n) * Math.PI * 2 : spread === 2 ? Math.abs(u) * Math.PI * 2 : (i % 2) * Math.PI;
+    const ph = (spread === 1 ? i / Math.max(1, n) * Math.PI * 2 : spread === 2 ? Math.abs(u) * Math.PI * 2 : (i % 2) * Math.PI) + own.ph;
     const mir = spread === 2 ? side : 1;
-    const a = cyc(beats) + ph;
+    const free = part !== 'solo' && part !== 'break';
+    const a = cyc(beats, free ? own.k : 1) + ph;
     let dp = 0, dtl = 0;
     if (s === 'circle') { dp = Math.cos(a); dtl = Math.sin(a); }
     else if (s === 'eight') { dp = Math.sin(a); dtl = 0.6 * Math.sin(2 * a); }
     else if (s === 'tiltWave') { dtl = Math.sin(a); }
     else if (s === 'panWave') { dp = Math.sin(a); }
     else { dp = Math.sin(a * 0.73 + i * 1.9) * Math.cos(a * 0.41 + i); dtl = Math.sin(a * 0.59 + i * 2.7); }
-    const A = amp * (0.75 + 0.4 * E);
+    const A = amp * (0.75 + 0.4 * E) * (free ? own.a : 1);
+    if (free) { p0 += own.p; t0 = Math.max(0, t0 + own.t); }
     const wantP = p0 + A * dp * mir * 1.4, wantT = Math.max(0, Math.min(up ? 1.2 : 2.1, t0 + A * dtl));
     [it.pan, it.vp] = motor(it.pan, it.vp, wantP, PAN_MAX, dt, true);
     [it.tilt, it.vt] = motor(it.tilt, it.vt, wantT, TILT_MAX, dt, false);
-    // the solo's burst snaps open on the kick, quicker than the yoke's own
-    // swing, fanned along the row
-    const pp = it.pan + burst * u * 1.6, tt = Math.max(0, it.tilt + burst * 0.35);
-    const st = Math.sin(tt);
-    fx.dir.set(st * Math.sin(pp), (up ? 1 : -1) * Math.cos(tt), st * Math.cos(pp)).normalize();
+    const st = Math.sin(it.tilt);
+    fx.dir.set(st * Math.sin(it.pan), (up ? 1 : -1) * Math.cos(it.tilt), st * Math.cos(it.pan)).normalize();
     // the song's look recolours the sections it has always played
     if (part === 'verse' || part === 'pre' || part === 'chorus') {
       const k = part === 'chorus' ? Math.floor(f.beat / 4) : 0;
@@ -411,9 +425,6 @@ export function runBlinders(B, f) {
     } else if (part === 'bridge' && f.kick > 0.8 && wrap(f.beat, 4) === 0) {
       // the bridge: each downbeat, one half then the other
       to = it.i % 2 === bar % 2 ? 1 : 0;
-    } else if (part === 'solo' && f.kick > 0.8 && wrap(f.beat, 8) === 0) {
-      // the solo: all of them every other bar
-      to = 1;
     }
     it.l = Math.max(to, it.l * fade) * show;
     it.fx.intensity = it.l * 1.3;
@@ -452,8 +463,8 @@ export function runStrobes(S, f) {
       if (secT < 0.6) to = wrap(Math.floor(secT * 20), 2) === 0 ? 1 : 0;
       else if (L.hit === 0 && f.kick > 0.85) to = ((it.i * 7 + f.beat * 3) % 5) < 2 ? 1 : 0;
       else if (L.hit === 1 && f.kick > 0.85) to = 0.8;
-    } else if ((part === 'dance' || part === 'solo') && f.kick > 0.85) {
-      // the dance break and the solo: every bar on every kick
+    } else if (part === 'dance' && f.kick > 0.85) {
+      // the dance break: every bar on every kick
       to = 1;
     } else if (roll != null) {
       // the bridge's roll: eighths, then sixteenths, then thirty-seconds,
@@ -860,7 +871,9 @@ export function floorZones(people) {
   for (const p of floor) {
     const [kx, kz] = key(p);
     const c = xs.indexOf(Math.round(kx * 2) / 2), r = zs.indexOf(Math.round(kz * 2) / 2);
-    p.zone = { lv: 0, u: xs.length > 1 ? c / (xs.length - 1) : 0.5, block: r * 64 + c, row: r };
+    // (row times an odd number, so the blocks' numbers alternate down a
+    // column as well as along a row: a chequerboard, not stripes)
+    p.zone = { lv: 0, u: xs.length > 1 ? c / (xs.length - 1) : 0.5, block: r * 65 + c, row: r };
   }
 }
 

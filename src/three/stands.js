@@ -52,7 +52,7 @@ export function decodeSeats(b64) {
 // aisles don't reach) is shared out seat by seat, and a few seats missing in
 // a row (a vomitory) don't split a block. Stray handfuls join the nearest
 // block. Returns each seat's block, numbered by bearing from the stage.
-export function seatBlocks(S, sk, ox, oz, stage, { gap = 0.85, reach = 4, minSeats = 12, anchors = null } = {}) {
+export function seatBlocks(S, sk, ox, oz, stage, { gap = 0.85, reach = 4, minSeats = 12, anchors = null, tidy = false } = {}) {
   const n = S.length / 4;
   const X = new Float64Array(n), Z = new Float64Array(n), byRow = new Map();
   for (let k = 0; k < n; k++) {
@@ -150,6 +150,39 @@ export function seatBlocks(S, sk, ox, oz, stage, { gap = 0.85, reach = 4, minSea
       to.set(b, byLabel.get(label));
     }
     for (let k = 0; k < n; k++) block[k] = to.get(block[k]);
+  }
+  // tidied (a level whose aisles the seats only half show): a sliver of a
+  // block left by a vomitory or a stair joins the block beside it, and a
+  // block run on past an aisle the seats don't show is cut back into blocks
+  // of the level's usual size, by bearing
+  if (tidy && !(anchors && anchors.length >= 4)) {
+    const bear = (k) => Math.atan2(X[k] - stage.x, Z[k] - stage.z);
+    const sizes = () => { const m = new Map(); for (let k = 0; k < n; k++) m.set(block[k], (m.get(block[k]) || 0) + 1); return m; };
+    let sz = sizes();
+    const med = [...sz.values()].sort((a, b) => a - b)[sz.size >> 1];
+    for (let pass = 0; pass < 3; pass++) {
+      const small = new Set([...sz].filter(([, v]) => v < 0.35 * med).map(([b]) => b));
+      if (!small.size) break;
+      const g = grid([...Array(n).keys()].filter((k) => !small.has(block[k])));
+      const to = new Map();
+      for (let k = 0; k < n; k++) {
+        if (!small.has(block[k])) continue;
+        const j = nearest(g, k, 12);
+        if (j < 0) continue;
+        const v = to.get(block[k]) || new Map(); v.set(block[j], (v.get(block[j]) || 0) + 1); to.set(block[k], v);
+      }
+      for (const [b, v] of to) { const t = [...v].sort((p, q) => q[1] - p[1])[0][0]; for (let k = 0; k < n; k++) if (block[k] === b) block[k] = t; }
+      sz = sizes();
+    }
+    let next = Math.max(...block) + 1;
+    for (const [b, v] of sz) {
+      const parts = Math.round(v / med);
+      if (v < 1.8 * med || parts < 2) continue;
+      const ks = []; for (let k = 0; k < n; k++) if (block[k] === b) ks.push(k);
+      ks.sort((p, q) => bear(p) - bear(q));
+      ks.forEach((k, i) => { const part = Math.floor(i * parts / ks.length); if (part) block[k] = next + part - 1; });
+      next += parts - 1;
+    }
   }
   // number them by bearing
   const sum = new Map();
@@ -883,7 +916,7 @@ export function seatFinder(spots, { below = 0.05 } = {}) {
 export function buildStands(data, {
   offset = V3(0, 0, 0), stage = V3(0, 2, 0), seatColors = {}, seatColor = 0x22262e,
   concreteTone = 0.22, sold = () => true, occupancy = 0.97, seed = 5, roofY = 36, crowd = true,
-  materials = {}, seatMesh = null, seatColorAt = null,
+  materials = {}, seatMesh = null, seatColorAt = null, tiers = null,
 }) {
   const g = new THREE.Group();
   const ox = offset.x, oz = offset.z;
@@ -1071,8 +1104,8 @@ export function buildStands(data, {
     const S = decodeSeats(L.seats), sk = L.seatScale ?? 10;      // (x, z in dm, or 1/seatScale m)
     // the level's blocks, for the lightsticks' control
     const anchors = (L.voms || []).filter((v) => v.label).map((v) => ({ x: v.p[0] + ox, z: v.p[1] + oz, label: v.label }));
-    const blocks = crowd ? seatBlocks(S, sk, ox, oz, stage, { anchors }) : null;
-    if (blocks) levelBlocks.push({ count: blocks.count, ySum: 0, n: 0 });
+    const blocks = crowd ? seatBlocks(S, sk, ox, oz, stage, { anchors, tidy: !!tiers }) : null;
+    if (blocks) levelBlocks.push({ count: blocks.count, ySum: 0, n: 0, name: L.name, at: new Map() });
     const lvRaw = levelBlocks.length - 1;
     for (let i = 0; i < S.length; i += 4) {
       const x = S[i] / sk + ox, z = S[i + 1] / sk + oz, yaw = S[i + 3] * DEG;
@@ -1083,6 +1116,8 @@ export function buildStands(data, {
       else spots.push({ x, y, z, yaw });
       if (crowd && sold(x, z, L.name) && rnd() < occupancy) {
         const lb = levelBlocks[lvRaw]; lb.ySum += y; lb.n++;
+        // (each block's middle, for its place round a floor made of several levels)
+        const bk = blocks.block[i / 4], ba = lb.at.get(bk) || { x: 0, z: 0, n: 0 }; ba.x += x; ba.z += z; ba.n++; lb.at.set(bk, ba);
         people.push({ x: x - Math.sin(yaw) * 0.12, y, z: z - Math.cos(yaw) * 0.12, turn: Math.atan2(stage.x - x, stage.z - z), seat: true, lvRaw, block: blocks.block[i / 4] });
       }
     }
@@ -1212,10 +1247,38 @@ export function buildStands(data, {
   // each sitter's place in the lightstick control: the level (1 the lowest,
   // counted by height; the floor is 0), the block, and the block's place
   // across its level from one end to the other (0..1)
+  // `tiers` ({ level name: [floor number, band] }) puts levels a building
+  // counts as one floor under one: a lower and upper half of a tier, or an
+  // outfield's stand on the 1st floor beside the infield's. Each block is
+  // placed across its floor by its angle round the stage, and its number for
+  // the chequerboard is its place along its level plus its band (front to
+  // back within the floor), so the block behind another is the other colour.
+  const tierOf = (name) => (tiers?.[name] == null ? null : [].concat(tiers[name]));
+  if (tiers) {
+    const byTier = new Map();
+    levelBlocks.forEach((l, i) => { const t = tierOf(l.name)?.[0]; if (t != null) { if (!byTier.has(t)) byTier.set(t, []); byTier.get(t).push(i); } });
+    const place = new Map();   // lvRaw → { u: Map(block → 0..1) }
+    for (const [, ids] of byTier) {
+      const ang = [];
+      for (const i of ids) {
+        const u = new Map();
+        for (const [b, a] of levelBlocks[i].at) { const t = Math.atan2(a.x / a.n - stage.x, a.z / a.n - stage.z); ang.push(t); u.set(b, t); }
+        place.set(i, { u });
+      }
+      const lo = Math.min(...ang), hi = Math.max(...ang);
+      for (const i of ids) for (const [b, t] of place.get(i).u) place.get(i).u.set(b, hi > lo ? (t - lo) / (hi - lo) : 0.5);
+    }
+    for (const p of people) {
+      if (p.lvRaw == null) continue;
+      const t = tierOf(levelBlocks[p.lvRaw].name), pl = place.get(p.lvRaw);
+      if (t == null || !pl) continue;
+      p.zone = { lv: t[0], block: p.block + (t[1] ?? 0), u: pl.u.get(p.block) ?? 0.5 };
+    }
+  }
   const rank = levelBlocks.map((l, i) => [i, l.n ? l.ySum / l.n : 0]).sort((a, b) => a[1] - b[1]).map(([i]) => i);
   const lvOf = new Map(rank.map((i, r) => [i, r + 1]));
   for (const p of people) {
-    if (p.lvRaw == null) continue;
+    if (p.lvRaw == null || p.zone) continue;
     const nb = levelBlocks[p.lvRaw].count;
     p.zone = { lv: lvOf.get(p.lvRaw), block: p.block, u: nb > 1 ? p.block / (nb - 1) : 0.5 };
   }
