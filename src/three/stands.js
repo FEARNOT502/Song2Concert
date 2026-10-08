@@ -45,6 +45,121 @@ export function decodeSeats(b64) {
   return new Int16Array(bytes.buffer);
 }
 
+// The blocks of a level, as the seats show them: a row's seats run unbroken
+// between aisles, and a run belongs to the block its seats sit behind (or in
+// front of) in the next row. Worked outward from the row with the most runs,
+// which has every aisle; a run lying across two blocks (a front row the
+// aisles don't reach) is shared out seat by seat, and a few seats missing in
+// a row (a vomitory) don't split a block. Stray handfuls join the nearest
+// block. Returns each seat's block, numbered by bearing from the stage.
+export function seatBlocks(S, sk, ox, oz, stage, { gap = 0.85, reach = 4, minSeats = 12, anchors = null } = {}) {
+  const n = S.length / 4;
+  const X = new Float64Array(n), Z = new Float64Array(n), byRow = new Map();
+  for (let k = 0; k < n; k++) {
+    X[k] = S[k * 4] / sk + ox; Z[k] = S[k * 4 + 1] / sk + oz;
+    const r = S[k * 4 + 2];
+    if (!byRow.has(r)) byRow.set(r, []);
+    byRow.get(r).push(k);
+  }
+  // a grid of seats, for the nearest one in a set
+  const grid = (ks) => { const g = new Map(); for (const k of ks) { const key = `${Math.floor(X[k])},${Math.floor(Z[k])}`; (g.get(key) || g.set(key, []).get(key)).push(k); } return g; };
+  const nearest = (g, k, rad, ok = null) => {
+    let best = -1, bd = rad * rad;
+    const cx = Math.floor(X[k]), cz = Math.floor(Z[k]), c = Math.ceil(rad);
+    for (let dx = -c; dx <= c; dx++) for (let dz = -c; dz <= c; dz++) {
+      for (const j of g.get(`${cx + dx},${cz + dz}`) || []) {
+        if (ok && !ok(j)) continue;
+        const d = (X[j] - X[k]) ** 2 + (Z[j] - Z[k]) ** 2;
+        if (d < bd) { bd = d; best = j; }
+      }
+    }
+    return best;
+  };
+  // each row's runs: its seats chained wherever the next is within `gap`
+  const runOf = new Int32Array(n), rows = [...byRow.keys()].sort((a, b) => a - b), runsOf = new Map(), grids = new Map();
+  for (const r of rows) {
+    const ks = byRow.get(r), g = grid(ks);
+    grids.set(r, g);
+    const seen = new Set(), runs = [];
+    for (const k of ks) {
+      if (seen.has(k)) continue;
+      const run = [], stack = [k]; seen.add(k);
+      while (stack.length) {
+        const a = stack.pop(); run.push(a);
+        const cx = Math.floor(X[a]), cz = Math.floor(Z[a]);
+        for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) for (const j of g.get(`${cx + dx},${cz + dz}`) || []) {
+          if (!seen.has(j) && (X[j] - X[a]) ** 2 + (Z[j] - Z[a]) ** 2 <= gap * gap) { seen.add(j); stack.push(j); }
+        }
+      }
+      for (const j of run) runOf[j] = runs.length;
+      runs.push({ ks: run, b: -1 });
+    }
+    runsOf.set(r, runs);
+  }
+  const parent = [];
+  const root = (b) => { while (parent[b] !== b) b = parent[b] = parent[parent[b]]; return b; };
+  const fresh = () => { parent.push(parent.length); return parent.length - 1; };
+  const block = new Int32Array(n).fill(-1);
+  const mid = rows.reduce((best, r) => (runsOf.get(r).length > runsOf.get(best).length ? r : best), rows[0]);
+  for (const run of runsOf.get(mid)) { run.b = fresh(); for (const k of run.ks) block[k] = run.b; }
+  for (const dir of [1, -1]) {
+    let ref = mid;
+    const order = rows.filter((r) => (dir > 0 ? r > mid : r < mid));
+    if (dir < 0) order.reverse();
+    for (const r of order) {
+      const g = grids.get(ref);
+      let clean = true;
+      for (const run of runsOf.get(r)) {
+        const near = run.ks.map((k) => nearest(g, k, reach));
+        const votes = new Map();
+        for (const j of near) if (j >= 0) { const b = root(block[j]); votes.set(b, (votes.get(b) || 0) + 1); }
+        const roots = [...votes].filter(([, v]) => v >= 0.2 * run.ks.length).map(([b]) => b);
+        if (roots.length === 1) { run.b = roots[0]; for (const k of run.ks) block[k] = run.b; }
+        else if (roots.length === 0) { run.b = fresh(); for (const k of run.ks) block[k] = run.b; }
+        else {
+          // across two blocks: each seat to the one it sits by
+          clean = false;
+          run.ks.forEach((k, i) => { block[k] = near[i] >= 0 ? root(block[near[i]]) : roots[0]; });
+        }
+      }
+      if (clean) ref = r;
+    }
+  }
+  // stray handfuls to the nearest real block
+  const size = new Map();
+  for (let k = 0; k < n; k++) { block[k] = root(block[k]); size.set(block[k], (size.get(block[k]) || 0) + 1); }
+  const big = (j) => size.get(block[j]) >= minSeats;
+  const all = grid([...Array(n).keys()]);
+  const moved = [];
+  for (let k = 0; k < n; k++) if (!big(k)) { const j = nearest(all, k, 8, big); if (j >= 0) moved.push([k, block[j]]); }
+  for (const [k, b] of moved) block[k] = b;
+  // where the level's vomitories carry their block's number, the pieces of
+  // one block (split by a cross-aisle, a walkway or a vomitory's flights)
+  // join under the number most of their seats are nearest
+  if (anchors && anchors.length >= 4) {
+    const votes = new Map();
+    for (let k = 0; k < n; k++) {
+      let best = null, bd = Infinity;
+      for (const a of anchors) { const d = (a.x - X[k]) ** 2 + (a.z - Z[k]) ** 2; if (d < bd) { bd = d; best = a.label; } }
+      const v = votes.get(block[k]) || new Map(); v.set(best, (v.get(best) || 0) + 1); votes.set(block[k], v);
+    }
+    const byLabel = new Map(), to = new Map();
+    for (const [b, v] of votes) {
+      const label = [...v].sort((p, q) => q[1] - p[1])[0][0];
+      if (!byLabel.has(label)) byLabel.set(label, b);
+      to.set(b, byLabel.get(label));
+    }
+    for (let k = 0; k < n; k++) block[k] = to.get(block[k]);
+  }
+  // number them by bearing
+  const sum = new Map();
+  for (let k = 0; k < n; k++) { const e = sum.get(block[k]) || [0, 0]; e[0] += Math.atan2(X[k] - stage.x, Z[k] - stage.z); e[1]++; sum.set(block[k], e); }
+  const ids = [...sum.keys()].sort((a, b) => sum.get(a)[0] / sum.get(a)[1] - sum.get(b)[0] / sum.get(b)[1]);
+  const idx = new Map(ids.map((b, i) => [b, i]));
+  for (let k = 0; k < n; k++) block[k] = idx.get(block[k]);
+  return { block, count: ids.length };
+}
+
 // The finishes inside: pale walls and ceilings and a floor that read as lit
 // under the concourse lights whatever the show is doing out in the bowl.
 export function roomMaterials(materials) {
@@ -889,6 +1004,7 @@ export function buildStands(data, {
   const mkPanels = ([p, n]) => { const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(p, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(weldNormals(p, n), 3)); return geo; };
 
   const people = [], aisleLights = [], seatSpots = [];
+  const levelBlocks = [];
   const fenceP = [], fenceN = [];
   const solid = [], floors = [], stairs = [], mouthFloors = [];
   const voms = { pit: [], cap: [], tunnel: [], floor: [], ceil: [], lamps: [], signs: [] };
@@ -953,6 +1069,11 @@ export function buildStands(data, {
     const col = seatColors[L.name] ?? seatColor;
     const spots = [], odd = new Map();
     const S = decodeSeats(L.seats), sk = L.seatScale ?? 10;      // (x, z in dm, or 1/seatScale m)
+    // the level's blocks, for the lightsticks' control
+    const anchors = (L.voms || []).filter((v) => v.label).map((v) => ({ x: v.p[0] + ox, z: v.p[1] + oz, label: v.label }));
+    const blocks = crowd ? seatBlocks(S, sk, ox, oz, stage, { anchors }) : null;
+    if (blocks) levelBlocks.push({ count: blocks.count, ySum: 0, n: 0 });
+    const lvRaw = levelBlocks.length - 1;
     for (let i = 0; i < S.length; i += 4) {
       const x = S[i] / sk + ox, z = S[i + 1] / sk + oz, yaw = S[i + 3] * DEG;
       const y = L.hs ? L.hs[Math.min(S[i + 2], L.hs.length - 1)] : L.h0 + L.rise * S[i + 2];
@@ -961,7 +1082,8 @@ export function buildStands(data, {
       if (c != null && c !== col) { if (!odd.has(c)) odd.set(c, []); odd.get(c).push({ x, y, z, yaw }); }
       else spots.push({ x, y, z, yaw });
       if (crowd && sold(x, z, L.name) && rnd() < occupancy) {
-        people.push({ x: x - Math.sin(yaw) * 0.12, y, z: z - Math.cos(yaw) * 0.12, turn: Math.atan2(stage.x - x, stage.z - z), seat: true });
+        const lb = levelBlocks[lvRaw]; lb.ySum += y; lb.n++;
+        people.push({ x: x - Math.sin(yaw) * 0.12, y, z: z - Math.cos(yaw) * 0.12, turn: Math.atan2(stage.x - x, stage.z - z), seat: true, lvRaw, block: blocks.block[i / 4] });
       }
     }
     seatSpots.push({ spots, col });
@@ -1087,6 +1209,16 @@ export function buildStands(data, {
     }
     return y;
   };
+  // each sitter's place in the lightstick control: the level (1 the lowest,
+  // counted by height; the floor is 0), the block, and the block's place
+  // across its level from one end to the other (0..1)
+  const rank = levelBlocks.map((l, i) => [i, l.n ? l.ySum / l.n : 0]).sort((a, b) => a[1] - b[1]).map(([i]) => i);
+  const lvOf = new Map(rank.map((i, r) => [i, r + 1]));
+  for (const p of people) {
+    if (p.lvRaw == null) continue;
+    const nb = levelBlocks[p.lvRaw].count;
+    p.zone = { lv: lvOf.get(p.lvRaw), block: p.block, u: nb > 1 ? p.block / (nb - 1) : 0.5 };
+  }
   // what the walker sits down in
   const seatNear = seatFinder(seatSpots.flatMap(({ spots }) => spots));
   if (seatMesh) {

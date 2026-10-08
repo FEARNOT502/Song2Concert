@@ -504,20 +504,24 @@ export function silhouettes(people, cu, { seed = 5 } = {}) {
 // One light per person: a lightstick under central control, or a phone's
 // torch, switched from the UI.
 //
-// The sticks are run the way a K-pop show runs them: every seat is in a zone
-// the system knows from its ticket, and the operator plays the house as one
-// picture. Here a stick's zone comes from where it is: its distance from the
-// stage, which way round from it, and which tier. What the house does follows
-// the song: zones in two or three colours breathing in the verse, a wave
-// rolling out from the stage in the pre-chorus, the whole house hitting the
-// kick and trading colours by the bar in the chorus, one dim colour drifting
-// round in a break. `uLook` (fixed per song) picks how the zones are cut and
-// which way the waves run, so no two songs play the house quite alike. With
-// the house lights up the sticks are off control: each glows on its own,
-// softly, as they do before a show.
+// The sticks are run the way a K-pop show runs them: every stick is paired to
+// its ticket's seat, so the control desk knows each one's level and block, and
+// plays the house as one picture in scenes, changing as the song goes on (a
+// new scene with each section, and every few bars within one). A scene is a
+// cut of the house and a set of the sleeve's colours: level by level, blocks
+// alternating, a gradient across the blocks of each level, a checker of
+// levels and blocks, the floor against the stands, bands out from the
+// centre. On top, what the section does: blocks breathing out of step in the
+// verse, a chase stepping block to block and up the levels in the
+// pre-chorus, the whole house on the kick with the levels trading colours
+// each bar in the chorus, one dim colour drifting round in a break. `uLook`
+// (fixed per song) seeds which scenes it plays. With the house lights up the
+// sticks are off control: each glows on its own, softly, as before a show.
+// `p.zone` is { lv (0 the floor, 1 up the levels), u (the block's place
+// across its level, 0..1), block (its number), row (a floor block's row) }.
 export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
   const n = people.length;
-  const pos = new Float32Array(n * 3), look = new Float32Array(n * 4);
+  const pos = new Float32Array(n * 3), look = new Float32Array(n * 4), zone = new Float32Array(n * 4);
   const rnd = prng(911);
   people.forEach((p, i) => {
     const up = (p.cell ?? 0) > 0;
@@ -525,60 +529,84 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
     // in the stands, held lower (sitting)
     pos[i * 3] = p.x + (rnd() - 0.5) * 0.3; pos[i * 3 + 1] = p.y + (p.seat ? (up ? 1.55 : 1.05) : (up ? 1.95 : 1.3)) * hs; pos[i * 3 + 2] = p.z + (rnd() - 0.5) * 0.2;
     look[i * 4] = rnd() * 6.283; look[i * 4 + 1] = Math.floor(rnd() * 4); look[i * 4 + 2] = size * (0.8 + rnd() * 0.4); look[i * 4 + 3] = rnd();
+    const z = p.zone || { lv: 0, u: 0.5, block: 0, row: 0 };
+    zone.set([z.lv, z.u, z.block, z.row ?? 0], i * 4);
   });
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('aLook', new THREE.BufferAttribute(look, 4));
+  geo.setAttribute('aZone', new THREE.BufferAttribute(zone, 4));
   const mat = new THREE.ShaderMaterial({
     uniforms: {
       uTime: cu.uTime, uKick: cu.uKick, uStage: cu.uStage,
       uScale: { value: 800 }, uMax: { value: maxPx }, uGain: { value: 1 },
       uMode: { value: 0 }, uHouse: { value: 0 },
-      // the operator's cue: this section and the last, crossfading over a
-      // second and a half, how long it has run, the beat count, the song's look
-      uSec: { value: 0 }, uSecPrev: { value: 0 }, uSecMix: { value: 1 }, uSecT: { value: 0 },
+      // the operator's cue: this scene (its number and section) and the last,
+      // crossfading; how long the section has run, the beat count, the song's look
+      uScene: { value: 1 }, uSec: { value: 0 }, uSecPrev: { value: 0 }, uSecMix: { value: 1 }, uSecT: { value: 0 },
       uBeat: { value: 0 }, uLook: { value: 0 },
       uPal: { value: [V3(1, 0.6, 0.3), V3(0.8, 0.4, 1), V3(0.5, 0.7, 1), V3(1, 0.85, 0.55)] },
       tGlow: { value: glowSprite() },
     },
     vertexShader: /* glsl */`
-      attribute vec4 aLook;
-      uniform float uTime, uScale, uMax, uMode, uHouse, uKick, uSec, uSecPrev, uSecMix, uSecT, uBeat, uLook;
+      attribute vec4 aLook, aZone;
+      uniform float uTime, uScale, uMax, uMode, uHouse, uKick, uScene, uSec, uSecPrev, uSecMix, uSecT, uBeat, uLook;
       uniform vec3 uPal[4], uStage;
       varying vec3 vC;
-      vec3 pal(float k) { int i = int(mod(k, 3.0)); return i == 0 ? uPal[0] : i == 1 ? uPal[1] : uPal[2]; }
-      // the house as the control system sees it
-      float zoneOf(float dist, float ang, float tier) {
-        float side = ang < -0.45 ? 0.0 : ang > 0.45 ? 2.0 : 1.0;
-        int l = int(uLook);
-        if (l == 0) return tier;                         // by tier: floor, lower, upper
-        if (l == 1) return side;                         // by side: left, centre, right
-        if (l == 2) return mod(floor(dist / 28.0), 3.0); // rings out from the stage
-        return mod(tier + side, 3.0);                    // a patchwork of both
+      float h1(float n) { return fract(sin(n * 127.1 + 311.7) * 43758.5453); }
+      // the sleeve's four colours, and a white with a breath of the first
+      vec3 col(float k) {
+        int i = int(mod(k, 5.0));
+        return i == 0 ? uPal[0] : i == 1 ? uPal[1] : i == 2 ? uPal[2] : i == 3 ? uPal[3] : mix(vec3(1.0), uPal[0], 0.15);
       }
-      vec3 cue(float sec, float dist, float ang, float tier, float zone) {
-        float t = uTime;
+      // scene s: which colour this stick's block takes (k turns them over)
+      vec3 sceneCol(float s, float k) {
+        float sd = s * 1.37 + uLook * 7.1;
+        float lay = floor(h1(sd) * 6.0);
+        float c0 = floor(h1(sd + 3.3) * 4.0), st = 1.0 + floor(h1(sd + 5.9) * 3.0);
+        // most scenes keep to the sleeve's colours; some light one part white
+        float wht = step(h1(sd + 8.1), 0.25);
+        float lv = aZone.x, u = aZone.y, blk = aZone.z;
+        if (lay > 1.5 && lay < 2.5) {
+          // a gradient across each level's blocks, end to end
+          float g = (lv < 0.5 ? u : fract(u + lv * 0.17)) * 2.0;
+          vec3 a = col(c0 + k * st), b = col(c0 + (k + 1.0) * st), c = col(c0 + (k + 2.0) * st);
+          return g < 1.0 ? mix(a, b, g) : mix(b, c, g - 1.0);
+        }
+        float idx = lay < 0.5 ? lv                                   // level by level
+                  : lay < 1.5 ? mod(blk + lv, 2.0)                   // blocks alternating
+                  : lay < 3.5 ? mod(blk + lv * 2.0, 3.0)             // a checker of levels and blocks
+                  : lay < 4.5 ? (lv < 0.5 ? 1.0 : 0.0)                // the floor against the stands
+                  : floor(abs(u - 0.5) * 5.0);                       // bands out from the centre
+        float ci = c0 + (idx + k) * st;
+        if (wht > 0.5 && mod(idx + k, 3.0) == 2.0) return col(4.0);
+        return col(ci);
+      }
+      vec3 cue(float sec, float s) {
+        float t = uTime, lv = aZone.x, u = aZone.y, blk = aZone.z;
+        vec3 sc = sceneCol(s, 0.0);
         if (sec < 0.5) {
-          // verse: the zones in their colours, breathing slowly, out of step
-          return pal(zone) * (0.5 + 0.25 * sin(t * 1.1 + zone * 2.1));
+          // verse: the scene, each block breathing slowly out of step
+          return sc * (0.5 + 0.22 * sin(t * 1.1 + blk * 1.9 + lv * 0.7));
         }
         if (sec < 1.5) {
-          // pre-chorus: a wave rolling out from the stage (or round the house,
-          // on an odd look), quickening as the section builds
+          // pre-chorus: a chase stepping from block to block round each level
+          // and on up the levels, quickening as the section builds
           float sp = 1.6 + 0.12 * min(uSecT, 16.0);
-          float ph = mod(uLook, 2.0) < 0.5 ? dist * 0.09 - t * sp : ang * 2.0 - t * sp * 0.6;
-          float w = smoothstep(0.55, 1.0, sin(ph));
-          return mix(pal(zone) * 0.22, pal(0.0) * 1.1, w);
+          float ph = (mod(uLook, 2.0) < 0.5 ? u * 9.0 : abs(u - 0.5) * 12.0) + lv * 1.3 - t * sp;
+          float w = smoothstep(0.5, 1.0, sin(ph));
+          return mix(sc * 0.25, sceneCol(s, 1.0) * 1.15, w);
         }
         if (sec < 2.5) {
-          // chorus: everyone on the kick; the colours trade places every bar
+          // chorus: the whole house on the kick, the colours trading places
+          // each bar
           float bar = floor(uBeat / 4.0);
-          vec3 col = pal(zone + bar);
-          if (uLook > 1.5) col = mix(col, vec3(1.0), 0.45 * uKick);
-          return col * (0.55 + 0.75 * uKick);
+          vec3 c = sceneCol(s, bar);
+          if (uLook > 1.5) c = mix(c, vec3(1.0), 0.45 * uKick);
+          return c * (0.55 + 0.75 * uKick);
         }
-        // break: one colour, dim, drifting slowly round the house
-        return pal(0.0) * (0.22 + 0.16 * sin(ang * 1.5 - t * 0.5));
+        // break: one colour, dim, drifting slowly round each level
+        return col(floor(h1(s * 1.37 + uLook * 7.1 + 3.3) * 4.0)) * (0.22 + 0.16 * sin(u * 9.0 + lv - t * 0.5));
       }
       void main() {
         vec4 mv = modelViewMatrix * vec4(position, 1.0);
@@ -586,12 +614,7 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
         // hide it
         mv.xyz -= normalize(mv.xyz) * 0.35;
         float d = -mv.z;
-        vec2 rel = position.xz - uStage.xz;
-        float dist = length(rel);
-        float ang = atan(rel.x, rel.y);
-        float tier = position.y < 3.0 ? 0.0 : position.y < 16.0 ? 1.0 : 2.0;
-        float zone = zoneOf(dist, ang, tier);
-        vec3 stick = mix(cue(uSecPrev, dist, ang, tier, zone), cue(uSec, dist, ang, tier, zone), uSecMix) * 0.75;
+        vec3 stick = mix(cue(uSecPrev, uScene - 1.0), cue(uSec, uScene), uSecMix) * 0.75;
         // off control (house lights up): each stick on its own, a soft glow
         // of the first colour toward white, blinking slowly out of step
         vec3 own = mix(vec3(0.9), uPal[0], 0.5) * (0.35 + 0.25 * step(0.5, fract(uTime * 0.4 + aLook.x)));

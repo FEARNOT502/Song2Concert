@@ -722,7 +722,7 @@ export function floorBlocks(blocks, { seat = 0.5, pitch = 0.9, seed = 5, occupan
       const x = ox + i * seat, z = b.z0 + (j + 0.5) * pitch;
       if (keep && !keep(x, z)) continue;
       chairs.push({ x, y: 0, z: z + 0.16, turn: Math.PI });
-      if (rnd() < occupancy) people.push({ x: x + (rnd() - 0.5) * 0.08, y: 0, z: z - 0.16 + (rnd() - 0.5) * 0.06, h: 0.92 + rnd() * 0.14, full: true });
+      if (rnd() < occupancy) people.push({ x: x + (rnd() - 0.5) * 0.08, y: 0, z: z - 0.16 + (rnd() - 0.5) * 0.06, h: 0.92 + rnd() * 0.14, full: true, fblock: b });
     }
   }
   return { people, chairs };
@@ -742,8 +742,25 @@ export function floorChairs(chairs, { color = 0x1a1c22 } = {}) {
 }
 
 // The crowd of a big room: silhouettes and their lights, thinned on Low.
+// The floor's blocks for the lightstick control: a seated floor's own blocks
+// (`p.fblock`), a standing floor cut into pens about as big; numbered across
+// the floor from one side to the other and in rows from the stage back.
+export function floorZones(people) {
+  const floor = people.filter((p) => !p.zone);
+  if (!floor.length) return;
+  const key = (p) => (p.fblock ? [(p.fblock.x0 + p.fblock.x1) / 2, p.fblock.z0] : [Math.round(p.x / 10) * 10, Math.floor(p.z / 15) * 15]);
+  const xs = [...new Set(floor.map((p) => Math.round(key(p)[0] * 2) / 2))].sort((a, b) => a - b);
+  const zs = [...new Set(floor.map((p) => Math.round(key(p)[1] * 2) / 2))].sort((a, b) => a - b);
+  for (const p of floor) {
+    const [kx, kz] = key(p);
+    const c = xs.indexOf(Math.round(kx * 2) / 2), r = zs.indexOf(Math.round(kz * 2) / 2);
+    p.zone = { lv: 0, u: xs.length > 1 ? c / (xs.length - 1) : 0.5, block: r * 64 + c, row: r };
+  }
+}
+
 export function bigCrowd(root, cu, q, people, { seed = 21 } = {}) {
   if (!q.crowd) return 0;
+  floorZones(people);
   const all = withCells(people, seed);
   const shown = q.crowd < 1 ? thin(all, Math.round(all.length * 0.7)) : all;
   root.add(silhouettes(shown, cu, { seed }));

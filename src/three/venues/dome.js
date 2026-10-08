@@ -597,7 +597,7 @@ export function buildDome(ctx) {
       if (rows.length < 2 || (b.minCols > 3 && rows.filter((r) => r.row.length >= b.minCols).length < b.minCols)) continue;
       for (const { z, row } of rows) for (const x of row) {
         arena.chairs.push({ x, y: 0, z: z + 0.16, turn: Math.PI });
-        if (rnd() < 0.97) arena.people.push({ x: x + (rnd() - 0.5) * 0.08, y: 0, z: z - 0.16 + (rnd() - 0.5) * 0.06, h: 0.92 + rnd() * 0.14, full: true });
+        if (rnd() < 0.97) arena.people.push({ x: x + (rnd() - 0.5) * 0.08, y: 0, z: z - 0.16 + (rnd() - 0.5) * 0.06, h: 0.92 + rnd() * 0.14, full: true, fblock: b });
       }
     }
   }
