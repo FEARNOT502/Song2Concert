@@ -10,9 +10,9 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { KELVIN, V3, clamp, glowMat, prng, std, thin, velvet } from './core.js';
+import { KELVIN, V3, glowMat, prng, std, thin, velvet } from './core.js';
 import { crowdLights, silhouettes, withCells } from './people.js';
-import { LOD, chainInto, drapeGeometry, latticeInto, ledScreen, lineArray, mats, rodInto, seatField, stageDeck, truss } from './rig.js';
+import { chainInto, drapeGeometry, latticeInto, ledScreen, lineArray, mats, rodInto, seatField, stageDeck, truss } from './rig.js';
 
 // The simulated song's shape: verse, pre-chorus, chorus, break over 24 bars.
 // A real track brings its own (`f.sec`, from the beat follower).
@@ -139,123 +139,6 @@ export function fixtureRow(q, n, make) {
 }
 // fixture k of a full row of n, in a row that may have been thinned
 export const fromRow = (row, k, n) => row[Math.min(row.length - 1, Math.round(k * row.length / n))];
-
-// ── lasers ──
-// A laser projector scans within about ±35° of the way its housing faces, so
-// each one keeps an `aim` and its beams move round that. `minSlope` is the
-// lowest it may point (rise over run): the deck's units stay over the heads
-// of the floor, the towers' may look a little down from up there.
-//   look.move 0 fans sweeping out over the house (the house style)
-//             1 scissors: neighbours crossing each other
-//             2 a sheet: every beam at one height, spread flat over the room
-//             3 a tunnel: each beam circling round its aim
-export function laser(rig, pos, aim, { length = 150, gain = 7, minSlope = 0.1, hung = false } = {}) {
-  const a = aim.clone().normalize();
-  // the beam itself is drawn as a line (laserUnits), not as a haze cone
-  const fx = rig.add({ kind: 'laser', pos, dir: a, body: false, length, beamGain: 0, flareGain: 0.2, noise: 0.4 });
-  return { fx, aim: a, minSlope, hung, gain };
-}
-export function runLasers(list, f) {
-  const sec = f.sec || section(f.bar);
-  const show = 1 - f.house;
-  const L = f.look || HOUSE_LOOK;
-  const t = f.t * L.pace;
-  const on = sec === 'chorus' ? 1 : sec === 'pre' ? 0.4 : (sec === 'break' && L.move === 2) ? 0.3 : 0;
-  const n = list.length;
-  list.forEach((it, i) => {
-    const { fx, aim, minSlope } = it;
-    const u = n > 1 ? i / (n - 1) - 0.5 : 0;
-    const yaw0 = Math.atan2(aim.x, aim.z), p0 = Math.asin(aim.y);
-    let dy = 0, dp = 0;
-    if (sec === 'pre' || L.move === 0) { dy = u * 0.9 + Math.sin(t * 2.2 + i * 0.4) * 0.3; dp = 0.06 * Math.sin(t * 1.3 + i); }
-    else if (L.move === 1) { dy = (i % 2 ? 1 : -1) * 0.5 * Math.sin(t * 1.6); dp = 0.04 * Math.cos(t * 0.8); }
-    else if (L.move === 2) { dy = u * 1.1 + 0.08 * Math.sin(t * 0.5); dp = -0.04 + 0.03 * Math.sin(t * 0.7); }
-    else { const a = t * 2 + i * 2.4; dy = 0.22 * Math.cos(a); dp = 0.1 + 0.18 * Math.sin(a); }
-    const yaw = yaw0 + clamp(dy, -0.6, 0.6);
-    const p = Math.max(p0 + dp, Math.atan(minSlope));
-    fx.dir.set(Math.sin(yaw) * Math.cos(p), Math.sin(p), Math.cos(yaw) * Math.cos(p));
-    fx.color.copy(L.col === 0 ? f.pal.a : i % 2 ? f.pal.b : f.pal.c);
-    fx.intensity = on * show * (0.6 + 0.4 * f.kick);
-  });
-  const R = list.lines;
-  if (!R) return;
-  const A = R.aA.array, B = R.aB.array, C = R.aC.array;
-  list.forEach(({ fx, gain }, i) => {
-    const e = V3().copy(fx.pos).addScaledVector(fx.dir, fx.length);
-    for (let k = 0; k < 4; k++) {
-      const o = (i * 4 + k) * 3;
-      A[o] = fx.pos.x; A[o + 1] = fx.pos.y; A[o + 2] = fx.pos.z;
-      B[o] = e.x; B[o + 1] = e.y; B[o + 2] = e.z;
-      C[o] = fx.color.r * fx.intensity * gain; C[o + 1] = fx.color.g * fx.intensity * gain; C[o + 2] = fx.color.b * fx.intensity * gain;
-    }
-  });
-  R.aA.needsUpdate = R.aB.needsUpdate = R.aC.needsUpdate = true;
-}
-
-// A laser in haze reads as a hard, thin line of light, far thinner than any
-// cone the haze pass can trace: each beam is a ribbon turned to the camera, a
-// few millimetres wide close to, never under a pixel far off (dimmed as it is
-// widened, so a far beam stays a line rather than a bar).
-function laserLines(list) {
-  const n = list.length;
-  const g = new THREE.BufferGeometry();
-  const mk = () => new THREE.BufferAttribute(new Float32Array(n * 12), 3).setUsage(THREE.DynamicDrawUsage);
-  const aA = mk(), aB = mk(), aC = mk();
-  const aS = new Float32Array(n * 8), idx = [];
-  for (let i = 0; i < n; i++) {
-    aS.set([0, -1, 0, 1, 1, -1, 1, 1], i * 8);
-    const v = i * 4; idx.push(v, v + 2, v + 1, v + 1, v + 2, v + 3);
-  }
-  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 12), 3));
-  g.setAttribute('aA', aA); g.setAttribute('aB', aB); g.setAttribute('aC', aC);
-  g.setAttribute('aS', new THREE.BufferAttribute(aS, 2));
-  g.setIndex(idx);
-  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
-    uniforms: { uPx: LOD.uPxAng },
-    vertexShader: /* glsl */`
-      uniform float uPx;
-      attribute vec3 aA, aB, aC; attribute vec2 aS;
-      varying vec3 vC; varying float vS, vAlong;
-      void main() {
-        vec3 d = normalize(aB - aA + vec3(0.0, 1e-5, 0.0));
-        vec3 p = mix(aA, aB, aS.x);
-        vec3 toCam = cameraPosition - p;
-        float dist = length(toCam);
-        vec3 sd = normalize(cross(d, toCam));
-        float core = 0.004, w = max(core, dist * uPx * 0.8);
-        p += sd * w * aS.y * 1.6;
-        vC = aC * sqrt(core / w); vS = aS.y * 1.6; vAlong = aS.x;
-        gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
-      }`,
-    fragmentShader: /* glsl */`
-      varying vec3 vC; varying float vS, vAlong;
-      void main() {
-        float a = exp(-vS * vS * 2.2);
-        gl_FragColor = vec4(vC * a * (1.0 - 0.7 * vAlong), 1.0);
-      }`,
-    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
-  }));
-  m.frustumCulled = false;
-  m.renderOrder = 9;
-  list.lines = { aA, aB, aC };
-  return m;
-}
-
-// The lasers' own housings: on the deck (the beam leaving the front face, not
-// the air above the boards), or hung under a truss or sat on a tower's head
-// with their top or foot on the steel, turned to their aim.
-export function laserUnits(root, list) {
-  const g = [];
-  for (const { fx, aim, hung } of list) {
-    const b = new THREE.BoxGeometry(0.34, 0.2, 0.42);
-    b.translate(0, hung ? 0.02 : -0.02, -0.2);
-    b.rotateY(Math.atan2(aim.x, aim.z));
-    b.translate(fx.pos.x, fx.pos.y, fx.pos.z);
-    g.push(b);
-  }
-  if (g.length) root.add(new THREE.Mesh(mergeGeometries(g), mats().cab));
-  if (list.length) root.add(laserLines(list));
-}
 
 // ── blinders and strobes ──
 // A blinder: eight warm lamps in a black box, a pair of them a 'unit' hung on
