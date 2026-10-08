@@ -13,7 +13,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { APP, DEG, KELVIN, V3, clamp, floorPanelTex, glowMat, lerp, prng, std } from '../core.js';
 import { lightPoints } from '../people.js';
-import { hoists, latticeInto, micStand, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
+import { hoists, micStand, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
 import { bigCrowd, bigScreens, crossThrust, delayTower, floorChairs, fohPosition, fixtureRow, flashOnCrowd, flashUnits, fromRow, groundRoof, laser, laserUnits, paHang, paWing, runBlinders, runLasers, runShow, runStrobes, scaffoldMasking, screenHang, section, subLine, thinRow, wallStrip } from '../show.js';
 import { buildStands } from '../stands.js';
 import { TD_STANDS } from './td-data.js';
@@ -295,41 +295,14 @@ export function buildDome(ctx) {
     g.computeVertexNormals();
     root.add(new THREE.Mesh(g, membrane));
   }
-  // Nothing hangs from the membrane: the floodlights (about 700 LED floods)
-  // stand in banks along the ring beam round its edge, over the top of the
-  // stands, aimed down and in at the field, as the photographs show them.
-  const ringSteel = [], bankLamps = [];
+  // Nothing hangs from the membrane (as the photographs show it: no light
+  // gondolas, no loudspeakers on it); the house light comes from round the
+  // ring, over the top of the stands, aimed down and in at the field.
   const LIGHTS = [];
-  // (the stands' seat rows, where their back is)
-  const rowPts = [];
-  for (const L of TD_STANDS.levels) for (const row of L.rows) for (const p of row.polys) for (const [x, z0] of p[0]) rowPts.push([x, z0 + ZH, Math.atan2(z0 + ZH - ZC, x)]);
-  for (let i = 0; i < 28; i++) {
-    // (just in front of the stands' back wall, over their top rows)
-    const t = (i + 0.5) / 28 * Math.PI * 2;
-    const e1 = edge(t, 1), a = Math.atan2(e1.z - ZC, e1.x);
-    let r = 0.9;
-    for (const [px, pz, pr] of rowPts) if (Math.abs(Math.atan2(Math.sin(pr - a), Math.cos(pr - a))) < 0.06) r = Math.max(r, norm(px, pz));
-    const { x, z } = edge(t, r - 0.012), o = edge(t, r + 0.006);
-    const y = ringY(z) - 1.0, yaw = Math.atan2(-x, ZC - z);
-    LIGHTS.push(V3(x, y, z));
-    // a bank of floods on a frame off the ring, its face tipped down
-    const fr = new THREE.BoxGeometry(6, 0.9, 1.4); fr.rotateX(0.6); fr.rotateY(yaw); fr.translate(x, y, z); ringSteel.push(fr);
-    for (const u of [-2.6, 2.6]) {
-      const side = V3(u, 0, 0).applyAxisAngle(V3(0, 1, 0), yaw);
-      latticeInto(ringSteel, V3(x + side.x, y + 0.3, z + side.z), V3(o.x + side.x, ringY(o.z), o.z + side.z), 0.25, 0.03);
-    }
-    for (let u = 0; u < 6; u++) for (let v = 0; v < 2; v++) {
-      const p = V3(-2.5 + u * 1.0, -0.47, -0.3 + v * 0.6).applyAxisAngle(V3(1, 0, 0), 0.6).applyAxisAngle(V3(0, 1, 0), yaw).add(V3(x, y, z));
-      bankLamps.push(p);
-    }
+  for (let i = 0; i < 14; i++) {
+    const { x, z } = edge((i + 0.5) / 14 * Math.PI * 2, 0.97);
+    LIGHTS.push(V3(x, ringY(z) - 1.5, z));
   }
-  const bankM = new THREE.MeshBasicMaterial({ color: 0x000000, toneMapped: false });
-  root.add(new THREE.Mesh(mergeGeometries(ringSteel), std({ color: 0x2a2b30, roughness: 0.6, metalness: 0.4 })));
-  const lampG = new THREE.CircleGeometry(0.3, 12);
-  const lampI = new THREE.InstancedMesh(lampG, bankM, bankLamps.length);
-  const lm4 = new THREE.Matrix4(), lq = new THREE.Quaternion().setFromUnitVectors(V3(0, 0, 1), V3(0, -1, 0));
-  bankLamps.forEach((p, i) => { lm4.compose(p, lq, V3(1, 1, 1)); lampI.setMatrixAt(i, lm4); });
-  root.add(lampI);
   // the ring beam's support frame round the edge, 5 m deep, roofed at the
   // ring; the outer wall under it
   {
@@ -510,7 +483,7 @@ export function buildDome(ctx) {
   // stands, so the membrane above them only gets what bounces back up
   for (let i = 0; i < 9; i++) {
     const p = LIGHTS[Math.round(i / 8 * (LIGHTS.length - 1))];
-    const l = new THREE.SpotLight(KELVIN(5200), 0, 300, 1.2, 1, 2);
+    const l = new THREE.SpotLight(KELVIN(5200), 0, 300, 0.8, 1, 2);
     l.position.copy(p).y -= 1.0;
     l.target.position.set(p.x * 0.2, 0, ZC + (p.z - ZC) * 0.2);
     root.add(l, l.target); house.push(l);
@@ -673,12 +646,11 @@ export function buildDome(ctx) {
         fx.color.copy(i % 2 ? f.pal.a : f.pal.c);
         fx.intensity = (sec === 'chorus' ? 0.9 + 0.4 * f.kick : sec === 'pre' ? 0.5 : 0.18) * show;
       });
-      bankM.color.copy(KELVIN(5200)).multiplyScalar(0.02 + 2.2 * f.house);
       runLasers(lasers, f);
       front1.intensity = 90000 * show + 9000 * f.house;
       stageWash.color.copy(f.pal.a); stageWash.intensity = (12000 + 14000 * f.energy + 6000 * f.kick) * show;
       fill.forEach((l, i) => { l.color.copy(i ? f.pal.b : f.pal.a); l.intensity = (200 + 500 * f.energy) * show; });
-      house.forEach((l) => { l.intensity = 30000 * f.house; });
+      house.forEach((l) => { l.intensity = 45000 * f.house; });
       hzWash[0].color.copy(f.pal.a); hzWash[1].color.copy(f.pal.b); hzWash[2].color.copy(f.pal.d);
       hzWash.forEach((h) => { h.power = 600 * (0.4 + 0.6 * f.energy + 0.3 * f.kick) * show; });
       bRimM.color.setHex(APP.accent).multiplyScalar((0.6 + 0.9 * f.kick) * show + 0.2);
