@@ -14,7 +14,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { APP, DEG, KELVIN, V3, clamp, floorPanelTex, glowMat, lerp, prng, std } from '../core.js';
 import { lightPoints } from '../people.js';
 import { hoists, micStand, rodInto, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, crossThrust, delayTower, floorChairs, fohPosition, groundRoof, paHang, paWing, runLasers, runShow, screenHang, section, subLine, wallStrip } from '../show.js';
+import { bigCrowd, bigScreens, crossThrust, delayTower, floorChairs, fohPosition, groundRoof, laserUnits, paHang, paWing, runLasers, runShow, screenHang, section, subLine, wallStrip } from '../show.js';
 import { buildStands } from '../stands.js';
 import { TD_STANDS } from './td-data.js';
 
@@ -449,7 +449,7 @@ export function buildDome(ctx) {
   // behind them on its side beams; the side hangs turned out to the infield
   // stands and the 270s further round, on wing towers bridged to the roof
   const PX = 47, PZ = 32, PH = 24;
-  const DT = [[-24, 78], [24, 78]];             // the delay towers, past the cross
+  const DT = [[-24, 100], [24, 100]];           // the delay towers, two-thirds of the way back to FOH
   const towerLights = [];
   for (const side of [-1, 1]) {
     paWing(root, { x: side * PX, z: PZ, h: PH, bridge: V3(side * (TX + 0.8), SR, BZ[2]) });
@@ -468,7 +468,7 @@ export function buildDome(ctx) {
   for (let i = 0; i < 10; i++) washes.push({ fx: rig.add({ kind: 'wash', pos: V3(-27 + i * 6, LT - 0.7, BZ[1]), length: 35, beamGain: 0.4 }), i, n: 10, group: 2 });
   // the lights on the delay towers' heads, sweeping the field and the stands
   const tw = towerLights.map((pos, i) => ({ fx: rig.add({ kind: 'beam', pos, length: 70, beamGain: 0.9 }), i, n: towerLights.length, group: 5 }));
-  for (let i = 0; i < 12; i++) ups.push({ fx: rig.add({ kind: 'beam', pos: V3(-26 + i * (52 / 11), DECK + 0.3, RW0 - 0.2), hang: 'up', length: 70 }), i, n: 12, group: 3 });
+  for (let i = 0; i < 12; i++) ups.push({ fx: rig.add({ kind: 'beam', pos: V3(-26 + i * (52 / 11), DECK, RW0 - 0.2), hang: 'up', length: 70 }), i, n: 12, group: 3 });
   // the ring: beams along the 2nd-floor front, pole to pole, pointing in
   {
     const edge = TD_STANDS.rim.map(([x, z]) => ({ x, z: z + ZH }));
@@ -485,7 +485,8 @@ export function buildDome(ctx) {
       ring2.push({ fx: rig.add({ kind: 'beam', pos, hang: 'up', length: 110, beamGain: 0.9, flareGain: 0.6 }), i, n: N2, group: 4, a });
     }
   }
-  for (let i = 0; i < 6; i++) lasers.push({ fx: rig.add({ kind: 'laser', pos: V3(-10 + i * 4, DECK + 0.3, RW0 - 0.1), body: false, length: 150, beamGain: 7, flareGain: 0.2, noise: 0.4 }), i, n: 6 });
+  for (let i = 0; i < 6; i++) lasers.push({ fx: rig.add({ kind: 'laser', pos: V3(-10 + i * 4, DECK + 0.12, RW0 - 0.1), body: false, length: 150, beamGain: 7, flareGain: 0.2, noise: 0.4 }), i, n: 6 });
+  laserUnits(root, lasers, DECK);
   const moverLights = [];
   for (const k of [3, 6, 9, 12]) moverLights.push(rig.light(spots[k].fx, shadowSpot(0xffffff, 0, { cast: false, penumbra: 0.5 }), 14000));
   const front1 = shadowSpot(KELVIN(5600), 0, { angle: 0.14, penumbra: 0.7, size: q.shadowSize, far: 140, cast: q.shadows });

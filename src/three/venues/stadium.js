@@ -9,7 +9,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { APP, DEG, KELVIN, V3, clamp, floorPanelTex, glowMat, noise3D, prng, std, withRepeat } from '../core.js';
 import { lightPoints } from '../people.js';
 import { ampStack, drumKit, guitar, hoists, keyboardRig, ledScreen, micStand, prismInto, rodInto, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, crossThrust, delayTower, fohPosition, groundRoof, paHang, paWing, packFloor, runLasers, runShow, screenHang, subLine } from '../show.js';
+import { bigCrowd, bigScreens, crossThrust, delayTower, fohPosition, groundRoof, laserUnits, paHang, paWing, packFloor, runLasers, runShow, screenHang, subLine } from '../show.js';
 import { buildStands } from '../stands.js';
 import { WB_STANDS } from './wb-data.js';
 
@@ -600,7 +600,7 @@ export function buildStadium(ctx) {
 
   // ── rig ──
   const rig = ctx.rig({ finish: 'black' });
-  const DT = [[-22, 80], [22, 80]];             // the delay towers, out on the pitch
+  const DT = [[-22, 105], [22, 105]];           // the delay towers, well back on the pitch, short of FOH
   const towerLights = [];
   for (const side of [-1, 1]) {
     // the mains from the roof's front corners, the flown subs behind them on
@@ -619,8 +619,9 @@ export function buildStadium(ctx) {
   for (let i = 0; i < 16; i++) beams.push({ fx: rig.add({ kind: 'beam', pos: V3(-30 + i * 4, LT - 0.7, BZ[2]), length: 140, beamGain: 1.3 }), i, n: 16, group: 1 });
   for (let i = 0; i < 12; i++) washes.push({ fx: rig.add({ kind: 'wash', pos: V3(-27.5 + i * 5, LT - 0.7, BZ[1]), length: 45, beamGain: 0.4 }), i, n: 12, group: 2 });
   const tw = towerLights.map((pos, i) => ({ fx: rig.add({ kind: 'beam', pos, length: 120, beamGain: 1.0 }), i, n: towerLights.length, group: 5 }));
-  for (let i = 0; i < 14; i++) ups.push({ fx: rig.add({ kind: 'beam', pos: V3(-33 + i * (66 / 13), DECK + 0.3, 32.2), hang: 'up', length: 220, beamGain: 1.4 }), i, n: 14, group: 3 });
-  for (let i = 0; i < 6; i++) lasers.push({ fx: rig.add({ kind: 'laser', pos: V3(-12 + i * 4.8, DECK + 0.3, 32.8), body: false, length: 200, beamGain: 8, flareGain: 0.2, noise: 0.4 }), i, n: 6 });
+  for (let i = 0; i < 14; i++) ups.push({ fx: rig.add({ kind: 'beam', pos: V3(-33 + i * (66 / 13), DECK, 32.2), hang: 'up', length: 220, beamGain: 1.4 }), i, n: 14, group: 3 });
+  for (let i = 0; i < 6; i++) lasers.push({ fx: rig.add({ kind: 'laser', pos: V3(-12 + i * 4.8, DECK + 0.12, 32.8), body: false, length: 200, beamGain: 8, flareGain: 0.2, noise: 0.4 }), i, n: 6 });
+  laserUnits(root, lasers, DECK);
   for (const k of [3, 7, 11, 14]) rig.light(spots[k].fx, shadowSpot(0xffffff, 0, { cast: false, penumbra: 0.5 }), 30000);
   const front1 = shadowSpot(KELVIN(5600), 0, { angle: 0.12, penumbra: 0.7, size: q.shadowSize, far: 200, cast: q.shadows });
   front1.position.set(-10, 34, 96); front1.target.position.set(0, DECK + 1, 20);

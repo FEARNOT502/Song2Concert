@@ -12,7 +12,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { APP, KELVIN, V3, concreteTex, std, withRepeat } from '../core.js';
 import { lightPoints } from '../people.js';
 import { ampStack, drumKit, guitar, hoists, keyboardRig, micStand, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, blockGrid, crossThrust, floorBlocks, floorChairs, fohPosition, maskingDrapes, paHang, runLasers, runShow, screenHang, stageSet, subLine } from '../show.js';
+import { bigCrowd, bigScreens, blockGrid, crossThrust, floorBlocks, floorChairs, fohPosition, laserUnits, maskingDrapes, paHang, runLasers, runShow, screenHang, stageSet, subLine } from '../show.js';
 import { buildStands } from '../stands.js';
 import { SSA_STANDS } from './ssa-data.js';
 
@@ -195,8 +195,9 @@ export function buildArena(ctx) {
   for (let i = 0; i < 12; i++) spots.push({ fx: rig.add({ kind: 'spot', pos: V3(-15.5 + i * (31 / 11), RIG - 0.5, 15.2 + SZ), length: 45, angle: 0.085, beamGain: 1.0 }), i, n: 12, group: 0 });
   for (let i = 0; i < 12; i++) beams.push({ fx: rig.add({ kind: 'beam', pos: V3(-15.5 + i * (31 / 11), RIG - 0.5, 9.2 + SZ), length: 60, beamGain: 1.2 }), i, n: 12, group: 1 });
   for (let i = 0; i < 10; i++) washes.push({ fx: rig.add({ kind: 'wash', pos: V3(-15 + i * (30 / 9), RIG - 0.5, 3.2 + SZ), length: 22, beamGain: 0.5 }), i, n: 10, group: 2 });
-  for (let i = 0; i < 10; i++) ups.push({ fx: rig.add({ kind: 'beam', pos: V3(-15 + i * (30 / 9), DECK + 0.25, 15.6 + SZ), hang: 'up', length: 50, beamGain: 1.0 }), i, n: 10, group: 3 });
-  for (let i = 0; i < 4; i++) lasers.push({ fx: rig.add({ kind: 'laser', pos: V3(-6 + i * 4, DECK + 0.3, 15.8 + SZ), body: false, length: 90, beamGain: 6, flareGain: 0.2, noise: 0.4 }), i, n: 4 });
+  for (let i = 0; i < 10; i++) ups.push({ fx: rig.add({ kind: 'beam', pos: V3(-15 + i * (30 / 9), DECK, 15.6 + SZ), hang: 'up', length: 50, beamGain: 1.0 }), i, n: 10, group: 3 });
+  for (let i = 0; i < 4; i++) lasers.push({ fx: rig.add({ kind: 'laser', pos: V3(-6 + i * 4, DECK + 0.12, 15.8 + SZ), body: false, length: 90, beamGain: 6, flareGain: 0.2, noise: 0.4 }), i, n: 4 });
+  laserUnits(root, lasers, DECK);
   // real light where the rig lands
   const moverLights = [];
   for (const k of [2, 5, 8, 10]) moverLights.push(rig.light(spots[k].fx, shadowSpot(0xffffff, 0, { cast: false, penumbra: 0.5, decay: 2 }), 5200));
