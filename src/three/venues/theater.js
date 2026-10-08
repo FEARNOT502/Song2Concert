@@ -13,6 +13,7 @@ import { APP, DEG, KELVIN, V3, carpetTex, glowMat, prng, std, velvet, withRepeat
 import { crowd3D, lightPoints } from '../people.js';
 import { drapeGeometry, ledScreen, lineArray, mats, performer, seatField, shadowSpot, stageDeck, stageSteps } from '../rig.js';
 import { floorBlocks } from '../show.js';
+import { seatFinder } from '../stands.js';
 
 // Blue Square's seating plan, read off the hall's published charts: for each
 // floor, blocks front (f), rear (r) or balcony (b), in the middle (side 0) or
@@ -392,7 +393,7 @@ export function buildTheater(ctx) {
 
   let aimT = 0;
   return {
-    root, eye,
+    root, eye, seatNear: seatFinder(spots, { below: 0.3 }),
     camera: { pos: eye, target: V3(0, 5.3, 0), fov: 54, near: 0.1, far: 120 },
     background: new THREE.Color(0),
     fog: new THREE.FogExp2(0x050304, 0.008),
