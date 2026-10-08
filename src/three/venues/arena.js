@@ -12,7 +12,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { APP, KELVIN, V3, concreteTex, std, withRepeat } from '../core.js';
 import { lightPoints } from '../people.js';
 import { ampStack, drumKit, guitar, hoists, keyboardRig, micStand, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, blockGrid, crossThrust, floorBlocks, floorChairs, fixtureRow, flashOnCrowd, flashUnits, fohPosition, fromRow, laser, laserUnits, maskingDrapes, paHang, runBlinders, runLasers, runShow, runStrobes, screenHang, stageSet, subLine, thinRow } from '../show.js';
+import { bigCrowd, bigScreens, blockGrid, crossThrust, floorBlocks, floorChairs, fixtureRow, flashOnCrowd, flashUnits, fohPosition, fromRow, maskingDrapes, paHang, runBlinders, runShow, runStrobes, screenHang, stageSet, subLine, thinRow } from '../show.js';
 import { buildStands } from '../stands.js';
 import { SSA_STANDS } from './ssa-data.js';
 
@@ -191,16 +191,12 @@ export function buildArena(ctx) {
     paHang(root, { x: side * 33.5, y: RIG - 1.4, z: 15 + SZ, boxes: 10, width: 1.1, yaw: side * 1.2, roofY: H });
     paHang(root, { x: side * 13, y: RIG - 3, z: 56, boxes: 8, width: 1.1, yaw: side * 0.06, roofY: H, splay: 0.03 });
   }
-  const spots = [], beams = [], washes = [], ups = [], lasers = [];
+  const spots = [], beams = [], washes = [], ups = [];
   spots.push(...fixtureRow(q, 12, (i) => ({ fx: rig.add({ kind: 'spot', pos: V3(-15.5 + i * (31 / 11), RIG - 0.5, 15.2 + SZ), length: 45, angle: 0.085, beamGain: 1.0 }), group: 0 })));
   beams.push(...fixtureRow(q, 12, (i) => ({ fx: rig.add({ kind: 'beam', pos: V3(-15.5 + i * (31 / 11), RIG - 0.5, 9.2 + SZ), length: 60, beamGain: 1.2 }), group: 1 })));
   washes.push(...fixtureRow(q, 10, (i) => ({ fx: rig.add({ kind: 'wash', pos: V3(-15 + i * (30 / 9), RIG - 0.5, 3.2 + SZ), length: 22, beamGain: 0.5 }), group: 2 })));
   ups.push(...fixtureRow(q, 10, (i) => ({ fx: rig.add({ kind: 'beam', pos: V3(-15 + i * (30 / 9), DECK, 15.6 + SZ), hang: 'up', length: 50, beamGain: 1.0 }), group: 3 })));
-  // lasers: four on the deck's lip, two hung under the front truss
   const TB = RIG - 0.38;                       // the trusses' bottom chord
-  lasers.push(...fixtureRow(q, 4, (i) => laser(rig, V3(-6 + i * 4, DECK + 0.12, 15.8 + SZ), V3(0, 0.2, 1), { length: 90, gain: 6, minSlope: 0.16 })));
-  for (const x of [-5.64, 5.64]) lasers.push(laser(rig, V3(x, TB - 0.12, 15.2 + SZ + 0.2), V3(x * 0.05, -0.1, 1), { length: 90, gain: 6, minSlope: -0.15, hung: true }));
-  laserUnits(root, lasers);
   // blinders under the front truss between the spots; strobes along the foot
   // of the wall either side of the riser and under the middle truss
   const bu = [];
@@ -280,7 +276,6 @@ export function buildArena(ctx) {
       runShow(rig, beams, f, { house: V3(0, 12, 60), stage: STAGE, span: 44 });
       runShow(rig, washes, f, { house: V3(0, 0, 18 + SZ), stage: STAGE, span: 20, strobe: false });
       runShow(rig, ups, f, { house: V3(0, 30, 40), stage: STAGE, up: true });
-      runLasers(lasers, f);
       washes.forEach(({ fx }) => { fx.angle = 0.3; });
       front1.intensity = 26000 * show + 4000 * f.house;
       front2.intensity = 9000 * show;

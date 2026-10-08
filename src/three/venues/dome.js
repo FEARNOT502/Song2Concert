@@ -14,7 +14,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { APP, DEG, KELVIN, V3, clamp, floorPanelTex, glowMat, lerp, prng, std } from '../core.js';
 import { lightPoints } from '../people.js';
 import { hoists, micStand, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, crossThrust, delayTower, floorChairs, fohPosition, fixtureRow, flashOnCrowd, flashUnits, fromRow, groundRoof, laser, laserUnits, paHang, paWing, runBlinders, runLasers, runShow, runStrobes, scaffoldMasking, screenHang, section, subLine, thinRow, wallStrip } from '../show.js';
+import { bigCrowd, bigScreens, crossThrust, delayTower, floorChairs, fohPosition, fixtureRow, flashOnCrowd, flashUnits, fromRow, groundRoof, paHang, paWing, runBlinders, runShow, runStrobes, scaffoldMasking, screenHang, section, subLine, thinRow, wallStrip } from '../show.js';
 import { buildStands } from '../stands.js';
 import { TD_STANDS } from './td-data.js';
 
@@ -429,7 +429,7 @@ export function buildDome(ctx) {
   // the delay towers on the field, either side of the runway, past the
   // cross: for the back of the field and the stands behind home
   for (const [x, z] of DT) towerLights.push(...delayTower(root, { x, z, h: 20, boxes: 16, width: 1.3, yaw: -Math.sign(x) * 0.04 }));
-  const spots = [], beams = [], washes = [], ups = [], ring2 = [], lasers = [], bst = [];
+  const spots = [], beams = [], washes = [], ups = [], ring2 = [], bst = [];
   spots.push(...fixtureRow(q, 14, (i) => ({ fx: rig.add({ kind: 'spot', pos: V3(-26 + i * 4, LT - 0.7, BZ[3]), length: 70, angle: 0.08 }), group: 0 })));
   beams.push(...fixtureRow(q, 14, (i) => ({ fx: rig.add({ kind: 'beam', pos: V3(-26 + i * 4, LT - 0.7, BZ[2]), length: 90, beamGain: 1.2 }), group: 1 })));
   washes.push(...fixtureRow(q, 10, (i) => ({ fx: rig.add({ kind: 'wash', pos: V3(-27 + i * 6, LT - 0.7, BZ[1]), length: 35, beamGain: 0.4 }), group: 2 })));
@@ -452,10 +452,6 @@ export function buildDome(ctx) {
       ring2.push({ fx: rig.add({ kind: 'beam', pos, hang: 'up', length: 110, beamGain: 0.9, flareGain: 0.6 }), i, n: N2, group: 4, a });
     }
   }
-  // lasers: a row on the deck's lip and a pair on each wing tower's head
-  lasers.push(...fixtureRow(q, 6, (i) => laser(rig, V3(-10 + i * 4, DECK + 0.12, RW0 - 0.1), V3(0, 0.12, 1))));
-  lasers.push(...fixtureRow(q, 4, (k) => { const side = k < 2 ? -1 : 1, dx = [-2.2, 2.6][k % 2]; return laser(rig, V3(side * (PX + dx), PH + 0.62, PZ + 0.2), V3(-side * 47, -6, 60), { minSlope: -0.16 }); }));
-  laserUnits(root, lasers);
   // blinders under the front truss and on the wing towers' faces; strobes
   // along the foot of the wall and under the middle truss
   const bu = [], bt = [];
@@ -646,7 +642,6 @@ export function buildDome(ctx) {
         fx.color.copy(i % 2 ? f.pal.a : f.pal.c);
         fx.intensity = (sec === 'chorus' ? 0.9 + 0.4 * f.kick : sec === 'pre' ? 0.5 : 0.18) * show;
       });
-      runLasers(lasers, f);
       front1.intensity = 90000 * show + 9000 * f.house;
       stageWash.color.copy(f.pal.a); stageWash.intensity = (12000 + 14000 * f.energy + 6000 * f.kick) * show;
       fill.forEach((l, i) => { l.color.copy(i ? f.pal.b : f.pal.a); l.intensity = (200 + 500 * f.energy) * show; });
