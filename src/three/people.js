@@ -493,8 +493,20 @@ export function silhouettes(people, cu, { seed = 5 } = {}) {
   return mesh;
 }
 
-// One light per person: a lightstick, all of them fading together through the
-// palette's colours, or a phone's torch, switched from the UI.
+// One light per person: a lightstick under central control, or a phone's
+// torch, switched from the UI.
+//
+// The sticks are run the way a K-pop show runs them: every seat is in a zone
+// the system knows from its ticket, and the operator plays the house as one
+// picture. Here a stick's zone comes from where it is: its distance from the
+// stage, which way round from it, and which tier. What the house does follows
+// the song: zones in two or three colours breathing in the verse, a wave
+// rolling out from the stage in the pre-chorus, the whole house hitting the
+// kick and trading colours by the bar in the chorus, one dim colour drifting
+// round in a break. `uLook` (fixed per song) picks how the zones are cut and
+// which way the waves run, so no two songs play the house quite alike. With
+// the house lights up the sticks are off control: each glows on its own,
+// softly, as they do before a show.
 export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
   const n = people.length;
   const pos = new Float32Array(n * 3), look = new Float32Array(n * 4);
@@ -511,33 +523,83 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
   geo.setAttribute('aLook', new THREE.BufferAttribute(look, 4));
   const mat = new THREE.ShaderMaterial({
     uniforms: {
-      uTime: cu.uTime,
+      uTime: cu.uTime, uKick: cu.uKick, uStage: cu.uStage,
       uScale: { value: 800 }, uMax: { value: maxPx }, uGain: { value: 1 },
       uMode: { value: 0 }, uHouse: { value: 0 },
+      // the operator's cue: this section and the last, crossfading over a
+      // second and a half, how long it has run, the beat count, the song's look
+      uSec: { value: 0 }, uSecPrev: { value: 0 }, uSecMix: { value: 1 }, uSecT: { value: 0 },
+      uBeat: { value: 0 }, uLook: { value: 0 },
       uPal: { value: [V3(1, 0.6, 0.3), V3(0.8, 0.4, 1), V3(0.5, 0.7, 1), V3(1, 0.85, 0.55)] },
       tGlow: { value: glowSprite() },
     },
     vertexShader: /* glsl */`
       attribute vec4 aLook;
-      uniform float uTime, uScale, uMax, uMode, uHouse;
-      uniform vec3 uPal[4];
+      uniform float uTime, uScale, uMax, uMode, uHouse, uKick, uSec, uSecPrev, uSecMix, uSecT, uBeat, uLook;
+      uniform vec3 uPal[4], uStage;
       varying vec3 vC;
+      vec3 pal(float k) { int i = int(mod(k, 3.0)); return i == 0 ? uPal[0] : i == 1 ? uPal[1] : uPal[2]; }
+      // the house as the control system sees it
+      float zoneOf(float dist, float ang, float tier) {
+        float side = ang < -0.45 ? 0.0 : ang > 0.45 ? 2.0 : 1.0;
+        int l = int(uLook);
+        if (l == 0) return tier;                         // by tier: floor, lower, upper
+        if (l == 1) return side;                         // by side: left, centre, right
+        if (l == 2) return mod(floor(dist / 28.0), 3.0); // rings out from the stage
+        return mod(tier + side, 3.0);                    // a patchwork of both
+      }
+      vec3 cue(float sec, float dist, float ang, float tier, float zone) {
+        float t = uTime;
+        if (sec < 0.5) {
+          // verse: the zones in their colours, breathing slowly, out of step
+          return pal(zone) * (0.5 + 0.25 * sin(t * 1.1 + zone * 2.1));
+        }
+        if (sec < 1.5) {
+          // pre-chorus: a wave rolling out from the stage (or round the house,
+          // on an odd look), quickening as the section builds
+          float sp = 1.6 + 0.12 * min(uSecT, 16.0);
+          float ph = mod(uLook, 2.0) < 0.5 ? dist * 0.09 - t * sp : ang * 2.0 - t * sp * 0.6;
+          float w = smoothstep(0.55, 1.0, sin(ph));
+          return mix(pal(zone) * 0.22, pal(0.0) * 1.1, w);
+        }
+        if (sec < 2.5) {
+          // chorus: everyone on the kick; the colours trade places every bar
+          float bar = floor(uBeat / 4.0);
+          vec3 col = pal(zone + bar);
+          if (uLook > 1.5) col = mix(col, vec3(1.0), 0.45 * uKick);
+          return col * (0.55 + 0.75 * uKick);
+        }
+        // break: one colour, dim, drifting slowly round the house
+        return pal(0.0) * (0.22 + 0.16 * sin(ang * 1.5 - t * 0.5));
+      }
       void main() {
         vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        // held out in front of the body, so the holder's own cut-out does not
+        // hide it
+        mv.xyz -= normalize(mv.xyz) * 0.35;
         float d = -mv.z;
-        // every stick is on the same central control: the whole house shows
-        // one colour of the sleeve, holds it, then fades into the next
-        float ph = uTime * 0.16;
-        float blend = smoothstep(0.45, 1.0, fract(ph));
-        float k0 = mod(floor(ph), 3.0);
-        vec3 stick = mix(uPal[int(k0)], uPal[int(mod(k0 + 1.0, 3.0))], blend) * 0.75;
+        vec2 rel = position.xz - uStage.xz;
+        float dist = length(rel);
+        float ang = atan(rel.x, rel.y);
+        float tier = position.y < 3.0 ? 0.0 : position.y < 16.0 ? 1.0 : 2.0;
+        float zone = zoneOf(dist, ang, tier);
+        vec3 stick = mix(cue(uSecPrev, dist, ang, tier, zone), cue(uSec, dist, ang, tier, zone), uSecMix) * 0.75;
+        // off control (house lights up): each stick on its own, a soft glow
+        // of the first colour toward white, blinking slowly out of step
+        vec3 own = mix(vec3(0.9), uPal[0], 0.5) * (0.35 + 0.25 * step(0.5, fract(uTime * 0.4 + aLook.x)));
+        stick = mix(stick, own, uHouse);
         float tw = 0.75 + 0.25 * sin(uTime * 2.3 + aLook.x);
         vec3 flash = vec3(1.0, 0.95, 0.88) * tw * 1.25;
         // most hold a stick; fewer have a phone up at any moment
         float on = uMode > 0.5 ? step(aLook.w, 0.62) : step(aLook.w, 0.93);
-        vC = mix(stick, flash, uMode) * on * (1.0 - 0.75 * uHouse);
+        vC = mix(stick, flash, uMode) * on * (1.0 - 0.6 * uHouse);
         float sz = aLook.z * (uMode > 0.5 ? 0.75 : 1.0);
-        gl_PointSize = clamp(sz * uScale / max(d, 0.1), 1.3, uMax);
+        // far off a stick is still a point of light, not a speck lost in the
+        // dark: never under a couple of pixels, and brighter as it shrinks, so
+        // a full house reads as a sea of light from the top of the stands
+        float px = sz * uScale / max(d, 0.1);
+        vC *= mix(1.0, 1.9, smoothstep(2.4, 0.6, px));
+        gl_PointSize = clamp(px, 2.2, uMax);
         gl_Position = projectionMatrix * mv;
       }`,
     fragmentShader: /* glsl */`
