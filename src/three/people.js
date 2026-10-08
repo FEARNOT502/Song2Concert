@@ -507,14 +507,14 @@ export function silhouettes(people, cu, { seed = 5 } = {}) {
 // The sticks are run the way a K-pop show runs them: every stick is paired to
 // its ticket's seat, so the control desk knows each one's level and block, and
 // plays the house as one picture in scenes, changing as the song goes on (a
-// new scene with each section, and every few bars within one). A scene is a
-// cut of the house and a set of the sleeve's colours: level by level, blocks
-// alternating, a gradient across the blocks of each level, a checker of
-// levels and blocks, the floor against the stands, bands out from the
-// centre. On top, what the section does: blocks breathing out of step in the
-// verse, a chase stepping block to block and up the levels in the
-// pre-chorus, the whole house on the kick with the levels trading colours
-// each bar in the chorus, one dim colour drifting round in a break. `uLook`
+// new scene with each section, and every few bars within one). A level is
+// always one colour (the floor one, each tier of the stands one); a scene is
+// which of the sleeve's colours each level takes: every level its own, levels
+// alternating, the floor against the stands, the whole house as one. On top,
+// what the section does, level by level: each breathing out of step in the
+// verse, a chase up the levels in the pre-chorus, the whole house on the kick
+// with the levels trading colours each bar in the chorus, one dim colour
+// swelling up the levels in a break. `uLook`
 // (fixed per song) seeds which scenes it plays. With the house lights up the
 // sticks are off control: each glows on its own, softly, as before a show.
 // `p.zone` is { lv (0 the floor, 1 up the levels), u (the block's place
@@ -559,54 +559,51 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
         int i = int(mod(k, 5.0));
         return i == 0 ? uPal[0] : i == 1 ? uPal[1] : i == 2 ? uPal[2] : i == 3 ? uPal[3] : mix(vec3(1.0), uPal[0], 0.15);
       }
-      // scene s: which colour this stick's block takes (k turns them over)
+      // scene s: which colour this stick's level takes (k turns them over).
+      // A level is always one colour: the floor one, each tier of the stands
+      // one, as a house is run from the desk tier by tier.
       vec3 sceneCol(float s, float k) {
         float sd = s * 1.37 + uLook * 7.1;
-        float lay = floor(h1(sd) * 6.0);
+        float lay = floor(h1(sd) * 5.0);
         float c0 = floor(h1(sd + 3.3) * 4.0), st = 1.0 + floor(h1(sd + 5.9) * 3.0);
-        // most scenes keep to the sleeve's colours; some light one part white
+        // most scenes keep to the sleeve's colours; some light one tier white
         float wht = step(h1(sd + 8.1), 0.25);
-        float lv = aZone.x, u = aZone.y, blk = aZone.z;
-        if (lay > 1.5 && lay < 2.5) {
-          // a gradient across each level's blocks, end to end
-          float g = (lv < 0.5 ? u : fract(u + lv * 0.17)) * 2.0;
-          vec3 a = col(c0 + k * st), b = col(c0 + (k + 1.0) * st), c = col(c0 + (k + 2.0) * st);
-          return g < 1.0 ? mix(a, b, g) : mix(b, c, g - 1.0);
-        }
-        float idx = lay < 0.5 ? lv                                   // level by level
-                  : lay < 1.5 ? mod(blk + lv, 2.0)                   // blocks alternating
-                  : lay < 3.5 ? mod(blk + lv * 2.0, 3.0)             // a checker of levels and blocks
-                  : lay < 4.5 ? (lv < 0.5 ? 1.0 : 0.0)                // the floor against the stands
-                  : floor(abs(u - 0.5) * 5.0);                       // bands out from the centre
+        float lv = aZone.x;
+        float idx = lay < 0.5 ? lv                                   // every level its own colour
+                  : lay < 1.5 ? mod(lv, 2.0)                         // levels alternating
+                  : lay < 2.5 ? (lv < 0.5 ? 1.0 : 0.0)               // the floor against the stands
+                  : lay < 3.5 ? (lv < 0.5 ? 0.0 : 1.0 + mod(lv + 1.0, 2.0)) // the floor, then the tiers in two
+                  : 0.0;                                             // the whole house as one
         float ci = c0 + (idx + k) * st;
         if (wht > 0.5 && mod(idx + k, 3.0) == 2.0) return col(4.0);
         return col(ci);
       }
       vec3 cue(float sec, float s) {
-        float t = uTime, lv = aZone.x, u = aZone.y, blk = aZone.z;
+        float t = uTime, lv = aZone.x;
         vec3 sc = sceneCol(s, 0.0);
         if (sec < 0.5) {
-          // verse: the scene, each block breathing slowly out of step
-          return sc * (0.5 + 0.22 * sin(t * 1.1 + blk * 1.9 + lv * 0.7));
+          // verse: the scene, each level breathing slowly, out of step with
+          // the level below
+          return sc * (0.5 + 0.22 * sin(t * 1.1 + lv * 1.6));
         }
         if (sec < 1.5) {
-          // pre-chorus: a chase stepping from block to block round each level
-          // and on up the levels, quickening as the section builds
+          // pre-chorus: a chase up the levels, floor to the top tier and
+          // round again, quickening as the section builds
           float sp = 1.6 + 0.12 * min(uSecT, 16.0);
-          float ph = (mod(uLook, 2.0) < 0.5 ? u * 9.0 : abs(u - 0.5) * 12.0) + lv * 1.3 - t * sp;
-          float w = smoothstep(0.5, 1.0, sin(ph));
+          float w = smoothstep(0.5, 1.0, sin(lv * 1.4 - t * sp));
           return mix(sc * 0.25, sceneCol(s, 1.0) * 1.15, w);
         }
         if (sec < 2.5) {
-          // chorus: the whole house on the kick, the colours trading places
-          // each bar
+          // chorus: the whole house on the kick, the levels trading colours
+          // each bar; in some looks the levels hit in turn, a beat apart
           float bar = floor(uBeat / 4.0);
           vec3 c = sceneCol(s, bar);
           if (uLook > 1.5) c = mix(c, vec3(1.0), 0.45 * uKick);
-          return c * (0.55 + 0.75 * uKick);
+          float turn = mod(uLook, 2.0) < 0.5 ? 1.0 : 0.6 + 0.4 * step(mod(uBeat - lv, 4.0), 0.5);
+          return c * (0.55 + 0.75 * uKick) * turn;
         }
-        // break: one colour, dim, drifting slowly round each level
-        return col(floor(h1(s * 1.37 + uLook * 7.1 + 3.3) * 4.0)) * (0.22 + 0.16 * sin(u * 9.0 + lv - t * 0.5));
+        // break: one colour, dim, the levels swelling slowly one after another
+        return col(floor(h1(s * 1.37 + uLook * 7.1 + 3.3) * 4.0)) * (0.22 + 0.16 * sin(lv * 1.3 - t * 0.5));
       }
       void main() {
         vec4 mv = modelViewMatrix * vec4(position, 1.0);
