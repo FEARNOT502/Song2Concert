@@ -636,7 +636,7 @@ export function wallStrip(pts, hs, { y0 = 0, thick = 0.3, closed = false, ease =
   return g;
 }
 
-export function maskingDrapes(root, { a, b, top, bottomAt = () => 0, skip = null, panel = 2.4 }) {
+export function maskingDrapes(root, { a, b, top, bottomAt = () => 0, skip = null, panel = 2.4, matte = false }) {
   const dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz), ux = dx / L, uz = dz / L;
   const yaw = Math.atan2(-uz, ux);
   const parts = [], pipes = [];
@@ -655,10 +655,41 @@ export function maskingDrapes(root, { a, b, top, bottomAt = () => 0, skip = null
     pipes.push(p);
   }
   if (!parts.length) return;
-  const m = new THREE.Mesh(mergeGeometries(parts), velvet(0x020202, 'maskvel', { sheenColor: new THREE.Color(0x060606), sheenRoughness: 0.6, side: THREE.DoubleSide }));
+  const m = new THREE.Mesh(mergeGeometries(parts), matte ? std({ color: 0x030303, roughness: 1, side: THREE.DoubleSide }) : velvet(0x020202, 'maskvel', { sheenColor: new THREE.Color(0x060606), sheenRoughness: 0.6, side: THREE.DoubleSide }));
   m.receiveShadow = true;
   root.add(m);
   root.add(new THREE.Mesh(mergeGeometries(pipes), std({ color: 0x111113, roughness: 0.6, metalness: 0.5 })));
+}
+
+// Masking that stands on its own feet, where nothing may hang from the
+// building: the drapes along `line` ([x, z] points), each run up to its own
+// height (`tops`, one per run), their hems on whatever is under them
+// (`bottomAt`), hung from a lattice header carried on scaffold towers set
+// behind them (away from `front`, a point the audience side) every `bay`
+// metres.
+export function scaffoldMasking(root, { line, tops, bottomAt = () => 0, front = [0, 100], bay = 12 }) {
+  const steel = [];
+  for (let i = 0; i + 1 < line.length; i++) {
+    const a = line[i], b = line[i + 1], top = tops[i];
+    maskingDrapes(root, { a, b, top, bottomAt, matte: true });
+    const dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz);
+    let nx = -dz / L, nz = dx / L;
+    const mx = (a[0] + b[0]) / 2, mz = (a[1] + b[1]) / 2;
+    if (nx * (front[0] - mx) + nz * (front[1] - mz) > 0) { nx = -nx; nz = -nz; }
+    const off = 0.9, n = Math.max(1, Math.round(L / bay));
+    const pa = V3(a[0] + nx * off, top + 0.4, a[1] + nz * off), pb = V3(b[0] + nx * off, top + 0.4, b[1] + nz * off);
+    latticeInto(steel, pa, pb, 0.6, 0.035);
+    for (let k = 0; k <= n; k++) {
+      const t = k / n, x = a[0] + dx * t + nx * off, z = a[1] + dz * t + nz * off;
+      const y0 = bottomAt(x, z);
+      if (top + 0.7 - y0 < 1) continue;
+      latticeInto(steel, V3(x, y0, z), V3(x, top + 0.7, z), 0.8, 0.045);
+      // a raking brace back to the ground (or the step) behind it
+      const y1 = bottomAt(x + nx * 4, z + nz * 4);
+      if (top - y1 > 6) latticeInto(steel, V3(x + nx * 4, y1, z + nz * 4), V3(x, y0 + (top - y0) * 0.55, z), 0.4, 0.03);
+    }
+  }
+  if (steel.length) root.add(new THREE.Mesh(mergeGeometries(steel), mats().trussBlack));
 }
 
 // A standing floor packed the way a sold-out floor is: a jittered grid, about
