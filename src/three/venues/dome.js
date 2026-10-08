@@ -14,7 +14,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { APP, DEG, KELVIN, V3, clamp, floorPanelTex, glowMat, lerp, prng, std } from '../core.js';
 import { lightPoints } from '../people.js';
 import { hoists, micStand, rodInto, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, crossThrust, delayTower, floorChairs, fohPosition, groundRoof, laserUnits, paHang, paWing, runLasers, runShow, screenHang, section, subLine, wallStrip } from '../show.js';
+import { bigCrowd, bigScreens, crossThrust, delayTower, floorChairs, fohPosition, groundRoof, flashOnCrowd, flashUnits, laser, laserUnits, paHang, paWing, runBlinders, runLasers, runShow, runStrobes, screenHang, section, subLine, wallStrip } from '../show.js';
 import { buildStands } from '../stands.js';
 import { TD_STANDS } from './td-data.js';
 
@@ -485,8 +485,23 @@ export function buildDome(ctx) {
       ring2.push({ fx: rig.add({ kind: 'beam', pos, hang: 'up', length: 110, beamGain: 0.9, flareGain: 0.6 }), i, n: N2, group: 4, a });
     }
   }
-  for (let i = 0; i < 6; i++) lasers.push({ fx: rig.add({ kind: 'laser', pos: V3(-10 + i * 4, DECK + 0.12, RW0 - 0.1), body: false, length: 150, beamGain: 7, flareGain: 0.2, noise: 0.4 }), i, n: 6 });
-  laserUnits(root, lasers, DECK);
+  // lasers: a row on the deck's lip and a pair on each wing tower's head
+  for (let i = 0; i < 6; i++) lasers.push(laser(rig, V3(-10 + i * 4, DECK + 0.12, RW0 - 0.1), V3(0, 0.12, 1)));
+  for (const side of [-1, 1]) for (const dx of [-2.2, 2.6]) lasers.push(laser(rig, V3(side * (PX + dx), PH + 0.62, PZ + 0.2), V3(-side * 47, -6, 60), { minSlope: -0.16 }));
+  laserUnits(root, lasers);
+  // blinders under the front truss and on the wing towers' faces; strobes
+  // along the foot of the wall and under the middle truss
+  const bu = [];
+  for (const x of [-28, -20, -12, -4, 4, 12, 20, 28]) bu.push({ pos: V3(x, LT - 0.9, BZ[3] + 0.12), dir: V3(x * 0.3, 1.5 - LT, 75 - BZ[3]), mount: LT - 0.5 });
+  for (const side of [-1, 1]) for (const dx of [-0.52, 0.52]) {
+    const pos = V3(side * PX + dx, 9, PZ + 1.15);
+    bu.push({ pos, dir: V3(0, 1.5, 80).sub(pos), mount: null });
+  }
+  const blinders = flashUnits(rig, root, bu, { kind: 'blinder' });
+  const su = [];
+  for (let i = 0; i < 10; i++) su.push({ pos: V3(-27 + i * 6, DECK + 0.12, WZ + 0.5), dir: V3(0, 0.25, 1), mount: DECK });
+  for (const x of [-20, -12, -4, 4, 12, 20]) su.push({ pos: V3(x, LT - 0.65, BZ[2] + 0.1), dir: V3(0, -0.5, 1), mount: LT - 0.5 });
+  const strobes = flashUnits(rig, root, su, { kind: 'strobe' });
   const moverLights = [];
   for (const k of [3, 6, 9, 12]) moverLights.push(rig.light(spots[k].fx, shadowSpot(0xffffff, 0, { cast: false, penumbra: 0.5 }), 14000));
   const front1 = shadowSpot(KELVIN(5600), 0, { angle: 0.14, penumbra: 0.7, size: q.shadowSize, far: 140, cast: q.shadows });
@@ -682,6 +697,7 @@ export function buildDome(ctx) {
       cu.uRimColor.value.copy(f.pal.a).lerp(new THREE.Color(1, 1, 1), 0.3).multiplyScalar((0.2 + 0.25 * f.kick) * show);
       cu.uStage.value.set(0, 14, 10 + SZ);
       cu.uWash.value.copy(f.pal.b).multiplyScalar(0.012 * show + 0.25 * f.house);
+      flashOnCrowd(cu.uWash.value, runBlinders(blinders, f), runStrobes(strobes, f));
       cu.uAmb.value.setRGB(0.004, 0.004, 0.007).multiplyScalar(1 + f.house * 8);
     },
   };

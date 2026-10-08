@@ -10,9 +10,9 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { V3, glowMat, prng, std, thin, velvet } from './core.js';
+import { KELVIN, V3, clamp, glowMat, prng, std, thin, velvet } from './core.js';
 import { crowdLights, silhouettes, withCells } from './people.js';
-import { chainInto, drapeGeometry, latticeInto, ledScreen, lineArray, mats, seatField, stageDeck, truss } from './rig.js';
+import { LOD, chainInto, drapeGeometry, latticeInto, ledScreen, lineArray, mats, rodInto, seatField, stageDeck, truss } from './rig.js';
 
 // The simulated song's shape: verse, pre-chorus, chorus, break over 24 bars.
 // A real track brings its own (`f.sec`, from the beat follower).
@@ -122,26 +122,230 @@ export function runShow(rig, list, f, { house, stage, span = 30, up = false, str
   }
 }
 
-// Lasers: thin, very bright, sweeping fans on the chorus.
+// ── lasers ──
+// A laser projector scans within about ±35° of the way its housing faces, so
+// each one keeps an `aim` and its beams move round that. `minSlope` is the
+// lowest it may point (rise over run): the deck's units stay over the heads
+// of the floor, the towers' may look a little down from up there.
+//   look.move 0 fans sweeping out over the house (the house style)
+//             1 scissors: neighbours crossing each other
+//             2 a sheet: every beam at one height, spread flat over the room
+//             3 a tunnel: each beam circling round its aim
+export function laser(rig, pos, aim, { length = 150, gain = 7, minSlope = 0.1, hung = false } = {}) {
+  const a = aim.clone().normalize();
+  // the beam itself is drawn as a line (laserUnits), not as a haze cone
+  const fx = rig.add({ kind: 'laser', pos, dir: a, body: false, length, beamGain: 0, flareGain: 0.2, noise: 0.4 });
+  return { fx, aim: a, minSlope, hung, gain };
+}
 export function runLasers(list, f) {
   const sec = f.sec || section(f.bar);
   const show = 1 - f.house;
-  const on = sec === 'chorus' ? 1 : sec === 'pre' ? 0.4 : 0;
-  list.forEach(({ fx, i, n }) => {
+  const L = f.look || HOUSE_LOOK;
+  const t = f.t * L.pace;
+  const on = sec === 'chorus' ? 1 : sec === 'pre' ? 0.4 : (sec === 'break' && L.move === 2) ? 0.3 : 0;
+  const n = list.length;
+  list.forEach((it, i) => {
+    const { fx, aim, minSlope } = it;
     const u = n > 1 ? i / (n - 1) - 0.5 : 0;
-    const a = Math.sin(f.t * 2.2 + i * 0.4) * 0.9;
-    fx.dir.set(u * 1.6 + a * 0.6, 0.12 + 0.1 * Math.sin(f.t * 1.3 + i), 1).normalize();
-    fx.color.copy(i % 2 ? f.pal.b : f.pal.c);
+    const yaw0 = Math.atan2(aim.x, aim.z), p0 = Math.asin(aim.y);
+    let dy = 0, dp = 0;
+    if (sec === 'pre' || L.move === 0) { dy = u * 0.9 + Math.sin(t * 2.2 + i * 0.4) * 0.3; dp = 0.06 * Math.sin(t * 1.3 + i); }
+    else if (L.move === 1) { dy = (i % 2 ? 1 : -1) * 0.5 * Math.sin(t * 1.6); dp = 0.04 * Math.cos(t * 0.8); }
+    else if (L.move === 2) { dy = u * 1.1 + 0.08 * Math.sin(t * 0.5); dp = -0.04 + 0.03 * Math.sin(t * 0.7); }
+    else { const a = t * 2 + i * 2.4; dy = 0.22 * Math.cos(a); dp = 0.1 + 0.18 * Math.sin(a); }
+    const yaw = yaw0 + clamp(dy, -0.6, 0.6);
+    const p = Math.max(p0 + dp, Math.atan(minSlope));
+    fx.dir.set(Math.sin(yaw) * Math.cos(p), Math.sin(p), Math.cos(yaw) * Math.cos(p));
+    fx.color.copy(L.col === 0 ? f.pal.a : i % 2 ? f.pal.b : f.pal.c);
     fx.intensity = on * show * (0.6 + 0.4 * f.kick);
   });
+  const R = list.lines;
+  if (!R) return;
+  const A = R.aA.array, B = R.aB.array, C = R.aC.array;
+  list.forEach(({ fx, gain }, i) => {
+    const e = V3().copy(fx.pos).addScaledVector(fx.dir, fx.length);
+    for (let k = 0; k < 4; k++) {
+      const o = (i * 4 + k) * 3;
+      A[o] = fx.pos.x; A[o + 1] = fx.pos.y; A[o + 2] = fx.pos.z;
+      B[o] = e.x; B[o + 1] = e.y; B[o + 2] = e.z;
+      C[o] = fx.color.r * fx.intensity * gain; C[o + 1] = fx.color.g * fx.intensity * gain; C[o + 2] = fx.color.b * fx.intensity * gain;
+    }
+  });
+  R.aA.needsUpdate = R.aB.needsUpdate = R.aC.needsUpdate = true;
 }
 
-// The lasers' own housings, sat on the deck: the beam leaves the front face
-// rather than the air above the boards.
-export function laserUnits(root, list, deck) {
+// A laser in haze reads as a hard, thin line of light, far thinner than any
+// cone the haze pass can trace: each beam is a ribbon turned to the camera, a
+// few millimetres wide close to, never under a pixel far off (dimmed as it is
+// widened, so a far beam stays a line rather than a bar).
+function laserLines(list) {
+  const n = list.length;
+  const g = new THREE.BufferGeometry();
+  const mk = () => new THREE.BufferAttribute(new Float32Array(n * 12), 3).setUsage(THREE.DynamicDrawUsage);
+  const aA = mk(), aB = mk(), aC = mk();
+  const aS = new Float32Array(n * 8), idx = [];
+  for (let i = 0; i < n; i++) {
+    aS.set([0, -1, 0, 1, 1, -1, 1, 1], i * 8);
+    const v = i * 4; idx.push(v, v + 2, v + 1, v + 1, v + 2, v + 3);
+  }
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 12), 3));
+  g.setAttribute('aA', aA); g.setAttribute('aB', aB); g.setAttribute('aC', aC);
+  g.setAttribute('aS', new THREE.BufferAttribute(aS, 2));
+  g.setIndex(idx);
+  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
+    uniforms: { uPx: LOD.uPxAng },
+    vertexShader: /* glsl */`
+      uniform float uPx;
+      attribute vec3 aA, aB, aC; attribute vec2 aS;
+      varying vec3 vC; varying float vS, vAlong;
+      void main() {
+        vec3 d = normalize(aB - aA + vec3(0.0, 1e-5, 0.0));
+        vec3 p = mix(aA, aB, aS.x);
+        vec3 toCam = cameraPosition - p;
+        float dist = length(toCam);
+        vec3 sd = normalize(cross(d, toCam));
+        float core = 0.004, w = max(core, dist * uPx * 0.8);
+        p += sd * w * aS.y * 1.6;
+        vC = aC * sqrt(core / w); vS = aS.y * 1.6; vAlong = aS.x;
+        gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+      }`,
+    fragmentShader: /* glsl */`
+      varying vec3 vC; varying float vS, vAlong;
+      void main() {
+        float a = exp(-vS * vS * 2.2);
+        gl_FragColor = vec4(vC * a * (1.0 - 0.7 * vAlong), 1.0);
+      }`,
+    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+  }));
+  m.frustumCulled = false;
+  m.renderOrder = 9;
+  list.lines = { aA, aB, aC };
+  return m;
+}
+
+// The lasers' own housings: on the deck (the beam leaving the front face, not
+// the air above the boards), or hung under a truss or sat on a tower's head
+// with their top or foot on the steel, turned to their aim.
+export function laserUnits(root, list) {
   const g = [];
-  for (const { fx } of list) { const b = new THREE.BoxGeometry(0.34, 0.2, 0.42); b.translate(fx.pos.x, deck + 0.1, fx.pos.z - 0.22); g.push(b); }
+  for (const { fx, aim, hung } of list) {
+    const b = new THREE.BoxGeometry(0.34, 0.2, 0.42);
+    b.translate(0, hung ? 0.02 : -0.02, -0.2);
+    b.rotateY(Math.atan2(aim.x, aim.z));
+    b.translate(fx.pos.x, fx.pos.y, fx.pos.z);
+    g.push(b);
+  }
   if (g.length) root.add(new THREE.Mesh(mergeGeometries(g), mats().cab));
+  if (list.length) root.add(laserLines(list));
+}
+
+// ── blinders and strobes ──
+// A blinder: eight warm lamps in a black box, a pair of them a 'unit' hung on
+// a clamp under a truss or bolted to a tower, aimed at the house. A strobe: a
+// long bar with a cold white face. Neither moves; their faces light per frame,
+// and a beam each (wide, faint) catches the haze and throws the glare.
+// units: [{ pos (the face's centre), dir, mount (the y of the steel it hangs
+// from or stands on; null when bolted to a tower's face) }]
+const WARM = KELVIN(2900), COLD = KELVIN(7500);
+export function flashUnits(rig, root, units, { kind = 'blinder' } = {}) {
+  const blind = kind === 'blinder';
+  const W = blind ? 1.0 : 1.05, H = blind ? 0.52 : 0.2, D = blind ? 0.24 : 0.2;
+  const body = [], o = new THREE.Object3D();
+  const lamps = [];
+  if (blind) for (let r = 0; r < 2; r++) for (let c = 0; c < 4; c++) { const l = new THREE.CircleGeometry(0.1, 14); l.translate((c - 1.5) * 0.235, (r - 0.5) * 0.23, 0.004); lamps.push(l); }
+  else { const l = new THREE.PlaneGeometry(W * 0.92, H * 0.6); l.translate(0, 0, 0.004); lamps.push(l); }
+  const faceG = mergeGeometries(lamps);
+  const face = new THREE.InstancedMesh(faceG, new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }), units.length);
+  face.frustumCulled = false;
+  const list = units.map((u, i) => {
+    const dir = u.dir.clone().normalize();
+    o.position.copy(u.pos); o.lookAt(u.pos.clone().add(dir)); o.updateMatrix();
+    const b = new THREE.BoxGeometry(W, H, D); b.translate(0, 0, -D / 2 - 0.002); b.applyMatrix4(o.matrix); body.push(b);
+    face.setMatrixAt(i, o.matrix);
+    face.setColorAt(i, new THREE.Color(0));
+    // the clamp and its pipe up (or the foot down) to the steel
+    if (u.mount != null) {
+      const top = u.pos.clone().addScaledVector(dir, -D / 2); top.y += Math.sign(u.mount - u.pos.y) * H * 0.45;
+      const at = V3(top.x, u.mount, top.z);
+      const r = [];
+      rodInto(r, top, at, 0.03);
+      body.push(...r);
+      const c = new THREE.BoxGeometry(0.12, 0.1, 0.12); c.translate(at.x, at.y, at.z); body.push(c);
+    }
+    const fx = rig.add({
+      kind: 'wash', pos: u.pos.clone().addScaledVector(dir, 0.05), dir, body: false, color: blind ? WARM : COLD,
+      angle: blind ? 0.42 : 0.6, length: blind ? 40 : 24, beamGain: blind ? 0.1 : 0.06, flareGain: blind ? 1.6 : 1.2, soft: 0.95, noise: 0.5,
+    });
+    return { fx, i, n: units.length, l: 0 };
+  });
+  root.add(new THREE.Mesh(mergeGeometries(body.map((g) => g.index ? g.toNonIndexed() : g)), mats().cab));
+  root.add(face);
+  return { list, face, blind };
+}
+
+// The blinders: dark but for the filaments' glow until the chorus lands, then
+// full on and dying away as a tungsten lamp does; with a look that hits with
+// them (hit 2), again on each bar's downbeat, the halves trading on the
+// backbeat. Returns how much they light the house (0–1), for the crowd.
+const _c = new THREE.Color(), _d = new THREE.Color();
+export function runBlinders(B, f) {
+  const sec = f.sec || section(f.bar);
+  const show = 1 - f.house;
+  const L = f.look || HOUSE_LOOK;
+  const secT = f.secT ?? 10;
+  const fade = Math.exp(-(f.dt || 0.016) * 5);
+  let sum = 0;
+  for (const it of B.list) {
+    let to = 0;
+    if (sec === 'chorus' && f.look) {
+      if (secT < 0.45) to = 1;
+      else if (L.hit === 2 && f.kick > 0.8) to = wrap(f.beat, 4) === 0 ? 1 : wrap(f.beat, 2) === 0 ? (it.i % 2 ? 0.7 : 0) : 0;
+    }
+    it.l = Math.max(to, it.l * fade) * show;
+    it.fx.intensity = it.l * 1.3;
+    it.fx.color.copy(WARM);
+    _c.setRGB(0.05, 0.02, 0.006).multiplyScalar(0.3 + show).add(_d.copy(WARM).multiplyScalar(it.l * 12));
+    B.face.setColorAt(it.i, _c);
+    sum += it.l;
+  }
+  B.face.instanceColor.needsUpdate = true;
+  return sum / Math.max(1, B.list.length);
+}
+
+// What the blinders and strobes throw on the crowd, added to its wash.
+export function flashOnCrowd(wash, bl, st) {
+  wash.r += WARM.r * bl * 0.45 + COLD.r * st * 0.22;
+  wash.g += WARM.g * bl * 0.45 + COLD.g * st * 0.22;
+  wash.b += WARM.b * bl * 0.45 + COLD.b * st * 0.22;
+}
+
+// The strobes: a burst as the chorus opens, then with a look that hits white
+// (hit 0) a scatter of bars on the kick, and with a colour hit (hit 1) all of
+// them in the song's colour on the kick. Returns how much they light the house.
+export function runStrobes(S, f) {
+  const sec = f.sec || section(f.bar);
+  const show = 1 - f.house;
+  const L = f.look || HOUSE_LOOK;
+  const secT = f.secT ?? 10;
+  const fade = Math.exp(-(f.dt || 0.016) * 30);
+  const tint = L.hit === 1 ? f.pal.a : null;
+  let sum = 0;
+  for (const it of S.list) {
+    let to = 0;
+    if (sec === 'chorus' && f.look) {
+      if (secT < 0.6) to = wrap(Math.floor(secT * 20), 2) === 0 ? 1 : 0;
+      else if (L.hit === 0 && f.kick > 0.85) to = ((it.i * 7 + f.beat * 3) % 5) < 2 ? 1 : 0;
+      else if (L.hit === 1 && f.kick > 0.85) to = 0.8;
+    }
+    it.l = Math.max(to, it.l * fade) * show;
+    it.fx.intensity = it.l * 1.5;
+    it.fx.color.copy(tint && secT >= 0.6 ? tint : COLD);
+    _c.setRGB(0.02, 0.022, 0.026).add(_d.copy(it.fx.color).multiplyScalar(it.l * 16));
+    S.face.setColorAt(it.i, _c);
+    sum += it.l;
+  }
+  S.face.instanceColor.needsUpdate = true;
+  return sum / Math.max(1, S.list.length);
 }
 
 // The FOH position: a riser, a desk, the barrier round it. The camera stands on
