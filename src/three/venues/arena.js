@@ -261,7 +261,7 @@ export function buildArena(ctx) {
   const hzWash = [hz.add(V3(-10, RIG - 1, 10 + SZ), 0xffffff, 0), hz.add(V3(10, RIG - 1, 10 + SZ), 0xffffff, 0), hz.add(V3(0, DECK + 3, 12 + SZ), 0xffffff, 0)];
 
   return {
-    root, eye,
+    root, eye, seatNear: stands.seatNear,
     camera: { pos: eye, target: V3(0, DECK + 7.2, 2 + SZ), fov: 58, near: 0.15, far: 400 },
     background: new THREE.Color(0),
     fog: new THREE.FogExp2(0x060508, 0.0045),

@@ -453,6 +453,8 @@ export function silhouettes(people, cu, { seed = 5 } = {}) {
       void main() {
         vec3 base = iPos.xyz;
         vec3 toCam = cameraPosition - base; toCam.y = 0.0;
+        // the seat the listener is in, or stands at, is theirs: nobody in it
+        if (dot(toCam, toCam) < 0.16 && abs(cameraPosition.y - base.y) < 2.5) { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); return; }
         vec3 fwd = normalize(toCam);
         vec3 right = normalize(cross(vec3(0.0, 1.0, 0.0), fwd));
         float h = 1.72 * iPos.w;
