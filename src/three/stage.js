@@ -24,6 +24,7 @@ import { Walker } from './walk.js';
 import { createArt } from './art.js';
 import { BeatFollower } from './beat.js';
 import { buildVenue } from './venues/index.js';
+import { section } from './show.js';
 
 // How far a new venue's camera may widen on a portrait screen: at least ~56°
 // across, so the stage is still in the room rather than a keyhole on it.
@@ -255,7 +256,16 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
       U.uScale.value = scale;
     }
     const mode = crowdLight === 'flash' ? 1 : 0;
-    for (const U of lightMats) { U.uMode.value = mode; U.uHouse.value = house; }
+    // the lightstick operator's cue: the section, crossfaded from the last
+    const sec = SEC[f.sec || section(f.bar)] ?? 0;
+    if (sec !== cue.sec) { cue.prev = cue.sec; cue.sec = sec; cue.t = 0; }
+    cue.t += dt;
+    const look = songLook();
+    for (const U of lightMats) {
+      U.uMode.value = mode; U.uHouse.value = house;
+      U.uSec.value = cue.sec; U.uSecPrev.value = cue.prev; U.uSecMix.value = clamp(cue.t / 1.5); U.uSecT.value = cue.t;
+      U.uBeat.value = B.beat; U.uLook.value = look;
+    }
     if (pipe.scene.fog) for (const U of fogMats) { U.fogDensity.value = pipe.scene.fog.density ?? 0; U.fogColor.value.copy(pipe.scene.fog.color); }
     pipe.render(t);
   }
@@ -268,6 +278,22 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
   // doubles again under strain reported from the audio thread (setStrain) —
   // which takes precedence, because a dropped frame is a frame and a dropped
   // audio quantum is a click.
+  // the song's look: fixed by what is playing, so a song plays the house the
+  // same way every time and the next one differently
+  const SEC = { verse: 0, pre: 1, chorus: 2, break: 3 };
+  const cue = { sec: 0, prev: 0, t: 10 };
+  let lookKey = null, lookVal = 0;
+  function songLook() {
+    const k = `${art.meta.title}|${art.meta.artist}`;
+    if (k !== lookKey) {
+      lookKey = k;
+      let h = 2166136261;
+      for (let i = 0; i < k.length; i++) h = Math.imul(h ^ k.charCodeAt(i), 16777619);
+      lookVal = (h >>> 0) % 4;
+    }
+    return lookVal;
+  }
+
   const targetMs = 1000 / (qName === 'low' ? 30 : 60);
   let heavy = false, lastDrawn = -1e9, drawn = 0, frameBudget = 0, lastT = 0;
 
