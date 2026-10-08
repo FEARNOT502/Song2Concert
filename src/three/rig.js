@@ -35,9 +35,14 @@ export function holdAtDistance(m) {
 export function mats() {
   if (MATS.ready) return MATS;
   MATS.ready = true;
-  MATS.alu = holdAtDistance(aluminium());
-  MATS.black = holdAtDistance(blackSteel());
-  MATS.paint = holdAtDistance(std({ color: 0x0c0c0e, roughness: 0.55, metalness: 0.2 }));
+  MATS.alu = aluminium();
+  MATS.black = blackSteel();
+  // the same finishes for truss and lattice only: the members held a pixel
+  // wide far off. Never on a box or a panel: pushed out, a cabinet's face
+  // would come forward over the screen set into it.
+  MATS.trussAlu = holdAtDistance(aluminium());
+  MATS.trussBlack = holdAtDistance(blackSteel());
+  MATS.paint = std({ color: 0x0c0c0e, roughness: 0.55, metalness: 0.2 });
   MATS.cab = std({ color: 0x0a0a0b, roughness: 0.7, metalness: 0.1 });
   MATS.grille = std({ ...grilleTex(), color: 0xffffff, roughness: 1, metalness: 0.3 });
   MATS.rubber = std({ color: 0x050505, roughness: 0.9 });
@@ -95,7 +100,7 @@ export function truss(length, { size = 0.52, finish = 'alu', bays = null } = {})
       }
     }
   }
-  const mesh = new THREE.Mesh(mergeGeometries(parts), finish === 'alu' ? M.alu : M.black);
+  const mesh = new THREE.Mesh(mergeGeometries(parts), finish === 'alu' ? M.trussAlu : M.trussBlack);
   mesh.castShadow = false;
   return mesh;
 }
