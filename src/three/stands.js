@@ -733,6 +733,38 @@ export function buildTunnels(data, ox, oz) {
   return g;
 }
 
+// The seat nearest (x, z) among `spots` ({ x, y, z }, y the tread it stands
+// on), within `r` across, on the tread `y` is standing on or one a little
+// below it (the next row down, from an aisle's half step), or null: what the
+// walker sits down in. `below` is how far under its tread one may stand and
+// still sit in it: next to nothing for a stand, so the floor in front of its
+// first row is not a seat; more in a hall that is seats wall to wall, whose
+// aisles step down beside the rows. Indexed in 2 m cells the first time it is
+// asked, not when it is built.
+export function seatFinder(spots, { below = 0.05 } = {}) {
+  let cells = null;
+  return (x, z, y, r = 0.9) => {
+    if (!cells) {
+      cells = new Map();
+      for (const sp of spots) {
+        const k = `${Math.floor(sp.x / 2)},${Math.floor(sp.z / 2)}`;
+        if (!cells.has(k)) cells.set(k, []);
+        cells.get(k).push(sp);
+      }
+    }
+    const cx = Math.floor(x / 2), cz = Math.floor(z / 2);
+    let best = null, bd = r;
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+      for (const sp of cells.get(`${cx + i},${cz + j}`) ?? []) {
+        if (y < sp.y - below || y > sp.y + 0.5) continue;
+        const d = Math.hypot(sp.x - x, sp.z - z);
+        if (d < bd) { bd = d; best = sp; }
+      }
+    }
+    return best;
+  };
+}
+
 export function buildStands(data, {
   offset = V3(0, 0, 0), stage = V3(0, 2, 0), seatColors = {}, seatColor = 0x22262e,
   concreteTone = 0.22, sold = () => true, occupancy = 0.97, seed = 5, roofY = 36, crowd = true,
@@ -1055,32 +1087,8 @@ export function buildStands(data, {
     }
     return y;
   };
-  // the stand seat nearest (x, z), within `r` across, on the tread `y` is
-  // standing on or a little below it (the next row down, from an aisle's half
-  // step), or null: what the walker sits down in. Not from the floor in front
-  // of a stand: its first row is above that. Indexed in
-  // 2 m cells the first time it is asked, not when the stand is built.
-  let seatCells = null;
-  const seatNear = (x, z, y, r = 0.9) => {
-    if (!seatCells) {
-      seatCells = new Map();
-      for (const { spots } of seatSpots) for (const sp of spots) {
-        const k = `${Math.floor(sp.x / 2)},${Math.floor(sp.z / 2)}`;
-        if (!seatCells.has(k)) seatCells.set(k, []);
-        seatCells.get(k).push(sp);
-      }
-    }
-    const cx = Math.floor(x / 2), cz = Math.floor(z / 2);
-    let best = null, bd = r;
-    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
-      for (const sp of seatCells.get(`${cx + i},${cz + j}`) ?? []) {
-        if (y < sp.y - 0.05 || y > sp.y + 0.5) continue;
-        const d = Math.hypot(sp.x - x, sp.z - z);
-        if (d < bd) { bd = d; best = sp; }
-      }
-    }
-    return best;
-  };
+  // what the walker sits down in
+  const seatNear = seatFinder(seatSpots.flatMap(({ spots }) => spots));
   if (seatMesh) {
     g.add(seatMesh(seatSpots.flatMap(({ spots }) => spots.map((sp) => ({ x: sp.x, y: sp.y, z: sp.z, turn: sp.yaw })))));
     return { group: g, people, aisleLights, update, topAt, seatNear };

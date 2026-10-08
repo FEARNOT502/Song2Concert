@@ -215,6 +215,12 @@ export function personMaterial(cu, kind = 'floor') {
         vec3 skin = skinRamp(iLook.w);
         vec3 pants = top * 0.35 + vec3(0.02, 0.02, 0.025);
         vPC = aPart < 0.5 ? top : aPart < 1.5 ? skin : aPart < 2.5 ? iHair : aPart < 3.5 ? pants : vec3(0.02);
+        {
+          // the seat the listener is in, or stands at, is theirs: nobody in it
+          vec3 at = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+          vec2 off = cameraPosition.xz - at.xz;
+          if (dot(off, off) < 0.16 && abs(cameraPosition.y - at.y) < 2.5) transformed = vec3(0.0);
+        }
       `)
       .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
         vWorldP = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
