@@ -535,7 +535,7 @@ export function buildDome(ctx) {
   // way the dome's floor plans run them — wide blocks of chairs, 16 to a row
   // and 15 rows deep, with narrow aisles between and a cross aisle between
   // the letters, laid out from the runway outwards. A block that meets the
-  // runway, the cross, a delay tower or the desk gives up the side that
+  // runway, the cross or the desk gives up the side that
   // meets it, whole rows and columns at a time; one cut down to a sliver is
   // left out, and so is a row the field's edge cuts to a few chairs.
   const SEAT = 0.5, PITCH = 0.9, NX = 16, NZ = 15, BW = NX * SEAT, BD = NZ * PITCH, AX = 1.2, AZ = 1.6;
@@ -550,8 +550,10 @@ export function buildDome(ctx) {
     [-XW - 1.4, XW + 1.4, CZ - 1.4, CZ + XD + 1.4],               // the walkway across
     [-TIP / 2 - 1.4, TIP / 2 + 1.4, RW1 - TIP - 1.4, RW1 + 1.4], // the end stage
   ];
-  // the desk and the towers' bases only take the chairs they stand on
-  const taken = [[eye.x - 4.4, eye.x + 4.4, eye.z - 3.0, eye.z + 4.4], ...DT.map(([x, z]) => [x - 4.0, x + 4.0, z - 4.0, z + 4.0])];
+  // the desk only takes the chairs it stands on; the towers stand in aisles
+  // of their own (below), TB either side of each clear of chairs
+  const TB = 4.0;
+  const taken = [[eye.x - 4.4, eye.x + 4.4, eye.z - 3.0, eye.z + 4.4], ...DT.map(([x, z]) => [x - TB, x + TB, z - TB, z + TB])];
   const free = (x, z) => !taken.some(([x0, x1, z0, z1]) => x > x0 && x < x1 && z > z0 && z < z1);
   // the floor ends where the dome's floor plans end it: straight across at
   // the aisle behind the desk's band, cut in towards it from the sides
@@ -568,16 +570,32 @@ export function buildDome(ctx) {
     // past the end stage the middle is open: a block on the centre line
     const open = z0 > RW1 + 1.4;
     const x0s = [];
-    for (let x = open ? -BW / 2 : 3.6; x < 80; x += BW + AX) { x0s.push(x); if (!open || x > 0) x0s.push(-x - BW); }
-    for (const x0 of x0s) {
-      let b = { x0, x1: x0 + BW, z0, z1 };
+    // a band the delay towers stand in: each tower in an aisle of its own, the
+    // blocks between the centre one and the tower resized to fill that span
+    // evenly (no block cut down round a tower's base), the usual ones outside
+    const tower = DT.find(([, tz]) => tz + TB > z0 && tz - TB < z1);
+    if (open && tower) {
+      const tx = Math.abs(tower[0]);
+      x0s.push([-BW / 2, BW]);
+      const a = BW / 2 + AX, span = tx - TB - a;
+      const n = Math.max(1, Math.round((span + AX) / (BW + AX)));
+      const w = Math.floor((span - (n - 1) * AX) / n / SEAT + 1e-6) * SEAT;
+      for (let k = 0; k < n; k++) { const x = a + k * (w + AX); x0s.push([x, w], [-x - w, w]); }
+      // past the tower, a block the field's edge cuts down to a few chairs
+      // across is left out rather than kept as a sliver beside the tower
+      for (let x = tx + TB; x < 80; x += BW + AX) x0s.push([x, BW, 8], [-x - BW, BW, 8]);
+    } else {
+      for (let x = open ? -BW / 2 : 3.6; x < 80; x += BW + AX) { x0s.push([x, BW]); if (!open || x > 0) x0s.push([-x - BW, BW]); }
+    }
+    for (const [x0, bw, minCols = 3] of x0s) {
+      let b = { x0, x1: x0 + bw, z0, z1 };
       for (const [ox0, ox1, oz0, oz1] of obst) {
         if (!b || ox1 <= b.x0 || ox0 >= b.x1 || oz1 <= b.z0 || oz0 >= b.z1) continue;
         const parts = [{ ...b, x1: ox0 }, { ...b, x0: ox1 }, { ...b, z1: oz0 }, { ...b, z0: oz1 }]
           .filter((p) => p.x1 - p.x0 >= 6 * SEAT && p.z1 - p.z0 >= 4 * PITCH);
         b = parts.sort((p, q2) => (q2.x1 - q2.x0) * (q2.z1 - q2.z0) - (p.x1 - p.x0) * (p.z1 - p.z0))[0] || null;
       }
-      if (b) blocks.push({ ...b, name: String.fromCharCode(65 + r) });
+      if (b) blocks.push({ ...b, minCols, name: String.fromCharCode(65 + r) });
     }
   });
   const arena = { people: [], chairs: [] };
@@ -594,7 +612,7 @@ export function buildDome(ctx) {
         for (let i = 0; i < nx; i++) { const x = ox + i * SEAT; if (inBoth(x, z) && free(x, z) && inBack(x, z)) row.push(x); }
         if (row.length >= 3) rows.push({ z, row });
       }
-      if (rows.length < 2) continue;
+      if (rows.length < 2 || (b.minCols > 3 && rows.filter((r) => r.row.length >= b.minCols).length < b.minCols)) continue;
       for (const { z, row } of rows) for (const x of row) {
         arena.chairs.push({ x, y: 0, z: z + 0.16, turn: Math.PI });
         if (rnd() < 0.97) arena.people.push({ x: x + (rnd() - 0.5) * 0.08, y: 0, z: z - 0.16 + (rnd() - 0.5) * 0.06, h: 0.92 + rnd() * 0.14, full: true });
