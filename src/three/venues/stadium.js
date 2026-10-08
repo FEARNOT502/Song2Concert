@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { APP, DEG, KELVIN, V3, clamp, floorPanelTex, glowMat, noise3D, prng, std, withRepeat } from '../core.js';
 import { lightPoints } from '../people.js';
-import { ampStack, drumKit, guitar, hoists, keyboardRig, ledScreen, micStand, prismInto, rodInto, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
+import { ampStack, drumKit, guitar, hoists, holdAtDistance, keyboardRig, ledScreen, micStand, prismInto, rodInto, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
 import { bigCrowd, bigScreens, crossThrust, delayTower, fohPosition, groundRoof, laserUnits, paHang, paWing, packFloor, runLasers, runShow, screenHang, subLine } from '../show.js';
 import { buildStands } from '../stands.js';
 import { WB_STANDS } from './wb-data.js';
@@ -520,9 +520,9 @@ export function buildStadium(ctx) {
       rodInto(cables, V3(path[i].x + off, path[i].y + 0.4, path[i].z), V3(path[i + 1].x + off, path[i + 1].y + 0.4, path[i + 1].z), 0.07, 0.07, 4);
     }
   }
-  const steelMat = std({ color: 0xe6e7e8, roughness: 0.5, metalness: 0.35, emissive: 0x2c2e32, emissiveIntensity: 0.2 });
+  const steelMat = holdAtDistance(std({ color: 0xe6e7e8, roughness: 0.5, metalness: 0.35, emissive: 0x2c2e32, emissiveIntensity: 0.2 }));
   root.add(new THREE.Mesh(mergeGeometries(steel), steelMat));
-  root.add(new THREE.Mesh(mergeGeometries(cables), std({ color: 0xb8bcc2, roughness: 0.4, metalness: 0.7, emissive: 0x202226, emissiveIntensity: 0.2 })));
+  root.add(new THREE.Mesh(mergeGeometries(cables), holdAtDistance(std({ color: 0xb8bcc2, roughness: 0.4, metalness: 0.7, emissive: 0x202226, emissiveIntensity: 0.2 }))));
   // the gantry lights along the roof's inner edge
   const flood = [];
   for (let k = 0; k < edge.length; k += 1) flood.push(pipe.flares.add(V3(edge[k].x, ROOF - 3.4, edge[k].z), KELVIN(5600), 1.8, 0));
@@ -684,7 +684,7 @@ export function buildStadium(ctx) {
     root, eye,
     camera: { pos: eye, target: V3(0, DECK + 13.5, 10), fov: 62, near: 0.2, far: 2000 },
     background: new THREE.Color(0x020306),
-    fog: new THREE.FogExp2(0x090708, 0.0019),
+    fog: new THREE.FogExp2(0x090708, 0.0015),
     hazeDensity: 0.0005, beamGain: 0.45, hazeAmb: new THREE.Color(0x060405), hazeAmbDist: 400,
     bloom: { strength: 0.7, radius: 0.7, threshold: 1.15 },
     grade: { exposure: 1.2, vignette: 0.38, ca: 0.005, grain: 0.04, sat: 1.08, lift: [0.004, 0.005, 0.01] },

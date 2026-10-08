@@ -638,7 +638,7 @@ export function buildDome(ctx) {
     root, eye,
     camera: { pos: eye, target: V3(0, DECK + 10, 6 + SZ), fov: 60, near: 0.2, far: 800 },
     background: new THREE.Color(0),
-    fog: new THREE.FogExp2(0x07070b, 0.0026),
+    fog: new THREE.FogExp2(0x07070b, 0.002),
     hazeDensity: 0.0011, beamGain: 0.5, hazeAmb: new THREE.Color(0x05050a), hazeAmbDist: 260,
     bloom: { strength: 0.75, radius: 0.7, threshold: 1.15 },
     grade: { exposure: 1.2, vignette: 0.4, ca: 0.005, grain: 0.04, sat: 1.1, lift: [0.004, 0.004, 0.009] },
