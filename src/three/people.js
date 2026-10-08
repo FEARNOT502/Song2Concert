@@ -514,7 +514,10 @@ export function silhouettes(people, cu, { seed = 5 } = {}) {
 // what the section does, level by level: each breathing out of step in the
 // verse, a chase up the levels in the pre-chorus, the whole house on the kick
 // with the levels trading colours each bar in the chorus, one dim colour
-// swelling up the levels in a break. `uLook`
+// swelling up the levels in a break; and the big rooms' other parts: lit from
+// the front back in an intro, a wave across in a post-chorus, a pulse across
+// on every beat in a bridge, a chequerboard in a dance break, sparkle and
+// white on the kick in a solo, the house breathing out in an outro. `uLook`
 // (fixed per song) seeds which scenes it plays. With the house lights up the
 // sticks are off control: each glows on its own, softly, as before a show.
 // `p.zone` is { lv (0 the floor, 1 up the levels), u (the block's place
@@ -538,19 +541,22 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
   geo.setAttribute('aZone', new THREE.BufferAttribute(zone, 4));
   const mat = new THREE.ShaderMaterial({
     uniforms: {
-      uTime: cu.uTime, uKick: cu.uKick, uStage: cu.uStage,
+      uTime: cu.uTime, uKick: cu.uKick, uEnergy: cu.uEnergy, uStage: cu.uStage,
       uScale: { value: 800 }, uMax: { value: maxPx }, uGain: { value: 1 },
       uMode: { value: 0 }, uHouse: { value: 0 },
       // the operator's cue: this scene (its number and section) and the last,
       // crossfading; how long the section has run, the beat count, the song's look
       uScene: { value: 1 }, uSec: { value: 0 }, uSecPrev: { value: 0 }, uSecMix: { value: 1 }, uSecT: { value: 0 },
       uBeat: { value: 0 }, uLook: { value: 0 },
+      // the beat's phase (beats and the way through one), how far through its
+      // section the song is, and a bridge's closing roll (0..1, or -1)
+      uPhase: { value: 0 }, uProg: { value: 0 }, uRoll: { value: -1 },
       uPal: { value: [V3(1, 0.6, 0.3), V3(0.8, 0.4, 1), V3(0.5, 0.7, 1), V3(1, 0.85, 0.55)] },
       tGlow: { value: glowSprite() },
     },
     vertexShader: /* glsl */`
       attribute vec4 aLook, aZone;
-      uniform float uTime, uScale, uMax, uMode, uHouse, uKick, uScene, uSec, uSecPrev, uSecMix, uSecT, uBeat, uLook;
+      uniform float uTime, uScale, uMax, uMode, uHouse, uKick, uEnergy, uScene, uSec, uSecPrev, uSecMix, uSecT, uBeat, uLook, uPhase, uProg, uRoll;
       uniform vec3 uPal[4], uStage;
       varying vec3 vC;
       float h1(float n) { return fract(sin(n * 127.1 + 311.7) * 43758.5453); }
@@ -578,32 +584,86 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
         if (wht > 0.5 && mod(idx + k, 3.0) == 2.0) return col(4.0);
         return col(ci);
       }
+      // the parts, in the desk's order: 0 intro, 1 verse, 2 pre, 3 chorus,
+      // 4 post-chorus, 5 break, 6 bridge, 7 dance break, 8 solo, 9 outro.
+      // Everything that moves runs on the beat (uPhase), not the clock.
       vec3 cue(float sec, float s) {
-        float t = uTime, lv = aZone.x;
+        float ph = uPhase, lv = aZone.x, u = aZone.y;
+        float bar = floor(ph / 4.0);
         vec3 sc = sceneCol(s, 0.0);
         if (sec < 0.5) {
-          // verse: the scene, each level breathing slowly, out of step with
-          // the level below
-          return sc * (0.5 + 0.22 * sin(t * 1.1 + lv * 1.6));
+          // intro: dark, lighting up from the front of the floor back and up
+          // the levels as the intro runs
+          float d = lv + (lv < 0.5 ? min(aZone.w, 8.0) / 8.0 : 1.0);
+          float w = clamp((uProg * 4.4 - d) / 0.8, 0.0, 1.0);
+          return mix(sc, vec3(1.0), 0.2) * w * (0.5 + 0.1 * sin(ph * 0.785 + lv));
         }
         if (sec < 1.5) {
-          // pre-chorus: a chase up the levels, floor to the top tier and
-          // round again, quickening as the section builds
-          float sp = 1.6 + 0.12 * min(uSecT, 16.0);
-          float w = smoothstep(0.5, 1.0, sin(lv * 1.4 - t * sp));
-          return mix(sc * 0.25, sceneCol(s, 1.0) * 1.15, w);
+          // verse: the scene, each level breathing once in eight beats, out
+          // of step with the level below
+          return sc * (0.5 + 0.22 * sin(ph * 0.785 + lv * 1.6));
         }
         if (sec < 2.5) {
+          // pre-chorus: a chase up the levels, once in four beats, quickening
+          // to once in two as the section builds
+          float w = smoothstep(0.5, 1.0, sin(lv * 1.4 - ph * 1.571 * (1.0 + uProg)));
+          return mix(sc * 0.25, sceneCol(s, 1.0) * 1.15, w);
+        }
+        if (sec < 3.5) {
           // chorus: the whole house on the kick, the levels trading colours
           // each bar; in some looks the levels hit in turn, a beat apart
-          float bar = floor(uBeat / 4.0);
           vec3 c = sceneCol(s, bar);
           if (uLook > 1.5) c = mix(c, vec3(1.0), 0.45 * uKick);
           float turn = mod(uLook, 2.0) < 0.5 ? 1.0 : 0.6 + 0.4 * step(mod(uBeat - lv, 4.0), 0.5);
           return c * (0.55 + 0.75 * uKick) * turn;
         }
-        // break: one colour, dim, the levels swelling slowly one after another
-        return col(floor(h1(s * 1.37 + uLook * 7.1 + 3.3) * 4.0)) * (0.22 + 0.16 * sin(lv * 1.3 - t * 0.5));
+        if (sec < 4.5) {
+          // post-chorus: the chorus's colours held, a wave across the house
+          // every two beats in place of the kick
+          float w = 0.5 + 0.5 * sin(u * 6.283 - ph * 3.1416);
+          return sceneCol(s, bar) * (0.4 + 0.6 * w);
+        }
+        if (sec < 5.5) {
+          // break: one colour, dim, the levels swelling one after another
+          return col(floor(h1(s * 1.37 + uLook * 7.1 + 3.3) * 4.0)) * (0.22 + 0.16 * sin(lv * 1.3 - ph * 0.393));
+        }
+        if (sec < 6.5) {
+          // bridge: two colours of its own, flipped each bar, a pulse running
+          // across the house on every beat; at its close the whole house
+          // flickering, quicker and quicker, into what comes next
+          vec3 cA = col(2.0), cB = col(3.0);
+          bool flip = mod(bar, 2.0) > 0.5;
+          vec3 base = flip ? cB : cA, hit = flip ? cA : cB;
+          float x = fract(ph) * 1.4 - 0.2 - u;
+          float w = exp(-x * x * 40.0);
+          vec3 c = base * 0.35 + hit * 1.1 * w;
+          if (uRoll >= 0.0) {
+            float k = exp2(1.0 + min(2.0, floor(uRoll * 3.0)));
+            float on = step(fract(ph * k), 0.5);
+            c = mix(c, mix(hit, vec3(1.0), 0.3) * (0.15 + 1.1 * on), 0.4 + 0.6 * uRoll);
+          }
+          return c;
+        }
+        if (sec < 7.5) {
+          // dance break: the blocks as a chequerboard, trading on every beat,
+          // two colours hard against each other, a white flash on the kick
+          float on = step(mod(aZone.z + lv + floor(ph), 2.0), 0.5);
+          vec3 c = on > 0.5 ? col(0.0) * 1.15 : col(1.0) * 0.18;
+          return mix(c, vec3(1.0), 0.6 * uKick * uKick);
+        }
+        if (sec < 8.5) {
+          // solo: low, sticks sparkling on their own on the sixteenths, the
+          // house going up white on the kick, a sweep up the levels each bar
+          float tw = step(0.82, h1(aLook.x * 13.0 + floor(ph * 4.0)));
+          float fb = fract(ph / 4.0) * 4.0;
+          float dl = (fb - lv) * 1.5;
+          float sw = exp(-dl * dl);
+          vec3 c = uPal[0] * (0.14 + 0.5 * sw) + mix(uPal[0], vec3(1.0), 0.6) * tw * 0.9;
+          return c + vec3(1.0) * 1.2 * uKick * uKick;
+        }
+        // outro: every level breathing together, once in eight beats, going
+        // down as the song ends
+        return sc * (0.5 + 0.3 * sin(ph * 0.785)) * max(0.04, pow(1.0 - uProg, 1.2));
       }
       void main() {
         vec4 mv = modelViewMatrix * vec4(position, 1.0);
@@ -611,7 +671,8 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
         // hide it
         mv.xyz -= normalize(mv.xyz) * 0.35;
         float d = -mv.z;
-        vec3 stick = mix(cue(uSecPrev, uScene - 1.0), cue(uSec, uScene), uSecMix) * 0.75;
+        // (louder for the louder stretches of the song)
+        vec3 stick = mix(cue(uSecPrev, uScene - 1.0), cue(uSec, uScene), uSecMix) * 0.75 * (0.75 + 0.4 * uEnergy);
         // off control (house lights up): each stick on its own, a soft glow
         // of the first colour toward white, blinking slowly out of step
         vec3 own = mix(vec3(0.9), uPal[0], 0.5) * (0.35 + 0.25 * step(0.5, fract(uTime * 0.4 + aLook.x)));

@@ -45,9 +45,25 @@ export const wrap = (k, n) => ((k % n) + n) % n;
 // how far a pre-chorus has built: through the section when the song is
 // mapped, else over its first twelve seconds
 const buildOf = (f, secT) => (f.secProg != null ? 0.45 + 0.55 * f.secProg : 0.55 + 0.45 * Math.min(1, secT / 12));
-// the beat before a drop: the rig pulled out, so the chorus lands out of the
-// dark (only when the song is mapped and the chorus is known to be next)
-export const dropGap = (f) => f.next === 'chorus' && f.sec !== 'chorus' && f.toNext != null && f.toNext < 60 / Math.max(60, f.bpm || 120) * 0.9;
+// how far through its section the song is: the map's account, else sixteen
+// seconds from when it began (or was called from the desk)
+const progOf = (f, secT) => (f.secProg != null ? f.secProg : Math.min(1, secT / 16));
+
+// The big rooms play every part of a song its own way; the rest, and the
+// rooms' own fixtures, play the four broad states (`f.sec`). In the order the
+// lighting desk lays them out.
+export const PARTS = ['intro', 'verse', 'pre', 'chorus', 'post', 'break', 'bridge', 'dance', 'solo', 'outro'];
+export const BASE = { intro: 'break', verse: 'verse', pre: 'pre', chorus: 'chorus', post: 'chorus', break: 'break', bridge: 'chorus', dance: 'chorus', solo: 'chorus', outro: 'break' };
+// a bridge's last two bars, 0..1 through them (null before): the roll that
+// carries it into what comes next. By the time to the next section when the
+// song is mapped; else the last two of every eight bars.
+export function rollOf(f) {
+  if ((f.part || f.sec) !== 'bridge') return null;
+  const bar = 4 * 60 / Math.max(60, f.bpm || 120);
+  if (f.toNext != null) return f.toNext < 2 * bar ? 1 - f.toNext / (2 * bar) : null;
+  const b = wrap(f.secBar ?? f.bar, 8) + wrap(f.phase ?? 0, 4) / 4;
+  return b >= 6 ? (b - 6) / 2 : null;
+}
 const WHITE = new THREE.Color(1, 1, 1);
 export function runShow(rig, list, f, opts) {
   if (f.look) return runMovers(list, f, opts);
@@ -156,16 +172,24 @@ const it0 = (list) => list[0]?.fx.hang === 'up';
 
 function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true, lift = 1 }) {
   const sec = f.sec || section(f.bar);
+  const part = f.part || sec;
   const show = 1 - f.house;
   const cols = [f.pal.a, f.pal.b, f.pal.c, f.pal.d];
   const L = f.look;
-  const t = f.t * L.pace;
   const secT = f.secT ?? 10;
   const dt = Math.min(0.1, f.dt || 0.016);
+  // the beat, not the clock: every move below turns over in beats, so a
+  // faster song moves faster and each move lands with the music
+  const beat = f.phase ?? f.t * 2;
+  const cyc = (beats) => beat / beats * L.pace * Math.PI * 2;
+  // the song's energy now (0.25 quiet .. 1 its loudest): brightness and size
+  const E = f.energy ?? 0.5;
+  const eS = 0.65 + 0.5 * E;
   // (bars counted from the section's start when the song is mapped, so the
   // positions turn over on its phrases)
   const bar = Math.floor(f.secBar ?? f.bar), phrase = Math.floor(f.bar / 8);
-  const gap = dropGap(f);
+  const prog = progOf(f, secT);
+  const roll = rollOf(f);
   // the phrase's effect and how it is spread, the position this couple of bars
   const shape = SHAPES[wrap(phrase + L.move * 2 + (it0(list) ? 1 : 0), SHAPES.length)];
   const spread = wrap(phrase + L.move, 4);
@@ -175,73 +199,129 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
     const { fx, i, n } = it;
     const u = n > 1 ? i / (n - 1) - 0.5 : 0;
     const side = u < 0 ? -1 : 1;
+    const beam = fx.kind === 'beam' || fx.kind === 'spot';
     if (it.pan == null) { [it.pan, it.tilt] = panTilt(fx.dir, up); it.vp = 0; it.vt = 0; }
     // the base position, in pan and tilt
     const aim = (x, y, z) => panTilt(tmp.set(x, y, z).sub(fx.pos).normalize(), up);
-    let p0, t0, amp = 0, rate = 1, lvl, col;
-    if (sec === 'verse') {
+    // the chorus's positions: fanned out over the house, crossed, all to one
+    // point in the air, lifted out to the far end
+    const chorusPos = (k) => {
+      if (up) return [[side * Math.PI / 2, 0.55], [-side * Math.PI / 2, 0.4], [0, 0.05], [Math.PI / 2 + u * 4, 0.45]][k];
+      // (each row about the point it throws to: the spots low over the
+      // floor, the beams high over the far stands)
+      const [hp, ht] = aim(house.x, house.y, house.z);
+      return [
+        [hp + u * 1.4, ht],
+        [hp - side * 0.5 + u * 0.4, ht - 0.2],
+        aim(house.x, house.y + 14, house.z - span * 0.3),
+        [hp + u * 0.5, ht + 0.25],
+      ][k];
+    };
+    let p0, t0, amp = 0, beats = 8, s = 'circle', lvl, col, burst = 0;
+    if (part === 'intro') {
+      // the room waiting: the heads parked up and dark, a few on the stage
+      // coming up as the intro runs
+      const lit = i % 3 === 1;
+      [p0, t0] = up ? [u * 0.6, 0.15] : lit ? aim(stage.x + u * span * 0.2, stage.y, stage.z + 4) : [u * 0.6, 0.05];
+      amp = 0.03; beats = 16;
+      lvl = up ? 0.08 * prog : lit ? 0.5 * prog * eS : 0;
+      col = cols[0];
+    } else if (part === 'verse') {
       // the stage picked out, a few heads at a time, turning slowly
       [p0, t0] = up ? [u * 0.8, 0.25] : aim(stage.x + u * span * 0.35, stage.y, stage.z + 6);
-      amp = 0.06; rate = 0.5;
-      lvl = i % 2 ? 0 : 0.5 + 0.15 * f.energy;
+      amp = 0.06; beats = 8;
+      lvl = i % 2 ? 0 : 0.4 + 0.3 * E;
       col = cols[it.group % 2 ? 3 : 0];
-    } else if (sec === 'pre') {
-      // fanned out over the house, a wave in tilt running along the row, quicker as it builds
+    } else if (part === 'pre') {
+      // fanned out over the house, a wave in tilt running along the row,
+      // wider and quicker as it builds: a wave every four beats, then two
       const build = buildOf(f, secT);
       [p0, t0] = up ? [side * Math.PI / 2, 0.35 + Math.abs(u) * 0.5] : ((a) => [a[0] + u * 1.3, a[1]])(aim(house.x, house.y, house.z));
-      amp = 0.2 + 0.15 * build; rate = 0.8 + 1.4 * build;
-      lvl = (0.55 + 0.35 * (wrap(f.beat, 2) === (i % 2) ? f.kick : 0.2)) * build;
+      amp = 0.2 + 0.15 * build; beats = 4 / (0.6 + 0.9 * build); s = 'tiltWave';
+      lvl = (0.55 + 0.35 * (wrap(f.beat, 2) === (i % 2) ? f.kick : 0.2)) * build * eS;
       col = cols[(i % 2) ? 1 : 0];
-    } else if (sec === 'chorus') {
-      // a new position every two bars, the phrase's effect over it
-      if (up) {
-        [p0, t0] = [[side * Math.PI / 2, 0.55], [-side * Math.PI / 2, 0.4], [0, 0.05], [Math.PI / 2 + u * 4, 0.45]][pos];
-      } else {
-        // (each row about the point it throws to: the spots low over the
-        // floor, the beams high over the far stands)
-        const [hp, ht] = aim(house.x, house.y, house.z);
-        [p0, t0] = [
-          [hp + u * 1.4, ht],                                         // fanned out over the house
-          [hp - side * 0.5 + u * 0.4, ht - 0.2],                      // crossed
-          aim(house.x, house.y + 14, house.z - span * 0.3),           // all to one point in the air
-          [hp + u * 0.5, ht + 0.25],                                  // lifted, out to the far end
-        ][pos];
-      }
-      amp = f.final ? 0.38 : 0.3; rate = f.final ? 1.9 : 1.6;
-      lvl = (f.final ? 0.85 : 0.75) + 0.35 * f.kick;
+    } else if (part === 'chorus') {
+      // a new position every two bars, the phrase's effect over it, once
+      // round every two beats (the last chorus quicker and wider)
+      [p0, t0] = chorusPos(pos);
+      amp = f.final ? 0.38 : 0.3; beats = f.final ? 1.5 : 2; s = shape;
+      lvl = ((f.final ? 0.85 : 0.75) + 0.35 * f.kick) * eS;
       col = cols[wrap(i + Math.floor(f.beat / 4), 3)];
       const first = secT < 0.35;
       if (L.hit === 0 && strobe && (first || (f.kick > 0.85 && wrap(i + f.beat, 3) === 0))) lvl = 1.6;
       if (L.hit === 1 && (first || f.kick > 0.85)) lvl = 1.15 + 0.2 * f.kick;
+    } else if (part === 'post') {
+      // the chorus ringing on: lifted high over the house, a wide slow
+      // circle, the colours trading every two bars; no hits
+      if (up) [p0, t0] = [u * 1.4, 0.5];
+      else { const [hp, ht] = aim(house.x, house.y + 18, house.z); [p0, t0] = [hp + u * 1.2, ht]; }
+      amp = 0.36; beats = 8;
+      lvl = (0.75 + 0.12 * f.kick) * eS;
+      col = cols[wrap(i + Math.floor(bar / 2), 2)];
+    } else if (part === 'dance') {
+      // the hardest: a new position on every beat, odd heads mirrored against
+      // even, a tilt flick each beat, two colours trading on the beat
+      const k = wrap(Math.floor(beat) + L.move, 4);
+      [p0, t0] = chorusPos(k);
+      if (i % 2) p0 = (up ? 0 : 2 * aim(house.x, house.y, house.z)[0]) - p0;
+      amp = 0.12; beats = 1; s = 'tiltWave';
+      lvl = (0.9 + 0.45 * f.kick) * eS;
+      col = cols[wrap(i + Math.floor(beat), 2)];
+    } else if (part === 'bridge') {
+      // the turn: two colours of its own, hard against each other, the halves
+      // crossing the whole room and thrown back on every downbeat
+      const flip = bar % 2 ? -1 : 1;
+      if (up) [p0, t0] = [side * flip * 1.1, 0.45];
+      else { const [hp, ht] = aim(house.x, house.y + 6, house.z); [p0, t0] = [hp + side * flip * 0.95 + u * 0.3, ht]; }
+      amp = 0.16; beats = 1; s = 'tiltWave';
+      lvl = (0.8 + 0.35 * f.kick) * eS;
+      col = (side < 0) !== (bar % 2 === 1) ? cols[2] : cols[3];
+      if (roll != null) lvl *= 0.8 + 0.4 * roll;
+    } else if (part === 'solo') {
+      // every head on one point, white, thrown open on each kick and drawn
+      // back in
+      [p0, t0] = up ? [0, 0.08] : aim(stage.x, stage.y, stage.z);
+      burst = f.kick;
+      lvl = (0.85 + 0.5 * f.kick) * eS;
+      col = beam && i % 3 ? WHITE : cols[0];
+    } else if (part === 'outro') {
+      // gathering up over the middle of the stage, going out as it ends
+      [p0, t0] = up ? [0, 0.05] : aim(stage.x, stage.y + 25, stage.z + 10);
+      amp = 0.1; beats = 8;
+      lvl = 0.8 * Math.pow(1 - prog, 1.5) * eS;
+      col = cols[wrap(i + Math.floor(bar / 2), 3)];
     } else {
       // break: straight down (or up), still, one colour, a few on
       [p0, t0] = [u * 0.2, 0.08];
-      lvl = i % 3 === 0 ? 0.3 : 0;
+      lvl = i % 3 === 0 ? 0.3 * eS : 0;
       col = cols[3];
     }
-    // the effect, spread across the row
+    // the effect, spread across the row, wider the louder the song runs
     const ph = spread === 0 ? 0 : spread === 1 ? i / Math.max(1, n) * Math.PI * 2 : spread === 2 ? Math.abs(u) * Math.PI * 2 : (i % 2) * Math.PI;
     const mir = spread === 2 ? side : 1;
-    const a = t * rate * 2 + ph;
+    const a = cyc(beats) + ph;
     let dp = 0, dtl = 0;
-    const s = sec === 'pre' ? 'tiltWave' : sec === 'verse' ? 'circle' : shape;
     if (s === 'circle') { dp = Math.cos(a); dtl = Math.sin(a); }
     else if (s === 'eight') { dp = Math.sin(a); dtl = 0.6 * Math.sin(2 * a); }
     else if (s === 'tiltWave') { dtl = Math.sin(a); }
     else if (s === 'panWave') { dp = Math.sin(a); }
     else { dp = Math.sin(a * 0.73 + i * 1.9) * Math.cos(a * 0.41 + i); dtl = Math.sin(a * 0.59 + i * 2.7); }
-    const wantP = p0 + amp * dp * mir * 1.4, wantT = Math.max(0, Math.min(up ? 1.2 : 2.1, t0 + amp * dtl));
+    const A = amp * (0.75 + 0.4 * E);
+    const wantP = p0 + A * dp * mir * 1.4, wantT = Math.max(0, Math.min(up ? 1.2 : 2.1, t0 + A * dtl));
     [it.pan, it.vp] = motor(it.pan, it.vp, wantP, PAN_MAX, dt, true);
     [it.tilt, it.vt] = motor(it.tilt, it.vt, wantT, TILT_MAX, dt, false);
-    const st = Math.sin(it.tilt);
-    fx.dir.set(st * Math.sin(it.pan), (up ? 1 : -1) * Math.cos(it.tilt), st * Math.cos(it.pan)).normalize();
-    if (sec !== 'break') {
-      const k = sec === 'chorus' ? Math.floor(f.beat / 4) : 0, beam = fx.kind === 'beam' || fx.kind === 'spot';
+    // the solo's burst snaps open on the kick, quicker than the yoke's own
+    // swing, fanned along the row
+    const pp = it.pan + burst * u * 1.6, tt = Math.max(0, it.tilt + burst * 0.35);
+    const st = Math.sin(tt);
+    fx.dir.set(st * Math.sin(pp), (up ? 1 : -1) * Math.cos(tt), st * Math.cos(pp)).normalize();
+    // the song's look recolours the sections it has always played
+    if (part === 'verse' || part === 'pre' || part === 'chorus') {
+      const k = part === 'chorus' ? Math.floor(f.beat / 4) : 0;
       if (L.col === 0) col = (i + k) % 5 === 0 ? cols[1] : cols[0];
       else if (L.col === 1) col = cols[wrap(i + k, 2)];
       else if (L.col === 2) col = beam ? WHITE : cols[wrap(i + k, 2)];
     }
-    if (gap) lvl *= 0.05;
     fx.color.copy(col);
     if (lvl > 1.2 && L.hit === 0) fx.color.lerp(WHITE, 0.7);
     fx.intensity = lvl * show * lift;
@@ -321,11 +401,19 @@ export function runBlinders(B, f) {
   const secT = f.secT ?? 10;
   const fade = Math.exp(-(f.dt || 0.016) * 5);
   let sum = 0;
+  const part = f.look ? (f.part || sec) : sec;
+  const bar = Math.floor(f.secBar ?? f.bar);
   for (const it of B.list) {
     let to = 0;
-    if (sec === 'chorus' && f.look) {
+    if (part === 'chorus' && f.look) {
       if (secT < 0.45) to = 1;
       else if (L.hit === 2 && f.kick > 0.8) to = wrap(f.beat, 4) === 0 ? 1 : wrap(f.beat, 2) === 0 ? (it.i % 2 ? 0.7 : 0) : 0;
+    } else if (part === 'bridge' && f.kick > 0.8 && wrap(f.beat, 4) === 0) {
+      // the bridge: each downbeat, one half then the other
+      to = it.i % 2 === bar % 2 ? 1 : 0;
+    } else if (part === 'solo' && f.kick > 0.8 && wrap(f.beat, 8) === 0) {
+      // the solo: all of them every other bar
+      to = 1;
     }
     it.l = Math.max(to, it.l * fade) * show;
     it.fx.intensity = it.l * 1.3;
@@ -355,17 +443,27 @@ export function runStrobes(S, f) {
   const secT = f.secT ?? 10;
   const fade = Math.exp(-(f.dt || 0.016) * 30);
   const tint = L.hit === 1 ? f.pal.a : null;
+  const part = f.look ? (f.part || sec) : sec;
+  const roll = f.look ? rollOf(f) : null;
   let sum = 0;
   for (const it of S.list) {
     let to = 0;
-    if (sec === 'chorus' && f.look) {
+    if (part === 'chorus' && f.look) {
       if (secT < 0.6) to = wrap(Math.floor(secT * 20), 2) === 0 ? 1 : 0;
       else if (L.hit === 0 && f.kick > 0.85) to = ((it.i * 7 + f.beat * 3) % 5) < 2 ? 1 : 0;
       else if (L.hit === 1 && f.kick > 0.85) to = 0.8;
+    } else if ((part === 'dance' || part === 'solo') && f.kick > 0.85) {
+      // the dance break and the solo: every bar on every kick
+      to = 1;
+    } else if (roll != null) {
+      // the bridge's roll: eighths, then sixteenths, then thirty-seconds,
+      // locked to the beat
+      const k = 2 ** (1 + Math.min(2, Math.floor(roll * 3)));
+      to = ((f.phase ?? f.t * 2) * k) % 1 < 0.5 ? 0.6 + 0.4 * roll : 0;
     }
     it.l = Math.max(to, it.l * fade) * show;
     it.fx.intensity = it.l * 1.5;
-    it.fx.color.copy(tint && secT >= 0.6 ? tint : COLD);
+    it.fx.color.copy(tint && part === 'chorus' && secT >= 0.6 ? tint : COLD);
     _c.setRGB(0.02, 0.022, 0.026).add(_d.copy(it.fx.color).multiplyScalar(it.l * 16));
     S.face.setColorAt(it.i, _c);
     sum += it.l;

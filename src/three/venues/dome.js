@@ -645,7 +645,9 @@ export function buildDome(ctx) {
       front1.intensity = 90000 * show + 9000 * f.house;
       stageWash.color.copy(f.pal.a); stageWash.intensity = (12000 + 14000 * f.energy + 6000 * f.kick) * show;
       fill.forEach((l, i) => { l.color.copy(i ? f.pal.b : f.pal.a); l.intensity = (200 + 500 * f.energy) * show; });
-      house.forEach((l) => { l.intensity = 45000 * f.house; });
+      // (half what they were: at full the deck, the trusses and the roof threw
+      // too much of them back)
+      house.forEach((l) => { l.intensity = 22500 * f.house; });
       hzWash[0].color.copy(f.pal.a); hzWash[1].color.copy(f.pal.b); hzWash[2].color.copy(f.pal.d);
       hzWash.forEach((h) => { h.power = 600 * (0.4 + 0.6 * f.energy + 0.3 * f.kick) * show; });
       bRimM.color.setHex(APP.accent).multiplyScalar((0.6 + 0.9 * f.kick) * show + 0.2);
@@ -653,7 +655,7 @@ export function buildDome(ctx) {
       const sh = membrane.userData.shader;
       if (sh) {
         // the house lights wash the membrane warm; in the show it takes the stage's colour back
-        sh.uniforms.uBounce.value.copy(f.pal.a).lerp(f.pal.b, 0.5 + 0.5 * Math.sin(f.t * 0.3)).multiplyScalar((0.012 + 0.02 * f.energy + 0.015 * f.kick) * show).add(new THREE.Color(0.2, 0.16, 0.11).multiplyScalar(0.02 + 0.98 * f.house));
+        sh.uniforms.uBounce.value.copy(f.pal.a).lerp(f.pal.b, 0.5 + 0.5 * Math.sin(f.t * 0.3)).multiplyScalar((0.012 + 0.02 * f.energy + 0.015 * f.kick) * show).add(new THREE.Color(0.2, 0.16, 0.11).multiplyScalar(0.02 + 0.49 * f.house));
       }
       cu.uRimColor.value.copy(f.pal.a).lerp(new THREE.Color(1, 1, 1), 0.3).multiplyScalar((0.2 + 0.25 * f.kick) * show);
       cu.uStage.value.set(0, 14, 10 + SZ);

@@ -20,7 +20,7 @@
 //   5. the names: sections that repeat are grouped, and the groups named the
 //      way a pop song is built: the chorus is what comes back most and hits
 //      hardest, the pre-chorus is what leads into it, the verse is what comes
-//      back before it; then the intro, bridge, dance break and outro
+//      back before it; then the intro, bridge, solo, dance break and outro
 //
 // Pure arithmetic on a mono Float32Array; no DOM and no audio graph, so it runs
 // in a worker (songmap.worker.js) and under node for the checks.
@@ -546,9 +546,12 @@ function cluster(M, nb, segs, th) {
 }
 
 // the functions, the way a pop song is built
-function name(segs, label, E, nb) {
+function name(segs, label, E, nb, F = null) {
   const n = segs.length;
   const segE = segs.map(([a, b]) => { let s = 0; for (let j = a; j < b; j++) s += E[j]; return s / (b - a); });
+  // how much of the sound is the low end (kick and bass), against the whole,
+  // in dB: a solo carries the tune over a band that has pulled its bottom back
+  const segLow = segs.map(([a, b]) => { if (!F) return 0; let s = 0; for (let j = a; j < b; j++) s += F.low[j] - F.loud[j]; return s / (b - a); });
   const k = Math.max(...label) + 1;
   const groups = Array.from({ length: k }, () => []);
   label.forEach((l, i) => groups[l].push(i));
@@ -626,9 +629,13 @@ function name(segs, label, E, nb) {
   if (lastCh >= 0) for (let i = lastCh + 1; i < n; i++) if (!role[i] && segs[i][0] / nb > 0.8 && (segE[i] < chE - 0.3 || i === n - 1)) role[i] = 'outro';
 
   // the rest: by how hard it plays
+  const chLow = (() => { const c = segLow.filter((_, i) => role[i] === 'chorus'); return c.length ? c.reduce((s, v) => s + v, 0) / c.length : null; })();
   for (let i = 0; i < n; i++) {
     if (role[i]) continue;
     if (segE[i] < Math.min(-0.5, eMed - 0.6)) role[i] = 'break';
+    // a solo: once only, past the middle, not quiet, the low end well back of
+    // the chorus's (a dance break keeps its kick)
+    else if (F && chLow != null && mid(i) > 0.45 && groups[label[i]].length === 1 && segE[i] >= eMed - 0.2 && segLow[i] < chLow - 2.5) role[i] = 'solo';
     else if (segE[i] > chE - 0.25 && mid(i) > 0.45) role[i] = 'dance';
     else if (mid(i) > 0.45 && groups[label[i]].length === 1) role[i] = 'bridge';
     else role[i] = 'verse';
@@ -638,7 +645,9 @@ function name(segs, label, E, nb) {
 }
 
 // what the rig plays for each function
-export const LIGHT = { intro: 'break', verse: 'verse', pre: 'pre', chorus: 'chorus', post: 'chorus', dance: 'chorus', bridge: 'verse', break: 'break', outro: 'break' };
+// (the four broad states every room plays; the big rooms play each `role` as
+// its own part, see show.js PARTS)
+export const LIGHT = { intro: 'break', verse: 'verse', pre: 'pre', chorus: 'chorus', post: 'chorus', dance: 'chorus', bridge: 'chorus', solo: 'chorus', break: 'break', outro: 'break' };
 
 // ── all of it ────────────────────────────────────────────────────────────────
 
@@ -671,7 +680,7 @@ export function analyzeSong(x, sr, opts = {}) {
     else { segs.push(s); lab.push(label[i]); }
   });
   label = lab;
-  const { role, segE } = name(segs, label, energy, F.nb);
+  const { role, segE } = name(segs, label, energy, F.nb, F);
 
   // neighbours with the same name are one section (two intro groups, a verse
   // in two halves); a chorus straight after a chorus stays its own, for the hit

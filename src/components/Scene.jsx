@@ -18,7 +18,7 @@ import { createStage } from '../three/stage.js';
 function Scene({
   venueId, coverId, coverSrc, pulse = 0, pulseRef = null, title, artist,
   strain = 0, effects = true, playing = false, crowdLight = 'stick', analyser = null,
-  songMap = null, clock = null,
+  songMap = null, clock = null, part = null, apiRef = null,
 }) {
   const hostRef = useRef(null);
   const canvasRef = useRef(null);
@@ -39,6 +39,7 @@ function Scene({
     const el = hostRef.current;
     if (stage) stageRef.current = stage;
     else setOk(false);
+    if (apiRef) apiRef.current = stage;
     // in development, the stage is reachable from the console (and the checks)
     if (import.meta.env.DEV && stage) window.__stage = stage;
 
@@ -55,6 +56,7 @@ function Scene({
       ro.disconnect();
       stage?.dispose();
       stageRef.current = null;
+      if (apiRef) apiRef.current = null;
     };
   }, []);
 
@@ -63,6 +65,8 @@ function Scene({
   // Stopped, the house lights are up; playing, they go down for the show.
   useEffect(() => { stageRef.current?.setPlaying(playing); }, [playing]);
   useEffect(() => { stageRef.current?.setCrowdLight(crowdLight); }, [crowdLight]);
+  // A part of the song called from the lighting desk, or null to follow the song.
+  useEffect(() => { stageRef.current?.setPart(part); }, [part]);
   // The engine's analyser, read for the kick drum — nothing is connected to it.
   useEffect(() => { stageRef.current?.setAnalyser(analyser); }, [analyser]);
   // The song's structure (src/songMap.js) and the playback clock to read it by.

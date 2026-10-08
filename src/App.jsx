@@ -10,9 +10,10 @@ import BottomTransport from './components/BottomTransport.jsx';
 import { LeftDataPanel, RightDataPanel } from './components/Panels.jsx';
 import { FilePicker, VenuePicker } from './components/Modals.jsx';
 import QueuePanel from './components/QueuePanel.jsx';
+import LightPanel, { DESK } from './components/LightPanel.jsx';
 import MobileLayout from './components/MobileLayout.jsx';
 import { useSceneEffects } from './useSceneEffects.js';
-import { useCrowdLight } from './useCrowdLight.js';
+import { CROWD_LIGHT_VENUES, useCrowdLight } from './useCrowdLight.js';
 import { useIsMobile } from './useIsMobile.js';
 import { useMediaSession } from './useMediaSession.js';
 import { useEngine } from './audio/useEngine.js';
@@ -95,6 +96,10 @@ export default function App() {
   const [effects, setEffects] = useSceneEffects();
   // lightsticks or phone torches in the big rooms' crowds — a picture choice
   const [crowdLight, setCrowdLight] = useCrowdLight();
+  // the lighting desk (big rooms, desktop): a part of the song called by hand,
+  // or null to follow the song; and the stage, for the desk to read
+  const [lightPart, setLightPart] = useState(null);
+  const stageRef = useRef(null);
   // The scene reads the engine's analyser for the kick drum. A getter, because
   // the analyser is made with the audio context, after the first file loads.
   const getAnalyser = useCallback(() => engine.analyser || null, [engine]);
@@ -105,6 +110,7 @@ export default function App() {
 
   // derived
   const venue = findVenue(venueId);
+  const desk = CROWD_LIGHT_VENUES.includes(venueId);
 
   const displayFile = useMemo(() => (upload
     ? {
@@ -464,6 +470,8 @@ export default function App() {
   // again on every tick.
   const clockRef = useRef({ time, effDurSec });
   clockRef.current = { time, effDurSec };
+  const deskRef = useRef({ on: false, playing: false });
+  deskRef.current = { on: desk && !isMobile, playing };
   useEffect(() => {
     const onKey = (e) => {
       const tag = document.activeElement?.tagName;
@@ -474,6 +482,12 @@ export default function App() {
       else if (e.key === 'ArrowLeft') handleSeek(Math.max(0, now - 5));
       else if (e.key === 'f' || e.key === 'F') setFilePickerOpen(true);
       else if (e.key === 'v' || e.key === 'V') setVenuePickerOpen(true);
+      // the lighting desk: 1–9, 0 call a part, ` hands it back to the song
+      else if (deskRef.current.on && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === '`' || /^[0-9]$/.test(e.key))) {
+        if (!deskRef.current.playing) return;
+        if (e.key === '`') setLightPart(null);
+        else { const row = DESK.find((d) => d[2] === e.key); if (row) setLightPart(row[0]); }
+      }
       else if (e.key === 'Escape') {
         setFilePickerOpen(false); setVenuePickerOpen(false);
       }
@@ -557,6 +571,8 @@ export default function App() {
         analyser={getAnalyser}
         songMap={songMap}
         clock={getClock}
+        part={desk ? lightPart : null}
+        apiRef={stageRef}
       />
 
       <TopBar
@@ -567,10 +583,18 @@ export default function App() {
         onVenueClick={openVenuePicker}
         effects={effects}
         onEffectsChange={setEffects}
-        crowdLight={crowdLight}
-        onCrowdLightChange={setCrowdLight}
       />
       <LeftDataPanel venue={venue} />
+      {desk && (
+        <LightPanel
+          part={lightPart}
+          onPart={setLightPart}
+          playing={playing}
+          stageRef={stageRef}
+          crowdLight={crowdLight}
+          onCrowdLightChange={setCrowdLight}
+        />
+      )}
       <RightDataPanel file={displayFile} />
       <QueuePanel queue={queue} onJump={jumpTo} onRemove={removeFromQueue} playing={playing} />
 

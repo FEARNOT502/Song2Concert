@@ -24,7 +24,7 @@ import { Walker } from './walk.js';
 import { createArt } from './art.js';
 import { BeatFollower } from './beat.js';
 import { buildVenue } from './venues/index.js';
-import { section } from './show.js';
+import { BASE, PARTS, rollOf, section } from './show.js';
 
 // How far a new venue's camera may widen on a portrait screen: at least ~56°
 // across, so the stage is still in the room rather than a keyhole on it.
@@ -61,6 +61,12 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
   // walking in — and they go down when the music starts.
   let house = 1, houseTarget = 1;
   let crowdLight = 'stick';
+  // the lighting desk: a part of the song called by hand (null, the song's
+  // own), held until it is handed back; when it was called, by the clock and
+  // by the beat, so it runs from there
+  let manual = null, manualAt = null, manualBeat = 0;
+  // what the rig is playing, for the desk to show
+  let shown = { part: null, manual: false };
   const pal = art.palette ? clonePal(art.palette) : null;
   let size = { w: 1, h: 1 };
   let raf = 0, running = false;
@@ -229,7 +235,17 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
     // the angle one pixel covers, for the members held a pixel wide far off
     LOD.uPxAng.value = 2 * Math.tan(pipe.camera.fov * 0.5 * DEG) / Math.max(1, pipe.size.h * pipe.renderer.getPixelRatio());
     const B = beat;
-    const f = { t, dt, kick: B.kick, snare: 0, hat: 0, energy: B.energy, bar: B.bar, beat: B.beat, sec: playing ? B.sec : null, secT: B.secT, secProg: playing ? B.secProg : null, secBar: B.secBar, next: B.next, toNext: B.toNext, final: B.final, role: B.role, bpm: songMap?.bpm, house, pal, cam: pipe.camera.position, look: LOOK_ROOMS.has(venueId) ? songLook().rig : null };
+    // the part the rig plays: the song's own, or the one called from the desk
+    // (only while the song plays; it runs from when it was called, sixteen
+    // seconds to build through, its bars counted from there)
+    let part = playing ? B.part : null, secT = B.secT, secProg = playing ? B.secProg : null, secBar = B.secBar, next = B.next, toNext = B.toNext, final = B.final;
+    if (playing && manual) {
+      if (manualAt == null) { manualAt = t; manualBeat = B.phase; }
+      part = manual; secT = t - manualAt; secProg = null; secBar = Math.max(0, Math.floor((B.phase - manualBeat) / 4)); next = toNext = null; final = false;
+    }
+    const sec = part ? (BASE[part] ?? B.sec) : null;
+    shown = { part, manual: !!(playing && manual) };
+    const f = { t, dt, kick: B.kick, snare: 0, hat: 0, energy: B.energy, bar: B.bar, beat: B.beat, phase: B.phase, sec, part, secT, secProg, secBar, next, toNext, final, role: B.role, bpm: songMap?.bpm || B.bpm, house, pal, cam: pipe.camera.position, look: LOOK_ROOMS.has(venueId) ? songLook().rig : null };
     const cu = ctx.cu;
     cu.uTime.value = t; cu.uKick.value = B.kick * (1 - house); cu.uEnergy.value = B.energy * (1 - house * 0.8);
     cu.uFlick.value = B.kick * (1 - house);
@@ -260,12 +276,12 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
     // the lightstick operator's cue: the section, crossfaded from the last
     // it moves on to a new scene with each section, and within one every
     // eight bars (four in a chorus), or every twenty seconds if the bars stall
-    const sec = SEC[f.sec || section(f.bar)] ?? 0;
+    const si = Math.max(0, PARTS.indexOf(f.part || f.sec || section(f.bar)));
     // (counted from the section's own first bar when the song is mapped)
-    const slot = Math.floor((f.secBar ?? B.bar) / (sec === 2 ? 4 : 8));
-    if (sec !== cue.sec) cue.t = 0;
-    if (sec !== cue.sec || slot !== cue.slot || cue.sceneT > 20) {
-      cue.prev = cue.sec; cue.sec = sec; cue.slot = slot; cue.scene++; cue.sceneT = 0;
+    const slot = Math.floor((f.secBar ?? B.bar) / (QUICK.has(PARTS[si]) ? 4 : 8));
+    if (si !== cue.sec) cue.t = 0;
+    if (si !== cue.sec || slot !== cue.slot || cue.sceneT > 20) {
+      cue.prev = cue.sec; cue.sec = si; cue.slot = slot; cue.scene++; cue.sceneT = 0;
     }
     cue.t += dt; cue.sceneT += dt;
     const look = songLook().sticks;
@@ -273,6 +289,7 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
       U.uMode.value = mode; U.uHouse.value = house;
       U.uScene.value = cue.scene; U.uSec.value = cue.sec; U.uSecPrev.value = cue.prev; U.uSecMix.value = clamp(cue.sceneT / 1.2); U.uSecT.value = cue.t;
       U.uBeat.value = B.beat; U.uLook.value = look;
+      U.uPhase.value = B.phase; U.uProg.value = f.secProg ?? Math.min(1, f.secT / 16); U.uRoll.value = rollOf(f) ?? -1;
     }
     if (pipe.scene.fog) for (const U of fogMats) { U.fogDensity.value = pipe.scene.fog.density ?? 0; U.fogColor.value.copy(pipe.scene.fog.color); }
     pipe.render(t);
@@ -288,8 +305,9 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
   // audio quantum is a click.
   // the song's look: fixed by what is playing, so a song plays the house the
   // same way every time and the next one differently
-  const SEC = { verse: 0, pre: 1, chorus: 2, break: 3 };
-  const cue = { sec: 0, prev: 0, t: 10, slot: 0, scene: 1, sceneT: 10 };
+  // the parts whose lightstick scenes turn over every four bars, not eight
+  const QUICK = new Set(['chorus', 'post', 'bridge', 'dance', 'solo']);
+  const cue = { sec: 1, prev: 1, t: 10, slot: 0, scene: 1, sceneT: 10 };
   // (the lightsticks' cut of the house in `sticks`, the rig's look in `rig`)
   let lookKey = null, lookVal = null;
   function songLook() {
@@ -359,6 +377,14 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
     setArt: (want) => { art.set(want); },
     setPlaying: (on) => { playing = !!on; houseTarget = playing ? 0 : 1; },
     setCrowdLight: (mode) => { crowdLight = mode === 'flash' ? 'flash' : 'stick'; },
+    // the lighting desk: call a part of the song (a name from PARTS), or hand
+    // it back to the song (null)
+    setPart(name) {
+      const next = PARTS.includes(name) ? name : null;
+      manual = next; manualAt = null;
+    },
+    // what the rig is playing now: { part (null while stopped), manual }
+    getPart: () => shown,
     setStrain(level) {
       const next = Math.max(0, Math.min(2, level | 0));
       if (next === strain) return;

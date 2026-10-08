@@ -9,6 +9,10 @@
 //   energy  how loud the track is running now, against its own loudest so far
 //   beat    a count of kicks; `bar` is every fourth
 //   sec     which section the rig should be playing (verse, pre, chorus, break)
+//   part    the section by its own name (intro, verse, pre, chorus, post, break,
+//           bridge, dance, solo, outro), for the rooms that play each its own
+//   phase   where the beat is: beats so far plus the way through this one, so
+//           the movers run in time with the song rather than the clock
 //
 // With the song's map (songmap.js: the whole track read when it loaded) all of
 // that comes from where playback is in the song: the beats and bars as
@@ -55,6 +59,10 @@ export class BeatFollower {
     this.toNext = null;
     this.final = false;    // the last chorus
     this.kickAt = -1;
+    this.part = 'verse';
+    this.phase = 0;
+    this.bpm = 120;         // the map's tempo, or the one the kicks keep
+    this.period = 0.5;      // seconds a beat, live
   }
 
   update(dt, { level = 0, analyser = null, playing = false, map = null, time = NaN }) {
@@ -63,10 +71,12 @@ export class BeatFollower {
     if (playing && map && map.sections?.length && Number.isFinite(time)) { this.follow(dt, map, time); return; }
     this.role = this.secProg = this.secBar = this.next = this.toNext = null;
     this.final = false;
+    this.phase += dt / this.period;
     if (!playing) {
       this.kick *= Math.exp(-dt * 6);
       this.energy += (0.3 - this.energy) * Math.min(1, dt);
       this.hold('verse');
+      this.part = this.sec;
       return;
     }
     // onsets: the low band against its own recent average when the spectrum is
@@ -87,6 +97,14 @@ export class BeatFollower {
       this.fast += (level - this.fast) * Math.min(1, dt * 4);
     }
     if (onset && this.sinceKick > 0.22) {
+      // the tempo the kicks keep: an interval near the beat (or two of them)
+      // pulls the period toward it, and the phase is drawn onto the beat
+      const iv = this.sinceKick, p = this.period;
+      const m = iv > p * 1.5 ? iv / 2 : iv;
+      if (m > 0.3 && m < 0.9 && Math.abs(m - p) < p * 0.25) this.period += (m - p) * 0.15;
+      else if (m > 0.3 && m < 0.9) this.period += (m - p) * 0.03;
+      this.bpm = 60 / this.period;
+      this.phase += (Math.round(this.phase) - this.phase) * 0.5;
       this.kick = 1;
       this.sinceKick = 0;
       this.beat++;
@@ -101,6 +119,7 @@ export class BeatFollower {
     this.energy += (norm - this.energy) * Math.min(1, dt * 0.8);
     const e = this.energy;
     this.hold(e > 0.78 ? 'chorus' : e > 0.6 ? 'pre' : e > 0.3 ? 'verse' : 'break');
+    this.part = this.sec;
   }
 
   // the map's account of where the song is
@@ -115,6 +134,12 @@ export class BeatFollower {
     if (this.sinceKick > 0) this.kick *= Math.exp(-dt * 7);
     const b = last(beats, time);
     this.beat = Math.max(0, b);
+    // the phase from the tracked beats themselves, so a seek lands in time
+    const p0 = beats[Math.max(0, b)], p1 = beats[Math.max(0, b) + 1];
+    const per = p1 != null ? p1 - p0 : (map.bpm ? 60 / map.bpm : 0.5);
+    if (!beats.length) this.phase += dt / this.period;
+    else this.phase = b < 0 ? (time - beats[0]) / per : b + clamp((time - p0) / Math.max(0.05, per));
+    if (map.bpm) { this.bpm = map.bpm; this.period = 60 / map.bpm; }
     const bar = last(downbeats, time);
     this.bar = Math.max(0, bar);
     // energy against the song's own range, held up off the floor as the live
@@ -126,6 +151,7 @@ export class BeatFollower {
     const s = sections[i], n = sections[i + 1];
     this.sec = s.light;
     this.role = s.role;
+    this.part = s.role || s.light;
     this.secT = Math.max(0, time - s.start);
     this.secProg = clamp(this.secT / Math.max(0.1, s.end - s.start));
     this.secBar = Math.max(0, bar - last(downbeats, s.start + 0.05));
