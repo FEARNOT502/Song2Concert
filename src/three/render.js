@@ -345,8 +345,8 @@ export class ScreenMask {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const QUALITY = {
-  high: { dpr: 2, msaa: 4, vol: 0.5, steps: 12, shadows: true, shadowSize: 2048, crowd: 1, bloom: true, grain: true },
-  low: { dpr: 1, msaa: 0, vol: 0.33, steps: 6, shadows: false, shadowSize: 512, crowd: 0.4, bloom: true, grain: false },
+  high: { dpr: 2, msaa: 4, vol: 0.5, steps: 12, shadows: true, shadowSize: 2048, crowd: 1, rig: 1, bloom: true, grain: true },
+  low: { dpr: 1, msaa: 0, vol: 0.33, steps: 6, shadows: false, shadowSize: 512, crowd: 0.4, rig: 0.5, bloom: true, grain: false },
 };
 
 export class VenuePass extends Pass {
