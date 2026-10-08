@@ -624,12 +624,9 @@ export function buildStadium(ctx) {
   for (const k of [3, 7, 11, 14]) rig.light(spots[k].fx, shadowSpot(0xffffff, 0, { cast: false, penumbra: 0.5 }), 30000);
   const front1 = shadowSpot(KELVIN(5600), 0, { angle: 0.12, penumbra: 0.7, size: q.shadowSize, far: 200, cast: q.shadows });
   front1.position.set(-10, 34, 96); front1.target.position.set(0, DECK + 1, 20);
-  const follow = shadowSpot(KELVIN(5600), 0, { angle: 0.03, penumbra: 0.5, cast: false });
-  follow.position.set(0, 40, 140); follow.target.position.set(0, XH, RW1 - TIP / 2);
-  const followBeam = rig.add({ kind: 'follow', pos: V3(0, 40, 140), length: 110, body: false, beamGain: 0.5, color: KELVIN(5600) });
   const stageWash = shadowSpot(0xffffff, 0, { angle: 0.8, penumbra: 1, cast: false });
   stageWash.position.set(0, LT - 1, BZ[1]); stageWash.target.position.set(0, DECK, 24);
-  for (const l of [front1, follow, stageWash]) root.add(l, l.target);
+  for (const l of [front1, stageWash]) root.add(l, l.target);
   const fill = [];
   for (const [x, y, z] of [[-50, 40, 60], [50, 40, 60]]) { const l = new THREE.PointLight(0xffffff, 0, 220, 2); l.position.set(x, y, z); root.add(l); fill.push(l); }
   const house = [];
@@ -705,9 +702,7 @@ export function buildStadium(ctx) {
       runShow(rig, ups, f, { house: V3(0, 120, 60), stage: STAGE, up: true });
       washes.forEach(({ fx }) => { fx.angle = 0.3; });
       runLasers(lasers, f);
-      rig.aim(followBeam, V3(star.position.x, XH + 0.8, star.position.z)); followBeam.intensity = 1.1 * show;
       front1.intensity = 60000 * show + 20000 * f.house;
-      follow.intensity = 90000 * show;
       stageWash.color.copy(f.pal.a); stageWash.intensity = (26000 + 30000 * f.energy + 12000 * f.kick) * show;
       fill.forEach((l, i) => { l.color.copy(i ? f.pal.b : f.pal.a); l.intensity = (600 + 1600 * f.energy) * show; });
       house.forEach((l) => { l.intensity = 38000 * f.house; });
