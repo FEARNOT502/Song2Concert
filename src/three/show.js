@@ -122,6 +122,24 @@ export function runShow(rig, list, f, { house, stage, span = 30, up = false, str
   }
 }
 
+// ── the rig on a phone ──
+// A phone draws every other fixture of each row (q.rig < 1), picked from
+// either end inwards so a row stays symmetric about the stage; the real
+// lights, the screens and the PA stay as they are.
+export function thinRow(q, list) {
+  if ((q.rig ?? 1) >= 1 || list.length <= 3) return list;
+  const n = list.length;
+  return list.filter((_, i) => (i < n / 2 ? i : n - 1 - i) % 2 === 0);
+}
+// A row of fixtures: make(i) adds fixture i of the full row; each kept one
+// gets its place (i) and the row's count (n) as thinned.
+export function fixtureRow(q, n, make) {
+  const keep = thinRow(q, Array.from({ length: n }, (_, i) => i));
+  return keep.map((i, k) => ({ ...make(i), i: k, n: keep.length }));
+}
+// fixture k of a full row of n, in a row that may have been thinned
+export const fromRow = (row, k, n) => row[Math.min(row.length - 1, Math.round(k * row.length / n))];
+
 // ── lasers ──
 // A laser projector scans within about ±35° of the way its housing faces, so
 // each one keeps an `aim` and its beams move round that. `minSlope` is the

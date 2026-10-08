@@ -14,7 +14,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { APP, DEG, KELVIN, V3, clamp, floorPanelTex, glowMat, lerp, prng, std } from '../core.js';
 import { lightPoints } from '../people.js';
 import { hoists, micStand, rodInto, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, crossThrust, delayTower, floorChairs, fohPosition, groundRoof, flashOnCrowd, flashUnits, laser, laserUnits, paHang, paWing, runBlinders, runLasers, runShow, runStrobes, screenHang, section, subLine, wallStrip } from '../show.js';
+import { bigCrowd, bigScreens, crossThrust, delayTower, floorChairs, fohPosition, fixtureRow, flashOnCrowd, flashUnits, fromRow, groundRoof, laser, laserUnits, paHang, paWing, runBlinders, runLasers, runShow, runStrobes, screenHang, section, subLine, thinRow, wallStrip } from '../show.js';
 import { buildStands } from '../stands.js';
 import { TD_STANDS } from './td-data.js';
 
@@ -463,19 +463,19 @@ export function buildDome(ctx) {
   // cross: for the back of the field and the stands behind home
   for (const [x, z] of DT) towerLights.push(...delayTower(root, { x, z, h: 20, boxes: 16, width: 1.3, yaw: -Math.sign(x) * 0.04 }));
   const spots = [], beams = [], washes = [], ups = [], ring2 = [], lasers = [], bst = [];
-  for (let i = 0; i < 14; i++) spots.push({ fx: rig.add({ kind: 'spot', pos: V3(-26 + i * 4, LT - 0.7, BZ[3]), length: 70, angle: 0.08 }), i, n: 14, group: 0 });
-  for (let i = 0; i < 14; i++) beams.push({ fx: rig.add({ kind: 'beam', pos: V3(-26 + i * 4, LT - 0.7, BZ[2]), length: 90, beamGain: 1.2 }), i, n: 14, group: 1 });
-  for (let i = 0; i < 10; i++) washes.push({ fx: rig.add({ kind: 'wash', pos: V3(-27 + i * 6, LT - 0.7, BZ[1]), length: 35, beamGain: 0.4 }), i, n: 10, group: 2 });
+  spots.push(...fixtureRow(q, 14, (i) => ({ fx: rig.add({ kind: 'spot', pos: V3(-26 + i * 4, LT - 0.7, BZ[3]), length: 70, angle: 0.08 }), group: 0 })));
+  beams.push(...fixtureRow(q, 14, (i) => ({ fx: rig.add({ kind: 'beam', pos: V3(-26 + i * 4, LT - 0.7, BZ[2]), length: 90, beamGain: 1.2 }), group: 1 })));
+  washes.push(...fixtureRow(q, 10, (i) => ({ fx: rig.add({ kind: 'wash', pos: V3(-27 + i * 6, LT - 0.7, BZ[1]), length: 35, beamGain: 0.4 }), group: 2 })));
   // the lights on the delay towers' heads, sweeping the field and the stands
-  const tw = towerLights.map((pos, i) => ({ fx: rig.add({ kind: 'beam', pos, length: 70, beamGain: 0.9 }), i, n: towerLights.length, group: 5 }));
-  for (let i = 0; i < 12; i++) ups.push({ fx: rig.add({ kind: 'beam', pos: V3(-26 + i * (52 / 11), DECK, RW0 - 0.2), hang: 'up', length: 70 }), i, n: 12, group: 3 });
+  const tw = fixtureRow(q, towerLights.length, (i) => ({ fx: rig.add({ pos: towerLights[i], kind: 'beam', length: 70, beamGain: 0.9 }), group: 5 }));
+  ups.push(...fixtureRow(q, 12, (i) => ({ fx: rig.add({ kind: 'beam', pos: V3(-26 + i * (52 / 11), DECK, RW0 - 0.2), hang: 'up', length: 70 }), group: 3 })));
   // the ring: beams along the 2nd-floor front, pole to pole, pointing in
   {
     const edge = TD_STANDS.rim.map(([x, z]) => ({ x, z: z + ZH }));
     edge.sort((p, q2) => Math.atan2(p.x, p.z - ZH) - Math.atan2(q2.x, q2.z - ZH));
     const len = [0];
     for (let i = 1; i < edge.length; i++) len.push(len[i - 1] + Math.hypot(edge[i].x - edge[i - 1].x, edge[i].z - edge[i - 1].z));
-    const N2 = 18;
+    const N2 = (q.rig ?? 1) < 1 ? 10 : 18;
     for (let i = 0, j = 0; i < N2; i++) {
       const want = (i + 0.5) / N2 * len[len.length - 1];
       while (j < len.length - 2 && len[j + 1] < want) j++;
@@ -486,24 +486,24 @@ export function buildDome(ctx) {
     }
   }
   // lasers: a row on the deck's lip and a pair on each wing tower's head
-  for (let i = 0; i < 6; i++) lasers.push(laser(rig, V3(-10 + i * 4, DECK + 0.12, RW0 - 0.1), V3(0, 0.12, 1)));
-  for (const side of [-1, 1]) for (const dx of [-2.2, 2.6]) lasers.push(laser(rig, V3(side * (PX + dx), PH + 0.62, PZ + 0.2), V3(-side * 47, -6, 60), { minSlope: -0.16 }));
+  lasers.push(...fixtureRow(q, 6, (i) => laser(rig, V3(-10 + i * 4, DECK + 0.12, RW0 - 0.1), V3(0, 0.12, 1))));
+  lasers.push(...fixtureRow(q, 4, (k) => { const side = k < 2 ? -1 : 1, dx = [-2.2, 2.6][k % 2]; return laser(rig, V3(side * (PX + dx), PH + 0.62, PZ + 0.2), V3(-side * 47, -6, 60), { minSlope: -0.16 }); }));
   laserUnits(root, lasers);
   // blinders under the front truss and on the wing towers' faces; strobes
   // along the foot of the wall and under the middle truss
-  const bu = [];
+  const bu = [], bt = [];
   for (const x of [-28, -20, -12, -4, 4, 12, 20, 28]) bu.push({ pos: V3(x, LT - 0.9, BZ[3] + 0.12), dir: V3(x * 0.3, 1.5 - LT, 75 - BZ[3]), mount: LT - 0.5 });
   for (const side of [-1, 1]) for (const dx of [-0.52, 0.52]) {
     const pos = V3(side * PX + dx, 9, PZ + 1.15);
-    bu.push({ pos, dir: V3(0, 1.5, 80).sub(pos), mount: null });
+    bt.push({ pos, dir: V3(0, 1.5, 80).sub(pos), mount: null });
   }
-  const blinders = flashUnits(rig, root, bu, { kind: 'blinder' });
-  const su = [];
+  const blinders = flashUnits(rig, root, [...thinRow(q, bu), ...thinRow(q, bt)], { kind: 'blinder' });
+  const su = [], st = [];
   for (let i = 0; i < 10; i++) su.push({ pos: V3(-27 + i * 6, DECK + 0.12, WZ + 0.5), dir: V3(0, 0.25, 1), mount: DECK });
-  for (const x of [-20, -12, -4, 4, 12, 20]) su.push({ pos: V3(x, LT - 0.65, BZ[2] + 0.1), dir: V3(0, -0.5, 1), mount: LT - 0.5 });
-  const strobes = flashUnits(rig, root, su, { kind: 'strobe' });
+  for (const x of [-20, -12, -4, 4, 12, 20]) st.push({ pos: V3(x, LT - 0.65, BZ[2] + 0.1), dir: V3(0, -0.5, 1), mount: LT - 0.5 });
+  const strobes = flashUnits(rig, root, [...thinRow(q, su), ...thinRow(q, st)], { kind: 'strobe' });
   const moverLights = [];
-  for (const k of [3, 6, 9, 12]) moverLights.push(rig.light(spots[k].fx, shadowSpot(0xffffff, 0, { cast: false, penumbra: 0.5 }), 14000));
+  for (const k of [3, 6, 9, 12]) moverLights.push(rig.light(fromRow(spots, k, 14).fx, shadowSpot(0xffffff, 0, { cast: false, penumbra: 0.5 }), 14000));
   const front1 = shadowSpot(KELVIN(5600), 0, { angle: 0.14, penumbra: 0.7, size: q.shadowSize, far: 140, cast: q.shadows });
   front1.position.set(-8, 30, 88); front1.target.position.set(0, DECK + 1, 15 + SZ);
   const stageWash = shadowSpot(0xffffff, 0, { angle: 0.8, penumbra: 1, cast: false });
