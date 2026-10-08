@@ -301,13 +301,15 @@ export class FlareField {
 // The art has to read. Haze and beams in front of a screen are physically
 // right and look wrong: the sleeve goes milky behind a wash of coloured air. So
 // after the volumetrics are drawn, every screen face is drawn once more into
-// that buffer with a multiply blend, keeping only a trace of the air in front of
-// it. The scene's own depth decides which pixels of the face are visible, so a
-// head or a truss in front of the screen keeps its haze.
+// that buffer with a multiply blend, thinning the air in front of it. Not to a
+// trace: a wall with no air in front of it, in a room full of haze, reads as
+// pasted on over the room. Somewhat under half is kept, and the art still
+// reads through it. The scene's own depth decides which pixels of the face
+// are visible, so a head or a truss in front of the screen keeps its haze.
 export class ScreenMask {
   constructor() {
     this.scene = new THREE.Scene();
-    this.uniforms = { tDepth: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uKeep: { value: 0.14 } };
+    this.uniforms = { tDepth: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uKeep: { value: 0.45 } };
     this.mat = new THREE.ShaderMaterial({
       uniforms: this.uniforms,
       vertexShader: 'void main(){ gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
@@ -343,7 +345,7 @@ export class ScreenMask {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const QUALITY = {
-  high: { dpr: 1.5, msaa: 4, vol: 0.5, steps: 12, shadows: true, shadowSize: 2048, crowd: 1, bloom: true, grain: true },
+  high: { dpr: 2, msaa: 4, vol: 0.5, steps: 12, shadows: true, shadowSize: 2048, crowd: 1, bloom: true, grain: true },
   low: { dpr: 1, msaa: 0, vol: 0.33, steps: 6, shadows: false, shadowSize: 512, crowd: 0.4, bloom: true, grain: false },
 };
 
@@ -541,7 +543,10 @@ export class Pipeline {
   }
   resize(w, h) {
     this.size = { w: Math.max(1, w), h: Math.max(1, h) };
-    const dpr = Math.min(window.devicePixelRatio || 1, this.q.dpr);
+    // at most MAX_PX drawn pixels whatever the window: a 2x laptop screen
+    // draws near its own density, a 4K monitor a little under it
+    const MAX_PX = 4.2e6;
+    const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, this.q.dpr, Math.sqrt(MAX_PX / (this.size.w * this.size.h))));
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(this.size.w, this.size.h, false);
     this.composer.setPixelRatio(dpr);

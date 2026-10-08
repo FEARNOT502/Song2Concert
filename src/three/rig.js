@@ -9,12 +9,35 @@ import { APP, V3, aluminium, blackSteel, clamp, glowMat, grilleTex, phys, smooth
 import { humanGeometry } from './people.js';
 
 export const MATS = {};
+
+// Far from the camera a truss tube, a chain or a lattice member is thinner
+// than a pixel, and a thin thing under a pixel breaks up into grey dust or
+// is lost: the stadium's roof trusses read as a blur. Real eyes and cameras
+// still see the line. So these materials push each surface out along its
+// normal by half a pixel at its distance: at 10 m it is a few millimetres,
+// at 150 m a 5 cm tube is drawn a pixel and a bit wide and holds as a line.
+// `uPxAng` is the angle one pixel covers, set each frame by the stage.
+export const LOD = { uPxAng: { value: 0.001 } };
+export function holdAtDistance(m) {
+  const prev = m.onBeforeCompile;
+  m.onBeforeCompile = (sh, r) => {
+    prev?.call(m, sh, r);
+    sh.uniforms.uPxAng = LOD.uPxAng;
+    sh.vertexShader = 'uniform float uPxAng;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+      {
+        vec4 lodW = modelMatrix * vec4(transformed, 1.0);
+        transformed += normalize(objectNormal) * distance(lodW.xyz, cameraPosition) * uPxAng * 0.5;
+      }`);
+  };
+  m.customProgramCacheKey = () => 'hold-at-distance';
+  return m;
+}
 export function mats() {
   if (MATS.ready) return MATS;
   MATS.ready = true;
-  MATS.alu = aluminium();
-  MATS.black = blackSteel();
-  MATS.paint = std({ color: 0x0c0c0e, roughness: 0.55, metalness: 0.2 });
+  MATS.alu = holdAtDistance(aluminium());
+  MATS.black = holdAtDistance(blackSteel());
+  MATS.paint = holdAtDistance(std({ color: 0x0c0c0e, roughness: 0.55, metalness: 0.2 }));
   MATS.cab = std({ color: 0x0a0a0b, roughness: 0.7, metalness: 0.1 });
   MATS.grille = std({ ...grilleTex(), color: 0xffffff, roughness: 1, metalness: 0.3 });
   MATS.rubber = std({ color: 0x050505, roughness: 0.9 });
@@ -26,7 +49,7 @@ export function mats() {
   MATS.fabric = std({ color: 0x0a0a0a, roughness: 0.95 });
   // chain and motors: dark steel that still catches the light, so a hang
   // reads as hung from the house
-  MATS.chain = std({ color: 0x4c4e53, roughness: 0.4, metalness: 0.8 });
+  MATS.chain = holdAtDistance(std({ color: 0x4c4e53, roughness: 0.4, metalness: 0.8 }));
   return MATS;
 }
 
@@ -331,11 +354,14 @@ export function ledMaterial({ tex, pitch = 0.0039, w, h, bright = 2.2, grid = 1,
       uPulse: { value: 0 }, uGrid: { value: grid }, uTime: { value: 0 }, uModule: { value: 128 },
       uKind: { value: kind === 'main' ? 0 : kind === 'imag' ? 1 : 2 }, uTint: { value: new THREE.Color(1, 1, 1) },
       uTint2: { value: new THREE.Color(1, 1, 1) }, uHouse: { value: 0 }, uExpo: { value: 1 },
+      // the room's own distance haze, set by the stage like the crowd's: a
+      // wall that alone stays clear of it reads as floating in front of the room
+      fogColor: { value: new THREE.Color(0) }, fogDensity: { value: 0 },
     },
-    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+    vertexShader: 'varying vec2 vUv; varying float vFogD; void main(){ vUv = uv; vec4 mv = modelViewMatrix * vec4(position,1.0); vFogD = -mv.z; gl_Position = projectionMatrix * mv; }',
     fragmentShader: /* glsl */`
       uniform sampler2D tArt; uniform vec2 uPix; uniform float uBright, uPulse, uGrid, uTime, uModule, uKind, uHouse, uExpo;
-      uniform vec3 uTint, uTint2;
+      uniform vec3 uTint, uTint2, fogColor; uniform float fogDensity; varying float vFogD;
       // a wall is driven so its whites stop short of glare: below the knee the
       // level is untouched, above it each channel rolls off toward a ceiling
       // just over the bloom threshold, so a white sleeve keeps its type
@@ -382,7 +408,9 @@ export function ledMaterial({ tex, pitch = 0.0039, w, h, bright = 2.2, grid = 1,
         if (uKind < 1.5) lvl = shoulder(lvl * uExpo);
         vec3 col = lvl * mask * seam;
         col += vec3(0.004) * (1.0 - mask * 0.5);
-        gl_FragColor = vec4(col * (1.0 - uHouse * 0.45), 1.0);
+        col *= 1.0 - uHouse * 0.45;
+        float fog = 1.0 - exp(-fogDensity * fogDensity * vFogD * vFogD);
+        gl_FragColor = vec4(mix(col, fogColor, fog), 1.0);
       }`,
   });
 }

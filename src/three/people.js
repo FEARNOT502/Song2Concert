@@ -304,16 +304,16 @@ export function personAtlas() {
     ctx.beginPath(); ctx.ellipse(0, CH - 232, 14, 17, 0, 0, Math.PI * 2); ctx.fill();
     ctx.fillRect(-6, CH - 219, 12, 14);
     ctx.beginPath();
-    ctx.moveTo(-22, hip); ctx.lineTo(-27, sh + 14); ctx.quadraticCurveTo(-27, sh, -13, sh - 3);
-    ctx.lineTo(13, sh - 3); ctx.quadraticCurveTo(27, sh, 27, sh + 14); ctx.lineTo(22, hip); ctx.closePath(); ctx.fill();
+    ctx.moveTo(-26, hip); ctx.lineTo(-31, sh + 14); ctx.quadraticCurveTo(-31, sh, -15, sh - 3);
+    ctx.lineTo(15, sh - 3); ctx.quadraticCurveTo(31, sh, 31, sh + 14); ctx.lineTo(26, hip); ctx.closePath(); ctx.fill();
     // the legs, a little apart, tapering to the feet
     for (const s of [-1, 1]) {
       ctx.beginPath();
-      ctx.moveTo(s * 21, hip - 4); ctx.lineTo(s * 1.5, hip - 4); ctx.lineTo(s * 4, CH - 6); ctx.lineTo(s * 14, CH - 6); ctx.closePath(); ctx.fill();
+      ctx.moveTo(s * 25, hip - 4); ctx.lineTo(s * 1.5, hip - 4); ctx.lineTo(s * 4, CH - 6); ctx.lineTo(s * 17, CH - 6); ctx.closePath(); ctx.fill();
       ctx.fillRect(Math.min(s * 3, s * 17), CH - 7, 14, 7);
     }
     ctx.lineCap = 'round'; ctx.lineWidth = 11;
-    for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(s * 24, sh + 6); ctx.lineTo(s * 28, sh + 50); ctx.lineTo(s * 27, sh + 94); ctx.stroke(); }
+    for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(s * 28, sh + 6); ctx.lineTo(s * 32, sh + 50); ctx.lineTo(s * 31, sh + 94); ctx.stroke(); }
     ctx.restore();
   };
   const body = (ctx, i, fill) => {
@@ -321,17 +321,17 @@ export function personAtlas() {
     ctx.save(); ctx.translate(i * CW + CW / 2, 0); ctx.fillStyle = fill; ctx.strokeStyle = fill;
     const base = CH, sh = CH - 118, headY = CH - 150;
     ctx.beginPath();
-    ctx.moveTo(-26, base); ctx.lineTo(-30, sh + 16); ctx.quadraticCurveTo(-30, sh, -14, sh - 4);
-    ctx.lineTo(14, sh - 4); ctx.quadraticCurveTo(30, sh, 30, sh + 16); ctx.lineTo(26, base); ctx.closePath(); ctx.fill();
+    ctx.moveTo(-31, base); ctx.lineTo(-34, sh + 16); ctx.quadraticCurveTo(-34, sh, -16, sh - 4);
+    ctx.lineTo(16, sh - 4); ctx.quadraticCurveTo(34, sh, 34, sh + 16); ctx.lineTo(31, base); ctx.closePath(); ctx.fill();
     ctx.fillRect(-7, headY + 14, 14, 24);
     ctx.beginPath(); ctx.ellipse(0, headY, 15, 19, 0, 0, Math.PI * 2); ctx.fill();
     ctx.lineCap = 'round'; ctx.lineWidth = 12;
     const arm = (x0, x1, y1, x2, y2) => { ctx.beginPath(); ctx.moveTo(x0, sh + 6); ctx.lineTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); };
-    if (i === 0) { arm(-26, -32, sh + 50, -30, sh + 92); arm(26, 32, sh + 50, 30, sh + 92); }
-    if (i === 1) { arm(-26, -32, sh + 50, -30, sh + 92); arm(24, 34, sh - 48, 36, sh - 96); }
-    if (i === 2) { arm(-24, -34, sh - 46, -38, sh - 94); arm(24, 34, sh - 46, 38, sh - 94); }
-    if (i === 3) { arm(-26, -32, sh + 50, -30, sh + 92); arm(24, 30, sh - 40, 20, sh - 82); ctx.fillRect(12, sh - 104, 16, 24); }
-    if (i === 4) { arm(-25, -28, sh + 52, -27, sh + 98); arm(25, 28, sh + 52, 27, sh + 98); }
+    if (i === 0) { arm(-30, -36, sh + 50, -34, sh + 92); arm(30, 36, sh + 50, 34, sh + 92); }
+    if (i === 1) { arm(-30, -36, sh + 50, -34, sh + 92); arm(28, 38, sh - 48, 40, sh - 96); }
+    if (i === 2) { arm(-28, -38, sh - 46, -42, sh - 94); arm(28, 38, sh - 46, 42, sh - 94); }
+    if (i === 3) { arm(-30, -36, sh + 50, -34, sh + 92); arm(28, 34, sh - 40, 24, sh - 82); ctx.fillRect(16, sh - 104, 16, 24); }
+    if (i === 4) { arm(-29, -32, sh + 52, -31, sh + 98); arm(29, 32, sh + 52, 31, sh + 98); }
     ctx.restore();
   };
   const alpha = document.createElement('canvas'); alpha.width = c.width; alpha.height = CH;
@@ -472,7 +472,12 @@ export function silhouettes(people, cu, { seed = 5 } = {}) {
       varying vec2 vUv; varying vec3 vTop; varying float vFront; varying float vFog; varying float vSkinT;
       void main() {
         vec4 a = texture2D(tAtlas, vUv);
-        if (a.r < 0.5) discard;
+        // a cut-out thins as it shrinks: the mipmaps average its edge toward
+        // the gap, and a fixed cut at a half then eats into the figure until
+        // the seats behind show between people. The further off, the lower
+        // the cut, so the figure keeps its width at any distance.
+        float texPx = max(fwidth(vUv.x) * 576.0, fwidth(vUv.y) * 256.0);
+        if (a.r < 0.5 - 0.25 * clamp((texPx - 1.0) / 3.0, 0.0, 1.0)) discard;
         vec3 skin = mix(vec3(0.5, 0.28, 0.17), vec3(0.12, 0.05, 0.03), vSkinT);
         vec3 base = mix(vTop, skin, a.b * 0.5) * 0.5;
         float front = clamp(vFront * 0.5 + 0.5, 0.0, 1.0);

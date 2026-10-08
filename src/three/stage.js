@@ -19,7 +19,7 @@ import * as THREE from 'three';
 import { DEG, clamp, regionColor, dropDegenerateTriangles } from './core.js';
 import { Pipeline, QUALITY, buildEnvironment } from './render.js';
 import { crowdUniforms } from './people.js';
-import { Rig } from './rig.js';
+import { LOD, Rig } from './rig.js';
 import { Walker } from './walk.js';
 import { createArt } from './art.js';
 import { BeatFollower } from './beat.js';
@@ -39,7 +39,11 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
   const qName = quality === 'low' ? 'low' : 'high';
   // Device pixel ratio is the single biggest lever on GPU cost, and this scene
   // shares a machine with a convolution reverb and five audio worklets.
-  const baseDpr = qName === 'low' ? 1 : 1.35;
+  // On a computer the scene is drawn at the screen's own density, up to 2x —
+  // at 1.35 a high-density display was upscaled and everything far off went
+  // soft — with the total held to a pixel budget (Pipeline.resize), so a
+  // large window draws at a lower density rather than a costlier frame.
+  const baseDpr = qName === 'low' ? 1 : 2;
   let fx = !!effects;
   let strain = 0;
 
@@ -220,6 +224,8 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
     const target = art.palette;
     for (const k of ['a', 'b', 'c', 'd']) pal[k].lerp(target[k], Math.min(1, dt * 2.2));
     applyCamera(dt);
+    // the angle one pixel covers, for the members held a pixel wide far off
+    LOD.uPxAng.value = 2 * Math.tan(pipe.camera.fov * 0.5 * DEG) / Math.max(1, pipe.size.h * pipe.renderer.getPixelRatio());
     const B = beat;
     const f = { t, dt, kick: B.kick, snare: 0, hat: 0, energy: B.energy, bar: B.bar, beat: B.beat, sec: playing ? B.sec : null, house, pal, cam: pipe.camera.position };
     const cu = ctx.cu;
