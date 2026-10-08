@@ -9,7 +9,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { APP, DEG, KELVIN, V3, clamp, floorPanelTex, glowMat, noise3D, prng, std, withRepeat } from '../core.js';
 import { lightPoints } from '../people.js';
 import { ampStack, drumKit, guitar, hoists, holdAtDistance, keyboardRig, ledScreen, micStand, prismInto, rodInto, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, crossThrust, delayTower, fohPosition, groundRoof, laserUnits, paHang, paWing, packFloor, runLasers, runShow, screenHang, subLine } from '../show.js';
+import { bigCrowd, bigScreens, crossThrust, delayTower, fohPosition, groundRoof, flashOnCrowd, flashUnits, laser, laserUnits, paHang, paWing, packFloor, runBlinders, runLasers, runShow, runStrobes, screenHang, subLine } from '../show.js';
 import { buildStands } from '../stands.js';
 import { WB_STANDS } from './wb-data.js';
 
@@ -620,8 +620,25 @@ export function buildStadium(ctx) {
   for (let i = 0; i < 12; i++) washes.push({ fx: rig.add({ kind: 'wash', pos: V3(-27.5 + i * 5, LT - 0.7, BZ[1]), length: 45, beamGain: 0.4 }), i, n: 12, group: 2 });
   const tw = towerLights.map((pos, i) => ({ fx: rig.add({ kind: 'beam', pos, length: 120, beamGain: 1.0 }), i, n: towerLights.length, group: 5 }));
   for (let i = 0; i < 14; i++) ups.push({ fx: rig.add({ kind: 'beam', pos: V3(-33 + i * (66 / 13), DECK, 32.2), hang: 'up', length: 220, beamGain: 1.4 }), i, n: 14, group: 3 });
-  for (let i = 0; i < 6; i++) lasers.push({ fx: rig.add({ kind: 'laser', pos: V3(-12 + i * 4.8, DECK + 0.12, 32.8), body: false, length: 200, beamGain: 8, flareGain: 0.2, noise: 0.4 }), i, n: 6 });
-  laserUnits(root, lasers, DECK);
+  // lasers: a row on the deck's lip, a pair on each wing tower's head and one
+  // on each delay tower's, firing back over the pitch at the stage
+  for (let i = 0; i < 6; i++) lasers.push(laser(rig, V3(-12 + i * 4.8, DECK + 0.12, 32.8), V3(0, 0.12, 1), { length: 200, gain: 8 }));
+  for (const side of [-1, 1]) for (const dx of [-2.2, 2.6]) lasers.push(laser(rig, V3(side * (PX + dx), PH + 0.62, PZ + 0.2), V3(-side * 44, -9, 71), { length: 200, gain: 8, minSlope: -0.18 }));
+  for (const [x, z] of DT) lasers.push(laser(rig, V3(x, 26 + 0.52, z - 0.6), V3(-Math.sign(x) * 0.25, 0.02, -1), { length: 200, gain: 8, minSlope: -0.1 }));
+  laserUnits(root, lasers);
+  // blinders under the front truss and on the wing towers' faces; strobes
+  // along the foot of the wall and under the middle truss
+  const bu = [];
+  for (const x of [-28, -20, -12, -4, 4, 12, 20, 28]) bu.push({ pos: V3(x, LT - 0.9, BZ[3] + 0.12), dir: V3(x * 0.3, 1.5 - LT, 70 - BZ[3]), mount: LT - 0.5 });
+  for (const side of [-1, 1]) for (const dx of [-0.52, 0.52]) for (const y of [10, 10.56]) {
+    const pos = V3(side * PX + dx, y, PZ + 1.15);
+    bu.push({ pos, dir: V3(0, 1.5, 75).sub(pos), mount: null });
+  }
+  const blinders = flashUnits(rig, root, bu, { kind: 'blinder' });
+  const su = [];
+  for (let i = 0; i < 12; i++) su.push({ pos: V3(-27.5 + i * 5, DECK + 0.12, WZ + 0.5), dir: V3(0, 0.25, 1), mount: DECK });
+  for (const x of [-28, -20, -12, -4, 4, 12, 20, 28]) su.push({ pos: V3(x, LT - 0.65, BZ[2] + 0.1), dir: V3(0, -0.5, 1), mount: LT - 0.5 });
+  const strobes = flashUnits(rig, root, su, { kind: 'strobe' });
   for (const k of [3, 7, 11, 14]) rig.light(spots[k].fx, shadowSpot(0xffffff, 0, { cast: false, penumbra: 0.5 }), 30000);
   const front1 = shadowSpot(KELVIN(5600), 0, { angle: 0.12, penumbra: 0.7, size: q.shadowSize, far: 200, cast: q.shadows });
   front1.position.set(-10, 34, 96); front1.target.position.set(0, DECK + 1, 20);
@@ -718,6 +735,7 @@ export function buildStadium(ctx) {
       cu.uRimColor.value.copy(f.pal.a).lerp(new THREE.Color(1, 1, 1), 0.3).multiplyScalar((0.2 + 0.25 * f.kick) * show);
       cu.uStage.value.set(0, 18, 16);
       cu.uWash.value.copy(f.pal.b).multiplyScalar(0.012 * show + 0.3 * f.house);
+      flashOnCrowd(cu.uWash.value, runBlinders(blinders, f), runStrobes(strobes, f));
       cu.uAmb.value.setRGB(0.004, 0.004, 0.007).multiplyScalar(1 + f.house * 10);
     },
   };
