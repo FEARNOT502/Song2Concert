@@ -228,7 +228,7 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
     // the angle one pixel covers, for the members held a pixel wide far off
     LOD.uPxAng.value = 2 * Math.tan(pipe.camera.fov * 0.5 * DEG) / Math.max(1, pipe.size.h * pipe.renderer.getPixelRatio());
     const B = beat;
-    const f = { t, dt, kick: B.kick, snare: 0, hat: 0, energy: B.energy, bar: B.bar, beat: B.beat, sec: playing ? B.sec : null, house, pal, cam: pipe.camera.position };
+    const f = { t, dt, kick: B.kick, snare: 0, hat: 0, energy: B.energy, bar: B.bar, beat: B.beat, sec: playing ? B.sec : null, secT: B.secT, house, pal, cam: pipe.camera.position, look: LOOK_ROOMS.has(venueId) ? songLook().rig : null };
     const cu = ctx.cu;
     cu.uTime.value = t; cu.uKick.value = B.kick * (1 - house); cu.uEnergy.value = B.energy * (1 - house * 0.8);
     cu.uFlick.value = B.kick * (1 - house);
@@ -260,7 +260,7 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
     const sec = SEC[f.sec || section(f.bar)] ?? 0;
     if (sec !== cue.sec) { cue.prev = cue.sec; cue.sec = sec; cue.t = 0; }
     cue.t += dt;
-    const look = songLook();
+    const look = songLook().sticks;
     for (const U of lightMats) {
       U.uMode.value = mode; U.uHouse.value = house;
       U.uSec.value = cue.sec; U.uSecPrev.value = cue.prev; U.uSecMix.value = clamp(cue.t / 1.5); U.uSecT.value = cue.t;
@@ -282,17 +282,23 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
   // same way every time and the next one differently
   const SEC = { verse: 0, pre: 1, chorus: 2, break: 3 };
   const cue = { sec: 0, prev: 0, t: 10 };
-  let lookKey = null, lookVal = 0;
+  // (the lightsticks' cut of the house in `sticks`, the rig's look in `rig`)
+  let lookKey = null, lookVal = null;
   function songLook() {
     const k = `${art.meta.title}|${art.meta.artist}`;
     if (k !== lookKey) {
       lookKey = k;
       let h = 2166136261;
       for (let i = 0; i < k.length; i++) h = Math.imul(h ^ k.charCodeAt(i), 16777619);
-      lookVal = (h >>> 0) % 4;
+      // stirred, so titles a letter apart still get unrelated looks
+      h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b); h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 16;
+      h >>>= 0;
+      lookVal = { sticks: h % 4, rig: { col: (h >>> 2) % 4, move: (h >>> 4) % 4, pace: [0.6, 1, 1.5][(h >>> 6) % 3], hit: (h >>> 8) % 3 } };
     }
     return lookVal;
   }
+  // the rooms whose rig plays a look per song; the rest keep their house style
+  const LOOK_ROOMS = new Set(['arena', 'dome', 'stadium']);
 
   const targetMs = 1000 / (qName === 'low' ? 30 : 60);
   let heavy = false, lastDrawn = -1e9, drawn = 0, frameBudget = 0, lastT = 0;
