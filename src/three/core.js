@@ -566,66 +566,105 @@ export function ledColor(L0, h, sat, pull = 0.65) {
   const [r, g, b] = oklabToLinear(L, c * Math.cos(h), c * Math.sin(h));
   return new THREE.Color(clamp(r), clamp(g), clamp(b));
 }
+// The sleeve's colours, as a show's designer would pick them off it: the
+// colours that cover the most of it and that you would name, each kept as the
+// colour it is — a navy stays a deep blue, a pastel stays soft, a brown stays
+// warm and dark — only lifted far enough to read as light.
+//
+// The pixels are grouped by colour (k-means in OKLab, lightness and hue
+// together, so a dark red and a pink are two colours, not one hue), each group
+// scored by the area it covers and how plainly it is a colour. Skin is scored
+// down: a face on the sleeve is not its colour unless nothing else is. A sleeve
+// with one colour gets that colour's own lighter and deeper shades, not hues
+// that are not on it; one with none, cool to neutral whites.
 export function extractPalette(canvas) {
-  const T = 72;
+  const T = 64;
   const c = document.createElement('canvas'); c.width = c.height = T;
   const g = c.getContext('2d', { willReadFrequently: true });
   g.drawImage(canvas, 0, 0, T, T);
   const px = g.getImageData(0, 0, T, T).data;
-  const BINS = 48;
-  const hist = new Float64Array(BINS), hx = new Float64Array(BINS), hy = new Float64Array(BINS), hc = new Float64Array(BINS);
-  // how much of the sleeve is visibly coloured, counted by area rather than
-  // averaged over it: a red logo on black is a red sleeve, however much black
-  let coloured = 0;
   const N = T * T;
+  // the visibly coloured pixels, counted by area: a red logo on black is a red
+  // sleeve, however much black
+  const pts = [];
   for (let i = 0; i < px.length; i += 4) {
     const [L, a, b] = srgbToOklab(px[i] / 255, px[i + 1] / 255, px[i + 2] / 255);
     const C = Math.hypot(a, b);
-    if (C < 0.012) continue;
-    const h = Math.atan2(b, a);
-    const lw = smooth(0.1, 0.35, L) * (1 - smooth(0.93, 1.0, L));
-    if (C > 0.03 && lw > 0.5) coloured++;
-    const w = Math.pow(C, 1.3) * lw;
-    const k = Math.floor(((h / (Math.PI * 2) + 1) % 1) * BINS) % BINS;
-    hist[k] += w; hx[k] += Math.cos(h) * w; hy[k] += Math.sin(h) * w; hc[k] += C * w;
+    if (C < 0.03 || L < 0.12 || L > 0.97) continue;
+    // a little more weight toward the middle, where the subject usually is
+    const x = (i / 4) % T, y = Math.floor(i / 4 / T);
+    const w = 1 + 0.35 * (1 - Math.hypot(x / T - 0.5, y / T - 0.5) * 2);
+    pts.push([L, a, b, w]);
   }
-  const sm = new Float64Array(BINS);
-  for (let k = 0; k < BINS; k++) for (let d = -2; d <= 2; d++) sm[k] += hist[(k + d + BINS) % BINS] * [1, 2, 3, 2, 1][d + 2];
-  const all = [];
-  for (let k = 0; k < BINS; k++) {
-    const l = sm[(k - 1 + BINS) % BINS], r = sm[(k + 1) % BINS];
-    if (sm[k] > 0 && sm[k] >= l && sm[k] > r) {
-      let x = 0, y = 0, cw = 0, ww = 0;
-      for (let d = -2; d <= 2; d++) { const j = (k + d + BINS) % BINS; x += hx[j]; y += hy[j]; cw += hc[j]; ww += hist[j]; }
-      all.push({ v: sm[k], h: Math.atan2(y, x), C: ww > 0 ? cw / ww : 0 });
-    }
-  }
-  // a hue only counts when it is a colour you would name, not the tint of a
-  // grey or the cast of a scan
-  const peaks = all.filter((p) => p.C > 0.022).sort((a, b) => b.v - a.v);
+  const share = pts.length / N;
   const dist = (a, b) => { const d = Math.abs(a - b) % (Math.PI * 2); return Math.min(d, Math.PI * 2 - d); };
-  const share = coloured / N;
-  let a, b, c2, d, kind;
-  if (!peaks.length || share < 0.004) {
+  if (share < 0.004) {
     // a black-and-white sleeve: its light is white, cool to neutral — not the
     // app's orange, which is not on the sleeve
-    kind = 'neutral';
-    a = KELVIN(6500); b = KELVIN(4800); c2 = KELVIN(8000); d = KELVIN(5600);
-  } else {
-    const p = peaks[0];
-    const q = peaks.find((x) => x !== p && dist(x.h, p.h) > 0.6 && x.v > p.v * 0.1);
-    const r = peaks.find((x) => x !== p && x !== q && dist(x.h, p.h) > 0.6 && (!q || dist(x.h, q.h) > 0.6) && x.v > p.v * 0.06);
-    kind = q ? 'duo' : 'mono';
-    // how vivid the light is follows how vivid the sleeve's own colour is
-    const sat = 0.7 + 0.3 * clamp(p.C / 0.12);
-    const h2 = q ? q.h : p.h + 0.2;
-    const h3 = r ? r.h : q ? (p.h + (q.h - p.h) * 0.5) : p.h - 0.2;
-    a = ledColor(0.72, p.h, sat);
-    b = ledColor(0.66, h2, sat);
-    c2 = ledColor(0.78, h3, sat * 0.9);
-    d = ledColor(0.9, p.h, 0.3, 0);
+    const a = KELVIN(6500), b = KELVIN(4800), c2 = KELVIN(8000), d = KELVIN(5600);
+    return { a, b, c: c2, d, kind: 'neutral', swatches: [a, b, c2, d] };
   }
-  return { a, b, c: c2, d, kind, swatches: [a, b, c2, d] };
+  // k-means, seeded from the pixels furthest apart (deterministic: the same
+  // sleeve always gives the same palette)
+  const K = Math.min(6, pts.length);
+  const LW = 0.5;   // lightness counts for less than colour in telling groups apart
+  const d2 = (p, q) => ((p[0] - q[0]) * LW) ** 2 + (p[1] - q[1]) ** 2 + (p[2] - q[2]) ** 2;
+  const cent = [pts[Math.floor(pts.length / 2)].slice(0, 3)];
+  const near = pts.map((p) => d2(p, cent[0]));
+  while (cent.length < K) {
+    let bi = 0; for (let i = 1; i < pts.length; i++) if (near[i] > near[bi]) bi = i;
+    if (near[bi] < 1e-5) break;
+    cent.push(pts[bi].slice(0, 3));
+    pts.forEach((p, i) => { near[i] = Math.min(near[i], d2(p, cent[cent.length - 1])); });
+  }
+  const own = new Int32Array(pts.length);
+  for (let it = 0; it < 10; it++) {
+    pts.forEach((p, i) => { let bk = 0, bd = Infinity; cent.forEach((q, k) => { const dd = d2(p, q); if (dd < bd) { bd = dd; bk = k; } }); own[i] = bk; });
+    const sum = cent.map(() => [0, 0, 0, 0]);
+    pts.forEach((p, i) => { const s = sum[own[i]]; s[0] += p[0] * p[3]; s[1] += p[1] * p[3]; s[2] += p[2] * p[3]; s[3] += p[3]; });
+    sum.forEach((s, k) => { if (s[3] > 0) cent[k] = [s[0] / s[3], s[1] / s[3], s[2] / s[3]]; });
+  }
+  const wsum = pts.reduce((t, p) => t + p[3], 0);
+  let groups = cent.map((q, k) => {
+    let w = 0; pts.forEach((p, i) => { if (own[i] === k) w += p[3]; });
+    const [L, a, b] = q; const C = Math.hypot(a, b), h = Math.atan2(b, a);
+    return { L, C, h, area: (w / wsum) * share };
+  }).filter((x) => x.area > 0);
+  // two groups that are the same colour to the eye are one
+  groups.sort((x, y) => y.area - x.area);
+  const merged = [];
+  for (const x of groups) {
+    const m = merged.find((y) => Math.hypot((x.L - y.L) * 0.8, x.C * Math.cos(x.h) - y.C * Math.cos(y.h), x.C * Math.sin(x.h) - y.C * Math.sin(y.h)) < 0.06);
+    if (m) m.area += x.area; else merged.push({ ...x });
+  }
+  groups = merged;
+  // skin: warm, light-to-mid, not very saturated
+  const skin = (x) => x.h > 0.45 && x.h < 1.25 && x.C < 0.13 && x.L > 0.45 && x.L < 0.88;
+  // how plainly a colour: its chroma against the most its hue can have at
+  // its lightness, so a navy or a forest green counts as fully coloured
+  const rel = (x) => clamp(x.C / Math.max(0.02, maxChroma(clamp(x.L, 0.2, 0.95), x.h)));
+  for (const x of groups) {
+    x.score = Math.pow(x.area, 0.75) * smooth(0.12, 0.5, rel(x)) * smooth(0.025, 0.06, x.C) * (0.75 + 0.25 * smooth(0.2, 0.5, x.L));
+    if (skin(x)) x.score *= 0.2;
+  }
+  groups.sort((x, y) => y.score - x.score);
+  const p = groups[0];
+  const differs = (x, y) => dist(x.h, y.h) > 0.5 || Math.abs(x.L - y.L) > 0.28;
+  const q = groups.find((x) => x !== p && differs(x, p) && x.score > p.score * 0.12);
+  const r = groups.find((x) => x !== p && x !== q && differs(x, p) && (!q || differs(x, q)) && x.score > p.score * 0.08);
+  // the light keeps the colour's character: how far up it sits toward the
+  // hue's brightest (a deep colour stays deep, lifted only so it reads), and
+  // how much of the hue's full colour it has (a pastel stays soft)
+  const light = (x, lift = 0) => {
+    const L = clamp(lerp(x.L, cuspL(x.h), 0.35) + lift, 0.5, 0.9);
+    const sat = clamp(0.4 + 0.75 * rel(x), 0.45, 1);
+    return ledColor(L, x.h, sat, 0);
+  };
+  const a = light(p);
+  const b = q ? light(q) : light(p, p.L > 0.65 ? -0.16 : 0.14);
+  const c2 = r ? light(r) : q ? light(p, p.L > 0.65 ? -0.14 : 0.12) : light({ ...p, C: p.C * 0.55 }, 0.1);
+  const d = ledColor(0.9, p.h, 0.3, 0);
+  return { a, b, c: c2, d, kind: q ? 'duo' : 'mono', swatches: [a, b, c2, d] };
 }
 
 export const appPalette = () => ({
