@@ -477,7 +477,7 @@ export function buildDome(ctx) {
   stageWash.position.set(0, LT - 1, BZ[1]); stageWash.target.position.set(0, DECK, 16 + SZ);
   for (const l of [front1, stageWash]) root.add(l, l.target);
   const fill = [];
-  for (const [x, y, z] of [[-40, 30, 66], [40, 30, 66], [0, 26, 100]]) { const l = new THREE.PointLight(0xffffff, 0, 160, 2); l.position.set(x, y, z); root.add(l); fill.push(l); }
+  for (const [x, y, z] of [[-40, 30, 66], [40, 30, 66], [0, 26, 100]]) { const l = new THREE.PointLight(0xffffff, 0, 160, 2); l.position.set(x, y, z); l.userData.offWhenDark = 'show'; root.add(l); fill.push(l); }
   const house = [];
   // the house lights are the ring's floods: aimed down at the field and the
   // stands, so the membrane above them only gets what bounces back up
@@ -486,7 +486,7 @@ export function buildDome(ctx) {
     const l = new THREE.SpotLight(KELVIN(5200), 0, 300, 0.8, 1, 2);
     l.position.copy(p).y -= 1.0;
     l.target.position.set(p.x * 0.2, 0, ZC + (p.z - ZC) * 0.2);
-    root.add(l, l.target); house.push(l);
+    l.userData.offWhenDark = 'house'; root.add(l, l.target); house.push(l);
   }
   root.add(new THREE.HemisphereLight(0x181a24, 0x050508, 0.35));
 

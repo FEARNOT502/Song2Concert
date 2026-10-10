@@ -40,11 +40,11 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
   const qName = quality === 'low' ? 'low' : 'high';
   // Device pixel ratio is the single biggest lever on GPU cost, and this scene
   // shares a machine with a convolution reverb and five audio worklets.
-  // On a computer the scene is drawn at the screen's own density, up to 2x —
-  // at 1.35 a high-density display was upscaled and everything far off went
-  // soft — with the total held to a pixel budget (Pipeline.resize), so a
-  // large window draws at a lower density rather than a costlier frame.
-  const baseDpr = qName === 'low' ? 1 : 2;
+  // On a computer the scene is drawn at the screen's own density — at 1.35 a
+  // high-density display was upscaled and everything far off went soft — and
+  // the dynamic resolution (Pipeline.adapt) takes it down when the GPU is
+  // pressed, rather than every screen paying for the worst one.
+  const baseDpr = qName === 'low' ? 1 : 3;
   let fx = !!effects;
   let strain = 0;
 
@@ -73,6 +73,9 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
   const clock = new THREE.Clock();
   // per-venue lists, collected once rather than found by a traversal each frame
   let pointMats = [], lightMats = [], fogMats = [];
+  // the lights a room marks to go out of the shader when they are dark: its
+  // house lights in the show, its show fill with the house up ({ l, peak })
+  let dimLights = [];
 
   function clonePal(p) { return { a: p.a.clone(), b: p.b.clone(), c: p.c.clone(), d: p.d.clone() }; }
 
@@ -134,7 +137,7 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
     envRT?.dispose(); envRT = null;
     pipe.beams.clear(); pipe.haze.clear(); pipe.flares.clear(); pipe.mask.clear();
     pipe.scene.remove(pipe.flares.mesh);
-    pointMats = []; lightMats = []; fogMats = [];
+    pointMats = []; lightMats = []; fogMats = []; dimLights = [];
   }
 
   async function setVenue(id) {
@@ -176,9 +179,26 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
       if (o.userData.crowdLights) lightMats.push(U);
       if (U.fogDensity) fogMats.push(U);
     });
+    v.root.traverse((o) => { if (o.isLight && o.userData.offWhenDark) dimLights.push({ l: o, peak: 0 }); });
     applyArt();
     applyCamera(0);
-    try { await pipe.renderer.compileAsync(pipe.scene, cam); } catch { /* compiles on the first frame instead */ }
+    // Every material's shader is built for the number of lights in the room,
+    // so a light taken out or put back would rebuild them all mid-song: build
+    // them now for each state the room passes through (house up, the fade,
+    // the show) and the switch later only picks one already made.
+    // (into the scene's own target: a shader is built for where it draws to,
+    // and one built for the screen is not the one the frame uses)
+    const states = dimLights.length ? [['house'], ['house', 'show'], ['show']] : [null];
+    try {
+      for (const on of states) {
+        if (on) for (const d of dimLights) d.l.visible = on.includes(d.l.userData.offWhenDark);
+        pipe.renderer.setRenderTarget(pipe.venuePass.sceneRT);
+        const job = pipe.renderer.compileAsync(pipe.scene, cam);
+        pipe.renderer.setRenderTarget(null);
+        await job;
+        if (gen !== buildGen || !running) return;
+      }
+    } catch { /* compiles on the first frame instead */ }
     if (gen !== buildGen || !running) return;
     frame(0.016, clock.getElapsedTime());
     fade(1, 420);
@@ -250,6 +270,12 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
     cu.uTime.value = t; cu.uKick.value = B.kick * (1 - house); cu.uEnergy.value = B.energy * (1 - house * 0.8);
     cu.uFlick.value = B.kick * (1 - house);
     venue.update(f);
+    // a light at nothing still costs every lit pixel its share: take it out
+    for (const d of dimLights) {
+      const k = d.l.intensity;
+      if (k > d.peak) d.peak = k;
+      d.l.visible = k > d.peak * 0.002;
+    }
     for (const r of ctx.rigs) r.update(1, pipe.camera.position);
     const glow = clamp(B.kick * 0.6 + B.energy * 0.3) * (1 - house);
     for (const s of ctx.screens) {
@@ -347,7 +373,9 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
     raf = requestAnimationFrame(tick);
     if (!venue || document.hidden) return;
     // walking is not throttled with the show: a halved rate reads as lag
-    const interval = (heavy || strain > 0) && !walker.moving && !walker.drag ? targetMs * 2 : targetMs;
+    // stopped, nothing moves but the house lights: half the frames
+    const still = !walker.moving && !walker.drag;
+    const interval = still && (heavy || strain > 0 || !playing) ? targetMs * 2 : targetMs;
     if (now - lastDrawn < interval - 1) return;
     lastDrawn = now;
     drawn++;
@@ -357,8 +385,15 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
     lastT = t;
     frame(dt, t);
     frameBudget += ((performance.now() - started) - frameBudget) * 0.05;
-    if (!heavy && frameBudget > targetMs * 0.78) heavy = true;
-    else if (heavy && frameBudget < targetMs * 0.42) heavy = false;
+    // the GPU kept to a little over half a frame, so the card is not run flat
+    // out for a picture that does not need it
+    pipe.adapt(now, targetMs * 0.6, interval);
+    // heavy: the CPU's share of the frame, or the GPU's once the resolution
+    // has nothing left to give
+    const gpuLoad = pipe.scale <= pipe.scaleMin + 1e-3 && Number.isFinite(pipe.gpuMs) ? pipe.gpuMs : 0;
+    const load = Math.max(frameBudget, gpuLoad);
+    if (!heavy && load > targetMs * 0.78) heavy = true;
+    else if (heavy && load < targetMs * 0.42) heavy = false;
   }
 
   function disposeTree(root) {
@@ -427,7 +462,7 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
       raf = requestAnimationFrame(tick);
       if (venueId && !venue) setVenue(venueId);
     },
-    stats: () => ({ drawn, heavy, strain, effects: fx, frameMs: +frameBudget.toFixed(2), venue: venueId, walker: walker.feet.toArray().map((v) => +v.toFixed(2)) }),
+    stats: () => ({ drawn, heavy, strain, effects: fx, frameMs: +frameBudget.toFixed(2), gpuMs: Number.isFinite(pipe.gpuMs) ? +pipe.gpuMs.toFixed(2) : null, scale: pipe.scale, dpr: pipe.renderer.getPixelRatio(), venue: venueId, walker: walker.feet.toArray().map((v) => +v.toFixed(2)) }),
     // for tests and the walk-through: the walker and the pipeline
     debug: { walker, pipe, art, beat },
     dispose() {
