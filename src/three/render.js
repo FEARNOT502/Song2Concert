@@ -345,7 +345,7 @@ export class ScreenMask {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const QUALITY = {
-  high: { dpr: 2, msaa: 4, vol: 0.5, steps: 12, shadows: true, shadowSize: 2048, crowd: 1, rig: 1, bloom: true, grain: true },
+  high: { dpr: 3, msaa: 4, vol: 0.5, steps: 12, shadows: true, shadowSize: 2048, crowd: 1, rig: 1, bloom: true, grain: true },
   low: { dpr: 1, msaa: 0, vol: 0.33, steps: 6, shadows: false, shadowSize: 512, crowd: 0.4, rig: 0.5, bloom: true, grain: false },
 };
 
@@ -502,6 +502,47 @@ export class FinalPass extends Pass {
   }
 }
 
+// How long the GPU takes over a frame, from the timer query extension where
+// the browser offers it (desktop Chrome and Edge do). The answer comes back a
+// frame or two late; a query begun before a resize is thrown away.
+class GpuTimer {
+  constructor(gl) {
+    this.gl = gl;
+    this.ext = gl.getExtension('EXT_disjoint_timer_query_webgl2');
+    this.free = []; this.pending = []; this.active = null; this.gen = 0;
+    this.samples = [];
+  }
+  get ok() { return !!this.ext; }
+  begin() {
+    if (!this.ext || this.active || this.pending.length > 6) return;
+    const q = this.free.pop() || this.gl.createQuery();
+    this.gl.beginQuery(this.ext.TIME_ELAPSED_EXT, q);
+    this.active = { q, gen: this.gen };
+  }
+  end() {
+    if (!this.active) return;
+    this.gl.endQuery(this.ext.TIME_ELAPSED_EXT);
+    this.pending.push(this.active);
+    this.active = null;
+  }
+  poll() {
+    if (!this.pending.length) return;
+    const gl = this.gl;
+    const done = [];
+    while (this.pending.length && gl.getQueryParameter(this.pending[0].q, gl.QUERY_RESULT_AVAILABLE)) done.push(this.pending.shift());
+    if (!done.length) return;
+    const disjoint = gl.getParameter(this.ext.GPU_DISJOINT_EXT);
+    for (const { q, gen } of done) {
+      const ns = gl.getQueryParameter(q, gl.QUERY_RESULT);
+      this.free.push(q);
+      if (!disjoint && gen === this.gen) this.samples.push(ns / 1e6);
+    }
+  }
+  // the frames measured so far belong to the old size
+  reset() { this.gen++; this.samples.length = 0; }
+  dispose() { for (const { q } of this.pending) this.gl.deleteQuery(q); for (const q of this.free) this.gl.deleteQuery(q); }
+}
+
 export class Pipeline {
   constructor(canvas) {
     const r = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', alpha: false, stencil: false });
@@ -533,6 +574,12 @@ export class Pipeline {
     this.composer.addPass(this.venuePass);
     this.composer.addPass(this.bloom);
     this.composer.addPass(this.final);
+    // dynamic resolution: the share of the screen's own density drawn
+    this.scale = 1;
+    this.scaleMin = 0.5;
+    this.gpu = new GpuTimer(r.getContext());
+    this.gpuMs = NaN;
+    this.adaptAt = 0; this.changedAt = 0; this.lastFrame = 0; this.intervalMs = NaN; this.calm = 0;
   }
   setQuality(name) {
     this.qName = name;
@@ -543,11 +590,11 @@ export class Pipeline {
   }
   resize(w, h) {
     this.size = { w: Math.max(1, w), h: Math.max(1, h) };
-    // at most MAX_PX drawn pixels whatever the window: a 2x laptop screen
-    // draws near its own density, a 4K monitor a little under it
-    const MAX_PX = 4.2e6;
-    const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, this.q.dpr, Math.sqrt(MAX_PX / (this.size.w * this.size.h))));
+    // the screen's own density, as many pixels drawn as it shows, less only
+    // what the dynamic resolution takes off when the GPU is pressed (adapt)
+    const dpr = Math.min(window.devicePixelRatio || 1, this.q.dpr) * this.scale;
     this.renderer.setPixelRatio(dpr);
+    this.gpu.reset();
     this.renderer.setSize(this.size.w, this.size.h, false);
     this.composer.setPixelRatio(dpr);
     this.composer.setSize(this.size.w, this.size.h);
@@ -562,9 +609,47 @@ export class Pipeline {
     this.beams.sync();
     this.haze.sync();
     this.flares.sync();
+    this.gpu.poll();
+    this.gpu.begin();
     this.composer.render();
+    this.gpu.end();
+  }
+  // Dynamic resolution. Called after each drawn frame with the frame time the
+  // GPU should keep under (`budget`, ms) and the interval frames are meant to
+  // come at (`interval`, ms). With the timer query the GPU's own time decides:
+  // over budget, the scale drops at once to what should fit; well under, it
+  // climbs back a step at a time. Without it, frames arriving late are the
+  // only sign, and the scale steps down on those.
+  adapt(now, budget, interval) {
+    const STEP = 0.05;
+    const set = (k) => {
+      k = Math.min(1, Math.max(this.scaleMin, Math.round(k / STEP) * STEP));
+      if (Math.abs(k - this.scale) < 1e-3) return;
+      this.scale = k; this.changedAt = now; this.calm = 0;
+      this.resize(this.size.w, this.size.h);
+    };
+    const gap = now - this.lastFrame;
+    this.lastFrame = now;
+    if (gap > 0 && gap < 500) this.intervalMs = Number.isFinite(this.intervalMs) ? this.intervalMs + (gap - this.intervalMs) * 0.1 : gap;
+    if (now - this.adaptAt < 500) return;
+    this.adaptAt = now;
+    if (this.gpu.ok) {
+      const S = this.gpu.samples;
+      if (S.length < 6) return;
+      const ms = S.reduce((a, b) => a + b, 0) / S.length;
+      S.length = 0;
+      this.gpuMs = ms;
+      if (ms > budget * 1.08) set(this.scale * Math.sqrt(budget / ms) - STEP * 0.5);
+      else if (ms < budget * 0.72 && this.scale < 1 && now - this.changedAt > 2000) set(this.scale + STEP);
+      return;
+    }
+    if (!Number.isFinite(this.intervalMs) || now - this.changedAt < 1500) return;
+    if (this.intervalMs > interval * 1.35) set(this.scale - STEP * 2);
+    else if (this.intervalMs < interval * 1.1) { if (this.scale < 1 && ++this.calm >= 8) set(this.scale + STEP); }
+    else this.calm = 0;
   }
   dispose() {
+    this.gpu.dispose();
     this.venuePass.dispose();
     this.bloom.dispose();
     this.composer.dispose();

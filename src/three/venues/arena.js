@@ -217,12 +217,12 @@ export function buildArena(ctx) {
   stageWash.position.set(0, RIG - 1, 2 + SZ); stageWash.target.position.set(0, DECK, 12 + SZ);
   for (const l of [front1, front2, stageWash]) root.add(l, l.target);
   const fill = [];
-  for (const [x, y, z] of [[-20, 18, 30], [20, 18, 30], [0, 24, 60]]) { const l = new THREE.PointLight(0xffffff, 0, 90, 2); l.position.set(x, y, z); root.add(l); fill.push(l); }
+  for (const [x, y, z] of [[-20, 18, 30], [20, 18, 30], [0, 24, 60]]) { const l = new THREE.PointLight(0xffffff, 0, 90, 2); l.position.set(x, y, z); l.userData.offWhenDark = 'show'; root.add(l); fill.push(l); }
   const house = [];
   // the house lights: the ceiling's downlights, shining down, not onto it
   for (const [x, z] of [[-24, 20], [24, 20], [-24, 60], [24, 60], [0, 40], [0, 80]]) {
     const l = new THREE.SpotLight(KELVIN(4200), 0, 140, 1.4, 0.3, 2); l.position.set(x, H - 0.6, z); l.target.position.set(x, 0, z);
-    root.add(l, l.target); house.push(l);
+    l.userData.offWhenDark = 'house'; root.add(l, l.target); house.push(l);
   }
   root.add(new THREE.HemisphereLight(0x14141c, 0x050508, 0.18));
 
