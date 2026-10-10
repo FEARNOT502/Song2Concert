@@ -346,7 +346,7 @@ export function buildTheater(ctx) {
   const houseLights = [];
   for (const [x, z] of [[-6, 12], [6, 12], [-6, 24], [6, 24], [0, 32]]) {
     const l = new THREE.PointLight(KELVIN(2800), 0, 30, 2);
-    l.position.set(x, H - 1, z); root.add(l); houseLights.push(l);
+    l.position.set(x, H - 1, z); l.userData.offWhenDark = 'house'; root.add(l); houseLights.push(l);
   }
   root.add(new THREE.HemisphereLight(0x1a1418, 0x080506, 0.12));
   // what the stage throws back into the house: a broad soft source in the

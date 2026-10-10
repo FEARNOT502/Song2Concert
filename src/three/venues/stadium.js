@@ -660,14 +660,14 @@ export function buildStadium(ctx) {
   stageWash.position.set(0, LT - 1, BZ[1]); stageWash.target.position.set(0, DECK, 24);
   for (const l of [front1, stageWash]) root.add(l, l.target);
   const fill = [];
-  for (const [x, y, z] of [[-50, 40, 60], [50, 40, 60]]) { const l = new THREE.PointLight(0xffffff, 0, 220, 2); l.position.set(x, y, z); root.add(l); fill.push(l); }
+  for (const [x, y, z] of [[-50, 40, 60], [50, 40, 60]]) { const l = new THREE.PointLight(0xffffff, 0, 220, 2); l.position.set(x, y, z); l.userData.offWhenDark = 'show'; root.add(l); fill.push(l); }
   const house = [];
   // house lights from the roof's leading edge, aimed down into the bowl rather
   // than lighting the underside of the roof they hang from
   for (const [x, z] of [[-70, 20], [70, 20], [-70, 110], [70, 110], [0, -10], [0, 150]]) {
     const l = new THREE.SpotLight(KELVIN(5600), 0, 320, 1.1, 1, 2);
     l.position.set(x, ROOF - 2, z); l.target.position.set(x * 0.7, 0, ZC + (z - ZC) * 0.7);
-    root.add(l, l.target); house.push(l);
+    l.userData.offWhenDark = 'house'; root.add(l, l.target); house.push(l);
   }
   // the bowl's own light: the sky over the opening, and in house light the
   // floodlit pitch and stands throwing it back up under the roof
