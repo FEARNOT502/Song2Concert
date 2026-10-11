@@ -341,11 +341,11 @@ export class ScreenMask {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // the pipeline: scene → (MSAA HDR + depth) → volumetrics at reduced res →
-// composite → bloom → lens + tone + grain → screen
+// composite → bloom → lens + tone → screen (no film grain: it read as noise)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const QUALITY = {
-  high: { dpr: 3, msaa: 4, vol: 0.5, steps: 12, shadows: true, shadowSize: 2048, crowd: 1, rig: 1, bloom: true, grain: true },
+  high: { dpr: 3, msaa: 4, vol: 0.5, steps: 12, shadows: true, shadowSize: 2048, crowd: 1, rig: 1, bloom: true, grain: false },
   low: { dpr: 1, msaa: 0, vol: 0.33, steps: 6, shadows: false, shadowSize: 512, crowd: 0.4, rig: 0.5, bloom: true, grain: false },
 };
 
@@ -383,7 +383,7 @@ export class VenuePass extends Pass {
   }
   // The scene is drawn at the dynamic resolution's share of the screen and
   // brought up to the screen's own size in the composite; the bloom, the tone
-  // and the grain after it run at full size, so a lowered scale reads as a
+  // and the dither after it run at full size, so a lowered scale reads as a
   // little softer rather than as coarse, crawling pixels.
   alloc(fw, fh) {
     const q = this.pipe.q;
