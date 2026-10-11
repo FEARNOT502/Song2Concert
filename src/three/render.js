@@ -381,8 +381,14 @@ export class VenuePass extends Pass {
       depthTest: false, depthWrite: false,
     }));
   }
-  alloc(w, h) {
+  // The scene is drawn at the dynamic resolution's share of the screen and
+  // brought up to the screen's own size in the composite; the bloom, the tone
+  // and the grain after it run at full size, so a lowered scale reads as a
+  // little softer rather than as coarse, crawling pixels.
+  alloc(fw, fh) {
     const q = this.pipe.q;
+    this.full = { w: fw, h: fh };
+    const w = Math.max(1, Math.round(fw * this.pipe.scale)), h = Math.max(1, Math.round(fh * this.pipe.scale));
     this.sceneRT?.dispose(); this.volRT?.dispose();
     this.sceneRT = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: q.msaa });
     this.sceneRT.depthTexture = new THREE.DepthTexture(w, h);
@@ -576,7 +582,8 @@ export class Pipeline {
     this.composer.addPass(this.final);
     // dynamic resolution: the share of the screen's own density drawn
     this.scale = 1;
-    this.scaleMin = 0.5;
+    this.scaleMin = 0.7;
+    this.sceneDpr = 1;          // drawn pixels per CSS pixel in the scene target
     this.gpu = new GpuTimer(r.getContext());
     this.gpuMs = NaN;
     this.adaptAt = 0; this.changedAt = 0; this.lastFrame = 0; this.intervalMs = NaN; this.calm = 0;
@@ -592,7 +599,8 @@ export class Pipeline {
     this.size = { w: Math.max(1, w), h: Math.max(1, h) };
     // the screen's own density, as many pixels drawn as it shows, less only
     // what the dynamic resolution takes off when the GPU is pressed (adapt)
-    const dpr = Math.min(window.devicePixelRatio || 1, this.q.dpr) * this.scale;
+    const dpr = Math.min(window.devicePixelRatio || 1, this.q.dpr);
+    this.sceneDpr = dpr * this.scale;
     this.renderer.setPixelRatio(dpr);
     this.gpu.reset();
     this.renderer.setSize(this.size.w, this.size.h, false);
@@ -626,7 +634,10 @@ export class Pipeline {
       k = Math.min(1, Math.max(this.scaleMin, Math.round(k / STEP) * STEP));
       if (Math.abs(k - this.scale) < 1e-3) return;
       this.scale = k; this.changedAt = now; this.calm = 0;
-      this.resize(this.size.w, this.size.h);
+      // only the scene's own targets change size; the canvas stays as it is
+      this.sceneDpr = this.renderer.getPixelRatio() * k;
+      if (this.venuePass.full) this.venuePass.alloc(this.venuePass.full.w, this.venuePass.full.h);
+      this.gpu.reset();
     };
     const gap = now - this.lastFrame;
     this.lastFrame = now;

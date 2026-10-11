@@ -253,7 +253,7 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
     for (const k of ['a', 'b', 'c', 'd']) pal[k].lerp(target[k], Math.min(1, dt * 2.2));
     applyCamera(dt);
     // the angle one pixel covers, for the members held a pixel wide far off
-    LOD.uPxAng.value = 2 * Math.tan(pipe.camera.fov * 0.5 * DEG) / Math.max(1, pipe.size.h * pipe.renderer.getPixelRatio());
+    LOD.uPxAng.value = 2 * Math.tan(pipe.camera.fov * 0.5 * DEG) / Math.max(1, pipe.size.h * pipe.sceneDpr);
     const B = beat;
     // the part the rig plays: the song's own, or the one called from the desk
     // (only while the song plays; it runs from when it was called, sixteen
@@ -293,7 +293,7 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
     }
     // the lightsticks and phones take the palette; the crowd's own lights follow
     // the stick/torch switch and dim when the house lights come up
-    const scale = (pipe.size.h * pipe.renderer.getPixelRatio() * 0.5) / Math.tan(pipe.camera.fov * 0.5 * DEG);
+    const scale = (pipe.size.h * pipe.sceneDpr * 0.5) / Math.tan(pipe.camera.fov * 0.5 * DEG);
     for (const U of pointMats) {
       ['a', 'b', 'c', 'd'].forEach((k, i) => U.uPal.value[i].set(pal[k].r, pal[k].g, pal[k].b));
       U.uScale.value = scale;
@@ -462,7 +462,7 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
       raf = requestAnimationFrame(tick);
       if (venueId && !venue) setVenue(venueId);
     },
-    stats: () => ({ drawn, heavy, strain, effects: fx, frameMs: +frameBudget.toFixed(2), gpuMs: Number.isFinite(pipe.gpuMs) ? +pipe.gpuMs.toFixed(2) : null, scale: pipe.scale, dpr: pipe.renderer.getPixelRatio(), venue: venueId, walker: walker.feet.toArray().map((v) => +v.toFixed(2)) }),
+    stats: () => ({ drawn, heavy, strain, effects: fx, frameMs: +frameBudget.toFixed(2), gpuMs: Number.isFinite(pipe.gpuMs) ? +pipe.gpuMs.toFixed(2) : null, scale: pipe.scale, dpr: pipe.renderer.getPixelRatio(), sceneDpr: +pipe.sceneDpr.toFixed(3), venue: venueId, walker: walker.feet.toArray().map((v) => +v.toFixed(2)) }),
     // for tests and the walk-through: the walker and the pipeline
     debug: { walker, pipe, art, beat },
     dispose() {
