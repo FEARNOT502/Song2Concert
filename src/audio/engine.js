@@ -8,7 +8,7 @@
 // - The analyser taps ahead of the volume control, so the artwork pulse follows
 //   the music rather than the volume knob.
 
-import { buildGraph, applyVenue, disposeGraph, wetTrimDb } from './graph.js';
+import { buildGraph, applyVenue, disposeGraph, wetTrimDb, vocalBrightGain, VENUE_FADE_IN } from './graph.js';
 import { readAudioFormat } from './bitdepth.js';
 import { reverbTimes } from './roomacoustics.js';
 import { roomAbsorption, VENUE_ROOMS } from './venuerooms.js';
@@ -66,6 +66,7 @@ export class ConcertEngine {
     this._venue = null;
     this._wetPercent = null;    // null until a venue sets its default
     this._bypass = false;
+    this._vocalBright = true;   // see VOCAL_BRIGHT in graph.js
     this._volume = 0.85;        // 0..1
     this._worklets = {};
     this.ready = false;
@@ -423,6 +424,7 @@ export class ConcertEngine {
       wetDb,
       worklets: this._worklets,
       deferResponse,
+      vocalBright: this._vocalBright,
     });
     graph.out.connect(this.analyser); // ahead of the volume control
     graph.limiter.connect(this.ctx.destination);
@@ -708,6 +710,19 @@ export class ConcertEngine {
     this._applyWet();
   }
 
+  // The FOH vocal brightness, on or off. Ramped over the same time a venue's
+  // parameters take to arrive, so switching it while listening is a change of
+  // tone rather than a step.
+  setVocalBright(on) {
+    this._vocalBright = !!on;
+    if (!this.graph) return;
+    const p = this.graph.bright.gain;
+    const t = this.ctx.currentTime;
+    p.cancelScheduledValues(t);
+    p.setValueAtTime(p.value, t);
+    p.linearRampToValueAtTime(vocalBrightGain(this._vocalBright), t + VENUE_FADE_IN);
+  }
+
   _applyWet() {
     if (!this.graph || !this._venue) return;
     const def = this._venue.position.wet;
@@ -921,6 +936,7 @@ export class ConcertEngine {
       volume: 1,
       wetDb: this._bypass ? -1000 : wetTrimDb(this._wetPercent ?? def, venue),
       worklets,
+      vocalBright: this._vocalBright,
     });
     graph.limiter.connect(offline.destination);
 

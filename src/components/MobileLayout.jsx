@@ -82,7 +82,7 @@ export default function MobileLayout({
   // transport
   playing, onToggle, onPrev, onNext, hasNext, hasPrev,
   time, durSec, wetDry, onWetChange, onSeek, onExport, exporting, exportProgress = 0,
-  volume, onVolumeChange,
+  volume, onVolumeChange, vocalBright = false, onVocalBrightChange,
   // pickers
   onFileClick, onVenueClick,
   strain = 0,
@@ -209,6 +209,18 @@ export default function MobileLayout({
               <span className="w-12">Volume</span>
               <MobileSlider value={volume} max={100} onChange={(v) => onVolumeChange(Math.round(v))} fillClass="bg-white/60" />
               <span className="w-12 text-right tabular-nums">{volume}</span>
+            </div>
+            <div className="flex items-center gap-3 text-[11px] tracking-[0.15em] text-neutral-400 uppercase">
+              <span className="w-12">Vocal</span>
+              <button
+                onClick={() => onVocalBrightChange(!vocalBright)}
+                aria-pressed={vocalBright}
+                className={`flex-1 py-2 border rounded-lg text-[11px] tracking-[0.15em] uppercase ${vocalBright
+                  ? 'border-[oklch(0.78_0.16_55)] text-[oklch(0.78_0.16_55)]'
+                  : 'border-white/20 text-neutral-500 active:bg-white/10'}`}
+              >
+                {vocalBright ? 'Bright · on' : 'Bright · off'}
+              </button>
             </div>
             <button
               onClick={onExport}

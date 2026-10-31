@@ -57,6 +57,7 @@ function BottomTransport({
   playing, onToggle, onPrev, onNext, hasNext, hasPrev,
   time, durSec, wetDry, onWetChange, onSeek,
   onExport, exporting, exportProgress = 0, volume, onVolumeChange,
+  vocalBright = false, onVocalBrightChange,
 }) {
   const pct = Math.round(exportProgress * 100);
   return (
@@ -96,6 +97,18 @@ function BottomTransport({
         />
         <span className="text-neutral-500 tabular-nums w-16 text-right">WET {wetDry}%</span>
       </div>
+
+      {/* FOH vocal brightness — on by default, here to be taken off */}
+      <button
+        onClick={() => onVocalBrightChange(!vocalBright)}
+        aria-pressed={vocalBright}
+        title="보컬 밝기: 공연장 PA처럼 센터 보컬의 3–6 kHz를 올립니다"
+        className={`px-2.5 py-1 border rounded text-[11px] transition-colors ${vocalBright
+          ? 'border-[oklch(0.78_0.16_55)] text-[oklch(0.78_0.16_55)]'
+          : 'border-white/20 text-neutral-500 hover:text-neutral-300 hover:border-white/40'}`}
+      >
+        BRIGHT
+      </button>
 
       {/* master volume */}
       <div className="flex items-center gap-3 min-w-[160px]">

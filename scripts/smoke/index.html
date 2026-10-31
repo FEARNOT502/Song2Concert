@@ -472,6 +472,44 @@ async function run() {
     });
   }
 
+  // The vocal brightness lifts the centre's presence band and nothing else. A
+  // wide tone must come through it untouched; a centred one must rise by the
+  // designed amount at 4 kHz and by much less either side of the band.
+  {
+    const sr = 48000;
+    const venue = venueById('arena');
+    const tone = async (f, wide, on) => {
+      const ctx = new OfflineAudioContext(2, sr, sr);
+      const g = buildGraph(ctx, { venue, volume: 1, wetDb: -1000, worklets: {}, vocalBright: on });
+      const buf = ctx.createBuffer(2, sr, sr);
+      for (let i = 0; i < sr; i++) {
+        const v = 0.05 * Math.sin(2 * Math.PI * f * i / sr);
+        buf.getChannelData(0)[i] = v;
+        buf.getChannelData(1)[i] = wide ? -v : v;
+      }
+      const src = ctx.createBufferSource(); src.buffer = buf; src.connect(g.direct); src.start(0);
+      g.mixOut.connect(ctx.destination);
+      const out = await ctx.startRendering();
+      const L = out.getChannelData(0), R = out.getChannelData(1);
+      // Goertzel at the tone over half a second, past the filters' settling.
+      const k = (2 * Math.PI * f) / sr, coef = 2 * Math.cos(k);
+      let s1 = 0, s2 = 0;
+      for (let i = sr / 4; i < (3 * sr) / 4; i++) {
+        const s0 = (wide ? (L[i] - R[i]) : (L[i] + R[i])) / 2 + coef * s1 - s2;
+        s2 = s1; s1 = s0;
+      }
+      return Math.sqrt(s1 * s1 + s2 * s2 - coef * s1 * s2);
+    };
+    const lift = async (f, wide) => +(20 * Math.log10(await tone(f, wide, true) / await tone(f, wide, false))).toFixed(2);
+    log({
+      test: 'vocal brightness lifts the centre only',
+      centreLift1k_dB: await lift(1000, false),
+      centreLift4k_dB: await lift(4000, false),
+      centreLift10k_dB: await lift(10000, false),
+      sideLift4k_dB: await lift(4000, true),
+    });
+  }
+
   // Does the anchor actually push the vocal forward when the arrangement piles
   // up? A steady centred tone plays throughout while wide instrumentation stays
   // quiet for the first half and loud for the second. Its level is read at its

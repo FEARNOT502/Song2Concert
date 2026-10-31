@@ -9,6 +9,7 @@
 //
 //   source ─► trim ─► subCut ─► in ─┬─► air ─► transients ─► crossfeed ─► dry ──┐
 //                                   │              └─► vocal anchor ─────┘      │
+//                                   │                  vocal brightness ─┘      │
 //                                   └─► convolver (4-ch, true stereo) ─► wet ───┤
 //                                                                               │
 //   mix ◄──────────────────────────────────────────────────────────────────────┘
@@ -282,6 +283,33 @@ const TRANSIENT_BANDS = [
   { name: 'attack', type: 'bandpass', frequency: 4200, Q: 0.9, amount: 1.35, gain: 0.8 },
 ];
 
+// ── FOH vocal brightness ────────────────────────────────────────────────────
+//
+// A voice heard over a big rig is brighter than the same voice on the record.
+// The vocal mics a tour uses rise in the 4–6 kHz region to begin with, and the
+// engineer adds more on top so the words stay above the band and the crowd. A
+// record goes the other way: it is smoothed for hours of listening at home.
+// Nothing here put that back, and the air absorption over the listening
+// distance takes a little more off the top.
+//
+// It is a parallel send, like the transient bands: the centre's band around
+// 4 kHz is extracted and ADDED back, so at zero it contributes exactly nothing
+// and the chain is the chain it was. A bandpass rather than a shelf, because
+// its phase is zero at the centre and stays within ±90° either side, so the sum
+// never dips anywhere — and it tapers above 8 kHz, where sibilance lives.
+// Measured as the sum: +0.5 dB at 1 kHz, +2.0–2.5 across 3–6 kHz, +1.4 at 8 kHz,
+// +0.9 at 10 kHz.
+//
+// Only the centre is touched, so the guitars, keys and crowd spread either side
+// are not brightened with it; whatever else sits in the middle — a hi-hat, a
+// snare — is. It is on in every venue, chosen by ear, with a switch to take it
+// off.
+const VOCAL_BRIGHT = { frequency: 4000, Q: 0.6, db: 2.5 };
+
+// The send gain that puts the centre VOCAL_BRIGHT.db up at the band's peak,
+// where the bandpass passes at unity and in phase.
+export const vocalBrightGain = (on) => (on ? dbToGain(VOCAL_BRIGHT.db) - 1 : 0);
+
 // Build the whole chain on any context. `worklets` says which AudioWorklet
 // modules successfully loaded; anything missing is simply skipped, and its
 // contribution was additive, so the chain stays correct without it.
@@ -291,7 +319,7 @@ const TRANSIENT_BANDS = [
 // synthesising a response on the main thread when a worker can do it instead.
 // The first applyVenue on such a graph simply brings the room up, since there
 // is nothing to cross-fade from.
-export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {}, deferResponse = false }) {
+export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {}, deferResponse = false, vocalBright = true }) {
   const n = {};
 
   n.trim = ctx.createGain();
@@ -347,9 +375,32 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {}, d
   }
 
   // Everything the FOH engineer decided — the transient emphasis, the vocal
-  // anchor — comes together here, and BOTH the listener and the room hear it.
+  // anchor, the vocal brightness — comes together here, and BOTH the listener
+  // and the room hear it.
+  //
+  // The brightness is taken from what the other decisions made (mixIn) and
+  // added after them (mixOut). It cannot tap and return to the same node: Web
+  // Audio silences a cycle that has no delay in it.
+  n.mixIn = ctx.createGain();
   n.mixOut = ctx.createGain();
-  n.direct.connect(n.mixOut);
+  n.direct.connect(n.mixIn);
+  n.mixIn.connect(n.mixOut);
+
+  // ── vocal brightness — see VOCAL_BRIGHT ───────────────────────────────────
+  n.brightMono = ctx.createGain();
+  n.brightMono.channelCount = 1;
+  n.brightMono.channelCountMode = 'explicit';
+  n.brightMono.channelInterpretation = 'speakers';
+  n.brightBand = ctx.createBiquadFilter();
+  n.brightBand.type = 'bandpass';
+  n.brightBand.frequency.value = VOCAL_BRIGHT.frequency;
+  n.brightBand.Q.value = VOCAL_BRIGHT.Q;
+  n.bright = ctx.createGain();
+  n.bright.gain.value = vocalBrightGain(vocalBright);
+  n.mixIn.connect(n.brightMono);
+  n.brightMono.connect(n.brightBand);
+  n.brightBand.connect(n.bright);
+  n.bright.connect(n.mixOut); // mono, up-mixed to the centre
 
   // ── crossfeed, as a shelf on the side signal ──────────────────────────────
   // Below ~700 Hz a head is small next to a wavelength and casts almost no
@@ -449,7 +500,7 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {}, d
     n.maskHigh.connect(n.progTap);
     n.progTap.connect(n.anchor, 0, 1);
     n.anchor.connect(n.anchorReturn);
-    n.anchorReturn.connect(n.mixOut); // mono, up-mixed to the centre
+    n.anchorReturn.connect(n.mixIn); // mono, up-mixed to the centre
   }
 
   // ── reverberant path ──────────────────────────────────────────────────────

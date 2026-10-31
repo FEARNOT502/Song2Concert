@@ -68,6 +68,9 @@ export default function App() {
   const [time, setTime] = useState(0);
   const [wetDry, setWetDry] = useState(findVenue('stadium').position.wet);
   const [volume, setVolume] = useState(85);
+  // FOH vocal brightness — on in every venue, switchable (see VOCAL_BRIGHT in
+  // audio/graph.js)
+  const [vocalBright, setVocalBright] = useState(true);
   const [filePickerOpen, setFilePickerOpen] = useState(false);
   const [venuePickerOpen, setVenuePickerOpen] = useState(false);
   // The artwork pulse. The scene and the stage art read this every frame; it
@@ -128,6 +131,7 @@ export default function App() {
   // ── push wet/dry + volume → graph ───────────────────────────────────────
   useEffect(() => { engine.setWetDry(wetDry); }, [engine, wetDry]);
   useEffect(() => { engine.setVolume(volume); }, [engine, volume]);
+  useEffect(() => { engine.setVocalBright(vocalBright); }, [engine, vocalBright]);
 
   // ── playback clock — reads engine.currentTime each frame while playing ───
   // (loadTrack is declared below; reach it via a ref to dodge the TDZ + deps.)
@@ -533,6 +537,8 @@ export default function App() {
           durSec={effDurSec}
           wetDry={wetDry}
           onWetChange={setWetDry}
+          vocalBright={vocalBright}
+          onVocalBrightChange={setVocalBright}
           onSeek={handleSeek}
           onExport={handleExport}
           exporting={exporting}
@@ -628,6 +634,8 @@ export default function App() {
         durSec={effDurSec}
         wetDry={wetDry}
         onWetChange={setWetDry}
+        vocalBright={vocalBright}
+        onVocalBrightChange={setVocalBright}
         onSeek={handleSeek}
         onExport={handleExport}
         exporting={exporting}
