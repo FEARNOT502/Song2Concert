@@ -551,7 +551,6 @@ export default function App() {
           wetDry={wetDry}
           onWetChange={setWetDry}
           live={live}
-          liveIsAuto={liveOverride === null && liveAuto}
           liveAvailable={liveAvailable}
           onLiveToggle={toggleLive}
           onSeek={handleSeek}
@@ -650,7 +649,6 @@ export default function App() {
         wetDry={wetDry}
         onWetChange={setWetDry}
         live={live}
-        liveIsAuto={liveOverride === null && liveAuto}
         liveAvailable={liveAvailable}
         onLiveToggle={toggleLive}
         onSeek={handleSeek}

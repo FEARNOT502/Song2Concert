@@ -506,7 +506,11 @@ async function run() {
     // for the voice and noise that differs either side for the audience: in
     // the arena the side rises and the tone does not move, and in the club
     // live mode changes nothing at all.
-    const live = async (venueId, on) => {
+    //
+    // The recorded vocal — AR, a double either side — is pitched, and must NOT
+    // come up with the crowd: lifted, it was pulled away from the live vocal in
+    // the middle. Sung on its own, wide, its side should barely move.
+    const live = async (venueId, on, ar = false) => {
       const ctx = new OfflineAudioContext(2, sr * 3, sr);
       await ctx.audioWorklet.addModule('/Song2Concert/crowd-lift-processor.js');
       const g = buildGraph(ctx, { venue: venueById(venueId), volume: 1, wetDb: -1000, worklets: { crowdLift: true }, live: on });
@@ -515,17 +519,29 @@ async function run() {
       const buf = ctx.createBuffer(2, sr * 3, sr);
       let seed = 1;
       const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 2 ** 32 * 2 - 1; };
+      let pl = 0, pr = 0;
       for (let i = 0; i < buf.length; i++) {
-        const v = 0.1 * Math.sin(2 * Math.PI * 1000 * i / sr);
+        if (ar) {
+          // two takes of one line, a few cents apart, one each side
+          pl += 2 * Math.PI * 262 * (1 + 0.006 * Math.sin(2 * Math.PI * 5.5 * i / sr)) / sr;
+          pr += 2 * Math.PI * 262.9 * (1 + 0.006 * Math.sin(2 * Math.PI * 5.1 * i / sr)) / sr;
+          let l = 0, r = 0;
+          for (let h = 1; h <= 10; h++) { l += 0.05 / h * Math.sin(h * pl); r += 0.05 / h * Math.sin(h * pr); }
+          buf.getChannelData(0)[i] = 0.8 * l + 0.2 * r;
+          buf.getChannelData(1)[i] = 0.2 * l + 0.8 * r;
+          continue;
+        }
+        // a voice at 1 kHz and a bass at 100 Hz, both centred
+        const v = 0.1 * Math.sin(2 * Math.PI * 1000 * i / sr) + 0.1 * Math.sin(2 * Math.PI * 100 * i / sr);
         buf.getChannelData(0)[i] = v + 0.05 * rnd();
         buf.getChannelData(1)[i] = v + 0.05 * rnd();
       }
       const src = ctx.createBufferSource(); src.buffer = buf; src.connect(g.trim); src.start(0);
       return ctx.startRendering();
     };
-    const centreTone = (out) => {
+    const centreTone = (out, f = 1000) => {
       const L = out.getChannelData(0), R = out.getChannelData(1);
-      const k = (2 * Math.PI * 1000) / sr, coef = 2 * Math.cos(k);
+      const k = (2 * Math.PI * f) / sr, coef = 2 * Math.cos(k);
       let s1 = 0, s2 = 0;
       for (let i = sr; i < 3 * sr; i++) { const s0 = (L[i] + R[i]) / 2 + coef * s1 - s2; s2 = s1; s1 = s0; }
       return Math.sqrt(s1 * s1 + s2 * s2 - coef * s1 * s2);
@@ -546,6 +562,7 @@ async function run() {
       return +(lr / Math.sqrt(ll * rr)).toFixed(3);
     };
     const arenaOn = await live('arena', true), arenaOff = await live('arena', false);
+    const arOn = await live('arena', true, true), arOff = await live('arena', false, true);
     const clubOn = await live('club', true), clubOff = await live('club', false);
     let clubDiff = 0;
     for (let c = 0; c < 2; c++) {
@@ -555,7 +572,10 @@ async function run() {
     log({
       test: 'live mode lifts the crowd, not the centre',
       arenaCentreTone_dB: dBr(centreTone(arenaOn), centreTone(arenaOff)),
+      // the band under the voice: the centred bass comes down, the voice holds
+      arenaCentreBass_dB: dBr(centreTone(arenaOn, 100), centreTone(arenaOff, 100)),
       arenaSide_dB: dBr(sideRms(arenaOn), sideRms(arenaOff)),
+      arenaRecordedVocalSide_dB: dBr(sideRms(arOn), sideRms(arOff)),
       arenaCorrelationOff: correlation(arenaOff),
       arenaCorrelationOn: correlation(arenaOn),
       clubMaxDifference: clubDiff,

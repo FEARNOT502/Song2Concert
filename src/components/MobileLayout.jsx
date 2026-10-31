@@ -83,7 +83,7 @@ export default function MobileLayout({
   playing, onToggle, onPrev, onNext, hasNext, hasPrev,
   time, durSec, wetDry, onWetChange, onSeek, onExport, exporting, exportProgress = 0,
   volume, onVolumeChange,
-  live = false, liveIsAuto = false, liveAvailable = false, onLiveToggle,
+  live = false, liveAvailable = false, onLiveToggle,
   // pickers
   onFileClick, onVenueClick,
   strain = 0,
@@ -221,7 +221,7 @@ export default function MobileLayout({
                   ? 'border-[oklch(0.78_0.16_55)] text-[oklch(0.78_0.16_55)]'
                   : 'border-white/20 text-neutral-500 active:bg-white/10'}`}
               >
-                {!liveAvailable ? 'Live · big rooms only' : live ? `Live · on${liveIsAuto ? ' (auto)' : ''}` : 'Live · off'}
+                {!liveAvailable ? 'Live · big rooms only' : live ? 'Live · on' : 'Live · off'}
               </button>
             </div>
             <button

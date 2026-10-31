@@ -57,7 +57,7 @@ function BottomTransport({
   playing, onToggle, onPrev, onNext, hasNext, hasPrev,
   time, durSec, wetDry, onWetChange, onSeek,
   onExport, exporting, exportProgress = 0, volume, onVolumeChange,
-  live = false, liveIsAuto = false, liveAvailable = false, onLiveToggle,
+  live = false, liveAvailable = false, onLiveToggle,
 }) {
   const pct = Math.round(exportProgress * 100);
   return (
@@ -98,8 +98,8 @@ function BottomTransport({
         <span className="text-neutral-500 tabular-nums w-16 text-right">WET {wetDry}%</span>
       </div>
 
-      {/* Live mode — set from the track's tags (AUTO), overridable, and only
-          for the big rooms */}
+      {/* Live mode — set from the track's tags, overridable, and only for the
+          big rooms */}
       <button
         onClick={onLiveToggle}
         disabled={!liveAvailable}
@@ -111,7 +111,7 @@ function BottomTransport({
           ? 'border-[oklch(0.78_0.16_55)] text-[oklch(0.78_0.16_55)]'
           : 'border-white/20 text-neutral-500 hover:text-neutral-300 hover:border-white/40'}`}
       >
-        LIVE{live && liveIsAuto && liveAvailable ? ' · AUTO' : ''}
+        LIVE
       </button>
 
       {/* master volume */}

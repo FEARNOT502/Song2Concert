@@ -310,6 +310,10 @@ const VOCAL_BRIGHT = { frequency: 4000, Q: 0.6, db: 2.5 };
 // where the bandpass passes at unity and in phase.
 const VOCAL_BRIGHT_GAIN = dbToGain(VOCAL_BRIGHT.db) - 1;
 
+// A singing voice's range, for live mode: half power at about 315 Hz and
+// 3.2 kHz — the body and the words; the brightness carries on above it.
+const VOICE_BAND = { frequency: 1000, Q: 0.35 };
+
 // The crowd lift's two bands. It READS the crowd in a single bandpass, half
 // power at about 420 Hz and 5.4 kHz — the roar and the screams, not the hiss —
 // which is the band its thresholds were measured in. It LIFTS a wider, flat
@@ -344,20 +348,32 @@ const CROWD_LIFT_BAND = { low: 250, high: 8000 };
 //   wetDb  — a trim on the venue's room: −1.4 dB, about 85 % of it, by ear —
 //            the full room was a touch much over a recording that brings some
 //            of its own;
-//   crowd  — the crowd lift's peak send, reached when the audience has the room:
-//            the crowd's side returned to each ear six times over;
-//   crowdBase — and the share of it that stays on under the band.
+//   bandDb, voiceDb — the band brought back under the singer, by ear: with the
+//            room no longer washing over it, the whole backing stood out. The
+//            mix bus comes down by bandDb and the centre's voice band — see
+//            VOICE_BAND — goes up by as much, so the voice stays where it was,
+//            room and all, and the kick, the bass, the synths, their room and
+//            the crowd come down together. Trimming only the side was tried
+//            first and did next to nothing here: in a big room the side of
+//            what reaches the ears is mostly the room and the crowd.
+//   crowd  — the crowd lift's send, steady: the crowd's side returned to each
+//            ear four and a half times over. It is what the lift used to give
+//            under the band, before it stopped riding up for cheers.
 //
-// Measured on the synthetic mix against live mode off: the crowd up 4.5–5.1 dB
-// under the band and 4.9–5.9 in the chant, A-weighted, and the wide instruments
-// up 1.4–2.5 rather than buried by it. On the Tokyo Dome recordings in the dome
-// the output's L/R correlation is +0.21, against the source's +0.44.
-const LIVE = { wetDb: -1.4, crowd: 6, crowdBase: 0.75 };
+// The lift takes the side's noise, not its notes, and under the band only the
+// audience's own top end — see crowd-lift-processor.js. Measured: a recorded
+// vocal doubled either side comes through it unmoved, and the wide instruments
+// stay where they were (−0.4 to +0.5 dB on the synthetic mix). On the Tokyo
+// Dome recordings, in the dome, what it adds under a verse or chorus is within
+// 3 dB of a cheer's own spectrum above 4 kHz, where it had run 7–12 dB brighter
+// with the band's cymbals in it, and the output's L/R correlation is +0.14
+// against the source's +0.44.
+const LIVE = { wetDb: -1.4, bandDb: -1.5, voiceDb: 1.5, crowd: 4.5 };
 
 // What the live-dependent parameters are for this venue, live mode on or off.
 // Off, or outside the big rooms, it is exactly what the venue had before.
 export function liveProfile(venue, on) {
-  return liveApplies(venue.id, on) ? LIVE : { wetDb: 0, crowd: 0, crowdBase: LIVE.crowdBase };
+  return liveApplies(venue.id, on) ? LIVE : { wetDb: 0, bandDb: 0, voiceDb: 0, crowd: 0 };
 }
 
 // Build the whole chain on any context. `worklets` says which AudioWorklet
@@ -453,10 +469,26 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {}, d
   n.brightBand.connect(n.bright);
   n.bright.connect(n.mixOut); // mono, up-mixed to the centre
 
+  // ── the voice band, for live mode — see LIVE.voiceDb ──────────────────────
+  // The same construction as the brightness, wider and lower: the centre's
+  // voice range taken out and added back, nothing added while it is at zero,
+  // which it is except in live mode. Before the send, so the room hears it too.
+  n.voiceBand = ctx.createBiquadFilter();
+  n.voiceBand.type = 'bandpass';
+  n.voiceBand.frequency.value = VOICE_BAND.frequency;
+  n.voiceBand.Q.value = VOICE_BAND.Q;
+  n.voice = ctx.createGain();
+  n.voice.gain.value = 0;
+  n.brightMono.connect(n.voiceBand);
+  n.voiceBand.connect(n.voice);
+  n.voice.connect(n.mixOut);
+
   // ── crowd lift — see crowd-lift-processor.js ──────────────────────────────
   // Taken from the input, ahead of the air absorption: the audience is around
   // the listener, not 60 m away on the stage. Read from the side, where an
-  // audience lives and the centre's voice, kick and bass do not, and returned
+  // audience lives and the centre's voice, kick and bass do not; split there
+  // into noise, which is the audience, and notes, which are the AR, the
+  // harmonies and the wide instruments and stay where they are; and returned
   // to each ear through its own diffuser, so it comes back as uncorrelated as
   // the audience it was taken from.
   //
@@ -789,10 +821,10 @@ const rampFor = (t, fade) => (param, value) => {
 };
 
 function applyLiveParams(n, venue, ramp) {
-  if (!n.crowdLift) return;
   const p = liveProfile(venue, n.live);
-  ramp(n.crowdLift.parameters.get('amount'), p.crowd);
-  ramp(n.crowdLift.parameters.get('base'), p.crowdBase);
+  if (n.voice) ramp(n.voice.gain, dbToGain(p.voiceDb) - 1);
+  if (n.mix) ramp(n.mix.gain, dbToGain(p.bandDb));
+  if (n.crowdLift) ramp(n.crowdLift.parameters.get('amount'), p.crowd);
 }
 
 // Switch live mode on a built graph. Parameters only, ramped over the time a

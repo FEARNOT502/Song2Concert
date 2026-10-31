@@ -46,11 +46,13 @@ for (const venue of VENUES) {
   const big = LIVE_VENUES.includes(venue.id);
   const on = liveProfile(venue, true);
   const off = liveProfile(venue, false);
-  check(`${venue.id}: off lifts no crowd`, off.crowd === 0 && off.wetDb === 0);
+  check(`${venue.id}: off changes nothing`, off.crowd === 0 && off.wetDb === 0 && off.bandDb === 0 && off.voiceDb === 0);
   if (big) {
-    check(`${venue.id}: on lifts the crowd`, on.crowd > 0, `crowd ${on.crowd}, base ${on.crowdBase}`);
+    check(`${venue.id}: on lifts the crowd`, on.crowd > 0, `crowd ${on.crowd}`);
+    // the band comes down under the voice by exactly what the voice goes up by
+    check(`${venue.id}: the voice holds while the band comes down`, on.bandDb < 0 && on.voiceDb === -on.bandDb, `band ${on.bandDb} dB, voice +${on.voiceDb} dB`);
   } else {
-    check(`${venue.id}: on changes nothing outside the big rooms`, on.crowd === 0 && on.wetDb === 0);
+    check(`${venue.id}: on changes nothing outside the big rooms`, on.crowd === 0 && on.wetDb === 0 && on.bandDb === 0 && on.voiceDb === 0);
   }
   // Off must be the wet level the venue has without live mode, to the bit.
   for (const pct of [0, venue.position.wet, 100]) {
