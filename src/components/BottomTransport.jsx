@@ -57,7 +57,7 @@ function BottomTransport({
   playing, onToggle, onPrev, onNext, hasNext, hasPrev,
   time, durSec, wetDry, onWetChange, onSeek,
   onExport, exporting, exportProgress = 0, volume, onVolumeChange,
-  vocalBright = false, onVocalBrightChange,
+  live = false, liveIsAuto = false, liveAvailable = false, onLiveToggle,
 }) {
   const pct = Math.round(exportProgress * 100);
   return (
@@ -98,16 +98,20 @@ function BottomTransport({
         <span className="text-neutral-500 tabular-nums w-16 text-right">WET {wetDry}%</span>
       </div>
 
-      {/* FOH vocal brightness — on by default, here to be taken off */}
+      {/* Live mode — set from the track's tags (AUTO), overridable, and only
+          for the big rooms */}
       <button
-        onClick={() => onVocalBrightChange(!vocalBright)}
-        aria-pressed={vocalBright}
-        title="보컬 밝기: 공연장 PA처럼 센터 보컬의 3–6 kHz를 올립니다"
-        className={`px-2.5 py-1 border rounded text-[11px] transition-colors ${vocalBright
+        onClick={onLiveToggle}
+        disabled={!liveAvailable}
+        aria-pressed={live && liveAvailable}
+        title={liveAvailable
+          ? '라이브 모드: 실황 음원의 함성과 떼창을 살리고, 이미 녹음된 잔향 위에 덜 얹습니다'
+          : '라이브 모드: 아레나·돔·스타디움 전용'}
+        className={`px-2.5 py-1 border rounded text-[11px] transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${live && liveAvailable
           ? 'border-[oklch(0.78_0.16_55)] text-[oklch(0.78_0.16_55)]'
           : 'border-white/20 text-neutral-500 hover:text-neutral-300 hover:border-white/40'}`}
       >
-        BRIGHT
+        LIVE{live && liveIsAuto && liveAvailable ? ' · AUTO' : ''}
       </button>
 
       {/* master volume */}

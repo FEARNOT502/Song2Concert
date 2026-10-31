@@ -34,9 +34,10 @@ import { buildImpulseResponse, venueSeed } from './impulse.js';
 import { SIDE_SHELF } from './binaural.js';
 import {
   listeningDistance, roomAbsorption, DIRECTIVITY, DIRECTIVITY_Q,
-  SYSTEM_LF_HZ, REVERB_WIDTH, VENUE_WET_DB, RIG_LOW_LIFT, RIG_POWER,
+  SYSTEM_LF_HZ, ROOM_RETURN_DB, VENUE_WET_DB, RIG_LOW_LIFT, RIG_POWER,
 } from './venuerooms.js';
 import { reverbTimes, reverberantRatio, midRT } from './roomacoustics.js';
+import { liveApplies } from './live.js';
 
 // Headroom taken off the front so the boosts downstream have somewhere to go.
 // Without it the chain ran a limiter at −3 dBFS with 20:1 into a signal already
@@ -302,13 +303,62 @@ const TRANSIENT_BANDS = [
 //
 // Only the centre is touched, so the guitars, keys and crowd spread either side
 // are not brightened with it; whatever else sits in the middle — a hi-hat, a
-// snare — is. It is on in every venue, chosen by ear, with a switch to take it
-// off.
+// snare — is. It is part of the chain in every venue, chosen by ear.
 const VOCAL_BRIGHT = { frequency: 4000, Q: 0.6, db: 2.5 };
 
 // The send gain that puts the centre VOCAL_BRIGHT.db up at the band's peak,
 // where the bandpass passes at unity and in phase.
-export const vocalBrightGain = (on) => (on ? dbToGain(VOCAL_BRIGHT.db) - 1 : 0);
+const VOCAL_BRIGHT_GAIN = dbToGain(VOCAL_BRIGHT.db) - 1;
+
+// The crowd lift's two bands. It READS the crowd in a single bandpass, half
+// power at about 420 Hz and 5.4 kHz — the roar and the screams, not the hiss —
+// which is the band its thresholds were measured in. It LIFTS a wider, flat
+// band: lifting through the bandpass made the crowd honk, its middle 6 dB up on
+// its own edges at the gains a live recording needs.
+const CROWD_BAND = { frequency: 1500, Q: 0.3 };
+const CROWD_LIFT_BAND = { low: 250, high: 8000 };
+
+// ── Live mode ───────────────────────────────────────────────────────────────
+//
+// What changes in the big rooms when the track is a live recording — see
+// live.js for when that is, and crowd-lift-processor.js for the crowd.
+//
+// The chain was run on a synthetic live mix — a centred voice, kick and bass,
+// wide instruments, and an uncorrelated crowd that swells into a chant — with
+// each stage taken out in turn, reading the crowd and the wide instruments
+// against the centre, A-weighted. The ADDED ROOM is what buries the audience:
+// taking it out brought the chanting crowd up 3.3 dB in the arena and 1.2–1.4
+// in the dome and stadium. Everything else that looked like a suspect — the
+// crossfeed, the rig's low end, the loudness compensation, the bus compression,
+// the vocal anchor, even over a long chant — moved it by 0.2 dB or less, and is
+// left alone.
+//
+// The room is not the thing to cut, though. That was tried, and by ear it left
+// the big rooms small and flat: a live recording holds far less of its room
+// than a seat in the building gives. So the room stays and the crowd is brought
+// up over it, which takes a strong lift. On the Tokyo Dome recordings, in the
+// dome, the room's side in the crowd band sits roughly 10 dB or more over the
+// recording's own under a verse: tripling the recording's side moved the
+// total side there by only 1.4 dB.
+//
+//   wetDb  — a trim on the venue's room: −1.4 dB, about 85 % of it, by ear —
+//            the full room was a touch much over a recording that brings some
+//            of its own;
+//   crowd  — the crowd lift's peak send, reached when the audience has the room:
+//            the crowd's side returned to each ear six times over;
+//   crowdBase — and the share of it that stays on under the band.
+//
+// Measured on the synthetic mix against live mode off: the crowd up 4.5–5.1 dB
+// under the band and 4.9–5.9 in the chant, A-weighted, and the wide instruments
+// up 1.4–2.5 rather than buried by it. On the Tokyo Dome recordings in the dome
+// the output's L/R correlation is +0.21, against the source's +0.44.
+const LIVE = { wetDb: -1.4, crowd: 6, crowdBase: 0.75 };
+
+// What the live-dependent parameters are for this venue, live mode on or off.
+// Off, or outside the big rooms, it is exactly what the venue had before.
+export function liveProfile(venue, on) {
+  return liveApplies(venue.id, on) ? LIVE : { wetDb: 0, crowd: 0, crowdBase: LIVE.crowdBase };
+}
 
 // Build the whole chain on any context. `worklets` says which AudioWorklet
 // modules successfully loaded; anything missing is simply skipped, and its
@@ -319,8 +369,9 @@ export const vocalBrightGain = (on) => (on ? dbToGain(VOCAL_BRIGHT.db) - 1 : 0);
 // synthesising a response on the main thread when a worker can do it instead.
 // The first applyVenue on such a graph simply brings the room up, since there
 // is nothing to cross-fade from.
-export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {}, deferResponse = false, vocalBright = true }) {
+export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {}, deferResponse = false, live = false }) {
   const n = {};
+  n.live = live;
 
   n.trim = ctx.createGain();
   n.trim.gain.value = dbToGain(INPUT_TRIM_DB);
@@ -396,11 +447,59 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {}, d
   n.brightBand.frequency.value = VOCAL_BRIGHT.frequency;
   n.brightBand.Q.value = VOCAL_BRIGHT.Q;
   n.bright = ctx.createGain();
-  n.bright.gain.value = vocalBrightGain(vocalBright);
+  n.bright.gain.value = VOCAL_BRIGHT_GAIN;
   n.mixIn.connect(n.brightMono);
   n.brightMono.connect(n.brightBand);
   n.brightBand.connect(n.bright);
   n.bright.connect(n.mixOut); // mono, up-mixed to the centre
+
+  // ── crowd lift — see crowd-lift-processor.js ──────────────────────────────
+  // Taken from the input, ahead of the air absorption: the audience is around
+  // the listener, not 60 m away on the stage. Read from the side, where an
+  // audience lives and the centre's voice, kick and bass do not, and returned
+  // to each ear through its own diffuser, so it comes back as uncorrelated as
+  // the audience it was taken from.
+  //
+  // It joins at the mix bus, AFTER the room (see below), not with the FOH
+  // decisions that the room hears. The recorded audience already carries the
+  // room it was recorded in, and sending the lift into a second one was
+  // measured to waste it: in the dome the lifted side went mostly into the
+  // reverberation and came back as centre, and a send gain of 3 raised the side
+  // under a verse by half a decibel.
+  if (worklets.crowdLift) {
+    n.crowdSplit = ctx.createChannelSplitter(2);
+    const mono = (g) => { const node = ctx.createGain(); node.gain.value = g; return node; };
+    const filter = (type, frequency, Q) => {
+      const f = ctx.createBiquadFilter();
+      f.type = type;
+      f.frequency.value = frequency;
+      f.Q.value = Q;
+      return f;
+    };
+    n.crowdSideL = mono(0.5); n.crowdSideR = mono(-0.5); n.crowdSide = mono(1);
+    n.crowdMidL = mono(0.5); n.crowdMidR = mono(0.5); n.crowdMid = mono(1);
+    // What is lifted: the crowd's whole range, flat — see CROWD_LIFT_BAND.
+    n.crowdLiftHP = filter('highpass', CROWD_LIFT_BAND.low, 0.707);
+    n.crowdLiftLP = filter('lowpass', CROWD_LIFT_BAND.high, 0.707);
+    // What is read to decide how much: the band the thresholds were measured in.
+    n.crowdSideBand = filter('bandpass', CROWD_BAND.frequency, CROWD_BAND.Q);
+    n.crowdMidBand = filter('bandpass', CROWD_BAND.frequency, CROWD_BAND.Q);
+    n.crowdLift = new AudioWorkletNode(ctx, 'crowd-lift', {
+      numberOfInputs: 3, numberOfOutputs: 1, outputChannelCount: [2],
+    });
+    n.in.connect(n.crowdSplit);
+    n.crowdSplit.connect(n.crowdSideL, 0); n.crowdSplit.connect(n.crowdSideR, 1);
+    n.crowdSplit.connect(n.crowdMidL, 0); n.crowdSplit.connect(n.crowdMidR, 1);
+    n.crowdSideL.connect(n.crowdSide); n.crowdSideR.connect(n.crowdSide);
+    n.crowdMidL.connect(n.crowdMid); n.crowdMidR.connect(n.crowdMid);
+    n.crowdSide.connect(n.crowdLiftHP);
+    n.crowdLiftHP.connect(n.crowdLiftLP);
+    n.crowdLiftLP.connect(n.crowdLift, 0, 0);
+    n.crowdSide.connect(n.crowdSideBand);
+    n.crowdSideBand.connect(n.crowdLift, 0, 1);
+    n.crowdMid.connect(n.crowdMidBand);
+    n.crowdMidBand.connect(n.crowdLift, 0, 2);
+  }
 
   // ── crossfeed, as a shelf on the side signal ──────────────────────────────
   // Below ~700 Hz a head is small next to a wavelength and casts almost no
@@ -593,28 +692,10 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {}, d
   // ── mix bus ───────────────────────────────────────────────────────────────
   n.mix = ctx.createGain();
   n.dry.connect(n.mix);
-  // ── Widen the room, not the source ────────────────────────────────────────
-  // Mid/side on the RETURN, boosting side only. See REVERB_WIDTH.
-  n.wSplit = ctx.createChannelSplitter(2);
-  n.wMerge = ctx.createChannelMerger(2);
-  n.wMidL = ctx.createGain(); n.wMidL.gain.value = 0.5;
-  n.wMidR = ctx.createGain(); n.wMidR.gain.value = 0.5;
-  n.wMid = ctx.createGain();
-  n.wSideL = ctx.createGain(); n.wSideL.gain.value = 0.5;
-  n.wSideR = ctx.createGain(); n.wSideR.gain.value = -0.5;
-  n.wSide = ctx.createGain();
-  n.wWidth = ctx.createGain();
-  n.wSideNeg = ctx.createGain(); n.wSideNeg.gain.value = -1;
-  n.wet.connect(n.wSplit);
-  n.wSplit.connect(n.wMidL, 0); n.wSplit.connect(n.wMidR, 1);
-  n.wMidL.connect(n.wMid); n.wMidR.connect(n.wMid);
-  n.wSplit.connect(n.wSideL, 0); n.wSplit.connect(n.wSideR, 1);
-  n.wSideL.connect(n.wSide); n.wSideR.connect(n.wSide);
-  n.wSide.connect(n.wWidth);
-  n.wWidth.connect(n.wSideNeg);
-  n.wMid.connect(n.wMerge, 0, 0); n.wWidth.connect(n.wMerge, 0, 0);
-  n.wMid.connect(n.wMerge, 0, 1); n.wSideNeg.connect(n.wMerge, 0, 1);
-  n.wMerge.connect(n.mix);
+  if (n.crowdLift) n.crowdLift.connect(n.mix);
+  // The room arrives as the response made it: decorrelated, not widened — see
+  // ROOM_RETURN_DB for why the side boost that stood here came out.
+  n.wet.connect(n.mix);
 
   n.loudShelf = ctx.createBiquadFilter();
   n.loudShelf.type = 'lowshelf';
@@ -700,6 +781,29 @@ export function buildGraph(ctx, { venue, volume = 1, wetDb = 0, worklets = {}, d
 export const VENUE_FADE_IN = 0.25;
 export const VENUE_FADE_OUT = 1.2;
 
+// A linear ramp from wherever a parameter is now, starting at `t`.
+const rampFor = (t, fade) => (param, value) => {
+  param.cancelScheduledValues(t);
+  param.setValueAtTime(param.value, t);
+  param.linearRampToValueAtTime(value, t + fade);
+};
+
+function applyLiveParams(n, venue, ramp) {
+  if (!n.crowdLift) return;
+  const p = liveProfile(venue, n.live);
+  ramp(n.crowdLift.parameters.get('amount'), p.crowd);
+  ramp(n.crowdLift.parameters.get('base'), p.crowdBase);
+}
+
+// Switch live mode on a built graph. Parameters only, ramped over the time a
+// venue's parameters take to arrive, so it lands as a change of balance rather
+// than a step.
+// The wet level moves with it, and is the caller's: see wetTrimDb.
+export function setLive(ctx, n, venue, on) {
+  n.live = !!on;
+  applyLiveParams(n, venue, rampFor(ctx.currentTime, VENUE_FADE_IN));
+}
+
 // Apply a venue to an already-built graph.
 //
 // Everything a venue decides is a parameter: the response, the air absorption
@@ -736,11 +840,7 @@ export function applyVenue(ctx, n, venue, { fadeIn = VENUE_FADE_IN, fadeOut = VE
     return;
   }
   n.pendingVenue = null;
-  const ramp = (param, value) => {
-    param.cancelScheduledValues(t);
-    param.setValueAtTime(param.value, t);
-    param.linearRampToValueAtTime(value, t + fadeIn);
-  };
+  const ramp = rampFor(t, fadeIn);
 
   const air = airTiltFor(venue.id);
   ramp(n.air4k.gain, air.hf4k);
@@ -752,7 +852,6 @@ export function applyVenue(ctx, n, venue, { fadeIn = VENUE_FADE_IN, fadeOut = VE
   ramp(n.sendVocalDip.gain, send.vocal);
   ramp(n.subCut.frequency, systemLowCut(venue.id));
   if (n.rigLow) ramp(n.rigLow.gain, rigLowLift(venue.id));
-  if (n.wWidth) ramp(n.wWidth.gain, REVERB_WIDTH[venue.id] ?? 1);
   ramp(n.sendHF.gain, send.hf);
   ramp(n.sendHF.frequency, send.hfHz);
 
@@ -760,6 +859,8 @@ export function applyVenue(ctx, n, venue, { fadeIn = VENUE_FADE_IN, fadeOut = VE
   if (n.glue) ramp(n.glue.parameters.get('amount'), pa.glue ?? 0);
 
   n.sat.curve = makeSatCurve(pa.drive ?? 0);
+
+  applyLiveParams(n, venue, ramp);
 
   // Everything but the room — see buildGraph's `deferResponse`.
   if (!loadResponse) return;
@@ -854,7 +955,12 @@ export const WET_OFFSET_DB = 2.5;
 // alone was what made `position.wet` look like a per-venue control while doing
 // nothing at all: the trim is the DIFFERENCE between the slider and the centre,
 // so moving the centre moves the trim by exactly minus itself.
-export function wetTrimDb(percent, venue) {
+//
+// ROOM_RETURN_DB is the level the return used to gain from being widened, kept
+// now that it is not; `live` moves the centre itself, in the big rooms — see
+// liveProfile.
+export function wetTrimDb(percent, venue, live = false) {
   const delta = (percent - venue.position.wet) / 100;
-  return Math.max(-40, (VENUE_WET_DB[venue.id] ?? WET_OFFSET_DB) + delta * 24);
+  return Math.max(-40, (VENUE_WET_DB[venue.id] ?? WET_OFFSET_DB) + (ROOM_RETURN_DB[venue.id] ?? 0)
+    + liveProfile(venue, live).wetDb + delta * 24);
 }

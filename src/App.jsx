@@ -20,6 +20,7 @@ import { useEngine } from './audio/useEngine.js';
 import { useAudioStrain } from './audio/useAudioStrain.js';
 import { audioBufferToFlac } from './audio/flac.js';
 import { extractMetadata } from './audio/metadata.js';
+import { detectLive, LIVE_VENUES } from './audio/live.js';
 import { songMapFor } from './songMap.js';
 
 // How the export's two halves divide the progress bar. Rendering the venue
@@ -68,9 +69,11 @@ export default function App() {
   const [time, setTime] = useState(0);
   const [wetDry, setWetDry] = useState(findVenue('stadium').position.wet);
   const [volume, setVolume] = useState(85);
-  // FOH vocal brightness — on in every venue, switchable (see VOCAL_BRIGHT in
-  // audio/graph.js)
-  const [vocalBright, setVocalBright] = useState(true);
+  // Live mode, for a live recording (audio/live.js). The tags decide it for each
+  // track as it loads (upload.liveAuto); the switch overrides that for the track
+  // that is playing, and the next track goes back to its own tags. null = the
+  // tags have it.
+  const [liveOverride, setLiveOverride] = useState(null);
   const [filePickerOpen, setFilePickerOpen] = useState(false);
   const [venuePickerOpen, setVenuePickerOpen] = useState(false);
   // The artwork pulse. The scene and the stage art read this every frame; it
@@ -114,6 +117,9 @@ export default function App() {
   // derived
   const venue = findVenue(venueId);
   const desk = CROWD_LIGHT_VENUES.includes(venueId);
+  const liveAuto = !!upload?.liveAuto;
+  const live = liveOverride ?? liveAuto;
+  const liveAvailable = LIVE_VENUES.includes(venueId);
 
   const displayFile = useMemo(() => (upload
     ? {
@@ -131,7 +137,8 @@ export default function App() {
   // ── push wet/dry + volume → graph ───────────────────────────────────────
   useEffect(() => { engine.setWetDry(wetDry); }, [engine, wetDry]);
   useEffect(() => { engine.setVolume(volume); }, [engine, volume]);
-  useEffect(() => { engine.setVocalBright(vocalBright); }, [engine, vocalBright]);
+  useEffect(() => { engine.setLive(live); }, [engine, live]);
+  const toggleLive = useCallback(() => setLiveOverride((o) => !(o ?? liveAuto)), [liveAuto]);
 
   // ── playback clock — reads engine.currentTime each frame while playing ───
   // (loadTrack is declared below; reach it via a ref to dodge the TDZ + deps.)
@@ -261,6 +268,7 @@ export default function App() {
     }
     const fmt = `${(f.name.split('.').pop() || 'PCM').toUpperCase()} · streaming`;
     const meta = await metadataFor(f, true);
+    const liveAuto = detectLive({ title: meta.title, album: meta.album, fileName: f.name });
     setQueue((rows) => (rows.length ? [{ ...rows[0], name: queueLabel(f, meta) }, ...rows.slice(1)] : rows));
     setUpload((prev) => {
       if (prev?.coverSrc) URL.revokeObjectURL(prev.coverSrc);
@@ -273,9 +281,14 @@ export default function App() {
         durSec: engine.duration,
         coverSrc: meta.coverSrc,
         format: fmt,
+        liveAuto,
       };
     });
     setTime(0);
+    // Straight to the engine as well as through the state, so a live track
+    // starts in live mode rather than ramping into it after its first notes.
+    setLiveOverride(null);
+    engine.setLive(liveAuto);
     engine.setWetDry(wetDry);
     engine.setVolume(volume);
     if (autoplay) { await play(); setPlaying(true); }
@@ -537,8 +550,10 @@ export default function App() {
           durSec={effDurSec}
           wetDry={wetDry}
           onWetChange={setWetDry}
-          vocalBright={vocalBright}
-          onVocalBrightChange={setVocalBright}
+          live={live}
+          liveIsAuto={liveOverride === null && liveAuto}
+          liveAvailable={liveAvailable}
+          onLiveToggle={toggleLive}
           onSeek={handleSeek}
           onExport={handleExport}
           exporting={exporting}
@@ -634,8 +649,10 @@ export default function App() {
         durSec={effDurSec}
         wetDry={wetDry}
         onWetChange={setWetDry}
-        vocalBright={vocalBright}
-        onVocalBrightChange={setVocalBright}
+        live={live}
+        liveIsAuto={liveOverride === null && liveAuto}
+        liveAvailable={liveAvailable}
+        onLiveToggle={toggleLive}
         onSeek={handleSeek}
         onExport={handleExport}
         exporting={exporting}

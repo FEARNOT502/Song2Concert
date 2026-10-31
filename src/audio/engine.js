@@ -8,7 +8,7 @@
 // - The analyser taps ahead of the volume control, so the artwork pulse follows
 //   the music rather than the volume knob.
 
-import { buildGraph, applyVenue, disposeGraph, wetTrimDb, vocalBrightGain, VENUE_FADE_IN } from './graph.js';
+import { buildGraph, applyVenue, disposeGraph, wetTrimDb, setLive as setGraphLive } from './graph.js';
 import { readAudioFormat } from './bitdepth.js';
 import { reverbTimes } from './roomacoustics.js';
 import { roomAbsorption, VENUE_ROOMS } from './venuerooms.js';
@@ -23,6 +23,7 @@ const WORKLETS = {
   vocalAnchor: `${import.meta.env.BASE_URL}vocal-anchor-processor.js`,
   limiter: `${import.meta.env.BASE_URL}limiter-processor.js`,
   glue: `${import.meta.env.BASE_URL}glue-processor.js`,
+  crowdLift: `${import.meta.env.BASE_URL}crowd-lift-processor.js`,
 };
 
 // Load every worklet module onto a context and report which ones took. Each is
@@ -66,7 +67,7 @@ export class ConcertEngine {
     this._venue = null;
     this._wetPercent = null;    // null until a venue sets its default
     this._bypass = false;
-    this._vocalBright = true;   // see VOCAL_BRIGHT in graph.js
+    this._live = false;         // the track is a live recording — see live.js
     this._volume = 0.85;        // 0..1
     this._worklets = {};
     this.ready = false;
@@ -410,7 +411,7 @@ export class ConcertEngine {
     const old = this.graph;
     const wetDb = this._bypass
       ? -1000
-      : wetTrimDb(this._wetPercent ?? venue.position.wet, venue);
+      : wetTrimDb(this._wetPercent ?? venue.position.wet, venue, this._live);
     // A response that is not cached yet is built in the worker and applied when
     // it arrives, rather than synthesised here on the main thread. The graph
     // plays dry for the few tens of milliseconds that takes — on the very first
@@ -424,7 +425,7 @@ export class ConcertEngine {
       wetDb,
       worklets: this._worklets,
       deferResponse,
-      vocalBright: this._vocalBright,
+      live: this._live,
     });
     graph.out.connect(this.analyser); // ahead of the volume control
     graph.limiter.connect(this.ctx.destination);
@@ -710,23 +711,21 @@ export class ConcertEngine {
     this._applyWet();
   }
 
-  // The FOH vocal brightness, on or off. Ramped over the same time a venue's
-  // parameters take to arrive, so switching it while listening is a change of
-  // tone rather than a step.
-  setVocalBright(on) {
-    this._vocalBright = !!on;
-    if (!this.graph) return;
-    const p = this.graph.bright.gain;
-    const t = this.ctx.currentTime;
-    p.cancelScheduledValues(t);
-    p.setValueAtTime(p.value, t);
-    p.linearRampToValueAtTime(vocalBrightGain(this._vocalBright), t + VENUE_FADE_IN);
+  // Live mode, for a live recording — see live.js and liveProfile in graph.js.
+  // It only does anything in the big rooms, but the state is kept whatever the
+  // venue, so walking from the club to the arena with a live track playing
+  // brings it in.
+  setLive(on) {
+    this._live = !!on;
+    if (!this.graph || !this._venue) return;
+    setGraphLive(this.ctx, this.graph, this._venue, this._live);
+    this._applyWet();
   }
 
   _applyWet() {
     if (!this.graph || !this._venue) return;
     const def = this._venue.position.wet;
-    const db = this._bypass ? -1000 : wetTrimDb(this._wetPercent ?? def, this._venue);
+    const db = this._bypass ? -1000 : wetTrimDb(this._wetPercent ?? def, this._venue, this._live);
     const g = db <= -100 ? 0 : Math.pow(10, db / 20);
     this.graph.wet.gain.setTargetAtTime(g, this.ctx.currentTime, 0.02);
   }
@@ -934,9 +933,9 @@ export class ConcertEngine {
       // Render at unity. The playback volume knob is a monitoring control, and
       // baking it into the file meant listening quietly produced a quiet export.
       volume: 1,
-      wetDb: this._bypass ? -1000 : wetTrimDb(this._wetPercent ?? def, venue),
+      wetDb: this._bypass ? -1000 : wetTrimDb(this._wetPercent ?? def, venue, this._live),
       worklets,
-      vocalBright: this._vocalBright,
+      live: this._live,
     });
     graph.limiter.connect(offline.destination);
 

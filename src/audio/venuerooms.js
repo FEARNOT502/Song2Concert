@@ -90,29 +90,33 @@ export const SYSTEM_LF_HZ = {
   stadium: 28,
 };
 
-// How much the reverberant return is widened on its way to the ears.
+// How much the reverberant return is lifted on its way to the ears, in dB.
 //
-// A real diffuse field arrives from every direction at once, including behind
-// and above. Two channels cannot deliver that, so a response measured as highly
-// decorrelated — these run an interaural cross-correlation of 0.02 to 0.09 late,
-// which is as diffuse as a great hall — still arrives narrower than the room it
-// came from. Widening the side component of the RETURN is the standard partial
-// compensation, and it costs the direct sound nothing: the source stays where it
-// is and only the room opens up, which is the right way round.
+// This was a WIDTH: a side-only boost on the return, on the reasoning that two
+// channels cannot deliver a diffuse field from every direction and widening the
+// side is the standard partial compensation. It overshot. The responses are
+// already as decorrelated as a great hall — a late interaural cross-correlation
+// of 0.02 to 0.09 — and boosting the side of an uncorrelated pair does not make
+// it more diffuse, it makes it ANTI-correlated: (1 − w²)/(1 + w²), −0.48 at the
+// dome's 1.68. Measured on a live recording in the dome, the whole output ran
+// at an L/R correlation of −0.22 against the source's +0.44. On headphones
+// anti-correlated sound is heard inside the head rather than around it, so the
+// room the widening was meant to open up collapsed into the middle instead.
+// Without it, at the same reverberant level, the output sits at +0.09.
 //
-// Scaled to what each venue actually feels like:
+// The widening also added LEVEL — the return's energy went up by (1 + w²)/2 —
+// and each venue's reverberant level was set by ear with that in. So the
+// energy is kept and the anti-correlation is not: the return comes up by the
+// same number of decibels in mid and side alike. The widths are kept below as
+// what these figures were derived from, with how they were scaled:
 //   · club        a small room heard close: intimate, not enveloping
 //   · theatre     boxes up both side walls wrap the stalls
-//   · concert hall the vineyard's terraces surround every seat — the highest
-//                 lateral fraction of the acoustic rooms, and the form exists
-//                 for that
-//   · arena/dome  large enclosed volumes, and the ones where the reverberant
-//                 return is doing most of the work of conveying size; the dome
-//                 is the biggest room here
-//   · stadium     open above the pitch, so much of what would envelop you
-//                 leaves and never comes back — it stays the narrowest of the
-//                 three big rooms on purpose
-export const REVERB_WIDTH = {
+//   · concert hall the vineyard's terraces surround every seat
+//   · arena/dome  large enclosed volumes, where the reverberant return does most
+//                 of the work of conveying size; the dome is the biggest room
+//   · stadium     open above the pitch, so much of what would envelop you leaves
+//                 and never comes back
+const FORMER_WIDTH = {
   club: 1.15,
   theater: 1.28,
   concerthall: 1.45,
@@ -120,6 +124,9 @@ export const REVERB_WIDTH = {
   dome: 1.68,
   stadium: 1.40,
 };
+export const ROOM_RETURN_DB = Object.fromEntries(
+  Object.entries(FORMER_WIDTH).map(([id, w]) => [id, 10 * Math.log10((1 + w * w) / 2)]),
+);
 
 // The reverberant level each venue arrives at, in dB relative to the level its
 // impulse response already carries. The wet slider trims ±12 dB around this.

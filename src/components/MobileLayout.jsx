@@ -82,7 +82,8 @@ export default function MobileLayout({
   // transport
   playing, onToggle, onPrev, onNext, hasNext, hasPrev,
   time, durSec, wetDry, onWetChange, onSeek, onExport, exporting, exportProgress = 0,
-  volume, onVolumeChange, vocalBright = false, onVocalBrightChange,
+  volume, onVolumeChange,
+  live = false, liveIsAuto = false, liveAvailable = false, onLiveToggle,
   // pickers
   onFileClick, onVenueClick,
   strain = 0,
@@ -211,15 +212,16 @@ export default function MobileLayout({
               <span className="w-12 text-right tabular-nums">{volume}</span>
             </div>
             <div className="flex items-center gap-3 text-[11px] tracking-[0.15em] text-neutral-400 uppercase">
-              <span className="w-12">Vocal</span>
+              <span className="w-12">Live</span>
               <button
-                onClick={() => onVocalBrightChange(!vocalBright)}
-                aria-pressed={vocalBright}
-                className={`flex-1 py-2 border rounded-lg text-[11px] tracking-[0.15em] uppercase ${vocalBright
+                onClick={onLiveToggle}
+                disabled={!liveAvailable}
+                aria-pressed={live && liveAvailable}
+                className={`flex-1 py-2 border rounded-lg text-[11px] tracking-[0.15em] uppercase disabled:opacity-30 ${live && liveAvailable
                   ? 'border-[oklch(0.78_0.16_55)] text-[oklch(0.78_0.16_55)]'
                   : 'border-white/20 text-neutral-500 active:bg-white/10'}`}
               >
-                {vocalBright ? 'Bright · on' : 'Bright · off'}
+                {!liveAvailable ? 'Live · big rooms only' : live ? `Live · on${liveIsAuto ? ' (auto)' : ''}` : 'Live · off'}
               </button>
             </div>
             <button

@@ -49,7 +49,7 @@ function mockGraph() {
     sendLF: { gain: param() }, sendMud: { gain: param() },
     sendVocalDip: { gain: param() },
     subCut: { frequency: param(80) },
-    rigLow: { gain: param() }, wWidth: { gain: param(1) },
+    rigLow: { gain: param() },
     sendHF: {
       gain: param(), frequency: param(2000),
       connect(x) { connected.add(x.name); },

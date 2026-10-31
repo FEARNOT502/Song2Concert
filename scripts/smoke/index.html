@@ -424,7 +424,7 @@ async function run() {
       const c = new OfflineAudioContext(2, sr * 4, sr);
       try { await c.audioWorklet.addModule('/Song2Concert/limiter-processor.js'); } catch (e) { /* noop */ }
       const gg = buildGraph(c, { venue, volume: 1, wetDb: 0, worklets: { limiter: true } });
-      gg.wMerge.connect(c.destination);
+      gg.wet.connect(c.destination);
       const b = c.createBuffer(2, 128, sr);
       b.getChannelData(0)[0] = 0.05; b.getChannelData(1)[0] = 0.05;
       const s2 = c.createBufferSource(); s2.buffer = b; s2.connect(gg.trim); s2.start(0);
@@ -480,7 +480,8 @@ async function run() {
     const venue = venueById('arena');
     const tone = async (f, wide, on) => {
       const ctx = new OfflineAudioContext(2, sr, sr);
-      const g = buildGraph(ctx, { venue, volume: 1, wetDb: -1000, worklets: {}, vocalBright: on });
+      const g = buildGraph(ctx, { venue, volume: 1, wetDb: -1000, worklets: {} });
+      if (!on) g.bright.gain.value = 0;
       const buf = ctx.createBuffer(2, sr, sr);
       for (let i = 0; i < sr; i++) {
         const v = 0.05 * Math.sin(2 * Math.PI * f * i / sr);
@@ -501,6 +502,65 @@ async function run() {
       return Math.sqrt(s1 * s1 + s2 * s2 - coef * s1 * s2);
     };
     const lift = async (f, wide) => +(20 * Math.log10(await tone(f, wide, true) / await tone(f, wide, false))).toFixed(2);
+    // Live mode lifts the crowd and leaves the centre. A centred tone stands in
+    // for the voice and noise that differs either side for the audience: in
+    // the arena the side rises and the tone does not move, and in the club
+    // live mode changes nothing at all.
+    const live = async (venueId, on) => {
+      const ctx = new OfflineAudioContext(2, sr * 3, sr);
+      await ctx.audioWorklet.addModule('/Song2Concert/crowd-lift-processor.js');
+      const g = buildGraph(ctx, { venue: venueById(venueId), volume: 1, wetDb: -1000, worklets: { crowdLift: true }, live: on });
+      // the lift joins at the mix bus, after the room
+      g.mix.connect(ctx.destination);
+      const buf = ctx.createBuffer(2, sr * 3, sr);
+      let seed = 1;
+      const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 2 ** 32 * 2 - 1; };
+      for (let i = 0; i < buf.length; i++) {
+        const v = 0.1 * Math.sin(2 * Math.PI * 1000 * i / sr);
+        buf.getChannelData(0)[i] = v + 0.05 * rnd();
+        buf.getChannelData(1)[i] = v + 0.05 * rnd();
+      }
+      const src = ctx.createBufferSource(); src.buffer = buf; src.connect(g.trim); src.start(0);
+      return ctx.startRendering();
+    };
+    const centreTone = (out) => {
+      const L = out.getChannelData(0), R = out.getChannelData(1);
+      const k = (2 * Math.PI * 1000) / sr, coef = 2 * Math.cos(k);
+      let s1 = 0, s2 = 0;
+      for (let i = sr; i < 3 * sr; i++) { const s0 = (L[i] + R[i]) / 2 + coef * s1 - s2; s2 = s1; s1 = s0; }
+      return Math.sqrt(s1 * s1 + s2 * s2 - coef * s1 * s2);
+    };
+    const sideRms = (out) => {
+      const L = out.getChannelData(0), R = out.getChannelData(1);
+      let s = 0;
+      for (let i = sr; i < 3 * sr; i++) s += ((L[i] - R[i]) / 2) ** 2;
+      return Math.sqrt(s / (2 * sr));
+    };
+    const dBr = (a, b) => +(20 * Math.log10(a / b)).toFixed(2);
+    // The crowd goes back uncorrelated, not opposed: lifting it must not turn
+    // the two ears against each other.
+    const correlation = (out) => {
+      const L = out.getChannelData(0), R = out.getChannelData(1);
+      let lr = 0, ll = 0, rr = 0;
+      for (let i = sr; i < 3 * sr; i++) { lr += L[i] * R[i]; ll += L[i] * L[i]; rr += R[i] * R[i]; }
+      return +(lr / Math.sqrt(ll * rr)).toFixed(3);
+    };
+    const arenaOn = await live('arena', true), arenaOff = await live('arena', false);
+    const clubOn = await live('club', true), clubOff = await live('club', false);
+    let clubDiff = 0;
+    for (let c = 0; c < 2; c++) {
+      const a = clubOn.getChannelData(c), b = clubOff.getChannelData(c);
+      for (let i = 0; i < a.length; i++) clubDiff = Math.max(clubDiff, Math.abs(a[i] - b[i]));
+    }
+    log({
+      test: 'live mode lifts the crowd, not the centre',
+      arenaCentreTone_dB: dBr(centreTone(arenaOn), centreTone(arenaOff)),
+      arenaSide_dB: dBr(sideRms(arenaOn), sideRms(arenaOff)),
+      arenaCorrelationOff: correlation(arenaOff),
+      arenaCorrelationOn: correlation(arenaOn),
+      clubMaxDifference: clubDiff,
+    });
+
     log({
       test: 'vocal brightness lifts the centre only',
       centreLift1k_dB: await lift(1000, false),
