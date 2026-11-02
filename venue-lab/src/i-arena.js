@@ -48,6 +48,38 @@ function buildArena(ctx) {
   });
   root.add(stands.group);
 
+  // ── the 300 level's ends ──
+  // Each three-row balcony stops short of the corners. The data has the
+  // partitions between its boxes but nothing at its two ends, so the last
+  // seats stood open to the void over the 200s. A wall closes each end, along
+  // the end of its rows from the front rail back into the rear wall, from the
+  // balcony's floor up to the 400 level's underside.
+  {
+    const L3 = SSA_STANDS.levels.find((l) => l.name === '300');
+    const L4 = SSA_STANDS.levels.find((l) => l.name === '400');
+    const bot = L3.rows[0].y0, top = L4.rows[0].y0, T = 0.25;
+    const walls = [];
+    for (const zs of [-1, 1]) for (const xs of [-1, 1]) {
+      const pts = [];
+      for (const r of L3.rows) for (const p of r.polys) for (const [x, z] of p[0]) if (Math.sign(x) === xs && Math.sign(z) === zs) pts.push([x, z]);
+      const mx = Math.max(...pts.map(([x]) => Math.abs(x)));
+      const end = pts.filter(([x]) => Math.abs(x) > mx - 1.2).sort((a, b) => Math.abs(a[1]) - Math.abs(b[1]));
+      const [f, b] = [end[0], end[end.length - 1]];
+      // along the end, a little past the front rail and on into the rear wall;
+      // set out by half its thickness, so its inner face is the end of the rows
+      const dx = b[0] - f[0], dz = b[1] - f[1], len = Math.hypot(dx, dz), ux = dx / len, uz = dz / len;
+      // the side away from the seats: the normal that points out along x
+      const k = Math.sign(uz) === xs ? 1 : -1, nx = uz * k, nz = -ux * k;
+      const cx = (f[0] + b[0]) / 2 + nx * T / 2 + ux * 0.1, cz = (f[1] + b[1]) / 2 + nz * T / 2 + uz * 0.1;
+      const g = new THREE.BoxGeometry(T, top - bot, len + 0.6);
+      g.rotateY(Math.atan2(dx, dz)); g.translate(cx, (bot + top) / 2, cz + OZ);
+      walls.push(g.toNonIndexed());
+    }
+    const wm = new THREE.Mesh(mergeGeometries(walls), std({ color: 0x2c2d31, roughness: 0.75 }));
+    wm.receiveShadow = true; wm.castShadow = true;
+    root.add(wm);
+  }
+
   // ── the suites on the 3rd floor, along the left side ──
   // behind the 200s' back: a row of rooms, each behind a glass front with its
   // balcony in front of it, the VIP room in the middle; lit warm within. A
@@ -268,7 +300,7 @@ function buildArena(ctx) {
       houseFix.forEach((h) => { h.intensity = 1.5 * f.house; });
       hzWash[0].color.copy(f.pal.a); hzWash[1].color.copy(f.pal.b); hzWash[2].color.copy(f.pal.d);
       hzWash.forEach((h, i) => { h.power = (i < 2 ? 260 : 120) * (0.4 + 0.6 * f.energy + 0.3 * f.kick) * show; });
-      deck.userData.lip.color.setHex(APP.accent).multiplyScalar((0.6 + 0.8 * f.kick) * show + 0.2);
+      ringTint(deck.userData.lip.color, f.pal.a).multiplyScalar((0.6 + 0.8 * f.kick) * show + 0.2);
       cu.uRimColor.value.copy(f.pal.a).lerp(new THREE.Color(1, 1, 1), 0.3).multiplyScalar((0.22 + 0.25 * f.kick) * show);
       cu.uStage.value.set(0, 10, 4 + SZ);
       cu.uWash.value.copy(f.pal.b).multiplyScalar(0.012 * show + 0.2 * f.house);

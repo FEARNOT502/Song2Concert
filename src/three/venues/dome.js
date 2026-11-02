@@ -11,11 +11,11 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { APP, DEG, KELVIN, V3, clamp, floorPanelTex, glowMat, lerp, prng, std } from '../core.js';
+import { APP, DEG, KELVIN, V3, clamp, lerp, prng, std, floorPanelTex, glowMat, ringTint } from '../core.js';
 import { lightPoints } from '../people.js';
 import { hoists, micStand, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
 import { bigCrowd, bigScreens, crossThrust, delayTower, floorChairs, fohPosition, fixtureRow, flashOnCrowd, flashUnits, fromRow, groundRoof, paHang, paWing, runBlinders, runShow, runStrobes, scaffoldMasking, screenHang, section, subLine, thinRow, wallStrip } from '../show.js';
-import { buildStands } from '../stands.js';
+import { buildStands, decodeSeats } from '../stands.js';
 import { TD_STANDS } from './td-data.js';
 
 export function membraneMaterial() {
@@ -124,9 +124,25 @@ export function buildDome(ctx) {
   // seat that can see the face of the wall, the restricted-view ones beside
   // the stage and the outfield's ends past the poles included; the outfield
   // behind the set not.
+  // ── the 2nd floor's box seats (the 2022 renewal) ──
+  // One row across the 2nd floor on the 1st- and 3rd-base sides, in the
+  // infield (about six of its blocks, as the photographs show it, not out
+  // towards the outfield): the first row of E over the walkway between D and
+  // E, made into boxes of four seats. Each row has a long light-wood counter at table height in front
+  // of its seats, with cup holes, on a wooden front down to the tread; light-wood
+  // half-height partitions between the boxes; the seats grey, not blue. Phi is
+  // the angle from the centre-field line seen from home plate (the foul lines
+  // at 45).
+  const BOX = { level: 'E', rows: [0], phi: [85, 115], per: 4 };
+  const inBox = (name, x, z, row) => {
+    if (name !== BOX.level || !BOX.rows.includes(row)) return false;
+    const f = Math.abs(Math.atan2(x, -z)) / DEG;
+    return f >= BOX.phi[0] && f <= BOX.phi[1];
+  };
   const stands = buildStands(TD_STANDS, {
     offset: OFF, stage: STAGE, seed: 400, concreteTone: 0.28, roofY: (x, z) => ringY(z + ZH) + 0.3,
     seatColors: { A: 0x1d3c86, B: 0x1d3c86, F: 0x1d3c86, K: 0x1d3c86, G: 0x1d3c86, C: 0x5a5d63, D: 0x1d3c86, E: 0x1d3c86 },
+    seatColorAt: (name, x, z, row) => (inBox(name, x, z, row) ? 0x6a6b6e : null),
     crowd: !!q.crowd,
     // the lightsticks' floors as the building counts them, [floor, band from
     // the front]: the 1st floor (the field-level seats, A, B behind it, and
@@ -138,6 +154,42 @@ export function buildDome(ctx) {
     materials: { rail: std({ color: 0x77736c, roughness: 0.92, side: THREE.DoubleSide }) },
   });
   root.add(stands.group);
+  {
+    const L = TD_STANDS.levels.find((l) => l.name === BOX.level), S = decodeSeats(L.seats), sk = L.seatScale ?? 10;
+    const rows = new Map();
+    for (let i = 0; i < S.length; i += 4) {
+      const x = S[i] / sk, z = S[i + 1] / sk, row = S[i + 2];
+      if (!inBox(L.name, x, z, row)) continue;
+      const yaw = S[i + 3] * DEG, side = Math.sign(x), key = `${side}:${row}`;
+      if (!rows.has(key)) rows.set(key, []);
+      rows.get(key).push({ x, z: z + ZH, y: L.hs ? L.hs[row] : L.h0 + L.rise * row, fx: Math.sin(yaw), fz: Math.cos(yaw), a: Math.atan2(x, -z) });
+    }
+    const wood = [], holes = [];
+    const piece = (out, w, h, d, x, y, z, rotY) => { const b = new THREE.BoxGeometry(w, h, d); b.rotateY(rotY); b.translate(x, y, z); out.push(b); };
+    for (const seats of rows.values()) {
+      seats.sort((p, q2) => p.a - q2.a);
+      seats.forEach((s, k) => {
+        const rot = Math.atan2(s.fx, s.fz);
+        // the counter and its front, the width of the seat (and a little over, so they run on unbroken)
+        piece(wood, 0.56, 0.035, 0.34, s.x + s.fx * 0.52, s.y + 0.72, s.z + s.fz * 0.52, rot);
+        piece(wood, 0.56, 0.72, 0.03, s.x + s.fx * 0.68, s.y + 0.36, s.z + s.fz * 0.68, rot);
+        piece(holes, 0.08, 0.004, 0.08, s.x + s.fx * 0.52, s.y + 0.74, s.z + s.fz * 0.52, rot);
+        // a partition between every fourth seat and the next, and at both ends
+        // of the run (half a seat out, away from its neighbour)
+        const wall = (x, z) => piece(wood, 0.04, 1.1, 0.95, x + s.fx * 0.22, s.y + 0.55, z + s.fz * 0.22, rot);
+        const o = seats[k + 1];
+        if (o && (k + 1) % BOX.per === 0) wall((s.x + o.x) / 2, (s.z + o.z) / 2);
+        for (const [e, n] of [[0, 1], [seats.length - 1, seats.length - 2]]) {
+          if (k !== e || !seats[n]) continue;
+          const dx = s.x - seats[n].x, dz = s.z - seats[n].z, l = Math.hypot(dx, dz) || 1;
+          wall(s.x + dx / l * 0.27, s.z + dz / l * 0.27);
+        }
+      });
+    }
+    const birch = std({ color: 0xc9a06a, roughness: 0.55 });
+    const wm = new THREE.Mesh(mergeGeometries(wood), birch); wm.receiveShadow = true; wm.castShadow = true;
+    root.add(wm, new THREE.Mesh(mergeGeometries(holes), std({ color: 0x141414, roughness: 0.9 })));
+  }
   // the boxes behind home at the balcony's level (S101–110 and S301–310
   // either side of the VIP box): glass fronts between mullions, lit within,
   // under the 2nd floor's front
@@ -269,12 +321,13 @@ export function buildDome(ctx) {
       }
     }
   }
-  // the foul poles, where the lines meet the fence
+  // the foul poles, where the lines meet the fence: flat paint and a net
+  // screen, lit by the room like the rest of it (no shine, no glow of their own)
   for (const sd of [-1, 1]) {
     const r = 100, x = sd * r * Math.SQRT1_2, z = ZH - r * Math.SQRT1_2;
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.36, 26, 12), std({ color: 0xe8c418, roughness: 0.45, emissive: 0x3a3004 }));
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.36, 26, 12), std({ color: 0xd9b81a, roughness: 1, metalness: 0, envMapIntensity: 0 }));
     pole.position.set(x, 13, z); root.add(pole);
-    const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 20), new THREE.MeshBasicMaterial({ color: 0xf2d020, transparent: true, opacity: 0.22, side: THREE.DoubleSide }));
+    const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 20), std({ color: 0xd9b81a, roughness: 1, metalness: 0, envMapIntensity: 0, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false }));
     flag.position.set(x - sd * 0.8, 14, z); flag.rotation.y = sd * Math.PI / 4; root.add(flag);
   }
 
@@ -306,6 +359,29 @@ export function buildDome(ctx) {
   for (let i = 0; i < 14; i++) {
     const { x, z } = edge((i + 0.5) / 14 * Math.PI * 2, 0.97);
     LIGHTS.push(V3(x, ringY(z) - 1.5, z));
+  }
+  // Since the 2022 remodel nothing is lit on the membrane: the only house
+  // lights are the floods round its edge.
+  // The floods themselves (LED, about 650 since the 2016 retrofit): a band
+  // of box fixtures all the way round where the membrane meets the top of the
+  // wall, close-packed on the ring beam just under the membrane's edge, each
+  // face turned in at the field and only a little down, so from the stands
+  // and the field the faces are seen square on: an almost unbroken ring of
+  // lit boxes, as the photographs show it. Their faces light with the house.
+  const floodM = new THREE.MeshBasicMaterial({ color: 0x000000, toneMapped: false, side: THREE.DoubleSide });
+  const floodGlow = [];
+  {
+    const NL = 220, TILT = 0.35, body = [], faces = [];
+    for (let i = 0; i < NL; i++) {
+      const { x, z } = edge((i + 0.5) / NL * Math.PI * 2, 0.988);
+      const y = ringY(z) - 1.1, yaw = Math.atan2(-x, ZC - z);
+      const at = (lx, ly, lz) => V3(lx, ly, lz).applyAxisAngle(V3(1, 0, 0), TILT).applyAxisAngle(V3(0, 1, 0), yaw).add(V3(x, y, z));
+      const box = new THREE.BoxGeometry(2.3, 0.95, 0.5); box.rotateX(TILT); box.rotateY(yaw); box.translate(x, y, z); body.push(box.toNonIndexed());
+      const face = new THREE.PlaneGeometry(2.1, 0.78); face.rotateX(TILT); face.rotateY(yaw); face.translate(...at(0, 0, 0.26).toArray()); faces.push(face);
+      if (i % 2 === 0) floodGlow.push(pipe.flares.add(at(0, 0, 0.4), KELVIN(5200), 3.0, 0));
+    }
+    root.add(new THREE.Mesh(mergeGeometries(body), std({ color: 0x24252a, roughness: 0.6, metalness: 0.4 })));
+    root.add(new THREE.Mesh(mergeGeometries(faces), floodM));
   }
   // the ring beam's support frame round the edge, 5 m deep, roofed at the
   // ring; the outer wall under it
@@ -373,9 +449,13 @@ export function buildDome(ctx) {
   // (as the photographs from the 2nd floor show it) a runway out from the
   // stage's middle, crossed a third of the way down the field by a long
   // walkway either side, and on past it to an end stage
-  const RW0 = 22 + SZ, CZ = 57, XW = 30, XD = 5.2, RW1 = 88, TIP = 10, XH = DECK - 0.8;
+  // the end stage's back (and the 1.4 m kept clear round it) on the aisle
+  // behind the band of floor blocks it stands in, so no strip too shallow for
+  // a block is left empty behind it
+  const RW0 = 22 + SZ, CZ = 57, XW = 30, XD = 5.2, RW1 = 91.2, TIP = 10, XH = DECK - 0.8;
   const cross = crossThrust(root, { z0: RW0, z1: RW1, w: 4.4, crossZ: CZ, crossD: XD, crossW: XW, tip: TIP, h: XH });
-  for (const s of [-1, 1]) root.add(stageSteps({ x: s * 35.75, z: RW0, h: DECK, dir: [0, -1] }));
+  // the stairs up either side of the deck, beside it (it is 72 m wide), 3 m wide
+  for (const s of [-1, 1]) root.add(stageSteps({ x: s * 37.55, z: RW0, h: DECK, dir: [0, -1], width: 3 }));
   const bRimM = glowMat(APP.accent, 1);
   {
     const g = new THREE.BoxGeometry(XW * 2 + 0.1, 0.05, 0.05); g.translate(0, XH, CZ + XD + 0.02);
@@ -485,7 +565,8 @@ export function buildDome(ctx) {
     const p = LIGHTS[Math.round(i / 8 * (LIGHTS.length - 1))];
     const l = new THREE.SpotLight(KELVIN(5200), 0, 300, 0.8, 1, 2);
     l.position.copy(p).y -= 1.0;
-    l.target.position.set(p.x * 0.2, 0, ZC + (p.z - ZC) * 0.2);
+    // each across to the far side of the field, so the bowl is lit evenly from round its edge
+    l.target.position.set(-p.x * 0.35, 0, ZC - (p.z - ZC) * 0.35);
     l.userData.offWhenDark = 'house'; root.add(l, l.target); house.push(l);
   }
   root.add(new THREE.HemisphereLight(0x181a24, 0x050508, 0.35));
@@ -647,16 +728,18 @@ export function buildDome(ctx) {
         fx.intensity = (sec === 'chorus' ? 0.9 + 0.4 * f.kick : sec === 'pre' ? 0.5 : 0.18) * show;
       });
       // (idle, at half what it was: it glared off the deck)
-      front1.intensity = 90000 * show + 4500 * f.house;
+      front1.intensity = 90000 * show;
       stageWash.color.copy(f.pal.a); stageWash.intensity = (12000 + 14000 * f.energy + 6000 * f.kick) * show;
       fill.forEach((l, i) => { l.color.copy(i ? f.pal.b : f.pal.a); l.intensity = (200 + 500 * f.energy) * show; });
       // (half what they were: at full the deck, the trusses and the roof threw
       // too much of them back)
+      floodM.color.copy(KELVIN(5200)).multiplyScalar(0.03 + 2.6 * f.house);
+      for (const g of floodGlow) g.intensity = 0.9 * f.house;
       house.forEach((l) => { l.intensity = 22500 * f.house; });
       hzWash[0].color.copy(f.pal.a); hzWash[1].color.copy(f.pal.b); hzWash[2].color.copy(f.pal.d);
       hzWash.forEach((h) => { h.power = 600 * (0.4 + 0.6 * f.energy + 0.3 * f.kick) * show; });
-      bRimM.color.setHex(APP.accent).multiplyScalar((0.6 + 0.9 * f.kick) * show + 0.2);
-      deck.userData.lip.color.setHex(APP.accent).multiplyScalar((0.6 + 0.8 * f.kick) * show + 0.2);
+      ringTint(bRimM.color, f.pal.a).multiplyScalar((0.6 + 0.9 * f.kick) * show + 0.2);
+      ringTint(deck.userData.lip.color, f.pal.a).multiplyScalar((0.6 + 0.8 * f.kick) * show + 0.2);
       const sh = membrane.userData.shader;
       if (sh) {
         // the house lights wash the membrane warm; in the show it takes the stage's colour back

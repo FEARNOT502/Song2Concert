@@ -2,16 +2,19 @@
 // THEATER — a musical house after Blue Square's Shinhan Card Hall: three
 // levels (1,066 / 430 / 270 at the real one), the stalls 27 m deep from the
 // stage edge to the back row, the first balcony 18.5 m from the stage. A black
-// portal, the house curtain gathered up, a pit, box booms, and a show running.
+// portal, the house curtain gathered up, the pit covered over, box booms, and a
+// show running. Behind each floor's last row a wall with doors onto its
+// concourse; stairs at both back corners join the three, and a passage down
+// each side from a door at the front of the stalls.
 // The seats are the hall's own plan, seat for seat: blue, each block angled
 // in toward the stage as the plan draws it.
 // Room model: 29 × 40 × 16 m, 9th row centre, 12 m from the source.
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { APP, DEG, KELVIN, V3, carpetTex, glowMat, prng, std, velvet, withRepeat, woodTex } from '../core.js';
+import { APP, DEG, KELVIN, V3, carpetTex, glowMat, prng, std, velvet, withRepeat, woodTex, ringTint } from '../core.js';
 import { crowd3D, lightPoints } from '../people.js';
-import { drapeGeometry, ledScreen, lineArray, mats, performer, seatField, shadowSpot, stageDeck, stageSteps } from '../rig.js';
+import { drapeGeometry, ledScreen, lineArray, mats, seatField, shadowSpot, stageDeck, stageSteps } from '../rig.js';
 import { floorBlocks } from '../show.js';
 import { seatFinder } from '../stands.js';
 
@@ -34,7 +37,7 @@ export function buildTheater(ctx) {
   const OW = 15.2, OB = 1.1, OT = 10.4; // opening width, sill (deck), head
   const DECK = 1.1;
   const APRON = 5.9;                    // stage edge
-  const PIT0 = APRON, PIT1 = 8.3;       // orchestra pit
+  const PIT0 = APRON, PIT1 = 8.3;       // orchestra pit (covered over)
   // the stalls: seven rows, a cross-aisle, fifteen more, then the wheelchair
   // places; row g of the stalls counts through the cross-aisle as a row
   const ROW0 = 8.9, ROWD = 0.95, CROSSW = 1.6;
@@ -52,20 +55,35 @@ export function buildTheater(ctx) {
   const seatVel = velvet(0x22409e, 'seatblue');
 
   // ── the house ──
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D - PIT1), carpet);
-  floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0.01, (PIT1 + D) / 2); floor.receiveShadow = true;
+  // the house floor, out to the proscenium: the pit is covered over level with it
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D - PZ - PT), carpet);
+  floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0.01, (PZ + PT + D) / 2); floor.receiveShadow = true;
   root.add(floor);
+  // the levels behind the seats (see concourses below): the floor of the
+  // stalls' wheelchair places, and where the stalls' and the 2nd floor's walls
+  // with their doors stand; the side walls' door and opening onto the passages
+  const CY1 = 0.12 + 23 * 0.075 + 23 * 23 * 0.0032;
+  const CZW = 33.5;
+  const SIDE_DOOR = [5.0, 6.6], SIDE_OPEN = [33.8, 39.6];
   for (const side of [-1, 1]) {
-    const wall = new THREE.Mesh(new THREE.PlaneGeometry(D - PZ, H), wallMat.clone());
-    wall.material.map = walnut.map.clone(); wall.material.map.repeat.set((D - PZ) / 1.2, H / 4);
-    wall.material.normalMap = walnut.normalMap.clone(); wall.material.normalMap.repeat.copy(wall.material.map.repeat);
-    wall.rotation.y = -side * Math.PI / 2;
-    wall.position.set(side * X, H / 2, (D + PZ) / 2);
+    // the side walls, with a door at the front of the stalls and the opening
+    // from the side passage onto the stalls' concourse
+    const ws = new THREE.Shape();
+    ws.moveTo(PZ, 0); ws.lineTo(D, 0); ws.lineTo(D, H); ws.lineTo(PZ, H); ws.lineTo(PZ, 0);
+    for (const [z0, z1, y0, y1] of [[SIDE_DOOR[0], SIDE_DOOR[1], 0, 2.3], [SIDE_OPEN[0], SIDE_OPEN[1], CY1, CY1 + 2.8]]) {
+      const h = new THREE.Path(); h.moveTo(z0, y0); h.lineTo(z1, y0); h.lineTo(z1, y1); h.lineTo(z0, y1); h.lineTo(z0, y0); ws.holes.push(h);
+    }
+    const wg = new THREE.ShapeGeometry(ws, 1);
+    const P = wg.attributes.position;
+    for (let i = 0; i < P.count; i++) { const u = P.getX(i), v = P.getY(i); P.setXYZ(i, side * X, v, u); }
+    wg.computeVertexNormals();
+    const wall = new THREE.Mesh(wg, std({ ...withRepeat(walnut, 1 / 1.2, 1 / 4), roughness: 1, side: THREE.DoubleSide }));
     wall.receiveShadow = true;
     root.add(wall);
-    // acoustic fins down the side walls, catching the light edge-on
+    // acoustic fins down the side walls, catching the light edge-on, short of
+    // the concourses
     const fins = [];
-    for (let z = PZ + 3; z < D - 1; z += 1.4) { const f = new THREE.BoxGeometry(0.22, H - 1, 0.06); f.translate(side * (X - 0.11), H / 2 + 0.5, z); fins.push(f); }
+    for (let z = PZ + 3; z < CZW - 0.5; z += 1.4) { const f = new THREE.BoxGeometry(0.22, H - 1, 0.06); f.translate(side * (X - 0.11), H / 2 + 0.5, z); fins.push(f); }
     root.add(new THREE.Mesh(mergeGeometries(fins), std({ color: 0x2a1a10, roughness: 0.6 })));
   }
   const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W, D), std({ color: 0x08080a, roughness: 0.95 }));
@@ -122,8 +140,14 @@ export function buildTheater(ctx) {
     bridge.position.set(s * 8.55, DECK / 2, 5.275); root.add(bridge);
   }
   const lipM = glowMat(APP.accent, 0.35);
-  const lip = new THREE.Mesh(new THREE.BoxGeometry(OW + 1.8, 0.02, 0.02), lipM);
-  lip.position.set(0, DECK - 0.01, APRON + 0.62); root.add(lip);
+  // along the apron's curved front (stageDeck's round front: the corners
+  // 0.8 m back from its edge, the middle 0.2 m out past it)
+  {
+    const aw = OW + 2, az = (PZ + PT + APRON) / 2 - 0.5, ad = APRON - PZ - PT + 1, y = DECK - 0.01;
+    const path = new THREE.CurvePath();
+    for (const s of [-1, 1]) path.add(new THREE.QuadraticBezierCurve3(V3(s * aw / 2, y, az + ad / 2 - 0.8 + 0.01), V3(s * aw / 2, y, az + ad / 2 + 0.01), V3(0, y, az + ad / 2 + 0.21)));
+    root.add(new THREE.Mesh(new THREE.TubeGeometry(path, 64, 0.012, 4, false), lipM));
+  }
   const stageBack = new THREE.Mesh(new THREE.PlaneGeometry(24, 16), black);
   stageBack.position.set(0, 8, -14); root.add(stageBack);
   // legs and borders: the black masking that makes wings
@@ -172,23 +196,8 @@ export function buildTheater(ctx) {
   const lead = { position: V3(-0.9, DECK, 3.3) };
 
   // ── the pit ──
-  const pitFloor = new THREE.Mesh(new THREE.PlaneGeometry(OW + 3, PIT1 - PIT0), std({ color: 0x080808, roughness: 1 }));
-  pitFloor.rotation.x = -Math.PI / 2; pitFloor.position.set(0, -2.2, (PIT0 + PIT1) / 2); root.add(pitFloor);
-  const pitWall = new THREE.Mesh(new THREE.BoxGeometry(OW + 3, 3.2, 0.2), std({ ...withRepeat(walnut, 3, 1), roughness: 1 }));
-  pitWall.position.set(0, -0.6, PIT1); root.add(pitWall);
-  const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, OW + 3, 8), std({ color: 0xb08a40, metalness: 1, roughness: 0.3 }));
-  rail.rotation.z = Math.PI / 2; rail.position.set(0, 1.02, PIT1); root.add(rail);
-  const pitLight = new THREE.PointLight(KELVIN(3000), 0, 9, 2);
-  pitLight.position.set(0, -0.6, (PIT0 + PIT1) / 2); root.add(pitLight);
-  // the players' way out, a flight at each end of the pit
-  for (const s of [-1, 1]) root.add(stageSteps({ x: s * 6.0, z: (PIT0 + PIT1) / 2, y0: -2.2, h: 0, dir: [s, 0], width: 1.4 }));
-  const standLights = [];
-  for (let i = 0; i < 16; i++) {
-    const x = -7 + i * 0.95, z = PIT0 + 0.6 + (i % 2) * 0.9;
-    standLights.push(pipe.flares.add(V3(x, -0.95, z), KELVIN(3000), 0.28, 0.45));
-  }
-  const conductorHead = performer('conductor', { top: 0x050505, skin: 0.3, cast: false });
-  conductorHead.position.set(0.3, -1.4, PIT1 - 0.5); conductorHead.rotation.y = Math.PI; root.add(conductorHead);
+  // covered over, level with the house floor (which runs on under the
+  // apron's front): no band in it for this show
 
   // ── PA: centre cluster and left/right columns ──
   const cluster = lineArray({ boxes: 6, width: 1.1, depth: 0.6, height: 0.34, splay: 0.05 });
@@ -225,7 +234,11 @@ export function buildTheater(ctx) {
   };
   // a floor's blocks: rows at z(sec, k), y(sec, k), the treads solid down to
   // `base(y)`, the aisles between the blocks filled at each row's height, the
-  // side blocks' treads run on out to the walls
+  // side blocks' treads run on out to the walls. In front of a block's first
+  // row the tread runs on a further KNEE, where its people's feet are (a
+  // seated person's feet are about 0.55 m in front of the seat), and a
+  // balcony's front stands past that, so no foot shows through it.
+  const KNEE = 0.6;
   const floorBlocks = (blocks, { z, y, base, aisleTo, parts, fronts, frontY, aisleLights }) => {
     for (const b of blocks) {
       const th = b.th * DEG, sd = b.side;
@@ -236,7 +249,8 @@ export function buildTheater(ctx) {
           // the middle block and the aisles either side, as one tread
           tread(parts, -aisleTo, zk, aisleTo, zk, ROWD, yk, base(yk));
           if (aisleLights) for (const s of [-1, 1]) aisleLights.push({ x: s * 4.7, y: yk + 0.05, z: zk + 0.3 });
-          if (k === 0 && fronts) tread(fronts, -aisleTo, zk - 0.16, aisleTo, zk - 0.16, 0.16, frontY(yk), yk - 0.4);
+          if (k === 0) tread(parts, -aisleTo, zk - KNEE, aisleTo, zk - KNEE, KNEE, yk, base(yk));
+          if (k === 0 && fronts) tread(fronts, -aisleTo, zk - KNEE - 0.16, aisleTo, zk - KNEE - 0.16, 0.16, frontY(yk), yk - 0.4);
           return;
         }
         // a side block's row: from its aisle end out, turned in toward the stage
@@ -248,7 +262,8 @@ export function buildTheater(ctx) {
         }
         const reach = (X - 0.15 - b.x0) / Math.cos(th);
         tread(parts, px - dx * 0.4, pz - dz * 0.4, px + dx * reach, pz + dz * reach, ROWD, yk, base(yk));
-        if (k === 0 && fronts) tread(fronts, px - dx * 0.4, pz - dz * 0.4 - 0.16, px + dx * reach, pz + dz * reach - 0.16, 0.16, frontY(yk), yk - 0.4);
+        if (k === 0) tread(parts, px - dx * 0.4, pz - dz * 0.4 - KNEE, px + dx * reach, pz + dz * reach - KNEE, KNEE, yk, base(yk));
+        if (k === 0 && fronts) tread(fronts, px - dx * 0.4, pz - dz * 0.4 - KNEE - 0.16, px + dx * reach, pz + dz * reach - KNEE - 0.16, 0.16, frontY(yk), yk - 0.4);
       });
     }
   };
@@ -265,21 +280,23 @@ export function buildTheater(ctx) {
   // and behind it, six rows; slabs under the treads, a timber front, and a
   // walkway behind the last row to the back wall
   const balconies = [
-    { blocks: BSQ.f2, z0: 24.4, y0: 5.2, rise: 0.3 },
-    { blocks: BSQ.f3, z0: 29.0, y0: 10.6, rise: 0.36 },
+    { blocks: BSQ.f2, z0: 24.4, y0: 5.2, rise: 0.3, front: 1.0 },
+    // the 3rd floor's front kept low (0.8 m over its first tread), as the
+    // photographs from its rows show it: under a seated eye, the stage clear over it
+    { blocks: BSQ.f3, z0: 29.0, y0: 10.6, rise: 0.36, front: 0.8 },
   ];
-  const lampSpots = [];
+  const lampSpots = [], levels = [];
   for (const B of balconies) {
     const parts = [], fronts = [];
     const z = (sec, k) => B.z0 + k * 0.9, y = (sec, k) => B.y0 + k * B.rise;
-    floorBlocks(B.blocks, { z, y, base: (yk) => yk - 0.45, aisleTo: 5.95, parts, fronts, frontY: (yk) => yk + 1.0, aisleLights: stepPts });
+    floorBlocks(B.blocks, { z, y, base: (yk) => yk - 0.45, aisleTo: 5.95, parts, fronts, frontY: (yk) => yk + B.front, aisleLights: stepPts });
     const n = Math.max(...B.blocks.map((b) => b.rows.length));
-    const yl = y('b', n - 1), zl = z('b', n - 1) + 0.72;
-    const back = new THREE.BoxGeometry(W - 0.2, 0.45, D - zl); back.translate(0, yl - 0.225, (zl + D) / 2); parts.push(back);
-    root.add(new THREE.Mesh(mergeGeometries(parts), slabMat));
+    // its back slab, to the rear wall, is laid with the concourses (cut for the stairs)
+    levels.push({ y: y('b', n - 1), z: z('b', n - 1) + 0.72, parts });
     root.add(new THREE.Mesh(mergeGeometries(fronts), balconyFront));
-    for (const x of [-8.5, -3, 3, 8.5]) lampSpots.push(V3(x, B.y0 + 1.05, B.z0 - 0.3 - Math.max(0, Math.abs(x) - 5.95) * Math.tan(12.3 * DEG)));
+    for (const x of [-8.5, -3, 3, 8.5]) lampSpots.push(V3(x, B.y0 + B.front + 0.05, B.z0 - KNEE - 0.3 - Math.max(0, Math.abs(x) - 5.95) * Math.tan(12.3 * DEG)));
   }
+  concourses(root, { X, D, H, CY1, CZW, levels, slabMat, wallMat: std({ ...withRepeat(walnut, 1 / 1.2, 1 / 4), roughness: 1 }), SIDE_DOOR, SIDE_OPEN });
   root.add(seatField(spots, { fabric: seatVel, frame: seatFrame }));
   if (q.crowd) root.add(crowd3D(people, cu, { kind: 'seated', detail: 1, seed: 5 }));
   // aisle step lights
@@ -427,8 +444,6 @@ export function buildTheater(ctx) {
       sides.forEach((fx, i) => { fx.color.copy(i % 2 ? c : d); fx.intensity = (0.35 + 0.45 * f.energy) * show; });
       follows.forEach((fx) => { rig.aim(fx, leadPos); fx.intensity = 1.4 * show; });
       practicals.forEach((p, i) => { p.intensity = (0.45 + 0.1 * Math.sin(f.t * 2 + i)) * (0.6 + 0.4 * show); });
-      standLights.forEach((p) => { p.intensity = 0.4 * show + 0.25 * f.house; });
-      pitLight.intensity = 3 * show + 1 * f.house;
       houseLights.forEach((l) => { l.intensity = 420 * f.house; });
       bounce.color.copy(tung).lerp(a, 0.4).lerp(b, 0.2);
       bounce.intensity = (0.9 + f.energy * 0.6 + f.kick * 0.2) * show + 0.3 * f.house;
@@ -436,7 +451,7 @@ export function buildTheater(ctx) {
       wallWash.forEach((l) => { l.intensity = 6 + 20 * f.house; });
       grazers.forEach((g) => { g.intensity = 18 + 40 * f.house; });
       steps.material.uniforms.uGain.value = 0.3 + 0.2 * f.house;
-      lipM.color.setHex(APP.accent).multiplyScalar(0.25 + 0.3 * f.kick * show);
+      ringTint(lipM.color, f.pal.a).multiplyScalar(0.25 + 0.3 * f.kick * show);
       hzBooth.forEach((h) => { h.power = 30 * show; });
       hzStage.power = (20 + f.energy * 20) * show + 6 * f.house;
       cu.uRimColor.value.copy(tung).lerp(a, 0.35).multiplyScalar(0.05 * show + 0.01);
@@ -445,4 +460,134 @@ export function buildTheater(ctx) {
       cu.uAmb.value.setRGB(0.008, 0.006, 0.005).multiplyScalar(1 + f.house * 6);
     },
   };
+}
+
+// The concourses behind the three floors, and the ways between them.
+//
+// Behind each floor's last row a wall across the house with a door at each
+// aisle, an exit sign over it; behind the 3rd floor's wall, a window for the
+// followspots. Behind the walls the floors run back to the rear wall: the
+// stalls' level floor, the balconies' back slabs (`levels`: their heights,
+// fronts and the parts their slabs are merged with). At each back corner a
+// pair of stairs: from the stalls' concourse up along the rear wall to the 2nd
+// floor's, then back the other way, in front of it, to the 3rd's; the slab
+// over each flight is cut away, a wall stands between the two flights and a
+// rail round each well. Down each side, outside the side wall, a passage from
+// the door at the front of the stalls, ramped up to the stalls' concourse.
+function concourses(root, { X, D, H, CY1, CZW, levels, slabMat, wallMat, SIDE_DOOR, SIDE_OPEN }) {
+  const [L2, L3] = levels;
+  const box = (out, x0, x1, y0, y1, z0, z1) => {
+    if (x1 - x0 < 1e-3 || y1 - y0 < 1e-3 || z1 - z0 < 1e-3) return;
+    const b = new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0); b.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2); out.push(b);
+  };
+  const T = 0.25, DW = 1.6, DH = 2.3, DOORS = [-4.7, 4.7];
+  // the stairs: A from the stalls' concourse to the 2nd floor, along the rear
+  // wall; B from there to the 3rd, in front of it (x for the right-hand pair,
+  // mirrored for the left)
+  const AZ = [38.3, D - 0.05], BZ = [36.55, 38.15];
+  const AX = [4.8, 12.0], BX = [5.6, 12.6];
+  const flight = (out, side, xFrom, xTo, z0, z1, y0, y1) => {
+    const n = Math.ceil((y1 - y0) / 0.18 - 1e-6), rise = (y1 - y0) / n, run = Math.abs(xTo - xFrom) / n, dir = Math.sign(xTo - xFrom);
+    for (let i = 0; i < n; i++) {
+      const xa = side * (xFrom + dir * i * run), xb = side * (xFrom + dir * (i + 1) * run);
+      box(out, Math.min(xa, xb), Math.max(xa, xb), y0, y0 + rise * (i + 1), z0, z1);
+    }
+  };
+  // a slab across the house from z0 to the rear wall, cut where `holes`
+  // ([x0, x1, z0, z1] on the right, mirrored on the left) are
+  const slab = (out, y0, y1, z0, holes) => {
+    const xs = [-X + 0.1, X - 0.1];
+    for (const [hx0, hx1] of holes) xs.push(-hx1, -hx0, hx0, hx1);
+    xs.sort((a, b) => a - b);
+    const zs = [z0, D];
+    for (const [, , hz0, hz1] of holes) zs.push(hz0, hz1);
+    zs.sort((a, b) => a - b);
+    for (let i = 0; i < xs.length - 1; i++) for (let j = 0; j < zs.length - 1; j++) {
+      const cx = (xs[i] + xs[i + 1]) / 2, cz = (zs[j] + zs[j + 1]) / 2;
+      if (holes.some(([hx0, hx1, hz0, hz1]) => Math.abs(cx) > hx0 && Math.abs(cx) < hx1 && cz > hz0 && cz < hz1)) continue;
+      box(out, xs[i], xs[i + 1], y0, y1, zs[j], zs[j + 1]);
+    }
+  };
+  slab(L2.parts, L2.y - 0.45, L2.y, L2.z, [[AX[0], AX[1], AZ[0], D]]);
+  slab(L3.parts, L3.y - 0.45, L3.y, L3.z, [[BX[0], BX[1], BZ[0], BZ[1]]]);
+  root.add(new THREE.Mesh(mergeGeometries(L2.parts), slabMat), new THREE.Mesh(mergeGeometries(L3.parts), slabMat));
+
+  const walls = [], dark = [], stairs = [], rails = [], lit = [];
+  // a wall across the house at z, from y0 to y1, a door at each aisle (and,
+  // with `win`, a window from x -win[0]..win[0] between win[1] and win[2])
+  const across = (z, y0, y1, win) => {
+    const xs = [-X + 0.05];
+    for (const x of DOORS) xs.push(x - DW / 2, x + DW / 2);
+    xs.push(X - 0.05);
+    for (let i = 0; i < xs.length - 1; i++) {
+      if (i % 2 === 1) { box(walls, xs[i], xs[i + 1], y0 + DH, y1, z - T / 2, z + T / 2); continue; }   // over a door
+      if (win && xs[i] < win[0] && xs[i + 1] > -win[0]) {
+        const a = Math.max(xs[i], -win[0]), b = Math.min(xs[i + 1], win[0]);
+        box(walls, xs[i], a, y0, y1, z - T / 2, z + T / 2); box(walls, b, xs[i + 1], y0, y1, z - T / 2, z + T / 2);
+        box(walls, a, b, y0, win[1], z - T / 2, z + T / 2); box(walls, a, b, win[2], y1, z - T / 2, z + T / 2);
+        continue;
+      }
+      box(walls, xs[i], xs[i + 1], y0, y1, z - T / 2, z + T / 2);
+    }
+    for (const x of DOORS) {
+      // the frame, and the exit sign over it on both faces
+      box(dark, x - DW / 2 - 0.08, x - DW / 2, y0, y0 + DH + 0.08, z - T / 2 - 0.02, z + T / 2 + 0.02);
+      box(dark, x + DW / 2, x + DW / 2 + 0.08, y0, y0 + DH + 0.08, z - T / 2 - 0.02, z + T / 2 + 0.02);
+      box(dark, x - DW / 2 - 0.08, x + DW / 2 + 0.08, y0 + DH, y0 + DH + 0.08, z - T / 2 - 0.02, z + T / 2 + 0.02);
+      for (const f of [-1, 1]) {
+        const sign = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.18), glowMat(0x19c26a, 2.2));
+        sign.position.set(x, y0 + DH + 0.32, z + f * (T / 2 + 0.01)); if (f < 0) sign.rotation.y = Math.PI; root.add(sign);
+      }
+    }
+  };
+  across(CZW, CY1, L2.y - 0.45);                       // the stalls'
+  across(CZW, L2.y, L3.y - 0.45);                      // the 2nd floor's (under the 3rd floor's last tread)
+  const zw3 = L3.z + 0.3;
+  across(zw3, L3.y, H, [5.5, L3.y + 1.9, L3.y + 3.2]); // the 3rd floor's, the followspots' window in it
+
+  for (const side of [-1, 1]) {
+    const sx = (a, b) => [Math.min(side * a, side * b), Math.max(side * a, side * b)];
+    flight(stairs, side, AX[0], AX[1], AZ[0], AZ[1], CY1, L2.y);
+    flight(stairs, side, BX[1], BX[0], BZ[0], BZ[1], L2.y, L3.y);
+    // between the two flights, on the 2nd floor, up to the 3rd floor's slab
+    box(walls, ...sx(AX[0], AX[1]), L2.y, L3.y - 0.45, AZ[0] - 0.12, AZ[0] - 0.02);
+    // rails round the wells: the 2nd floor's at A's foot, the 3rd's round B
+    box(rails, ...sx(AX[0] - 0.06, AX[0]), L2.y, L2.y + 1.05, AZ[0], D);
+    box(rails, ...sx(BX[0] + 0.3, BX[1]), L3.y, L3.y + 1.05, BZ[0] - 0.06, BZ[0]);
+    box(rails, ...sx(BX[1], BX[1] + 0.06), L3.y, L3.y + 1.05, BZ[0], BZ[1]);
+    box(rails, ...sx(BX[0] + 0.3, BX[1]), L3.y, L3.y + 1.05, BZ[1], BZ[1] + 0.06);
+    // the side passage, outside the side wall: level from the front door, a
+    // ramp up to the stalls' concourse, level along it; its outer wall, its
+    // front end wall and its ceiling (the rear wall closes its back end)
+    const x0 = side > 0 ? X : -X - 1.9, x1 = side > 0 ? X + 1.9 : -X;
+    const zr0 = SIDE_DOOR[1] + 0.6, zr1 = SIDE_OPEN[0] - 0.3;
+    // (its floor runs 0.2 m on through the wall's line, over the house's floors' edge)
+    const [f0, f1] = sx(X - 0.2, X + 1.9);
+    box(walls, f0, f1, -0.2, 0, SIDE_DOOR[0] - 0.4, zr0);
+    box(walls, f0, f1, CY1 - 0.2, CY1, zr1, D);
+    {
+      const len = Math.hypot(zr1 - zr0, CY1), r = new THREE.BoxGeometry(x1 - x0, 0.2, len);
+      r.rotateX(-Math.atan2(CY1, zr1 - zr0)); r.translate((x0 + x1) / 2, CY1 / 2 - 0.1, (zr0 + zr1) / 2); walls.push(r);
+    }
+    const xo = side > 0 ? x1 : x0;
+    box(walls, ...sx(Math.abs(xo), Math.abs(xo) + T), -0.2, L2.y, SIDE_DOOR[0] - 0.4, D);
+    box(walls, x0, x1, -0.2, L2.y, SIDE_DOOR[0] - 0.4 - T, SIDE_DOOR[0] - 0.4);
+    box(walls, x0, x1, L2.y - 0.45, L2.y, SIDE_DOOR[0] - 0.4, D);
+    // its lamps, down the outer wall
+    for (let z = SIDE_DOOR[0] + 1; z < D - 1; z += 4) {
+      const fy = z <= zr0 ? 0 : z >= zr1 ? CY1 : CY1 * (z - zr0) / (zr1 - zr0);
+      box(lit, ...sx(Math.abs(xo) - 0.06, Math.abs(xo) - 0.02), fy + 2.4, fy + 2.7, z - 0.4, z + 0.4);
+    }
+  }
+  // the concourses' ceiling lamps
+  for (const [y, z0] of [[L2.y - 0.45, CZW], [L3.y - 0.45, CZW], [H, zw3]]) {
+    for (const x of [-9, -3, 3, 9]) box(lit, x - 0.6, x + 0.6, y - 0.03, y, (z0 + D) / 2 - 0.3, (z0 + D) / 2 + 0.3);
+  }
+  const wm = new THREE.Mesh(mergeGeometries(walls), wallMat); wm.receiveShadow = true;
+  root.add(wm);
+  root.add(new THREE.Mesh(mergeGeometries(dark), std({ color: 0x0a0605, roughness: 0.6 })));
+  const sm = new THREE.Mesh(mergeGeometries(stairs), slabMat); sm.receiveShadow = true;
+  root.add(sm);
+  root.add(new THREE.Mesh(mergeGeometries(rails), std({ color: 0x1a1210, roughness: 0.5, metalness: 0.4 })));
+  root.add(new THREE.Mesh(mergeGeometries(lit), std({ color: 0x1a1612, emissive: 0xc79a6a, emissiveIntensity: 0.6 })));
 }

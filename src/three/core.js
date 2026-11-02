@@ -667,6 +667,15 @@ export function extractPalette(canvas) {
   return { a, b, c: c2, d, kind: q ? 'duo' : 'mono', swatches: [a, b, c2, d] };
 }
 
+// A light's colour from a palette colour: its hue at full brightness, so the
+// colour of a dark sleeve still reads as a lit tube rather than going out. The
+// app's palette leads with the accent, so before any art it is the accent.
+export function ringTint(out, c) {
+  out.copy(c);
+  const m = Math.max(out.r, out.g, out.b);
+  return m > 1e-4 ? out.multiplyScalar(1 / m) : out.setScalar(1);
+}
+
 export const appPalette = () => ({
   a: new THREE.Color(APP.accent), b: new THREE.Color(APP.magenta),
   c: new THREE.Color(APP.cool), d: new THREE.Color(APP.warm),
@@ -694,13 +703,26 @@ export function screenContent(cover, meta, aspect, { W = 2048, frame = true } = 
   const vg = g.createRadialGradient(W / 2, H / 2, H * 0.2, W / 2, H / 2, Math.max(W, H) * 0.7);
   vg.addColorStop(0, 'rgba(0,0,0,0.15)'); vg.addColorStop(1, 'rgba(0,0,0,0.85)');
   g.fillStyle = vg; g.fillRect(0, 0, W, H);
-  // the art: centred on an ordinary wall; on a letterbox-wide wall (a club's
-  // LED behind the drums) it sits high and large, with the type beside it
+  // the art, and the type with it as one block, centred on an ordinary wall;
+  // on a letterbox-wide wall (a club's LED behind the drums) the art sits left
+  // of centre and the type right of it, so a drum kit in front of the middle
+  // of the wall covers neither. The title wraps to two lines and is cut short
+  // with … after that; nothing is squeezed to fit.
   const wide = aspect >= 2.4;
-  const s = wide ? H * 0.8 : Math.min(H * 0.64, W * 0.6);
-  // wide: the art left of centre and the type right of it, so a drum kit in
-  // front of the middle of the wall covers neither
-  const x = wide ? W / 2 - s - H * 0.22 : (W - s) / 2, y = wide ? H * 0.05 : H * 0.14;
+  const s = wide ? H * 0.78 : Math.min(H * 0.52, W * 0.5);
+  const MONO = '"JetBrains Mono", ui-monospace, monospace', SANS = '"Inter Tight", system-ui, sans-serif';
+  const fs = { label: s * (wide ? 0.055 : 0.048), title: s * (wide ? 0.14 : 0.15), artist: s * (wide ? 0.068 : 0.066) };
+  const maxW = wide ? W - (W / 2 + H * 0.22) - s * 0.08 : W * 0.86;
+  g.font = `300 ${Math.round(fs.title)}px ${SANS}`;
+  const title = wrapText(g, meta.title || '', maxW, 2);
+  g.font = `400 ${Math.round(fs.artist)}px ${MONO}`; g.letterSpacing = `${Math.round(fs.artist * 0.12)}px`;
+  const artist = wrapText(g, meta.artist || '', maxW, 1);
+  g.letterSpacing = '0px';
+  const lh = fs.title * 1.12;
+  // the type's block: label, title lines, artist
+  const typeH = (meta.label ? fs.label * 1.9 : 0) + title.length * lh + (artist.length ? fs.artist * 1.9 : 0);
+  const x = wide ? W / 2 - s - H * 0.22 : (W - s) / 2;
+  const y = wide ? (H - s) / 2 : Math.max(H * 0.05, (H - (s + s * 0.07 + typeH)) / 2);
   if (frame) {
     g.fillStyle = 'rgba(0,0,0,0.6)';
     g.fillRect(x - s * 0.02, y - s * 0.02 + s * 0.02, s * 1.04, s * 1.04);
@@ -708,39 +730,61 @@ export function screenContent(cover, meta, aspect, { W = 2048, frame = true } = 
   g.drawImage(cover, x, y, s, s);
   g.strokeStyle = 'rgba(255,255,255,0.18)'; g.lineWidth = Math.max(1, s * 0.004);
   g.strokeRect(x, y, s, s);
-  // type
-  if (wide) {
-    const tx = W / 2 + H * 0.22;
-    g.textAlign = 'left';
+  // type: a soft shadow under it, so it holds on a bright field
+  g.shadowColor = 'rgba(0,0,0,0.65)'; g.shadowBlur = Math.round(s * 0.025); g.shadowOffsetY = Math.round(s * 0.004);
+  g.textBaseline = 'alphabetic';
+  const tx = wide ? W / 2 + H * 0.22 : W / 2;
+  g.textAlign = wide ? 'left' : 'center';
+  let ty = wide ? (H - typeH) / 2 : y + s + s * 0.07;
+  if (meta.label) {
     g.fillStyle = '#ffae6e';
-    g.font = `${Math.round(s * 0.05)}px "JetBrains Mono", ui-monospace, monospace`;
-    g.fillText((meta.label || '').split('').join(' '), tx, y + s * 0.38, W - tx - s * 0.1);
-    g.fillStyle = '#f2ede4';
-    g.font = `300 ${Math.round(s * 0.11)}px "Inter Tight", system-ui, sans-serif`;
-    g.fillText(meta.title || '', tx, y + s * 0.53, W - tx - s * 0.1);
-    g.fillStyle = 'rgba(242,237,228,0.6)';
-    g.font = `${Math.round(s * 0.05)}px "JetBrains Mono", ui-monospace, monospace`;
-    g.fillText((meta.artist || '').split('').join(' '), tx, y + s * 0.64, W - tx - s * 0.1);
-    const tw = new THREE.CanvasTexture(c);
-    tw.colorSpace = THREE.SRGBColorSpace; tw.anisotropy = MAX_ANISO; tw.generateMipmaps = true; tw.minFilter = THREE.LinearMipmapLinearFilter;
-    return tw;
+    g.font = `500 ${Math.round(fs.label)}px ${MONO}`; g.letterSpacing = `${Math.round(fs.label * 0.3)}px`;
+    g.fillText(meta.label, tx, ty + fs.label);
+    g.letterSpacing = '0px';
+    ty += fs.label * 1.9;
   }
-  g.textAlign = 'center';
-  g.fillStyle = '#ffae6e';
-  g.font = `${Math.round(s * 0.032)}px "JetBrains Mono", ui-monospace, monospace`;
-  g.fillText((meta.label || '').split('').join(' '), W / 2, y - s * 0.045, W * 0.9);
-  g.fillStyle = '#f2ede4';
-  g.font = `300 ${Math.round(s * 0.085)}px "Inter Tight", system-ui, sans-serif`;
-  g.fillText(meta.title || '', W / 2, y + s + s * 0.12, W * 0.9);
-  g.fillStyle = 'rgba(242,237,228,0.6)';
-  g.font = `${Math.round(s * 0.036)}px "JetBrains Mono", ui-monospace, monospace`;
-  g.fillText((meta.artist || '').split('').join(' '), W / 2, y + s + s * 0.19, W * 0.9);
+  g.fillStyle = '#f7f3ec';
+  g.font = `300 ${Math.round(fs.title)}px ${SANS}`;
+  for (const line of title) { g.fillText(line, tx, ty + fs.title * 0.92); ty += lh; }
+  if (artist.length) {
+    g.fillStyle = 'rgba(242,237,228,0.82)';
+    g.font = `400 ${Math.round(fs.artist)}px ${MONO}`; g.letterSpacing = `${Math.round(fs.artist * 0.12)}px`;
+    g.fillText(artist[0], tx, ty + fs.artist * 1.35);
+    g.letterSpacing = '0px';
+  }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = MAX_ANISO;
   t.generateMipmaps = true;
   t.minFilter = THREE.LinearMipmapLinearFilter;
   return t;
+}
+
+// Text broken into at most `maxLines` lines no wider than `maxW` in the
+// context's current font: at spaces (Korean too, word by word), and between
+// any two Chinese or Japanese characters, which need no space to break; a word
+// too long for a line is broken where it has to be. What does not fit is cut, the last line ending in …
+export function wrapText(g, text, maxW, maxLines) {
+  const fits = (t) => g.measureText(t).width <= maxW;
+  const tokens = String(text).trim().match(/[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef]|[^\s\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef]+|\s+/g) || [];
+  const lines = [];
+  let line = '';
+  const push = () => { if (line.trim()) lines.push(line.trim()); line = ''; };
+  for (const tok of tokens) {
+    if (/^\s+$/.test(tok)) { if (line) line += ' '; continue; }
+    if (fits(line + tok)) { line += tok; continue; }
+    push();
+    if (fits(tok)) { line = tok; continue; }
+    // a word wider than a whole line: broken where it has to be
+    for (const ch of tok) { if (line && !fits(line + ch)) push(); line += ch; }
+  }
+  push();
+  if (lines.length <= maxLines) return lines;
+  const kept = lines.slice(0, maxLines);
+  const last = Array.from(kept[maxLines - 1]);
+  while (last.length && !fits(last.join('').trimEnd() + '…')) last.pop();
+  kept[maxLines - 1] = last.join('').trimEnd() + '…';
+  return kept;
 }
 
 // Average colour of a canvas region, linear — what the screen throws into the

@@ -458,6 +458,15 @@ for t in TUNNELS[:4]:
     t['gap'] = ((fl + fr) / 2).tolist(); t['gaps'] = (t['gap'], t['gap']); t['a_end'] = float(a_end)
     g_end = float(np.polyval(t['gap'], a_end))
     t['w'] = round(2 * (g_end - ROW_END), 2)          # the portal: the cut's walls run on into it
+# All four the size of the biggest (asked 2026-11-02: the south corners' were
+# narrower and lower than the north's). Each keeps its own length; its cut
+# fans out as the biggest one's does, shifted along so that it reaches the
+# same width at its own portal, and the seats beside it are cut back to that.
+BIG = max(TUNNELS[:4], key=lambda t: t['w'])
+for t in TUNNELS[:4]:
+    sh = BIG['a_end'] - t['a_end']
+    g = np.poly1d(BIG['gap'])(np.poly1d([1.0, sh]))  # g_big(a + sh)
+    t['gap'] = g.coeffs.tolist(); t['gaps'] = (t['gap'], t['gap']); t['w'] = BIG['w']
 def gap_at(t, a, b):
     # the gap from the axis to the plan's seats on b's side of it, a along it
     return np.where(b < 0, np.polyval(t['gaps'][0], a), np.polyval(t['gaps'][1], a))
@@ -661,6 +670,14 @@ c5 |= holes_mask['L5']
 print('masks', round(time.time() - T0, 1))
 
 # the corner tunnels cut: the deck over each mouth, and how far each runs
+# (their clear height, all four: the highest that the plan's first row over a
+# portal gives, the rows under it at the lower corners cut away to match)
+def first_over(t):
+    p, u = t['p'], t['u']; v = np.array([-u[1], u[0]])
+    q = L1.seats - p; sa = q @ u; sb = np.abs(q @ v)
+    over = (sa > t['a_end']) & (sa < t['a_end'] + 1.0) & (sb < t['w'] / 2)
+    return int(L1.row[over].min()) if over.any() else int(np.searchsorted(L1.hs, TUN_H + LINTEL))
+TUN_HT = max(float(L1.h(first_over(t))) - LINTEL for t in TUNNELS[:4])
 TUNM = np.zeros_like(inside1)
 body1 = (L1.hull > 0) | (L1.R > 0) | cv2.dilate(c1.astype(np.uint8), np.ones((3, 3), np.uint8), iterations=3) > 0
 CUT_WALLS = []
@@ -679,9 +696,7 @@ for t in TUNNELS:
     corner = 'gap' in t
     if corner:
         # its clear height: the plan's first row over it stands a lintel above
-        q = L1.seats - p; sa = q @ u; sb = np.abs(q @ v)
-        over = (sa > t['a_end']) & (sa < t['a_end'] + 1.0) & (sb < t['w'] / 2)
-        r_end = int(L1.row[over].min()) if over.any() else int(np.searchsorted(L1.hs, TUN_H + LINTEL))
+        r_end = max(first_over(t), int(np.searchsorted(L1.hs, TUN_HT + LINTEL - 0.005)))
         t['lintel'] = LINTEL; t['h'] = round(float(L1.h(r_end)) - LINTEL, 2)
         # the cut: out to the walls, which stand a row's end out from the seats
         e_ = np.minimum(gap_at(t, al, lb) - ROW_END - 0.12, t['w'] / 2)
@@ -711,7 +726,11 @@ for t in TUNNELS:
     keep = ~((sb < edge + 0.25) & (sa > -3) & ((L1.row < r_end) & (sa < t['L']) if corner else (sa < t['deck'] + 0.3)))
     L1.seats, L1.row, L1.yaw = L1.seats[keep], L1.row[keep], L1.yaw[keep]
     t['rect'] = [(p + u * a + v * b).round(3).tolist() for a, b in ((-3.0, -t['w'] / 2), (t['L'], -t['w'] / 2), (t['L'], t['w'] / 2), (-3.0, t['w'] / 2))]
-    t['void'] = [(p + u * a + v * b).round(3).tolist() for a, b in ((t['deck2'][0], -t['w'] / 2), (t['L'], -t['w'] / 2), (t['L'], t['w'] / 2), (t['deck2'][1], t['w'] / 2))]
+    # (from a metre in front of the portal: where the portal stands askew to the
+    # side rows, a row too low to pass over it otherwise keeps a sliver along
+    # the portal's line, down to the ground, which reads as a wall across it)
+    pre = 1.0 if corner else 0.0
+    t['void'] = [(p + u * a + v * b).round(3).tolist() for a, b in ((t['deck2'][0] - pre, -t['w'] / 2), (t['L'], -t['w'] / 2), (t['L'], t['w'] / 2), (t['deck2'][1] - pre, t['w'] / 2))]
     if not corner: continue
     print('corner tunnel', t['block'], 'cut seats', int((~keep).sum()), 'portal row', r_end, 'clear', t['h'], 'portal sides at', t['deck2'])
     # its walls: from where the stand begins beside the cut to the portal, a

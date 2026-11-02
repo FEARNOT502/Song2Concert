@@ -16,7 +16,7 @@
 // side, like everything else there.
 
 import * as THREE from 'three';
-import { DEG, clamp, regionColor, dropDegenerateTriangles } from './core.js';
+import { DEG, clamp, regionColor, dropDegenerateTriangles, ringTint } from './core.js';
 import { Pipeline, QUALITY, buildEnvironment } from './render.js';
 import { crowdUniforms } from './people.js';
 import { LOD, Rig } from './rig.js';
@@ -297,7 +297,7 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
       const rect = s.group.userData.rect;
       if (rect) rect.intensity = (s.lum ?? 0.3) * (face?.material.uniforms.uBright.value ?? 1) * (s.group.userData.lightPower ?? 1) * (0.9 + 0.2 * glow) * (1 - 0.45 * house) * 1.6;
       for (const { h } of s.haze) h.power = (s.group.userData.hazePower ?? 20) * (0.85 + 0.3 * glow) * (1 - 0.6 * house);
-      if (s.group.userData.bezel) s.group.userData.bezel.color.setHex(0xff9745).multiplyScalar(0.7 + glow * 0.6);
+      if (s.group.userData.bezel) ringTint(s.group.userData.bezel.color, pal.a).multiplyScalar(0.7 + glow * 0.6);
     }
     // the lightsticks and phones take the palette; the crowd's own lights follow
     // the stick/torch switch and dim when the house lights come up

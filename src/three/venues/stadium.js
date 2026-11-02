@@ -6,7 +6,7 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { APP, DEG, KELVIN, V3, clamp, floorPanelTex, glowMat, noise3D, prng, std, withRepeat } from '../core.js';
+import { APP, DEG, KELVIN, V3, clamp, prng, std, floorPanelTex, glowMat, noise3D, ringTint, withRepeat } from '../core.js';
 import { lightPoints } from '../people.js';
 import { ampStack, drumKit, guitar, hoists, holdAtDistance, keyboardRig, ledScreen, micStand, prismInto, rodInto, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
 import { bigCrowd, bigScreens, crossThrust, delayTower, fohPosition, fixtureRow, flashOnCrowd, flashUnits, fromRow, groundRoof, paHang, paWing, packFloor, runBlinders, runShow, runStrobes, scaffoldMasking, screenHang, subLine, thinRow } from '../show.js';
@@ -573,13 +573,14 @@ export function buildStadium(ctx) {
   const deck = stageDeck({ w: 78, d: 26, h: DECK, z: 20 });
   root.add(deck);
   for (const s of [-1, 1]) root.add(stageSteps({ x: s * 39.75, z: 33, h: DECK, dir: [0, -1] }));
-  const RW0 = 33, CZ = 50, XW = 30, XD = 5.2, RW1 = 84, TIP = 10, XH = DECK - 0.8;
-  const cross = crossThrust(root, { z0: RW0, z1: RW1, w: 5, crossZ: CZ, crossD: XD, crossW: XW, tip: TIP, h: XH });
+  // the walkway across 29 m out from the deck, and nothing past it: the
+  // runway ends at the walkway (no runway on, no end stage)
+  const RW0 = 33, CZ = 62, XW = 30, XD = 5.2, RW1 = CZ + XD, XH = DECK - 0.8;
+  const cross = crossThrust(root, { z0: RW0, z1: RW1, w: 5, crossZ: CZ, crossD: XD, crossW: XW, h: XH });
   const bRimM = glowMat(APP.accent, 1);
   {
     const g = new THREE.BoxGeometry(XW * 2 + 0.1, 0.05, 0.05); g.translate(0, XH, CZ + XD + 0.02);
-    const g2 = new THREE.BoxGeometry(TIP + 0.1, 0.05, 0.05); g2.translate(0, XH, RW1 + 0.02);
-    root.add(new THREE.Mesh(mergeGeometries([g, g2]), bRimM));
+    root.add(new THREE.Mesh(g, bRimM));
   }
   const WZ = 8, WW = 62, WH = 21, Y0 = DECK + 1.6;   // the wall's face, size and foot
   const scr = bigScreens(ctx, root, { w: WW, h: WH, y: Y0 + WH / 2, z: WZ, pitch: 0.0059 });
@@ -603,7 +604,7 @@ export function buildStadium(ctx) {
     const t = truss(2 * TX - 4, { size: 1.0, finish: 'black' }); t.position.set(0, LT, z); root.add(t);
     root.add(hoists([-28, -14, 0, 14, 28], LT, z, SR - 0.8));
   }
-  // no one on stage: the backline set, the microphone at the end stage
+  // no one on stage: the backline set, the microphone out on the walkway
   const star = micStand({ height: 1.6 });
   star.position.set(0, XH, RW1 - 1.2); root.add(star);
   for (const [x, z, col] of [[-10, 18, 0x5a1a0e], [10, 18, 0x1a1a1c]]) {
@@ -743,8 +744,8 @@ export function buildStadium(ctx) {
       steelMat.emissiveIntensity = 0.12 + 0.5 * f.house;
       hzWash[0].color.copy(f.pal.a); hzWash[1].color.copy(f.pal.b); hzWash[2].color.copy(f.pal.d);
       hzWash.forEach((h) => { h.power = 260 * (0.4 + 0.6 * f.energy + 0.3 * f.kick) * show; });
-      deck.userData.lip.color.setHex(APP.accent).multiplyScalar((0.6 + 0.8 * f.kick) * show + 0.2);
-      bRimM.color.setHex(APP.accent).multiplyScalar((0.6 + 0.8 * f.kick) * show + 0.2);
+      ringTint(deck.userData.lip.color, f.pal.a).multiplyScalar((0.6 + 0.8 * f.kick) * show + 0.2);
+      ringTint(bRimM.color, f.pal.a).multiplyScalar((0.6 + 0.8 * f.kick) * show + 0.2);
       cu.uRimColor.value.copy(f.pal.a).lerp(new THREE.Color(1, 1, 1), 0.3).multiplyScalar((0.2 + 0.25 * f.kick) * show);
       cu.uStage.value.set(0, 18, 16);
       cu.uWash.value.copy(f.pal.b).multiplyScalar(0.012 * show + 0.3 * f.house);
