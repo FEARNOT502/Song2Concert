@@ -99,7 +99,8 @@ function TopBar({
         <span className="text-neutral-600">v1.0</span>
       </div>
 
-      <div className="flex items-center gap-1">
+      {/* the pickers in the bar's exact middle, whatever the two sides' widths */}
+      <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1">
         <button onClick={onFileClick} className="px-3 py-1.5 hover:bg-white/5 rounded transition-colors flex items-center gap-2 group">
           <span className="text-neutral-500">File</span>
           <span className="text-neutral-200 text-[15px] normal-case tracking-normal font-tight">{file.name}</span>
