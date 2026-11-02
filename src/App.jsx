@@ -513,7 +513,16 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [togglePlay, handleSeek]);
 
-  const audioStatus = hasAudio ? (playing ? 'live' : (status === 'loading' ? 'loading' : 'ready')) : 'demo';
+  // a file is being read: the play button spins until it can play
+  const decoding = status === 'loading';
+
+  // The keys under the stage are shown for a while after the app opens, then
+  // fade out; they are kept in the help (?) for good.
+  const [hintOn, setHintOn] = useState(true);
+  useEffect(() => {
+    const id = setTimeout(() => setHintOn(false), 8000);
+    return () => clearTimeout(id);
+  }, []);
 
   // Shared pickers — rendered in both layouts.
   const pickers = (
@@ -522,8 +531,6 @@ export default function App() {
         open={filePickerOpen}
         onClose={closeFilePicker}
         onUpload={handleUpload}
-        uploadedName={upload?.name}
-        queueCount={queue.length}
       />
       <VenuePicker open={venuePickerOpen} onClose={closeVenuePicker} current={venueId} onPick={handlePickVenue} />
     </>
@@ -538,7 +545,7 @@ export default function App() {
           coverSrc={coverSrc}
           pulseRef={pulseRef}
           upload={upload}
-          audioStatus={audioStatus}
+          decoding={decoding}
           hasAudio={hasAudio}
           playing={playing}
           onToggle={togglePlay}
@@ -598,11 +605,11 @@ export default function App() {
       <TopBar
         file={displayFile}
         venue={venue}
-        audioStatus={audioStatus}
         onFileClick={openFilePicker}
         onVenueClick={openVenuePicker}
         effects={effects}
         onEffectsChange={setEffects}
+        desk={desk}
       />
       <LeftDataPanel venue={venue} />
       {desk && (
@@ -629,12 +636,16 @@ export default function App() {
         </button>
       )}
 
-      {/* shortcuts hint */}
-      <div className="absolute bottom-[112px] left-1/2 -translate-x-1/2 z-20 text-[11px] tracking-[0.3em] uppercase text-neutral-600 flex gap-5 font-mono">
+      {/* shortcuts hint — fades out after the first seconds */}
+      <div
+        aria-hidden={!hintOn}
+        className={`absolute bottom-[112px] left-1/2 -translate-x-1/2 z-20 text-[11px] tracking-[0.3em] uppercase text-neutral-600 flex gap-5 font-mono whitespace-nowrap pointer-events-none transition-opacity duration-1000 ${hintOn ? 'opacity-100' : 'opacity-0'}`}
+      >
         <span>[SPACE] play/pause</span>
         <span>[F] file</span>
         <span>[V] venue</span>
         <span>[WASD] walk · drag to look</span>
+        <span>[SHIFT] run</span>
       </div>
 
       <BottomTransport
@@ -657,6 +668,7 @@ export default function App() {
         exportProgress={exportProgress}
         volume={volume}
         onVolumeChange={setVolume}
+        decoding={decoding}
       />
 
       {pickers}

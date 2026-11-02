@@ -6,7 +6,7 @@
 
 import { useState } from 'react';
 import Scene from './Scene.jsx';
-import { formatTime } from './BottomTransport.jsx';
+import { PlayFace, formatTime } from './BottomTransport.jsx';
 import { CrowdLightToggle, EffectsToggle } from './TopBar.jsx';
 import { CROWD_LIGHT_VENUES } from '../useCrowdLight.js';
 
@@ -24,13 +24,6 @@ function BrandMark({ size = 20 }) {
     </svg>
   );
 }
-
-const STATUS_LABEL = {
-  demo: '○ NO FILE',
-  loading: '◌ DECODING…',
-  ready: '● PAUSED',
-  live: '● IN VENUE',
-};
 
 // A draggable slider sized for touch (tall hit area, larger knob).
 function MobileSlider({ value, max = 100, onChange, fillClass, disabled }) {
@@ -78,7 +71,7 @@ function StatRow({ k, v }) {
 }
 
 export default function MobileLayout({
-  venue, displayFile, coverSrc, pulseRef, upload, audioStatus, hasAudio,
+  venue, displayFile, coverSrc, pulseRef, upload, hasAudio, decoding = false,
   // transport
   playing, onToggle, onPrev, onNext, hasNext, hasPrev,
   time, durSec, wetDry, onWetChange, onSeek, onExport, exporting, exportProgress = 0,
@@ -94,7 +87,6 @@ export default function MobileLayout({
   const exportPct = Math.round(exportProgress * 100);
   const pos = venue.position;
   const direct = 100 - pos.wet;
-  const liveish = audioStatus === 'live' || audioStatus === 'ready';
 
   return (
     <div className="fixed inset-0 bg-black text-neutral-200 flex flex-col font-mono overflow-hidden">
@@ -103,11 +95,9 @@ export default function MobileLayout({
         <div className="flex items-center gap-2">
           <BrandMark size={20} />
           <span className="text-[12px] tracking-[0.18em] text-neutral-300">SONG2CONCERT</span>
+          <span className="text-[10px] tracking-[0.15em] text-neutral-600">v1.0</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className={`text-[10px] tracking-[0.15em] ${liveish ? 'text-[oklch(0.78_0.16_55)]' : 'text-neutral-500'}`}>
-            {STATUS_LABEL[audioStatus] || STATUS_LABEL.demo}
-          </span>
           {onEffectsChange && <EffectsToggle on={effects} onChange={onEffectsChange} />}
         </div>
       </header>
@@ -155,7 +145,6 @@ export default function MobileLayout({
             {displayFile.album && <div className="text-[12px] text-neutral-500 mt-0.5 truncate">{displayFile.album}</div>}
             {displayFile.artist && <div className="text-[11px] text-neutral-600 mt-0.5 truncate">{displayFile.artist}</div>}
             {displayFile.hint && <div className="text-[12px] text-neutral-500 mt-0.5 truncate">{displayFile.hint}</div>}
-            <div className="text-[11px] text-neutral-600 mt-1.5">{displayFile.format}</div>
           </Card>
 
           {/* venue */}
@@ -211,19 +200,21 @@ export default function MobileLayout({
               <MobileSlider value={volume} max={100} onChange={(v) => onVolumeChange(Math.round(v))} fillClass="bg-white/60" />
               <span className="w-12 text-right tabular-nums">{volume}</span>
             </div>
-            <div className="flex items-center gap-3 text-[11px] tracking-[0.15em] text-neutral-400 uppercase">
-              <span className="w-12">Live</span>
-              <button
-                onClick={onLiveToggle}
-                disabled={!liveAvailable}
-                aria-pressed={live && liveAvailable}
-                className={`flex-1 py-2 border rounded-lg text-[11px] tracking-[0.15em] uppercase disabled:opacity-30 ${live && liveAvailable
-                  ? 'border-[oklch(0.78_0.16_55)] text-[oklch(0.78_0.16_55)]'
-                  : 'border-white/20 text-neutral-500 active:bg-white/10'}`}
-              >
-                {!liveAvailable ? 'Live · big rooms only' : live ? 'Live · on' : 'Live · off'}
-              </button>
-            </div>
+            {/* live mode exists only in the big rooms */}
+            {liveAvailable && (
+              <div className="flex items-center gap-3 text-[11px] tracking-[0.15em] text-neutral-400 uppercase">
+                <span className="w-12">Live</span>
+                <button
+                  onClick={onLiveToggle}
+                  aria-pressed={live}
+                  className={`flex-1 py-2 border rounded-lg text-[11px] tracking-[0.15em] uppercase ${live
+                    ? 'border-[oklch(0.78_0.16_55)] text-[oklch(0.78_0.16_55)]'
+                    : 'border-white/20 text-neutral-500 active:bg-white/10'}`}
+                >
+                  {live ? 'Live · on' : 'Live · off'}
+                </button>
+              </div>
+            )}
             <button
               onClick={onExport}
               disabled={exporting}
@@ -251,18 +242,18 @@ export default function MobileLayout({
 
         {/* transport buttons */}
         <div className="px-4 pb-4 pt-1 flex items-center justify-between">
-          <button onClick={onFileClick} className="w-11 h-11 rounded-full border border-white/20 flex items-center justify-center text-[15px] active:bg-white/10" title="Open file">⊕</button>
+          <button onClick={onFileClick} aria-label="파일 열기" className="w-11 h-11 rounded-full border border-white/20 flex items-center justify-center text-[15px] active:bg-white/10">⊕</button>
           <div className="flex items-center gap-5">
-            <button onClick={onPrev} disabled={!hasPrev} className="w-10 h-10 rounded-full border border-white/25 flex items-center justify-center text-xs active:bg-white/10 disabled:opacity-30">⏮</button>
-            <button onClick={onToggle} className="w-14 h-14 rounded-full bg-white text-black flex items-center justify-center text-xl active:bg-neutral-300">
-              {playing ? '⏸' : '▶'}
+            <button onClick={onPrev} disabled={!hasPrev} aria-label="처음부터 다시" className="w-10 h-10 rounded-full border border-white/25 flex items-center justify-center text-xs active:bg-white/10 disabled:opacity-30">⏮</button>
+            <button onClick={onToggle} aria-label={decoding ? '불러오는 중' : playing ? '일시정지' : '재생'} aria-busy={decoding} className="w-14 h-14 rounded-full bg-white text-black flex items-center justify-center text-xl active:bg-neutral-300">
+              <PlayFace playing={playing} decoding={decoding} />
             </button>
-            <button onClick={onNext} disabled={!hasNext} className="w-10 h-10 rounded-full border border-white/25 flex items-center justify-center text-xs active:bg-white/10 disabled:opacity-30">⏭</button>
+            <button onClick={onNext} disabled={!hasNext} aria-label="다음 곡" className="w-10 h-10 rounded-full border border-white/25 flex items-center justify-center text-xs active:bg-white/10 disabled:opacity-30">⏭</button>
           </div>
           <button
             onClick={() => setShowMixer((s) => !s)}
+            aria-label="믹서와 내보내기"
             className={`w-11 h-11 rounded-full border flex items-center justify-center text-[15px] active:bg-white/10 ${showMixer ? 'border-[oklch(0.78_0.16_55)] text-[oklch(0.78_0.16_55)]' : 'border-white/20'}`}
-            title="Mixer & export"
           >
             ⚙
           </button>

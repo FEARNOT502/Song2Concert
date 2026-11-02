@@ -30,7 +30,7 @@ import { BASE, PARTS, rollOf, section } from './show.js';
 // across, so the stage is still in the room rather than a keyhole on it.
 const MIN_HFOV = 56 * DEG;
 
-export function createStage(canvas, { quality = 'high', effects = true } = {}) {
+export function createStage(canvas, { quality = 'high', effects = true, onLoading = null } = {}) {
   let pipe;
   try {
     pipe = new Pipeline(canvas);
@@ -143,15 +143,22 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
   async function setVenue(id) {
     venueId = id;
     const gen = ++buildGen;
+    // the page's loading cover goes up first: the build below holds the
+    // thread, and without it the room would sit black and still meanwhile
+    onLoading?.(true, id);
     await fade(0, venue ? 180 : 0);
     if (gen !== buildGen || !running) return;
     teardown();
-    // a frame for the fade to land before the build takes the thread
-    await new Promise((r) => setTimeout(r, 16));
+    // a painted frame (the fade landed, the cover drawn) before the build
+    // takes the thread; the timer, for a tab that is not drawing frames
+    await new Promise((r) => {
+      const t = setTimeout(r, 120);
+      requestAnimationFrame(() => setTimeout(() => { clearTimeout(t); r(); }, 0));
+    });
     if (gen !== buildGen || !running) return;
     const c = makeCtx();
     const v = buildVenue(id, c);
-    for (const r of c.rigs) v.root.add(r.build());
+    for (const r of c.rigs) { const g = r.build(); g.userData.plan = 'rig'; v.root.add(g); }
     dropDegenerateTriangles(v.root);
     pipe.scene.add(v.root);
     pipe.scene.add(pipe.flares.mesh);
@@ -202,6 +209,7 @@ export function createStage(canvas, { quality = 'high', effects = true } = {}) {
     if (gen !== buildGen || !running) return;
     frame(0.016, clock.getElapsedTime());
     fade(1, 420);
+    onLoading?.(false, id);
   }
 
   // screens, their light, their haze, and the reflections, from the current art

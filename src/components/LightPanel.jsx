@@ -72,7 +72,6 @@ function LightPanel({ part, onPart, playing, stageRef, crowdLight, onCrowdLightC
                   disabled={!playing}
                   onClick={() => onPart(id)}
                   aria-pressed={held}
-                  title={playing ? `${label} [${key}]` : 'Plays while the song plays'}
                   className={`${btn} relative ${
                     held
                       ? 'border-[oklch(0.78_0.16_55)] bg-[oklch(0.78_0.16_55)]/20 text-white'
@@ -92,7 +91,6 @@ function LightPanel({ part, onPart, playing, stageRef, crowdLight, onCrowdLightC
               type="button"
               onClick={() => onPart(null)}
               aria-pressed={auto}
-              title="Follow the song [`]"
               className={`${btn} flex-1 ${
                 auto
                   ? 'border-[oklch(0.78_0.16_55)] bg-[oklch(0.78_0.16_55)]/20 text-white'

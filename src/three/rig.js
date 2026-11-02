@@ -480,6 +480,7 @@ export function stageDeck({ w, d, h, z, x = 0, lip = true, fascia = 0x060607, ro
   }
   body.position.x = x; body.position.z = z;
   body.receiveShadow = true;
+  body.userData.plan = 'stage';   // for the venue picker's seat maps
   g.add(body);
   if (lip && !round) {
     const lm = glowMat(APP.accent, 1.2);

@@ -1,8 +1,17 @@
 // BottomTransport.jsx — transport bar.
 // All sliders are real draggable controls (pointer capture), independent of one
 // another. Wet/dry drives the GainNode crossfader; EXPORT FLAC renders offline.
+// While a file is decoding, the play button turns into a spinning ring.
 
 import { memo, useRef } from 'react';
+
+// The play button's face: a ring while a file decodes, else play / pause.
+export function PlayFace({ playing, decoding }) {
+  if (decoding) {
+    return <span aria-hidden="true" className="block w-[42%] aspect-square rounded-full border-2 border-black/20 border-t-black animate-spin" />;
+  }
+  return playing ? '⏸' : '▶';
+}
 
 export function formatTime(sec) {
   const m = Math.floor(sec / 60);
@@ -57,17 +66,17 @@ function BottomTransport({
   playing, onToggle, onPrev, onNext, hasNext, hasPrev,
   time, durSec, wetDry, onWetChange, onSeek,
   onExport, exporting, exportProgress = 0, volume, onVolumeChange,
-  live = false, liveAvailable = false, onLiveToggle,
+  live = false, liveAvailable = false, onLiveToggle, decoding = false,
 }) {
   const pct = Math.round(exportProgress * 100);
   return (
     <div className="absolute bottom-0 inset-x-0 z-40 border-t border-white/10 px-10 py-6 flex items-center gap-8 text-[13px] tracking-[0.2em] text-neutral-400 uppercase bg-black/70 backdrop-blur-md font-mono">
       <div className="flex items-center gap-3">
-        <button onClick={onPrev} disabled={!hasPrev} title="처음부터 다시" className="w-9 h-9 rounded-full border border-white/25 hover:border-white/60 flex items-center justify-center text-xs transition-colors disabled:opacity-30">⏮</button>
-        <button onClick={onToggle} className="w-12 h-12 rounded-full bg-white text-black hover:bg-neutral-200 flex items-center justify-center text-lg transition-colors">
-          {playing ? '⏸' : '▶'}
+        <button onClick={onPrev} disabled={!hasPrev} aria-label="처음부터 다시" className="w-9 h-9 rounded-full border border-white/25 hover:border-white/60 flex items-center justify-center text-xs transition-colors disabled:opacity-30">⏮</button>
+        <button onClick={onToggle} aria-label={decoding ? '불러오는 중' : playing ? '일시정지' : '재생'} aria-busy={decoding} className="w-12 h-12 rounded-full bg-white text-black hover:bg-neutral-200 flex items-center justify-center text-lg transition-colors">
+          <PlayFace playing={playing} decoding={decoding} />
         </button>
-        <button onClick={onNext} disabled={!hasNext} title="다음 곡" className="w-9 h-9 rounded-full border border-white/25 hover:border-white/60 flex items-center justify-center text-xs transition-colors disabled:opacity-30">⏭</button>
+        <button onClick={onNext} disabled={!hasNext} aria-label="다음 곡" className="w-9 h-9 rounded-full border border-white/25 hover:border-white/60 flex items-center justify-center text-xs transition-colors disabled:opacity-30">⏭</button>
       </div>
 
       <div className="flex items-center gap-3 text-[12px] tabular-nums text-neutral-300 min-w-[120px]">
@@ -98,21 +107,22 @@ function BottomTransport({
         <span className="text-neutral-500 tabular-nums w-16 text-right">WET {wetDry}%</span>
       </div>
 
-      {/* Live mode — set from the track's tags, overridable, and only for the
-          big rooms */}
-      <button
-        onClick={onLiveToggle}
-        disabled={!liveAvailable}
-        aria-pressed={live && liveAvailable}
-        title={liveAvailable
-          ? '라이브 모드: 실황 음원의 함성과 떼창을 살리고, 이미 녹음된 잔향 위에 덜 얹습니다'
-          : '라이브 모드: 아레나·돔·스타디움 전용'}
-        className={`px-2.5 py-1 border rounded text-[11px] transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${live && liveAvailable
-          ? 'border-[oklch(0.78_0.16_55)] text-[oklch(0.78_0.16_55)]'
-          : 'border-white/20 text-neutral-500 hover:text-neutral-300 hover:border-white/40'}`}
-      >
-        LIVE
-      </button>
+      {/* Live mode — set from the track's tags, overridable, and only in the
+          big rooms, so elsewhere it is not shown at all. The bar's letter
+          spacing also follows the last letter; the negative margin takes that
+          back so the word sits in the middle of its box. */}
+      {liveAvailable && (
+        <button
+          onClick={onLiveToggle}
+          aria-pressed={live}
+          aria-label="라이브 모드"
+          className={`px-2.5 py-1 border rounded text-[11px] transition-colors ${live
+            ? 'border-[oklch(0.78_0.16_55)] text-[oklch(0.78_0.16_55)]'
+            : 'border-white/20 text-neutral-500 hover:text-neutral-300 hover:border-white/40'}`}
+        >
+          <span className="-mr-[0.2em]">LIVE</span>
+        </button>
+      )}
 
       {/* master volume */}
       <div className="flex items-center gap-3 min-w-[160px]">

@@ -10,10 +10,28 @@
 // The album art and title are drawn on the room's own screens by the stage; the
 // HTML version (StageArt) is only the fallback for a browser without WebGL,
 // where the record still plays and the art is laid out on a black frame.
+//
+// Building a room holds the page's thread for a moment, so while one is being
+// built (the first one, and each venue change) a loading cover sits over the
+// view: the mark, the venue's name and a moving bar, drawn by CSS that keeps
+// moving while the thread is busy (index.html has its styles).
 
 import { memo, useEffect, useRef, useState } from 'react';
 import StageArt from './StageArt.jsx';
+import { BrandMark } from './TopBar.jsx';
 import { createStage } from '../three/stage.js';
+import { findVenue } from '../data.js';
+
+function LoadingCover({ venueId, done }) {
+  return (
+    <div className={`s2c-load ${done ? 'is-done' : ''}`} aria-hidden={done} role="status">
+      <span className="s2c-load-mark"><BrandMark size={34} /></span>
+      <div className="s2c-load-label">Loading venue</div>
+      <div className="s2c-load-name">{findVenue(venueId).name}</div>
+      <div className="s2c-load-bar"><span /></div>
+    </div>
+  );
+}
 
 function Scene({
   venueId, coverId, coverSrc, pulse = 0, pulseRef = null, title, artist,
@@ -29,16 +47,21 @@ function Scene({
   const effectsAtMount = useRef(effects);
   const [host, setHost] = useState({ w: 0, h: 0 });
   const [ok, setOk] = useState(true);
+  // the room being built, or null once it is drawn
+  const [loading, setLoading] = useState(venueId);
 
   // ── the stage lives as long as the component does ──
   useEffect(() => {
     // Phones get a cheaper renderer: no multisampling, a lower pixel ratio, a
     // thinner crowd, 30 frames a second. The rooms are otherwise the same.
     const quality = window.matchMedia?.('(max-width: 900px)').matches ? 'low' : 'high';
-    const stage = createStage(canvasRef.current, { quality, effects: effectsAtMount.current });
+    const stage = createStage(canvasRef.current, {
+      quality, effects: effectsAtMount.current,
+      onLoading: (on, id) => setLoading(on ? id : null),
+    });
     const el = hostRef.current;
     if (stage) stageRef.current = stage;
-    else setOk(false);
+    else { setOk(false); setLoading(null); }
     if (apiRef) apiRef.current = stage;
     // in development, the stage is reachable from the console (and the checks)
     if (import.meta.env.DEV && stage) window.__stage = stage;
@@ -94,6 +117,7 @@ function Scene({
         style={{ display: ok ? 'block' : 'none' }}
         aria-label="공연장 3D 장면. 드래그해서 둘러보고 W A S D로 걸어 다닐 수 있습니다."
       />
+      {ok && <LoadingCover venueId={loading || venueId} done={!loading} />}
       {!ok && (
         <StageArt
           rect={box}

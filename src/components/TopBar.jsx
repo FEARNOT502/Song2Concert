@@ -1,7 +1,5 @@
-// TopBar.jsx — top chrome bar (ported from proto/ui.jsx)
-// `audioStatus` reflects the real Web Audio engine state: 'demo' | 'loading' |
-// 'ready' | 'live'. It replaces the prototype's static "IN SEAT" badge with a
-// truthful indicator of whether real audio is loaded.
+// TopBar.jsx — top chrome bar (ported from proto/ui.jsx): the mark, the file
+// and venue pickers, and at the right edge the effects switch and the help.
 
 import { memo } from 'react';
 
@@ -10,7 +8,7 @@ import { CROWD_LIGHT_VENUES } from '../useCrowdLight.js';
 
 // Brand mark — "Wave → Hall Arc" (icon-exports). Inlined so it inherits color
 // and needs no extra request. Cream waveform morphs into an accent hall arc.
-function BrandMark({ size = 22 }) {
+export function BrandMark({ size = 22 }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" aria-hidden="true">
       <line x1="3" y1="9" x2="3" y2="15" stroke="#f3ecdc" strokeWidth="1.6" strokeLinecap="round" />
@@ -70,7 +68,6 @@ export function CrowdLightToggle({ mode, onChange, className = '' }) {
     <div
       role="group"
       aria-label="Crowd lights"
-      title="Crowd lights — lightsticks under central control, or phone torches"
       className={`flex items-center border border-white/10 rounded overflow-hidden text-[10px] tracking-[0.18em] ${className}`}
     >
       {[['stick', 'Stick'], ['flash', 'Flash']].map(([v, label]) => (
@@ -90,24 +87,16 @@ export function CrowdLightToggle({ mode, onChange, className = '' }) {
   );
 }
 
-const STATUS_LABEL = {
-  demo: '○ NO FILE',
-  loading: '◌ DECODING…',
-  ready: '● IN VENUE · paused',
-  live: '● IN VENUE',
-};
-
 function TopBar({
-  file, venue, audioStatus = 'demo', onFileClick, onVenueClick, effects = true, onEffectsChange,
-  crowdLight = 'stick', onCrowdLightChange,
+  file, venue, onFileClick, onVenueClick, effects = true, onEffectsChange,
+  crowdLight = 'stick', onCrowdLightChange, desk = false,
 }) {
-  const liveish = audioStatus === 'live' || audioStatus === 'ready';
   return (
     <div className="absolute top-0 inset-x-0 z-40 flex items-center justify-between px-10 pt-6 pb-4 text-[13px] tracking-[0.2em] uppercase text-neutral-500 border-b border-white/5 bg-black/40 backdrop-blur-sm font-mono">
       <div className="flex items-center gap-3">
         <BrandMark size={22} />
         <span className="text-neutral-300">SONG2CONCERT</span>
-        <span className="text-neutral-600">v0.4</span>
+        <span className="text-neutral-600">v1.0</span>
       </div>
 
       <div className="flex items-center gap-1">
@@ -129,11 +118,7 @@ function TopBar({
           <CrowdLightToggle mode={crowdLight} onChange={onCrowdLightChange} />
         )}
         {onEffectsChange && <EffectsToggle on={effects} onChange={onEffectsChange} />}
-        <SoundInfo venue={venue} />
-        <span>{file.format.split(' · ').slice(0, 2).join(' · ')}</span>
-        <span className={liveish ? 'text-[oklch(0.78_0.16_55)]' : 'text-neutral-500'}>
-          {STATUS_LABEL[audioStatus] || STATUS_LABEL.demo}
-        </span>
+        <SoundInfo venue={venue} desk={desk} />
       </div>
     </div>
   );
