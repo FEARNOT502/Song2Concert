@@ -869,7 +869,8 @@ export function buildDome(ctx) {
     for (const [x, z] of DTR) towerLights.push(...delayTower(root, { x, z, h: 20, boxes: 16, width: 1.3, yaw: Math.atan2(x - STAGE.x, z - STAGE.z) }));
     const rig = ctx.rig({ finish: 'black' });
     const tw = fixtureRow(q, towerLights.length, (i) => ({ fx: rig.add({ pos: towerLights[i], kind: 'beam', length: 70, beamGain: 0.9 }), group: 5 }));
-    const feye = V3(0, 1.6 + 1.0, STAGE.z + 46);
+    // (well back from the runway's end, towards home)
+    const feye = V3(0, 1.6 + 1.0, STAGE.z + 60);
     const skip = (x, z) => !inF(x, z) || Math.min(edgeD(x, z), edgeD(-x, z)) < 2.2 || RC.inside(x, z, 3.5)
       || DTR.some(([tx, tz]) => Math.abs(x - tx) < 4.5 && Math.abs(z - tz) < 4.5)
       || (Math.abs(x - feye.x) < 4.4 && Math.abs(z - feye.z) < 3.6);

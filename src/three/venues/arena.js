@@ -244,13 +244,13 @@ function arenaEnd(ctx) {
   // the backline, set and waiting; no one on stage
   for (const [x, z, col] of [[-7, 9.0 + SZ, 0x5a1a0e], [7, 9.0 + SZ, 0x1a1a1c]]) {
     const gt = guitar({ color: col, bass: x > 0 }); gt.scale.setScalar(0.8); gt.position.set(x, DECK + 0.5, z); gt.rotation.x = -0.28; root.add(gt);
-    const m = micStand({ height: 1.5 }); m.position.set(x, DECK, z + 1.2); m.rotation.y = Math.PI; root.add(m);
+    const m = micStand({ height: 1.5 }); m.position.set(x, DECK, z + 1.2); root.add(m);
   }
   const keysL = keyboardRig(); keysL.position.set(-4, DECK + 1, 4.6 + SZ); root.add(keysL);
   const kit = drumKit({ shell: 0x1a1a1e }); kit.position.set(0, DECK + 1, 3.6 + SZ); kit.scale.setScalar(1.1); root.add(kit);
   for (const x of [-12, 12]) { const a = ampStack({ count: 2 }); a.position.set(x, DECK, 4.5 + SZ); root.add(a); }
   for (let i = 0; i < 8; i++) { const w = wedge(); w.position.set(-10.5 + i * 3, DECK, 15.4 + SZ); w.rotation.y = Math.PI; root.add(w); }
-  const mic = micStand({ height: 1.5 }); mic.position.set(0.05, DECK, 13.6 + SZ); root.add(mic);
+  const mic = micStand({ height: 1.5 }); mic.position.set(0.05, DECK, 13.6 + SZ); mic.rotation.y = Math.PI; root.add(mic);
   // the subs in a row on the floor under the barrier, the front fills on the lip
   subLine(root, { x0: -15.2, x1: 15.2, z: RW0 + 0.9, gap: 2.4, count: 2, fills: { xs: [-15, -10, -5, 5, 10, 15], y: DECK, z: RW0 - 0.35 } });
 
@@ -427,7 +427,7 @@ function arenaRound(ctx) {
       const gt = guitar({ color: col, bass }); gt.scale.setScalar(0.8); gt.position.set(x, DECK + 0.5, z); gt.rotation.x = -0.28; root.add(gt);
     }
     for (const [x, z, rot] of [[0, OZ + SD / 2 - 1, 0], [0, OZ - SD / 2 + 1, Math.PI], [-SW / 2 + 1.5, OZ, -Math.PI / 2], [SW / 2 - 1.5, OZ, Math.PI / 2]]) {
-      const m = micStand({ height: 1.5 }); m.position.set(x, DECK, z); m.rotation.y = rot; root.add(m);
+      const m = micStand({ height: 1.5 }); m.position.set(x, DECK, z); m.rotation.y = rot + Math.PI; root.add(m);
     }
     for (const [x, z, rot] of [[-2, OZ + SD / 2 - 0.3, Math.PI], [2, OZ + SD / 2 - 0.3, Math.PI], [-2, OZ - SD / 2 + 0.3, 0], [2, OZ - SD / 2 + 0.3, 0]]) {
       const w = wedge(); w.position.set(x, DECK, z); w.rotation.y = rot; root.add(w);

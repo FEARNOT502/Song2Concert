@@ -1008,9 +1008,9 @@ export function roundStage(ctx, root, { c, w = 16, d = 40, deck = 2.2, top = 26,
     run(-BX, -BZ, BX, -BZ); run(BX, -BZ, BX, BZ); run(BX, BZ, -BX, BZ); run(-BX, BZ, -BX, -BZ);
     root.add(new THREE.Mesh(mergeGeometries(bar), M.alu));
   }
-  // the mics out at the four edges, each turned in (the singer faces out over it)
+  // the mics out at the four edges, each turned to the singer (the head away from the house)
   for (const [x, z, rot] of [[0, d / 2 - 1.5, 0], [0, -d / 2 + 1.5, Math.PI], [-w / 2 + 1.2, 0, -Math.PI / 2], [w / 2 - 1.2, 0, Math.PI / 2]]) {
-    const m = micStand({ height: 1.5 }); m.position.set(c.x + x, deck, c.z + z); m.rotation.y = rot + Math.PI; root.add(m);
+    const m = micStand({ height: 1.5 }); m.position.set(c.x + x, deck, c.z + z); m.rotation.y = rot; root.add(m);
   }
   // the roof over it on four towers, a beam across every 10 m
   const TX = w / 2 + 6, TZ = d / 2 + 4;

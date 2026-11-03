@@ -608,7 +608,7 @@ export function buildStadium(ctx) {
   // no one on stage: the backline set (nothing out on the runway)
   for (const [x, z, col] of [[-10, 18, 0x5a1a0e], [10, 18, 0x1a1a1c]]) {
     const gt = guitar({ color: col, bass: x > 0 }); gt.scale.setScalar(0.8); gt.position.set(x, DECK + 0.5, z); gt.rotation.x = -0.28; root.add(gt);
-    const m = micStand({ height: 1.5 }); m.position.set(x, DECK, z + 1.4); m.rotation.y = Math.PI; root.add(m);
+    const m = micStand({ height: 1.5 }); m.position.set(x, DECK, z + 1.4); root.add(m);
     const a = ampStack({ count: 2 }); a.position.set(x * 1.2, DECK, z - 6); root.add(a);
   }
   const keysS = keyboardRig(); keysS.position.set(-5, DECK + 1, 13); root.add(keysS);
@@ -767,7 +767,8 @@ export function buildStadium(ctx) {
       }
       return c;
     };
-    const RC = roundStage(ctx, root, { c: STAGE, w: 16, d: 40, deck: DECK, top: 30, box: [24, 12], follow: 95, followY: 30 });
+    // (a runway 8 m wide out from each end, towards the two goals)
+    const RC = roundStage(ctx, root, { c: STAGE, w: 16, d: 40, deck: DECK, top: 30, box: [24, 12], follow: 95, followY: 30, runway: { w: 8, len: 22 } });
     const inF = (x, z) => inRing(field, x, z) && inRing(field, -x, z);
     const edgeD = (x, z) => {
       let m = Infinity;
@@ -784,7 +785,7 @@ export function buildStadium(ctx) {
     for (const [x, z] of DTR) towerLights.push(...delayTower(root, { x, z, h: 22, boxes: 16, width: 1.3, yaw: Math.atan2(x - STAGE.x, z - STAGE.z) }));
     const rig = ctx.rig({ finish: 'black' });
     const tw = fixtureRow(q, towerLights.length, (i) => ({ fx: rig.add({ pos: towerLights[i], kind: 'beam', length: 80, beamGain: 0.9 }), group: 5 }));
-    const feye = V3(0, 1.6 + 1.2, ZC + 52);
+    const feye = V3(0, 1.6 + 1.2, ZC + 60);
     const skip = (x, z) => !inF(x, z) || Math.min(edgeD(x, z), edgeD(-x, z)) < 3.5 || RC.inside(x, z, 3.5)
       || DTR.some(([tx, tz]) => Math.abs(x - tx) < 4.5 && Math.abs(z - tz) < 4.5)
       || (Math.abs(x - feye.x) < 4.4 && Math.abs(z - feye.z) < 3.6);

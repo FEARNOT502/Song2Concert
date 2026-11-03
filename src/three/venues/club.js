@@ -140,7 +140,7 @@ export function buildClub(ctx) {
   keys.position.set(3.35, DECK, 2.4); keys.rotation.y = -0.7; root.add(keys);
   // microphones
   for (const [x, z, h] of [[0, 2.95, 1.55], [-2.0, 2.75, 1.5], [2.05, 2.75, 1.5], [3.0, 2.95, 1.4]]) {
-    const m = micStand({ height: h }); m.position.set(x, DECK, z); m.rotation.y = Math.PI; root.add(m);
+    const m = micStand({ height: h }); m.position.set(x, DECK, z); root.add(m);
   }
   // wedges and a set list taped to the floor
   for (const x of [-2.3, -1.0, 1.0, 2.3]) { const w = wedge({ w: 0.5 }); w.position.set(x, DECK, FRONT - 0.35); w.rotation.y = Math.PI; root.add(w); }
