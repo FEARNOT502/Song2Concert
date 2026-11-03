@@ -757,7 +757,8 @@ export function stageSet(root, { w, h, z, deck, towerX, backdropW, backdropH, wi
   // the black drop behind the set and the wings either side (a stage out in
   // the open of a ballpark has none)
   if (drapes) {
-    const bv = velvet(0x040404, 'blackvel', { sheenColor: new THREE.Color(0x121212) });
+    // (both faces: from behind, a single face left the drop see-through)
+    const bv = velvet(0x040404, 'blackvel', { sheenColor: new THREE.Color(0x121212), side: THREE.DoubleSide });
     const drop = new THREE.Mesh(drapeGeometry(backdropW, backdropH, Math.round(backdropW / 1.6), 0.18), bv);
     drop.position.set(0, deck + backdropH / 2, z - 1.4); root.add(drop);
     for (const s of [-1, 1]) {
@@ -765,14 +766,17 @@ export function stageSet(root, { w, h, z, deck, towerX, backdropW, backdropH, wi
       wing.position.set(s * wingX, deck + wingH / 2, z + 0.6); wing.rotation.y = -s * 0.25; root.add(wing);
     }
   }
-  // road cases stacked backstage, just visible past the wings
-  const rnd = prng(17);
+  // road cases backstage: behind the drop, between the towers, in two straight
+  // rows, the back row stacked two high
   const cases = [];
-  for (const s of [-1, 1]) for (let i = 0; i < 10; i++) {
-    const cw = 1.2 + rnd() * 0.6, ch = 0.9 + rnd() * 0.5, cd = 0.8 + rnd() * 0.3;
-    const b = new THREE.BoxGeometry(cw, ch, cd);
-    b.translate(s * (wingX + 1.5 + (i % 3) * 1.6), deck + ch / 2 + (i > 5 ? 1.2 : 0), z - 1 - Math.floor(i / 3) * 1.1);
-    cases.push(b);
+  const n = Math.floor((2 * towerX - 3) / 1.4);
+  for (let i = 0; i < n; i++) {
+    const x = (i - (n - 1) / 2) * 1.4;
+    for (const [dz, k] of [[-2.4, 1], [-3.5, 2]]) for (let j = 0; j < k; j++) {
+      const b = new THREE.BoxGeometry(1.2, 0.95, 0.85);
+      b.translate(x, deck + 0.5 + j * 1.0, z + dz);
+      cases.push(b);
+    }
   }
   root.add(new THREE.Mesh(mergeGeometries(cases), std({ color: 0x141416, roughness: 0.5, metalness: 0.3 })));
 }

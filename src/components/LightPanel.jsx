@@ -54,8 +54,11 @@ function LightPanel({ part, onPart, playing, stageRef, crowdLight, onCrowdLightC
       >
         <span className="text-neutral-600">{open ? '▾' : '▸'}</span>
         Lighting
+        {/* (on AUTO just that: the song's own part is shown on the desk's
+            buttons while it is open, not in the title, where it went stale
+            once the desk was folded) */}
         <span className="tracking-[0.2em]" style={{ color: ACCENT }}>
-          {auto ? (playing && live ? `auto · ${live}` : 'auto') : part}
+          {auto ? 'auto' : part}
         </span>
       </button>
 

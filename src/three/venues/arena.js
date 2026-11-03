@@ -12,7 +12,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { APP, KELVIN, V3, std, concreteTex, ringTint, withRepeat } from '../core.js';
 import { lightPoints } from '../people.js';
 import { ampStack, drumKit, guitar, hoists, keyboardRig, micStand, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, blockGrid, crossThrust, fixtureRow, flashOnCrowd, flashUnits, floorBlocks, floorChairs, fohPosition, fromRow, maskingDrapes, paHang, runBlinders, runShow, runStrobes, screenHang, stageRing, stageSet, subLine, thinRow } from '../show.js';
+import { bigCrowd, bigScreens, blockGrid, crossThrust, fixtureRow, flashOnCrowd, flashUnits, floorBlocks, floorChairs, fohPosition, fromRow, maskingDrapes, paHang, runBlinders, runShow, runStrobes, screenHang, stageRing, stageSet, subLine, thinRow, wallStrip } from '../show.js';
 import { buildStands } from '../stands.js';
 import { SSA_STANDS } from './ssa-data.js';
 
@@ -176,10 +176,31 @@ export function buildArena(ctx) {
   const mline = [[-76, SZF], [-SX, SZF], [-MX, MZ], [MX, MZ], [SX, SZF], [76, SZF]];
   for (let i = 0; i + 1 < mline.length; i++) maskingDrapes(root, { a: mline[i], b: mline[i + 1], top: H,
     bottomAt: (x, z) => (Math.abs(x) < 16 ? DECK + 16 : stands.topAt(x, z)) });
+  // From behind, one flat black wall: a matte backing just behind the velour,
+  // from the floor (or the treads it crosses) to the ceiling, wall to wall;
+  // behind the set it runs straight across behind the towers' braces, at the
+  // back of the backstage deck, and joins the masking either side. From the
+  // north end's stands the drapes' folds, the chains, the braces and the cases
+  // are out of sight, and nothing shows between the drop and the masking.
+  {
+    const BZ = 2.9, o = 0.35;
+    const back = [[-76, SZF - o], [-SX, SZF - o], [-MX - 0.3, MZ - 0.2], [-MX - 0.3, BZ], [MX + 0.3, BZ], [MX + 0.3, MZ - 0.2], [SX, SZF - o], [76, SZF - o]];
+    const pts = [];
+    for (let i = 0; i + 1 < back.length; i++) {
+      const [ax, az] = back[i], [bx, bz] = back[i + 1], n = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 0.5));
+      for (let k = 0; k < n; k++) pts.push({ x: ax + (bx - ax) * k / n, z: az + (bz - az) * k / n });
+    }
+    pts.push({ x: back[back.length - 1][0], z: back[back.length - 1][1] });
+    const wall = wallStrip(pts, pts.map(() => H), { y0: pts.map((p) => stands.topAt(p.x, p.z)), thick: 0.12, ease: 0 });
+    root.add(new THREE.Mesh(wall, std({ color: 0x050506, roughness: 1 })));
+  }
 
   // ── stage ──
   const deck = stageDeck({ w: 34, d: 15, h: DECK, z: 8.5 + SZ, lip: false });
   root.add(deck);
+  // the backstage deck behind it, under the drop, the towers' braces and the
+  // cases (they stood in the air off the deck's back edge)
+  root.add(stageDeck({ w: 34, d: 4.1, h: DECK, z: 5.0, lip: false }));
   for (const s of [-1, 1]) root.add(stageSteps({ x: s * 17.75, z: 16 + SZ, h: DECK, dir: [0, -1] }));
   // the runway out to a cross on the floor: a walkway either side two-thirds
   // of the way, the runway on past it to a square end stage in the middle
@@ -227,7 +248,9 @@ export function buildArena(ctx) {
   const spots = [], beams = [], washes = [], ups = [];
   spots.push(...fixtureRow(q, 12, (i) => ({ fx: rig.add({ kind: 'spot', pos: V3(-15.5 + i * (31 / 11), RIG - 0.5, 15.2 + SZ), length: 45, angle: 0.085, beamGain: 1.0 }), group: 0 })));
   beams.push(...fixtureRow(q, 12, (i) => ({ fx: rig.add({ kind: 'beam', pos: V3(-15.5 + i * (31 / 11), RIG - 0.5, 9.2 + SZ), length: 60, beamGain: 1.2 }), group: 1 })));
-  washes.push(...fixtureRow(q, 10, (i) => ({ fx: rig.add({ kind: 'wash', pos: V3(-15 + i * (30 / 9), RIG - 0.5, 3.2 + SZ), length: 22, beamGain: 0.5 }), group: 2 })));
+  // (a wash's broad lens flares little: at full, the one that faced FOH hung
+  // over the stage as a ball of light)
+  washes.push(...fixtureRow(q, 10, (i) => ({ fx: rig.add({ kind: 'wash', pos: V3(-15 + i * (30 / 9), RIG - 0.5, 3.2 + SZ), length: 22, beamGain: 0.5, flareGain: 0.15 }), group: 2 })));
   ups.push(...fixtureRow(q, 10, (i) => ({ fx: rig.add({ kind: 'beam', pos: V3(-15 + i * (30 / 9), DECK, 15.6 + SZ), hang: 'up', length: 50, beamGain: 1.0 }), group: 3 })));
   const TB = RIG - 0.38;                       // the trusses' bottom chord
   // blinders under the front truss between the spots; strobes along the foot
@@ -247,7 +270,10 @@ export function buildArena(ctx) {
   const front2 = shadowSpot(KELVIN(5600), 0, { angle: 0.12, penumbra: 0.6, cast: false });
   front2.position.set(4, RIG + 3, 44 + SZ); front2.target.position.set(0, DECK + 1.5, 13.2 + SZ);
   const stageWash = shadowSpot(0xffffff, 0, { angle: 0.8, penumbra: 1, cast: false });
-  stageWash.position.set(0, RIG - 1, 2 + SZ); stageWash.target.position.set(0, DECK, 12 + SZ);
+  // (between the back and middle trusses, clear of everything hung: at the
+  // wall's header it sat a hand's width from the middle chain, which it lit
+  // white, a ball of light floating over the stage)
+  stageWash.position.set(0, RIG - 1, 6.2 + SZ); stageWash.target.position.set(0, DECK, 12 + SZ);
   for (const l of [front1, front2, stageWash]) root.add(l, l.target);
   const fill = [];
   for (const [x, y, z] of [[-20, 18, 30], [20, 18, 30], [0, 24, 60]]) { const l = new THREE.PointLight(0xffffff, 0, 90, 2); l.position.set(x, y, z); l.userData.offWhenDark = 'show'; root.add(l); fill.push(l); }
@@ -287,7 +313,8 @@ export function buildArena(ctx) {
   const hzs = offs.map(([dx, dy]) => hz.add(V3(dx * 12, scr.main.position.y + dy * scr.h * 0.5, 2.6 + SZ), 0xffffff, 0));
   ctx.screenHaze(scr.main, hzs, offs);
   scr.main.userData.hazePower = 90;
-  const hzWash = [hz.add(V3(-10, RIG - 1, 10 + SZ), 0xffffff, 0), hz.add(V3(10, RIG - 1, 10 + SZ), 0xffffff, 0), hz.add(V3(0, DECK + 3, 12 + SZ), 0xffffff, 0)];
+  // (no glows of their own in the air over the stage: what lights the haze
+  // there is the rig's beams)
 
   return {
     root, eye, seatNear: stands.seatNear,
@@ -316,8 +343,6 @@ export function buildArena(ctx) {
       fill.forEach((l, i) => { l.color.copy(i ? f.pal.b : f.pal.a); l.intensity = (120 + 300 * f.energy) * show; });
       house.forEach((l) => { l.intensity = 9000 * f.house; });
       houseFix.forEach((h) => { h.intensity = 1.5 * f.house; });
-      hzWash[0].color.copy(f.pal.a); hzWash[1].color.copy(f.pal.b); hzWash[2].color.copy(f.pal.d);
-      hzWash.forEach((h, i) => { h.power = (i < 2 ? 260 : 120) * (0.4 + 0.6 * f.energy + 0.3 * f.kick) * show; });
       ringTint(ringM.color, f.pal.a).multiplyScalar((0.6 + 0.8 * f.kick) * show + 0.2);
       cu.uRimColor.value.copy(f.pal.a).lerp(new THREE.Color(1, 1, 1), 0.3).multiplyScalar((0.22 + 0.25 * f.kick) * show);
       cu.uStage.value.set(0, 10, 4 + SZ);

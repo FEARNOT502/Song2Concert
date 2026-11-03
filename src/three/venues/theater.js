@@ -429,26 +429,31 @@ export function buildTheater(ctx) {
       const { a, b, c, d } = f.pal;
       aimT += f.dt * (0.4 + f.energy * 0.6);
       const leadPos = V3(lead.position.x, DECK + 1.3, lead.position.z);
-      front1.intensity = (170 + f.energy * 60) * show + 60 * f.house;
-      front2.intensity = (140 + f.energy * 50) * show + 50 * f.house;
-      washA.color.copy(a); washA.intensity = (120 + f.energy * 200 + f.kick * 80) * show;
-      backC.color.copy(b); backC.intensity = (140 + f.energy * 220 + f.snare * 90) * show;
+      // In the show the house is dark but for the two followspots from the
+      // booth on the 3rd floor, the screen, the exit signs and the aisles'
+      // step lights: the rig, the front light, the washes and the stage's own
+      // lamps are out, lit only with the house.
+      front1.intensity = 60 * f.house;
+      front2.intensity = 50 * f.house;
+      washA.color.copy(a); washA.intensity = 0;
+      backC.color.copy(b); backC.intensity = 0;
       followL.position.set(3.5, 14.8, D - 1.2); followL.target.position.copy(leadPos); followL.target.updateMatrixWorld();
       followL.intensity = 900 * show;
-      booms.forEach((fx) => { fx.color.copy(tung); fx.intensity = 0.8 * show + 0.1 * f.house; });
-      fohs.forEach((fx) => { fx.intensity = 0.9 * show + 0.15 * f.house; });
+      booms.forEach((fx) => { fx.color.copy(tung); fx.intensity = 0.1 * f.house; });
+      fohs.forEach((fx) => { fx.intensity = 0.15 * f.house; });
       backs.forEach((fx, i) => {
         const sw = Math.sin(aimT * 1.3 + i * 0.8);
         fx.color.copy(i % 2 ? b : a);
         rig.aim(fx, V3(-6.3 + i * 1.8 + sw * 2.2, DECK, 1.8 + Math.cos(aimT + i) * 1.5));
-        fx.intensity = (0.25 + 0.55 * f.energy + (i % 2 ? f.snare : f.kick) * 0.4) * show;
+        fx.intensity = 0;
       });
-      sides.forEach((fx, i) => { fx.color.copy(i % 2 ? c : d); fx.intensity = (0.35 + 0.45 * f.energy) * show; });
+      sides.forEach((fx, i) => { fx.color.copy(i % 2 ? c : d); fx.intensity = 0; });
       follows.forEach((fx) => { rig.aim(fx, leadPos); fx.intensity = 1.4 * show; });
-      practicals.forEach((p, i) => { p.intensity = (0.45 + 0.1 * Math.sin(f.t * 2 + i)) * (0.6 + 0.4 * show); });
+      practicals.forEach((p, i) => { p.intensity = (0.45 + 0.1 * Math.sin(f.t * 2 + i)) * 0.6 * f.house; });
+      practical.color.copy(KELVIN(2600)).multiplyScalar(6 * f.house);
       houseLights.forEach((l) => { l.intensity = 420 * f.house; });
       bounce.color.copy(tung).lerp(a, 0.4).lerp(b, 0.2);
-      bounce.intensity = (0.9 + f.energy * 0.6 + f.kick * 0.2) * show + 0.3 * f.house;
+      bounce.intensity = 0.3 * f.house;
       // in the show only what lights the stage stays on (and the exit signs
       // and the aisles' step lights, brighter then): the curtain warmers, the
       // walls' washes and grazers, the balcony lamps go out with the house
@@ -461,10 +466,10 @@ export function buildTheater(ctx) {
       steps.material.uniforms.uGain.value = 0.7 + 0.2 * f.house;
       // the concourses: lit with the house; in the show only while someone is in one
       conc.set(Math.max(f.house, conc.inside(f.cam) ? 1 : 0));
-      ringTint(lipM.color, f.pal.a).multiplyScalar(0.25 + 0.3 * f.kick * show);
+      ringTint(lipM.color, f.pal.a).multiplyScalar(0.25 * f.house);
       hzBooth.forEach((h) => { h.power = 30 * show; });
-      hzStage.power = (20 + f.energy * 20) * show + 6 * f.house;
-      cu.uRimColor.value.copy(tung).lerp(a, 0.35).multiplyScalar(0.05 * show + 0.01);
+      hzStage.power = 6 * f.house;
+      cu.uRimColor.value.copy(tung).lerp(a, 0.35).multiplyScalar(0.02 * show + 0.01);
       cu.uStage.value.set(0, 5, 0);
       cu.uWash.value.copy(tung).multiplyScalar(0.02 * show);
       cu.uAmb.value.setRGB(0.008, 0.006, 0.005).multiplyScalar(1 + f.house * 6);

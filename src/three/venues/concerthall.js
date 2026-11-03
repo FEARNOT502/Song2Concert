@@ -403,9 +403,12 @@ function concourses(plan, doors) {
     const fx = d.from[0], fz = d.from[1], tx = d.x + nx * 0.8, tz = d.z + nz * 0.8;
     const L = Math.hypot(tx - fx, tz - fz);
     if (L > 0.05) box(slab, -DOOR_W / 2, DOOR_W / 2, d.y - 0.3, d.y, -L / 2, L / 2, Math.atan2(tx - fx, tz - fz), (fx + tx) / 2, (fz + tz) / 2);
-    const along = Math.atan2(nx, nz) + Math.PI / 2;
-    for (const s of [-1, 1]) box(frames, s * DOOR_W / 2 - 0.06, s * DOOR_W / 2 + 0.06, d.y, d.y + DOOR_H + 0.08, -0.12, 0.12, along, d.x, d.z);
-    box(frames, -DOOR_W / 2 - 0.06, DOOR_W / 2 + 0.06, d.y + DOOR_H, d.y + DOOR_H + 0.1, -0.12, 0.12, along, d.x, d.z);
+    // (turned to face out of the wall: its x along the wall, so the jambs
+    // stand either side of the opening; a quarter-turn more had stood them
+    // one inside and one outside the wall, a post in the middle of the door)
+    const facing = Math.atan2(nx, nz);
+    for (const s of [-1, 1]) box(frames, s * DOOR_W / 2 - 0.06, s * DOOR_W / 2 + 0.06, d.y, d.y + DOOR_H + 0.08, -0.12, 0.12, facing, d.x, d.z);
+    box(frames, -DOOR_W / 2 - 0.06, DOOR_W / 2 + 0.06, d.y + DOOR_H, d.y + DOOR_H + 0.1, -0.12, 0.12, facing, d.x, d.z);
   }
   // the stair between them, behind the back wall: off the rings' outer edge,
   // up along the wall, a turn, and back up onto the 2nd floor's ring

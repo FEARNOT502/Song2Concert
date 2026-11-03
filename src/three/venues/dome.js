@@ -508,7 +508,7 @@ export function buildDome(ctx) {
   const spots = [], beams = [], washes = [], ups = [], ring2 = [], bst = [];
   spots.push(...fixtureRow(q, 14, (i) => ({ fx: rig.add({ kind: 'spot', pos: V3(-26 + i * 4, LT - 0.7, BZ[3]), length: 70, angle: 0.08 }), group: 0 })));
   beams.push(...fixtureRow(q, 14, (i) => ({ fx: rig.add({ kind: 'beam', pos: V3(-26 + i * 4, LT - 0.7, BZ[2]), length: 90, beamGain: 1.2 }), group: 1 })));
-  washes.push(...fixtureRow(q, 10, (i) => ({ fx: rig.add({ kind: 'wash', pos: V3(-27 + i * 6, LT - 0.7, BZ[1]), length: 35, beamGain: 0.4 }), group: 2 })));
+  washes.push(...fixtureRow(q, 10, (i) => ({ fx: rig.add({ kind: 'wash', pos: V3(-27 + i * 6, LT - 0.7, BZ[1]), length: 35, beamGain: 0.4, flareGain: 0.15 }), group: 2 })));
   // the lights on the delay towers' heads, sweeping the field and the stands
   const tw = fixtureRow(q, towerLights.length, (i) => ({ fx: rig.add({ pos: towerLights[i], kind: 'beam', length: 70, beamGain: 0.9 }), group: 5 }));
   ups.push(...fixtureRow(q, 12, (i) => ({ fx: rig.add({ kind: 'beam', pos: V3(-26 + i * (52 / 11), DECK, RW0 - 0.2), hang: 'up', length: 70 }), group: 3 })));
@@ -693,7 +693,8 @@ export function buildDome(ctx) {
   const offs = [[-0.6, 0.35], [0.6, 0.35], [-0.6, -0.35], [0.6, -0.35], [0, 0]];
   ctx.screenHaze(scr.main, offs.map(([dx, dy]) => hz.add(V3(dx * 32, scr.main.position.y + dy * scr.h * 0.5, WZ + 0.9), 0xffffff, 0)), offs);
   scr.main.userData.hazePower = 320;
-  const hzWash = [hz.add(V3(-16, LT - 1, 14 + SZ), 0xffffff, 0), hz.add(V3(16, LT - 1, 14 + SZ), 0xffffff, 0), hz.add(V3(0, 22, CZ + XD / 2), 0xffffff, 0)];
+  // (no glows of their own in the air over the stage and the cross: what
+  // lights the haze there is the rig's beams)
 
   return {
     root, eye, seatNear: stands.seatNear,
@@ -734,8 +735,6 @@ export function buildDome(ctx) {
       floodM.color.copy(KELVIN(5200)).multiplyScalar(0.03 + 2.6 * f.house);
       for (const g of floodGlow) g.intensity = 0.9 * f.house;
       house.forEach((l) => { l.intensity = 1.6 * f.house; });
-      hzWash[0].color.copy(f.pal.a); hzWash[1].color.copy(f.pal.b); hzWash[2].color.copy(f.pal.d);
-      hzWash.forEach((h) => { h.power = 600 * (0.4 + 0.6 * f.energy + 0.3 * f.kick) * show; });
       ringTint(ringM.color, f.pal.a).multiplyScalar((0.6 + 0.8 * f.kick) * show + 0.2);
       const sh = membrane.userData.shader;
       if (sh) {

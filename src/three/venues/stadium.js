@@ -632,7 +632,7 @@ export function buildStadium(ctx) {
   // spots on the front truss, beams on the middle one, washes on the back
   spots.push(...fixtureRow(q, 16, (i) => ({ fx: rig.add({ kind: 'spot', pos: V3(-30 + i * 4, LT - 0.7, BZ[3]), length: 90, angle: 0.08 }), group: 0 })));
   beams.push(...fixtureRow(q, 16, (i) => ({ fx: rig.add({ kind: 'beam', pos: V3(-30 + i * 4, LT - 0.7, BZ[2]), length: 140, beamGain: 1.3 }), group: 1 })));
-  washes.push(...fixtureRow(q, 12, (i) => ({ fx: rig.add({ kind: 'wash', pos: V3(-27.5 + i * 5, LT - 0.7, BZ[1]), length: 45, beamGain: 0.4 }), group: 2 })));
+  washes.push(...fixtureRow(q, 12, (i) => ({ fx: rig.add({ kind: 'wash', pos: V3(-27.5 + i * 5, LT - 0.7, BZ[1]), length: 45, beamGain: 0.4, flareGain: 0.15 }), group: 2 })));
   const tw = fixtureRow(q, towerLights.length, (i) => ({ fx: rig.add({ pos: towerLights[i], kind: 'beam', length: 120, beamGain: 1.0 }), group: 5 }));
   ups.push(...fixtureRow(q, 14, (i) => ({ fx: rig.add({ kind: 'beam', pos: V3(-33 + i * (66 / 13), DECK, 32.2), hang: 'up', length: 220, beamGain: 1.4 }), group: 3 })));
   // blinders under the front truss and on the wing towers' faces; strobes
@@ -706,7 +706,8 @@ export function buildStadium(ctx) {
   const offs = [[-0.6, 0.35], [0.6, 0.35], [-0.6, -0.35], [0.6, -0.35], [0, 0]];
   ctx.screenHaze(scr.main, offs.map(([dx, dy]) => hz.add(V3(dx * 30, Y0 + WH / 2 + dy * WH * 0.5, WZ + 1.5), 0xffffff, 0)), offs);
   scr.main.userData.hazePower = 160;
-  const hzWash = [hz.add(V3(-20, LT - 2, 20), 0xffffff, 0), hz.add(V3(20, LT - 2, 20), 0xffffff, 0), hz.add(V3(0, DECK + 5, 30), 0xffffff, 0)];
+  // (no glows of their own in the air over the stage: what lights the haze
+  // there is the rig's beams)
 
   return {
     root, eye, seatNear: stands.seatNear,
@@ -738,8 +739,6 @@ export function buildStadium(ctx) {
       hemi.intensity = 0.25 + 1.4 * f.house;
       hemi.groundColor.setRGB(0.016 + 0.1 * f.house, 0.016 + 0.09 * f.house, 0.024 + 0.08 * f.house);
       steelMat.emissiveIntensity = 0.12 + 0.5 * f.house;
-      hzWash[0].color.copy(f.pal.a); hzWash[1].color.copy(f.pal.b); hzWash[2].color.copy(f.pal.d);
-      hzWash.forEach((h) => { h.power = 260 * (0.4 + 0.6 * f.energy + 0.3 * f.kick) * show; });
       ringTint(ringM.color, f.pal.a).multiplyScalar((0.6 + 0.8 * f.kick) * show + 0.2);
       cu.uRimColor.value.copy(f.pal.a).lerp(new THREE.Color(1, 1, 1), 0.3).multiplyScalar((0.2 + 0.25 * f.kick) * show);
       cu.uStage.value.set(0, 18, 16);
