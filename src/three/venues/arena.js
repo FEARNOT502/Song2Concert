@@ -373,8 +373,8 @@ function arenaEnd(ctx) {
 // ─────────────────────────────────────────────────────────────────────────────
 // The centre stage (360), after Linkin Park's From Zero tour here (February
 // 2025): the house sold all round, the floor one standing crowd with no pens,
-// and in the floor's very middle a low, long stage, an LED strip round its
-// edge, two great LED cubes hung over its two halves, each tilted, a square of
+// and in the floor's very middle a low, long stage down the room, an LED strip
+// round its edge, two great LED cubes hung over its two halves, a frame of
 // truss over it all with the rig on its four sides, the PA hung on all four.
 // ─────────────────────────────────────────────────────────────────────────────
 function arenaRound(ctx) {
@@ -382,17 +382,17 @@ function arenaRound(ctx) {
   const DECK = 1.5, RIG = 24;
   const OZ = 45;
   const C = V3(0, DECK, OZ);                    // the stage's middle: the floor's
-  const SW = 24, SD = 10;                       // the stage, its long side across the room
+  const SW = 10, SD = 40;                       // the stage, its long side down the room
   const { root, stands, H, X0, X1, Z0, Z1, houseFix, house } = arenaRoom(ctx, { stage: C, sold: () => true });
   // FOH, and the listener there: out on the floor to the south
-  const eye = V3(0, 1.6 + 0.9, OZ + 27);
+  const eye = V3(0, 1.6 + 0.9, OZ + 34);
 
   // ── the stage ──
   root.add(stageDeck({ w: SW, d: SD, h: DECK, z: OZ, lip: false }));
   // the LED strip round all four edges, in the sleeve's colour
   const ringM = stageRing(root, [{ x: 0, z: OZ, w: SW, d: SD, h: DECK }]);
   // steps up at each end
-  for (const s of [-1, 1]) root.add(stageSteps({ x: s * (SW / 2 + 8 * 0.28 + 0.05), z: OZ + 2.5, h: DECK, dir: [-s, 0], width: 1.6 }));
+  for (const s of [-1, 1]) root.add(stageSteps({ x: 2.5, z: OZ + s * (SD / 2 + 8 * 0.28 + 0.05), h: DECK, dir: [0, -s], width: 1.6 }));
   // the barrier round it, 2.5 m out: the crowd up against it on every side
   const PIT = 2.5, BX = SW / 2 + PIT, BZ = SD / 2 + PIT;
   {
@@ -411,24 +411,24 @@ function arenaRound(ctx) {
   {
     const riser = stageDeck({ w: 4, d: 3, h: 0.6, z: OZ, lip: false }); riser.position.y = DECK; root.add(riser);
     const kit = drumKit({ shell: 0x1a1a1e }); kit.position.set(0, DECK + 0.6, OZ); kit.scale.setScalar(1.05); root.add(kit);
-    for (const [x, rot] of [[-5.5, Math.PI / 2], [5.5, -Math.PI / 2]]) { const k = keyboardRig(); k.position.set(x, DECK, OZ - 1.5); k.rotation.y = rot; root.add(k); }
-    for (const [x, z, col, bass] of [[-8.5, OZ + 2.5, 0x5a1a0e, false], [8.5, OZ - 2.5, 0x1a1a1c, true]]) {
+    for (const [z, rot] of [[OZ - 6, 0], [OZ + 6, Math.PI]]) { const k = keyboardRig(); k.position.set(-1.5, DECK, z); k.rotation.y = rot; root.add(k); }
+    for (const [x, z, col, bass] of [[2.5, OZ - 12, 0x5a1a0e, false], [-2.5, OZ + 12, 0x1a1a1c, true]]) {
       const gt = guitar({ color: col, bass }); gt.scale.setScalar(0.8); gt.position.set(x, DECK + 0.5, z); gt.rotation.x = -0.28; root.add(gt);
     }
     for (const [x, z, rot] of [[0, OZ + SD / 2 - 1, 0], [0, OZ - SD / 2 + 1, Math.PI], [-SW / 2 + 1.5, OZ, -Math.PI / 2], [SW / 2 - 1.5, OZ, Math.PI / 2]]) {
       const m = micStand({ height: 1.5 }); m.position.set(x, DECK, z); m.rotation.y = rot; root.add(m);
     }
-    for (const [x, z, rot] of [[-3, OZ + SD / 2 - 0.3, Math.PI], [3, OZ + SD / 2 - 0.3, Math.PI], [-3, OZ - SD / 2 + 0.3, 0], [3, OZ - SD / 2 + 0.3, 0]]) {
+    for (const [x, z, rot] of [[-2, OZ + SD / 2 - 0.3, Math.PI], [2, OZ + SD / 2 - 0.3, Math.PI], [-2, OZ - SD / 2 + 0.3, 0], [2, OZ - SD / 2 + 0.3, 0]]) {
       const w = wedge(); w.position.set(x, DECK, z); w.rotation.y = rot; root.add(w);
     }
   }
 
   // ── the cubes ──
-  // two LED cubes, 8 m a side, over the stage's two halves, the art on every
-  // face but the top; hung tilted, each its own way, on chains from the truss
-  const CUBE = 8, CY = 17;
+  // two LED cubes, 9 m a side, over the stage's two halves, the art on every
+  // face but the top, hung level and square to the stage on chains from the truss
+  const CUBE = 9, CY = 16;
   const cubes = [];
-  for (const [cx, rx, ry, rz] of [[-6.5, 0.14, 0.38, 0.07], [6.5, -0.14, -0.38, -0.07]]) {
+  for (const cz of [-10, 10]) {
     const g = new THREE.Group();
     g.add(new THREE.Mesh(new THREE.BoxGeometry(CUBE - 0.1, CUBE - 0.1, CUBE - 0.1), std({ color: 0x050506, roughness: 0.6 })));
     for (const [ax, ay] of [[0, 0], [0, Math.PI / 2], [0, Math.PI], [0, -Math.PI / 2], [Math.PI / 2, 0]]) {
@@ -436,7 +436,7 @@ function arenaRound(ctx) {
       const pv = new THREE.Group(); pv.rotation.set(ax, ay, 0); sc.position.z = CUBE / 2; pv.add(sc); g.add(pv);
       ctx.addScreen(sc, 1, 'main');
     }
-    g.position.set(cx, CY, OZ); g.rotation.set(rx, ry, rz);
+    g.position.set(0, CY, OZ + cz);
     root.add(g); cubes.push(g);
     // a chain from each top corner up to the truss
     g.updateMatrixWorld(true);
@@ -449,19 +449,19 @@ function arenaRound(ctx) {
   }
 
   // ── rig ──
-  // a square of truss over the stage, 36 × 22 m, a truss across its middle
-  // between the cubes and one down each short side, on hoists to the steel
+  // a frame of truss over the stage, 22 × 50 m, a truss across its middle
+  // between the cubes, on hoists to the steel
   const rig = ctx.rig({ finish: 'black' });
-  const TX = 18, TZ = 11;
-  for (const z of [-TZ, TZ]) { const t = truss(2 * TX + 0.8, { size: 0.76, finish: 'black' }); t.position.set(0, RIG, OZ + z); root.add(t); root.add(hoists([-TX, -TX / 2, 0, TX / 2, TX], RIG, OZ + z, H)); }
-  for (const x of [-TX, 0, TX]) { const t = truss(2 * TZ - 0.8, { size: 0.76, finish: 'black' }); t.rotation.y = Math.PI / 2; t.position.set(x, RIG, OZ); root.add(t); }
+  const TX = 11, TZ = 25;
+  for (const x of [-TX, TX]) { const t = truss(2 * TZ + 0.8, { size: 0.76, finish: 'black' }); t.rotation.y = Math.PI / 2; t.position.set(x, RIG, OZ); root.add(t); for (const z of [-TZ, -TZ / 2, 0, TZ / 2, TZ]) root.add(hoists([x], RIG, OZ + z, H)); }
+  for (const z of [-TZ, 0, TZ]) { const t = truss(2 * TX - 0.8, { size: 0.76, finish: 'black' }); t.position.set(0, RIG, OZ + z); root.add(t); }
   // the rig on the square's four sides, each row lighting its own side of the
   // house (`out`, the way its side looks)
   const sides = [
-    { out: [0, 1], at: (u) => V3(u * (2 * TX - 3), RIG - 0.5, OZ + TZ), n: 12 },
-    { out: [0, -1], at: (u) => V3(-u * (2 * TX - 3), RIG - 0.5, OZ - TZ), n: 12 },
-    { out: [1, 0], at: (u) => V3(TX, RIG - 0.5, OZ - u * (2 * TZ - 3)), n: 8 },
-    { out: [-1, 0], at: (u) => V3(-TX, RIG - 0.5, OZ + u * (2 * TZ - 3)), n: 8 },
+    { out: [0, 1], at: (u) => V3(u * (2 * TX - 3), RIG - 0.5, OZ + TZ), n: 8 },
+    { out: [0, -1], at: (u) => V3(-u * (2 * TX - 3), RIG - 0.5, OZ - TZ), n: 8 },
+    { out: [1, 0], at: (u) => V3(TX, RIG - 0.5, OZ - u * (2 * TZ - 3)), n: 14 },
+    { out: [-1, 0], at: (u) => V3(-TX, RIG - 0.5, OZ + u * (2 * TZ - 3)), n: 14 },
   ];
   for (const sd of sides) {
     const [ox, oz] = sd.out;
@@ -472,10 +472,10 @@ function arenaRound(ctx) {
     sd.high = V3(ox * 60, 14, OZ + oz * 60);
   }
   // washes over the stage, either side of the cross truss
-  const washes = fixtureRow(q, 10, (i) => ({ fx: rig.add({ kind: 'wash', pos: V3((i % 5 - 2) * 4, RIG - 0.5, OZ + (i < 5 ? -4 : 4)), length: 22, beamGain: 0.5, flareGain: 0.15 }), group: 2 }));
+  const washes = fixtureRow(q, 10, (i) => ({ fx: rig.add({ kind: 'wash', pos: V3(i < 5 ? -4 : 4, RIG - 0.5, OZ + (i % 5 - 2) * 8), length: 22, beamGain: 0.5, flareGain: 0.15 }), group: 2 }));
   // the deck's edge: beams standing up out of it all round
   const ups = [];
-  for (const [x, z, n, dx, dz] of [[0, OZ + SD / 2 - 0.3, 6, 1, 0], [0, OZ - SD / 2 + 0.3, 6, 1, 0], [SW / 2 - 0.3, OZ, 3, 0, 1], [-SW / 2 + 0.3, OZ, 3, 0, 1]]) {
+  for (const [x, z, n, dx, dz] of [[0, OZ + SD / 2 - 0.3, 3, 1, 0], [0, OZ - SD / 2 + 0.3, 3, 1, 0], [SW / 2 - 0.3, OZ, 8, 0, 1], [-SW / 2 + 0.3, OZ, 8, 0, 1]]) {
     const span = dx ? SW - 4 : SD - 3;
     ups.push(...fixtureRow(q, n, (i) => ({ fx: rig.add({ kind: 'beam', pos: V3(x + dx * (i / (n - 1) - 0.5) * span, DECK, z + dz * (i / (n - 1) - 0.5) * span), hang: 'up', length: 50, beamGain: 1.0 }), group: 3 })));
   }
@@ -493,7 +493,7 @@ function arenaRound(ctx) {
   for (const sd of sides) rig.light(fromRow(sd.spots, 3, 8).fx, shadowSpot(0xffffff, 0, { cast: false, penumbra: 0.5, decay: 2 }), 4200);
   // followspots from all four sides, high in the stands
   const follows = [];
-  for (const [x, z, cast] of [[0, OZ + 52, true], [0, OZ - 52, false], [52, OZ, false], [-52, OZ, false]]) {
+  for (const [x, z, cast] of [[0, OZ + 55, true], [0, OZ - 55, false], [50, OZ, false], [-50, OZ, false]]) {
     const l = shadowSpot(KELVIN(5600), 0, { angle: 0.1, penumbra: 0.6, size: q.shadowSize, far: 90, cast: cast && q.shadows });
     l.position.set(x, 21, z); l.target.position.set(0, DECK + 1, OZ);
     root.add(l, l.target); follows.push(l);
@@ -505,10 +505,10 @@ function arenaRound(ctx) {
   const fill = [];
   for (const [x, y, z] of [[-26, 18, OZ], [26, 18, OZ], [0, 18, OZ - 30], [0, 18, OZ + 30]]) { const l = new THREE.PointLight(0xffffff, 0, 90, 2); l.position.set(x, y, z); l.userData.offWhenDark = 'show'; root.add(l); fill.push(l); }
   root.add(new THREE.HemisphereLight(0x14141c, 0x050508, 0.18));
-  // the PA, hung all round: a main hang over each side of the stage, a hang at
-  // each corner turned out to the stands between
-  for (const [x, z, yaw, boxes] of [[-7, OZ + TZ + 1.2, 0, 14], [7, OZ + TZ + 1.2, 0, 14], [-7, OZ - TZ - 1.2, Math.PI, 14], [7, OZ - TZ - 1.2, Math.PI, 14],
-    [TX + 1.4, OZ, Math.PI / 2, 14], [-TX - 1.4, OZ, -Math.PI / 2, 14],
+  // the PA, hung all round: a hang over each end of the stage, two down each
+  // side, a hang at each corner turned out to the stands between
+  for (const [x, z, yaw, boxes] of [[0, OZ + TZ + 1.2, 0, 14], [0, OZ - TZ - 1.2, Math.PI, 14],
+    [TX + 1.4, OZ - 10, Math.PI / 2, 14], [TX + 1.4, OZ + 10, Math.PI / 2, 14], [-TX - 1.4, OZ - 10, -Math.PI / 2, 14], [-TX - 1.4, OZ + 10, -Math.PI / 2, 14],
     [TX + 1, OZ + TZ + 1, Math.PI / 4, 10], [-TX - 1, OZ + TZ + 1, -Math.PI / 4, 10], [TX + 1, OZ - TZ - 1, 3 * Math.PI / 4, 10], [-TX - 1, OZ - TZ - 1, -3 * Math.PI / 4, 10]]) {
     paHang(root, { x, y: RIG - 1, z, boxes, width: 1.2, yaw, roofY: H });
   }
@@ -534,7 +534,7 @@ function arenaRound(ctx) {
     bloom: { strength: 0.7, radius: 0.65, threshold: 1.15 },
     grade: { exposure: 1.2, vignette: 0.4, ca: 0.005, grain: 0.04, sat: 1.08, lift: [0.004, 0.004, 0.008] },
     env: { w: X1 - X0, h: H, d: Z1 - Z0, eye, wall: 0x0a0a10, floor: 0x050507, emitters: cubes.map((g) => (
-      { w: CUBE, h: CUBE, pos: V3(g.position.x, CY, OZ + CUBE / 2), normal: V3(0, 0, 1), screen: true, power: 1.2, aspect: 1 })) },
+      { w: CUBE, h: CUBE, pos: V3(CUBE / 2, CY, g.position.z), normal: V3(1, 0, 0), screen: true, power: 1.2, aspect: 1 })) },
     envIntensity: 0.6,
     update(f) {
       stands.update(f);
