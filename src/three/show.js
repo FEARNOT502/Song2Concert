@@ -647,6 +647,15 @@ export function paHang(root, { x, y, z, boxes, width = 1.3, yaw = 0, roofY = 0, 
   return a;
 }
 
+// A hang and its flown subs beside it (to its left as it faces, `gap` off),
+// two-thirds as many boxes, deeper, hung straight: a fuller PA, still tidy.
+export function paPair(root, o) {
+  const a = paHang(root, o);
+  const g = (o.width ?? 1.3) + 0.3, yaw = o.yaw ?? 0;
+  paHang(root, { ...o, x: o.x - Math.cos(yaw) * g, z: o.z + Math.sin(yaw) * g, boxes: Math.round(o.boxes * 0.65), depth: 1.0, splay: 0.006 });
+  return a;
+}
+
 // A screen's rigging: a truss along its top edge (`y` the top, `z` its face,
 // `w` its width, turned `yaw`) and chains from that truss up to the steel at
 // `topY` (a height, or a function of x and z), `n` of them.
@@ -1080,7 +1089,7 @@ export function roundStage(ctx, root, { c, w = 16, d = 40, deck = 2.2, top = 26,
   for (const [x, z, yaw, boxes] of [[0, TZ + 1, 0, 18], [0, -TZ - 1, Math.PI, 18],
     [TX + 1, -d / 4, Math.PI / 2, 18], [TX + 1, d / 4, Math.PI / 2, 18], [-TX - 1, -d / 4, -Math.PI / 2, 18], [-TX - 1, d / 4, -Math.PI / 2, 18],
     [TX + 0.8, TZ + 0.8, Math.PI / 4, 14], [-TX - 0.8, TZ + 0.8, -Math.PI / 4, 14], [TX + 0.8, -TZ - 0.8, 3 * Math.PI / 4, 14], [-TX - 0.8, -TZ - 0.8, -3 * Math.PI / 4, 14]]) {
-    paHang(root, { x: c.x + x, y: RY - 0.8, z: c.z + z, boxes, width: 1.3, yaw, roofY: top - 0.8 });
+    paPair(root, { x: c.x + x, y: RY - 0.8, z: c.z + z, boxes, width: 1.3, yaw, roofY: top - 0.8 });
   }
   const inside = (x, z, pad = 0) => (Math.abs(x - c.x) < BX + pad && Math.abs(z - c.z) < BZ + pad)
     || (runway && Math.abs(x - c.x) < RW / 2 + PIT + pad && Math.abs(z - c.z) < ends + PIT + pad);
@@ -1161,12 +1170,15 @@ export function roundBlocks({ c, hd, x0, x1, z0, z1, skip, size = 8.6, aisle = 1
 // Delay towers on a centre stage's four diagonals: each set `r` out from the
 // stage's middle `c` along its diagonal (`ax`, `az` the diagonal's spread),
 // brought in until it stands on the floor (`ok`) clear of its edge by `clear`.
-export function diagonalTowers(c, { r = 48, ax = 0.6, az = 0.8, ok }) {
+// With `cell` (roundBlocks' block and aisle), each in the middle of a block's
+// place on the grid, so it takes one block whole and leaves the rest square.
+export function diagonalTowers(c, { r = 48, ax = 0.6, az = 0.8, ok, cell = 0 }) {
   const out = [];
+  const snap = (v, o) => (cell ? o + (Math.round((v - o) / cell - 0.5) + 0.5) * cell : v);
   for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-    let k = r;
-    while (k > 20 && !ok(c.x + sx * ax * k, c.z + sz * az * k)) k -= 0.5;
-    out.push([c.x + sx * ax * k, c.z + sz * az * k]);
+    let k = r, p;
+    do { p = [snap(c.x + sx * ax * k, c.x), snap(c.z + sz * az * k, c.z)]; k -= 0.5; } while (k > 20 && !ok(...p));
+    out.push(p);
   }
   return out;
 }

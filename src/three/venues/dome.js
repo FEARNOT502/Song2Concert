@@ -14,7 +14,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { APP, DEG, KELVIN, V3, clamp, lerp, prng, std, floorPanelTex, glowMat, ringTint } from '../core.js';
 import { lightPoints } from '../people.js';
 import { hoists, micStand, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, crossThrust, diagonalTowers, roundBlocks, roundStage, delayTower, fixtureRow, flashOnCrowd, flashUnits, floorChairs, fohPosition, fromRow, groundRoof, paHang, paWing, runBlinders, runShow, runStrobes, scaffoldMasking, screenHang, section, stageRing, subLine, thinRow, wallStrip } from '../show.js';
+import { bigCrowd, bigScreens, crossThrust, diagonalTowers, roundBlocks, roundStage, delayTower, fixtureRow, flashOnCrowd, flashUnits, floorChairs, fohPosition, fromRow, groundRoof, paHang, paPair, paWing, runBlinders, runShow, runStrobes, scaffoldMasking, screenHang, section, stageRing, subLine, thinRow, wallStrip } from '../show.js';
 import { buildStands, decodeSeats } from '../stands.js';
 import { TD_STANDS } from './td-data.js';
 
@@ -591,13 +591,13 @@ export function buildDome(ctx) {
     paWing(root, { x: side * PX, z: PZ, h: PH, bridge: V3(side * (TX + 0.8), SR, BZ[2]) });
     paHang(root, { x: side * (WW / 2 + 2.6), y: SR - 2.4, z: BZ[3] + 0.2, boxes: 20, width: 1.4, yaw: -side * 0.05, roofY: SR - 0.8 });
     paHang(root, { x: side * TX, y: SR - 2.4, z: BZ[2] + 1.5, boxes: 10, width: 1.4, depth: 1.0, splay: 0.008, roofY: SR - 0.8 });
-    paHang(root, { x: side * (PX - 1.2), y: PH - 1.6, z: PZ + 1.0, boxes: 16, width: 1.3, yaw: side * 0.5, roofY: PH - 0.5 });
+    paPair(root, { x: side * (PX - 1.2), y: PH - 1.6, z: PZ + 1.0, boxes: 16, width: 1.3, yaw: side * 0.5, roofY: PH - 0.5 });
     paHang(root, { x: side * (PX + 2.5), y: PH - 1.6, z: PZ + 0.4, boxes: 12, width: 1.2, yaw: side * 1.15, roofY: PH - 0.4 });
     for (const dx of [-1.6, 0, 1.6]) towerLights.push(V3(side * PX + dx, PH + 1.2, PZ));
   }
   // the delay towers on the field, either side of the runway, past the
   // cross: for the back of the field and the stands behind home
-  for (const [x, z] of DT) towerLights.push(...delayTower(root, { x, z, h: 20, boxes: 16, width: 1.3, yaw: -Math.sign(x) * 0.04 }));
+  for (const [x, z] of DT) towerLights.push(...delayTower(root, { x, z, h: 26, boxes: 16, width: 1.3, yaw: -Math.sign(x) * 0.04 }));
   const spots = [], beams = [], washes = [], ups = [], ring2 = [], bst = [];
   spots.push(...fixtureRow(q, 14, (i) => ({ fx: rig.add({ kind: 'spot', pos: V3(-26 + i * 4, LT - 0.7, BZ[3]), length: 70, angle: 0.08 }), group: 0 })));
   beams.push(...fixtureRow(q, 14, (i) => ({ fx: rig.add({ kind: 'beam', pos: V3(-26 + i * 4, LT - 0.7, BZ[2]), length: 90, beamGain: 1.2 }), group: 1 })));
@@ -867,15 +867,15 @@ export function buildDome(ctx) {
     };
     // the delay towers on the diagonals, each aimed out, an aisle of its own
     // (on the field, 12 m clear of its edge: never into the stands)
-    const DTR = diagonalTowers(STAGE, { r: 52, ax: 0.62, az: 0.78, ok: (x, z) => inF(x, z) && Math.min(edgeD(x, z), edgeD(-x, z)) > 12 });
+    const DTR = diagonalTowers(STAGE, { r: 52, ax: 0.62, az: 0.78, cell: 10, ok: (x, z) => inF(x, z) && Math.min(edgeD(x, z), edgeD(-x, z)) > 12 });
     const towerLights = [];
-    for (const [x, z] of DTR) towerLights.push(...delayTower(root, { x, z, h: 20, boxes: 16, width: 1.3, yaw: Math.atan2(x - STAGE.x, z - STAGE.z) }));
+    for (const [x, z] of DTR) towerLights.push(...delayTower(root, { x, z, h: 30, boxes: 18, width: 1.3, yaw: Math.atan2(x - STAGE.x, z - STAGE.z) }));
     const rig = ctx.rig({ finish: 'black' });
     const tw = fixtureRow(q, towerLights.length, (i) => ({ fx: rig.add({ pos: towerLights[i], kind: 'beam', length: 70, beamGain: 0.9 }), group: 5 }));
     // (well back from the runway's end, towards home)
     const feye = V3(0, 1.6 + 1.0, STAGE.z + 60);
     const skip = (x, z) => !inF(x, z) || Math.min(edgeD(x, z), edgeD(-x, z)) < 2.2 || RC.inside(x, z, 3.5)
-      || DTR.some(([tx, tz]) => Math.abs(x - tx) < 7 && Math.abs(z - tz) < 7)
+      || DTR.some(([tx, tz]) => Math.abs(x - tx) < 5 && Math.abs(z - tz) < 5)
       || (Math.abs(x - feye.x) < 4.4 && Math.abs(z - feye.z) < 3.6);
     const seats = roundBlocks({ c: STAGE, hd: 20 + 3.5, x0: -80, x1: 80, z0: -10, z1: 140, skip, seed: 55 });
     root.add(floorChairs(seats.chairs));

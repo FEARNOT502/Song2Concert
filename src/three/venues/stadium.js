@@ -9,7 +9,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { APP, DEG, KELVIN, V3, clamp, prng, std, floorPanelTex, glowMat, noise3D, ringTint, withRepeat } from '../core.js';
 import { lightPoints } from '../people.js';
 import { ampStack, drumKit, guitar, hoists, holdAtDistance, keyboardRig, ledScreen, micStand, prismInto, rodInto, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, crossThrust, diagonalTowers, roundBlocks, roundStage, delayTower, fixtureRow, flashOnCrowd, flashUnits, floorChairs, fohPosition, fromRow, groundRoof, packFloor, paHang, paWing, runBlinders, runShow, runStrobes, scaffoldMasking, screenHang, stageRing, subLine, thinRow } from '../show.js';
+import { bigCrowd, bigScreens, crossThrust, diagonalTowers, roundBlocks, roundStage, delayTower, fixtureRow, flashOnCrowd, flashUnits, floorChairs, fohPosition, fromRow, groundRoof, packFloor, paHang, paPair, paWing, runBlinders, runShow, runStrobes, scaffoldMasking, screenHang, stageRing, subLine, thinRow } from '../show.js';
 import { buildStands } from '../stands.js';
 import { WB_STANDS } from './wb-data.js';
 
@@ -628,11 +628,11 @@ export function buildStadium(ctx) {
     // stands and the 270s further round
     paHang(root, { x: side * (WW / 2 + 2.6), y: SR - 2.4, z: BZ[3] + 0.2, boxes: 20, width: 1.5, yaw: -side * 0.04, roofY: SR - 0.8 });
     paHang(root, { x: side * TX, y: SR - 2.4, z: 24.5, boxes: 10, width: 1.4, depth: 1.0, splay: 0.008, roofY: SR - 0.8 });
-    paHang(root, { x: side * (PX - 1.2), y: PH - 1.6, z: PZ + 1.0, boxes: 18, width: 1.4, yaw: side * 0.45, roofY: PH - 0.5 });
+    paPair(root, { x: side * (PX - 1.2), y: PH - 1.6, z: PZ + 1.0, boxes: 18, width: 1.4, yaw: side * 0.45, roofY: PH - 0.5 });
     paHang(root, { x: side * (PX + 2.5), y: PH - 1.6, z: PZ + 0.4, boxes: 14, width: 1.3, yaw: side * 1.15, roofY: PH - 0.4 });
     for (const dx of [-1.6, 0, 1.6]) towerLights.push(V3(side * PX + dx, PH + 1.2, PZ));
   }
-  for (const [x, z] of DT) towerLights.push(...delayTower(root, { x, z, h: 26, boxes: 18, width: 1.4, yaw: -Math.sign(x) * 0.03 }));
+  for (const [x, z] of DT) towerLights.push(...delayTower(root, { x, z, h: 32, boxes: 18, width: 1.4, yaw: -Math.sign(x) * 0.03 }));
   const spots = [], beams = [], washes = [], ups = [];
   // spots on the front truss, beams on the middle one, washes on the back
   spots.push(...fixtureRow(q, 16, (i) => ({ fx: rig.add({ kind: 'spot', pos: V3(-30 + i * 4, LT - 0.7, BZ[3]), length: 90, angle: 0.08 }), group: 0 })));
@@ -782,14 +782,14 @@ export function buildStadium(ctx) {
       return m;
     };
     // (on the pitch, 10 m clear of its edge)
-    const DTR = diagonalTowers(STAGE, { r: 56, ax: 0.6, az: 0.8, ok: (x, z) => inF(x, z) && Math.min(edgeD(x, z), edgeD(-x, z)) > 10 });
+    const DTR = diagonalTowers(STAGE, { r: 56, ax: 0.6, az: 0.8, cell: 10, ok: (x, z) => inF(x, z) && Math.min(edgeD(x, z), edgeD(-x, z)) > 10 });
     const towerLights = [];
-    for (const [x, z] of DTR) towerLights.push(...delayTower(root, { x, z, h: 22, boxes: 16, width: 1.3, yaw: Math.atan2(x - STAGE.x, z - STAGE.z) }));
+    for (const [x, z] of DTR) towerLights.push(...delayTower(root, { x, z, h: 34, boxes: 18, width: 1.3, yaw: Math.atan2(x - STAGE.x, z - STAGE.z) }));
     const rig = ctx.rig({ finish: 'black' });
     const tw = fixtureRow(q, towerLights.length, (i) => ({ fx: rig.add({ pos: towerLights[i], kind: 'beam', length: 80, beamGain: 0.9 }), group: 5 }));
     const feye = V3(0, 1.6 + 1.2, ZC + 60);
     const skip = (x, z) => !inF(x, z) || Math.min(edgeD(x, z), edgeD(-x, z)) < 3.5 || RC.inside(x, z, 3.5)
-      || DTR.some(([tx, tz]) => Math.abs(x - tx) < 7 && Math.abs(z - tz) < 7)
+      || DTR.some(([tx, tz]) => Math.abs(x - tx) < 5 && Math.abs(z - tz) < 5)
       || (Math.abs(x - feye.x) < 4.4 && Math.abs(z - feye.z) < 3.6);
     const seats = roundBlocks({ c: STAGE, hd: 20 + 3.5, x0: -60, x1: 60, z0: ZC - 70, z1: ZC + 70, skip, seed: 177 });
     root.add(floorChairs(seats.chairs));

@@ -12,7 +12,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { APP, KELVIN, V3, std, concreteTex, ringTint, withRepeat } from '../core.js';
 import { lightPoints } from '../people.js';
 import { ampStack, chainInto, drumKit, guitar, hoists, keyboardRig, ledScreen, mats, micStand, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, crossThrust, fixtureRow, flashOnCrowd, flashUnits, floorBlocks, floorChairs, fohPosition, fromRow, maskingDrapes, packFloor, paHang, runBlinders, runShow, runStrobes, screenHang, stageRing, stageSet, subLine, thinRow, wallStrip } from '../show.js';
+import { bigCrowd, bigScreens, crossThrust, fixtureRow, flashOnCrowd, flashUnits, floorBlocks, floorChairs, fohPosition, fromRow, maskingDrapes, packFloor, paHang, paPair, runBlinders, runShow, runStrobes, screenHang, stageRing, stageSet, subLine, thinRow, wallStrip } from '../show.js';
 import { buildStands } from '../stands.js';
 import { SSA_STANDS } from './ssa-data.js';
 
@@ -267,7 +267,7 @@ function arenaEnd(ctx) {
   for (const side of [-1, 1]) {
     pa.push(paHang(root, { x: side * 17.6, y: RIG - 0.6, z: 16.5 + SZ, boxes: 16, yaw: -side * 0.06, roofY: H }));
     paHang(root, { x: side * 15.6, y: RIG - 0.6, z: 15.4 + SZ, boxes: 8, depth: 1.0, splay: 0.008, roofY: H });
-    paHang(root, { x: side * 29.5, y: RIG - 1.0, z: 12 + SZ, boxes: 14, width: 1.2, yaw: side * 0.5, roofY: H });
+    paPair(root, { x: side * 29.5, y: RIG - 1.0, z: 12 + SZ, boxes: 14, width: 1.2, yaw: side * 0.5, roofY: H });
     paHang(root, { x: side * 33.5, y: RIG - 1.4, z: 15 + SZ, boxes: 10, width: 1.1, yaw: side * 1.2, roofY: H });
     paHang(root, { x: side * 13, y: RIG - 3, z: 56, boxes: 8, width: 1.1, yaw: side * 0.06, roofY: H, splay: 0.03 });
   }
@@ -521,7 +521,7 @@ function arenaRound(ctx) {
   for (const [x, z, yaw, boxes] of [[0, OZ + TZ + 1.2, 0, 14], [0, OZ - TZ - 1.2, Math.PI, 14],
     [TX + 1.4, OZ - 10, Math.PI / 2, 14], [TX + 1.4, OZ + 10, Math.PI / 2, 14], [-TX - 1.4, OZ - 10, -Math.PI / 2, 14], [-TX - 1.4, OZ + 10, -Math.PI / 2, 14],
     [TX + 1, OZ + TZ + 1, Math.PI / 4, 10], [-TX - 1, OZ + TZ + 1, -Math.PI / 4, 10], [TX + 1, OZ - TZ - 1, 3 * Math.PI / 4, 10], [-TX - 1, OZ - TZ - 1, -3 * Math.PI / 4, 10]]) {
-    paHang(root, { x, y: RIG - 1, z, boxes, width: 1.2, yaw, roofY: H });
+    paPair(root, { x, y: RIG - 1, z, boxes, width: 1.2, yaw, roofY: H });
   }
 
   // ── people ──
