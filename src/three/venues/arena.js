@@ -11,26 +11,22 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { APP, KELVIN, V3, std, concreteTex, ringTint, withRepeat } from '../core.js';
 import { lightPoints } from '../people.js';
-import { ampStack, drumKit, guitar, hoists, keyboardRig, micStand, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, blockGrid, crossThrust, fixtureRow, flashOnCrowd, flashUnits, floorBlocks, floorChairs, fohPosition, fromRow, maskingDrapes, paHang, runBlinders, runShow, runStrobes, screenHang, stageRing, stageSet, subLine, thinRow, wallStrip } from '../show.js';
+import { ampStack, chainInto, drumKit, guitar, hoists, keyboardRig, ledScreen, mats, micStand, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
+import { bigCrowd, bigScreens, blockGrid, crossThrust, fixtureRow, flashOnCrowd, flashUnits, floorBlocks, floorChairs, fohPosition, fromRow, maskingDrapes, packFloor, paHang, runBlinders, runShow, runStrobes, screenHang, stageRing, stageSet, subLine, thinRow, wallStrip } from '../show.js';
 import { buildStands } from '../stands.js';
 import { SSA_STANDS } from './ssa-data.js';
 
 export function buildArena(ctx) {
-  const { pipe, q, cu } = ctx;
+  return ctx.mode === '360' ? arenaRound(ctx) : arenaEnd(ctx);
+}
+
+// The building, the same for either layout: the stands (the seats turned to
+// `stage`, the crowd in those `sold` says), the 300 level's ends, the suites,
+// the floor, the movable ceiling with its downlights, and the house lights.
+function arenaRoom(ctx, { stage, sold }) {
+  const { pipe, q } = ctx;
   const root = new THREE.Group();
   const H = 30;                        // the movable ceiling, lowered for arena mode
-  const DECK = 2.2, RIG = 20;
-  // FOH, and the listener there: at the back of the floor's seats
-  const eye = V3(0, 1.6 + 0.9, 81.4);
-  // the stage set 6 m out from the end, the masking brought forward with it
-  const SZ = 6;
-  const STAGE = V3(0, DECK, 8 + SZ);
-  // the masking's line: across behind the set, then angled forward past the
-  // corners' blocks to the sides' fronts, and on across the sides to the walls
-  const MZ = 2.2 + SZ, MX = 16, SX = 31, SZF = 15;
-  const maskZ = (x) => { const a = Math.abs(x); return a <= MX ? MZ : a >= SX ? SZF : MZ + (SZF - MZ) * (a - MX) / (SX - MX); };
-
   // ── the stands, from the official seat map ──
   // Arena mode, end stage 2 (the layout nearly every concert uses): the floor
   // 51 × 82 m between the 200 level's front rows, the stage at its north end.
@@ -39,11 +35,12 @@ export function buildArena(ctx) {
   // sides); the 300 level's three-row balconies round the ends; the 400 level
   // — its great crescents down the sides, 24 rows at the middle and under ten
   // at the ends where the wall curves in, and five-row balconies round the
-  // ends; the 500 level's three rows over them. The centre of the north end
-  // 200 level is where the stage and backstage stand.
+  // ends; the 500 level's three rows over them. (The north end's 200 level
+  // is the south end's, as the centre-stage chart has it: see
+  // pipeline/ssa_north.py.)
   const OZ = 45;                       // the floor's centre, in this room's coordinates
   const stands = buildStands(SSA_STANDS, {
-    offset: V3(0, 0, OZ), stage: STAGE, seed: 200, concreteTone: 0.2, roofY: H,
+    offset: V3(0, 0, OZ), stage, seed: 200, concreteTone: 0.2, roofY: H,
     seatColors: { 200: 0x1c1d22, 300: 0xc8341e, 400: 0x1c1d22, 500: 0x1c1d22, '300S': 0x2a1d17 },
     // the 300 level, the VIP balcony: red seats in boxes behind a dark mesh
     // front; the suites' balconies behind glass
@@ -52,8 +49,7 @@ export function buildArena(ctx) {
       '300S': new THREE.MeshPhysicalMaterial({ color: 0xa8bcc6, roughness: 0.06, metalness: 0, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false }),
     } },
     crowd: !!q.crowd,
-    // nobody behind the masking
-    sold: (x, z) => z > maskZ(x) + 0.8,
+    sold,
   });
   root.add(stands.group);
 
@@ -167,6 +163,32 @@ export function buildArena(ctx) {
   for (let z = Z0 + 8; z <= Z1 - 6; z += 9) for (let x = -63; x <= 63; x += 9) {
     houseFix.push(pipe.flares.add(V3(x, H - 0.05, z), KELVIN(4200), 0.9, 0));
   }
+  const house = [];
+  // the house lights: the ceiling's downlights, shining down, not onto it
+  for (const [x, z] of [[-24, 20], [24, 20], [-24, 60], [24, 60], [0, 40], [0, 80]]) {
+    const l = new THREE.SpotLight(KELVIN(4200), 0, 140, 1.4, 0.3, 2); l.position.set(x, H - 0.6, z); l.target.position.set(x, 0, z);
+    l.userData.offWhenDark = 'house'; root.add(l, l.target); house.push(l);
+  }
+  return { root, stands, H, OZ, X0, X1, Z0, Z1, houseFix, house };
+}
+
+// The end stage (GENERAL): the set at the north end, masking behind it, a
+// runway out to a cross on the seated floor.
+function arenaEnd(ctx) {
+  const { pipe, q, cu } = ctx;
+  const DECK = 2.2, RIG = 20;
+  // FOH, and the listener there: at the back of the floor's seats
+  const eye = V3(0, 1.6 + 0.9, 81.4);
+  // the stage set 6 m out from the end, the masking brought forward with it
+  const SZ = 6;
+  const STAGE = V3(0, DECK, 8 + SZ);
+  // the masking's line: across behind the set, then angled forward past the
+  // corners' blocks to the sides' fronts, and on across the sides to the walls
+  const MZ = 2.2 + SZ, MX = 16, SX = 31, SZF = 15;
+  const maskZ = (x) => { const a = Math.abs(x); return a <= MX ? MZ : a >= SX ? SZF : MZ + (SZF - MZ) * (a - MX) / (SX - MX); };
+
+  // nobody behind the masking
+  const { root, stands, H, OZ, X0, X1, Z0, Z1, houseFix, house } = arenaRoom(ctx, { stage: STAGE, sold: (x, z) => z > maskZ(x) + 0.8 });
   // the set stands on the deck; the building's stands carry on round it
   stageSet(root, { w: 30, h: 17, z: 1.8 + SZ, deck: DECK, towerX: 15.8, backdropW: 32, backdropH: 16, wingX: 18.5, wingW: 6, wingH: 11 });
   // masking across the building behind the stage, wall to wall and floor to
@@ -278,12 +300,6 @@ export function buildArena(ctx) {
   for (const l of [front1, front2, stageWash]) root.add(l, l.target);
   const fill = [];
   for (const [x, y, z] of [[-20, 18, 30], [20, 18, 30], [0, 24, 60]]) { const l = new THREE.PointLight(0xffffff, 0, 90, 2); l.position.set(x, y, z); l.userData.offWhenDark = 'show'; root.add(l); fill.push(l); }
-  const house = [];
-  // the house lights: the ceiling's downlights, shining down, not onto it
-  for (const [x, z] of [[-24, 20], [24, 20], [-24, 60], [24, 60], [0, 40], [0, 80]]) {
-    const l = new THREE.SpotLight(KELVIN(4200), 0, 140, 1.4, 0.3, 2); l.position.set(x, H - 0.6, z); l.target.position.set(x, 0, z);
-    l.userData.offWhenDark = 'house'; root.add(l, l.target); house.push(l);
-  }
   root.add(new THREE.HemisphereLight(0x14141c, 0x050508, 0.18));
 
   // ── people ──
@@ -347,6 +363,197 @@ export function buildArena(ctx) {
       ringTint(ringM.color, f.pal.a).multiplyScalar((0.6 + 0.8 * f.kick) * show + 0.2);
       cu.uRimColor.value.copy(f.pal.a).lerp(new THREE.Color(1, 1, 1), 0.3).multiplyScalar((0.22 + 0.25 * f.kick) * show);
       cu.uStage.value.set(0, 10, 4 + SZ);
+      cu.uWash.value.copy(f.pal.b).multiplyScalar(0.012 * show + 0.2 * f.house);
+      flashOnCrowd(cu.uWash.value, runBlinders(blinders, f), runStrobes(strobes, f));
+      cu.uAmb.value.setRGB(0.004, 0.004, 0.006).multiplyScalar(1 + f.house * 8);
+    },
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The centre stage (360), after Linkin Park's From Zero tour here (February
+// 2025): the house sold all round, the floor one standing crowd with no pens,
+// and in the floor's very middle a low, long stage, an LED strip round its
+// edge, two great LED cubes hung over its two halves, each tilted, a square of
+// truss over it all with the rig on its four sides, the PA hung on all four.
+// ─────────────────────────────────────────────────────────────────────────────
+function arenaRound(ctx) {
+  const { pipe, q, cu } = ctx;
+  const DECK = 1.5, RIG = 24;
+  const OZ = 45;
+  const C = V3(0, DECK, OZ);                    // the stage's middle: the floor's
+  const SW = 24, SD = 10;                       // the stage, its long side across the room
+  const { root, stands, H, X0, X1, Z0, Z1, houseFix, house } = arenaRoom(ctx, { stage: C, sold: () => true });
+  // FOH, and the listener there: out on the floor to the south
+  const eye = V3(0, 1.6 + 0.9, OZ + 27);
+
+  // ── the stage ──
+  root.add(stageDeck({ w: SW, d: SD, h: DECK, z: OZ, lip: false }));
+  // the LED strip round all four edges, in the sleeve's colour
+  const ringM = stageRing(root, [{ x: 0, z: OZ, w: SW, d: SD, h: DECK }]);
+  // steps up at each end
+  for (const s of [-1, 1]) root.add(stageSteps({ x: s * (SW / 2 + 8 * 0.28 + 0.05), z: OZ + 2.5, h: DECK, dir: [-s, 0], width: 1.6 }));
+  // the barrier round it, 2.5 m out: the crowd up against it on every side
+  const PIT = 2.5, BX = SW / 2 + PIT, BZ = SD / 2 + PIT;
+  {
+    const bar = [], M = mats();
+    const run = (x0, z0, x1, z1) => {
+      const len = Math.hypot(x1 - x0, z1 - z0), yaw = -Math.atan2(z1 - z0, x1 - x0);
+      for (const y of [0.25, 1.1]) { const b = new THREE.BoxGeometry(len, 0.05, 0.05); b.rotateY(yaw); b.translate((x0 + x1) / 2, y, OZ + (z0 + z1) / 2); bar.push(b); }
+      const n = Math.round(len / 0.5);
+      for (let k = 0; k <= n; k++) { const b = new THREE.BoxGeometry(0.03, 0.85, 0.03); b.translate(x0 + (x1 - x0) * k / n, 0.68, OZ + z0 + (z1 - z0) * k / n); bar.push(b); }
+    };
+    run(-BX, -BZ, BX, -BZ); run(BX, -BZ, BX, BZ); run(BX, BZ, -BX, BZ); run(-BX, BZ, -BX, -BZ);
+    root.add(new THREE.Mesh(mergeGeometries(bar), M.alu));
+  }
+  // the backline: the drums on a riser in the middle, keys either side, the
+  // guitars and the singers' mics out towards the four edges
+  {
+    const riser = stageDeck({ w: 4, d: 3, h: 0.6, z: OZ, lip: false }); riser.position.y = DECK; root.add(riser);
+    const kit = drumKit({ shell: 0x1a1a1e }); kit.position.set(0, DECK + 0.6, OZ); kit.scale.setScalar(1.05); root.add(kit);
+    for (const [x, rot] of [[-5.5, Math.PI / 2], [5.5, -Math.PI / 2]]) { const k = keyboardRig(); k.position.set(x, DECK, OZ - 1.5); k.rotation.y = rot; root.add(k); }
+    for (const [x, z, col, bass] of [[-8.5, OZ + 2.5, 0x5a1a0e, false], [8.5, OZ - 2.5, 0x1a1a1c, true]]) {
+      const gt = guitar({ color: col, bass }); gt.scale.setScalar(0.8); gt.position.set(x, DECK + 0.5, z); gt.rotation.x = -0.28; root.add(gt);
+    }
+    for (const [x, z, rot] of [[0, OZ + SD / 2 - 1, 0], [0, OZ - SD / 2 + 1, Math.PI], [-SW / 2 + 1.5, OZ, -Math.PI / 2], [SW / 2 - 1.5, OZ, Math.PI / 2]]) {
+      const m = micStand({ height: 1.5 }); m.position.set(x, DECK, z); m.rotation.y = rot; root.add(m);
+    }
+    for (const [x, z, rot] of [[-3, OZ + SD / 2 - 0.3, Math.PI], [3, OZ + SD / 2 - 0.3, Math.PI], [-3, OZ - SD / 2 + 0.3, 0], [3, OZ - SD / 2 + 0.3, 0]]) {
+      const w = wedge(); w.position.set(x, DECK, z); w.rotation.y = rot; root.add(w);
+    }
+  }
+
+  // ── the cubes ──
+  // two LED cubes, 8 m a side, over the stage's two halves, the art on every
+  // face but the top; hung tilted, each its own way, on chains from the truss
+  const CUBE = 8, CY = 17;
+  const cubes = [];
+  for (const [cx, rx, ry, rz] of [[-6.5, 0.14, 0.38, 0.07], [6.5, -0.14, -0.38, -0.07]]) {
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(new THREE.BoxGeometry(CUBE - 0.1, CUBE - 0.1, CUBE - 0.1), std({ color: 0x050506, roughness: 0.6 })));
+    for (const [ax, ay] of [[0, 0], [0, Math.PI / 2], [0, Math.PI], [0, -Math.PI / 2], [Math.PI / 2, 0]]) {
+      const sc = ledScreen({ w: CUBE, h: CUBE, tex: ctx.art.texture(1), pitch: 0.006, bright: 1.3, frame: 0, light: false });
+      const pv = new THREE.Group(); pv.rotation.set(ax, ay, 0); sc.position.z = CUBE / 2; pv.add(sc); g.add(pv);
+      ctx.addScreen(sc, 1, 'main');
+    }
+    g.position.set(cx, CY, OZ); g.rotation.set(rx, ry, rz);
+    root.add(g); cubes.push(g);
+    // a chain from each top corner up to the truss
+    g.updateMatrixWorld(true);
+    const ch = [];
+    for (const [dx, dz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      const p = V3(dx * CUBE / 2 * 0.9, CUBE / 2, dz * CUBE / 2 * 0.9).applyMatrix4(g.matrixWorld);
+      chainInto(ch, p.x, p.y, p.z, RIG - 0.4, { motor: false });
+    }
+    root.add(new THREE.Mesh(mergeGeometries(ch), mats().chain));
+  }
+
+  // ── rig ──
+  // a square of truss over the stage, 36 × 22 m, a truss across its middle
+  // between the cubes and one down each short side, on hoists to the steel
+  const rig = ctx.rig({ finish: 'black' });
+  const TX = 18, TZ = 11;
+  for (const z of [-TZ, TZ]) { const t = truss(2 * TX + 0.8, { size: 0.76, finish: 'black' }); t.position.set(0, RIG, OZ + z); root.add(t); root.add(hoists([-TX, -TX / 2, 0, TX / 2, TX], RIG, OZ + z, H)); }
+  for (const x of [-TX, 0, TX]) { const t = truss(2 * TZ - 0.8, { size: 0.76, finish: 'black' }); t.rotation.y = Math.PI / 2; t.position.set(x, RIG, OZ); root.add(t); }
+  // the rig on the square's four sides, each row lighting its own side of the
+  // house (`out`, the way its side looks)
+  const sides = [
+    { out: [0, 1], at: (u) => V3(u * (2 * TX - 3), RIG - 0.5, OZ + TZ), n: 12 },
+    { out: [0, -1], at: (u) => V3(-u * (2 * TX - 3), RIG - 0.5, OZ - TZ), n: 12 },
+    { out: [1, 0], at: (u) => V3(TX, RIG - 0.5, OZ - u * (2 * TZ - 3)), n: 8 },
+    { out: [-1, 0], at: (u) => V3(-TX, RIG - 0.5, OZ + u * (2 * TZ - 3)), n: 8 },
+  ];
+  for (const sd of sides) {
+    const [ox, oz] = sd.out;
+    sd.spots = fixtureRow(q, sd.n, (i) => ({ fx: rig.add({ kind: 'spot', pos: sd.at(i / (sd.n - 1) - 0.5).add(V3(-ox * 0.6, 0, -oz * 0.6)), length: 45, angle: 0.085, beamGain: 1.0 }), group: 0 }));
+    sd.beams = fixtureRow(q, sd.n, (i) => ({ fx: rig.add({ kind: 'beam', pos: sd.at((i + 0.5) / sd.n - 0.5).add(V3(ox * 0.6, 0, oz * 0.6)), length: 60, beamGain: 1.2 }), group: 1 }));
+    // the house each row plays to: low over its floor, high over its stands
+    sd.low = V3(ox * 40, 1, OZ + oz * 40);
+    sd.high = V3(ox * 60, 14, OZ + oz * 60);
+  }
+  // washes over the stage, either side of the cross truss
+  const washes = fixtureRow(q, 10, (i) => ({ fx: rig.add({ kind: 'wash', pos: V3((i % 5 - 2) * 4, RIG - 0.5, OZ + (i < 5 ? -4 : 4)), length: 22, beamGain: 0.5, flareGain: 0.15 }), group: 2 }));
+  // the deck's edge: beams standing up out of it all round
+  const ups = [];
+  for (const [x, z, n, dx, dz] of [[0, OZ + SD / 2 - 0.3, 6, 1, 0], [0, OZ - SD / 2 + 0.3, 6, 1, 0], [SW / 2 - 0.3, OZ, 3, 0, 1], [-SW / 2 + 0.3, OZ, 3, 0, 1]]) {
+    const span = dx ? SW - 4 : SD - 3;
+    ups.push(...fixtureRow(q, n, (i) => ({ fx: rig.add({ kind: 'beam', pos: V3(x + dx * (i / (n - 1) - 0.5) * span, DECK, z + dz * (i / (n - 1) - 0.5) * span), hang: 'up', length: 50, beamGain: 1.0 }), group: 3 })));
+  }
+  const TB = RIG - 0.38;
+  // blinders on each side of the square, facing out; strobes under it
+  const bu = [], st = [];
+  for (const sd of sides) {
+    const [ox, oz] = sd.out;
+    for (const u of [-0.4, -0.13, 0.13, 0.4]) { const p = sd.at(u); bu.push({ pos: V3(p.x + ox * 0.5, TB - 0.38, p.z + oz * 0.5), dir: V3(ox * 30, 2 - RIG, oz * 30), mount: TB }); }
+    for (const u of [-0.25, 0.25]) { const p = sd.at(u); st.push({ pos: V3(p.x, TB - 0.15, p.z), dir: V3(ox, -0.5, oz), mount: TB }); }
+  }
+  const blinders = flashUnits(rig, root, thinRow(q, bu), { kind: 'blinder' });
+  const strobes = flashUnits(rig, root, thinRow(q, st), { kind: 'strobe' });
+  // real light where the rig lands
+  for (const sd of sides) rig.light(fromRow(sd.spots, 3, 8).fx, shadowSpot(0xffffff, 0, { cast: false, penumbra: 0.5, decay: 2 }), 4200);
+  // followspots from all four sides, high in the stands
+  const follows = [];
+  for (const [x, z, cast] of [[0, OZ + 52, true], [0, OZ - 52, false], [52, OZ, false], [-52, OZ, false]]) {
+    const l = shadowSpot(KELVIN(5600), 0, { angle: 0.1, penumbra: 0.6, size: q.shadowSize, far: 90, cast: cast && q.shadows });
+    l.position.set(x, 21, z); l.target.position.set(0, DECK + 1, OZ);
+    root.add(l, l.target); follows.push(l);
+  }
+  // the wash from straight over the stage, between the cubes
+  const stageWash = shadowSpot(0xffffff, 0, { angle: 0.75, penumbra: 1, cast: false });
+  stageWash.position.set(0, RIG - 1, OZ); stageWash.target.position.set(0, DECK, OZ);
+  root.add(stageWash, stageWash.target);
+  const fill = [];
+  for (const [x, y, z] of [[-26, 18, OZ], [26, 18, OZ], [0, 18, OZ - 30], [0, 18, OZ + 30]]) { const l = new THREE.PointLight(0xffffff, 0, 90, 2); l.position.set(x, y, z); l.userData.offWhenDark = 'show'; root.add(l); fill.push(l); }
+  root.add(new THREE.HemisphereLight(0x14141c, 0x050508, 0.18));
+  // the PA, hung all round: a main hang over each side of the stage, a hang at
+  // each corner turned out to the stands between
+  for (const [x, z, yaw, boxes] of [[-7, OZ + TZ + 1.2, 0, 14], [7, OZ + TZ + 1.2, 0, 14], [-7, OZ - TZ - 1.2, Math.PI, 14], [7, OZ - TZ - 1.2, Math.PI, 14],
+    [TX + 1.4, OZ, Math.PI / 2, 14], [-TX - 1.4, OZ, -Math.PI / 2, 14],
+    [TX + 1, OZ + TZ + 1, Math.PI / 4, 10], [-TX - 1, OZ + TZ + 1, -Math.PI / 4, 10], [TX + 1, OZ - TZ - 1, 3 * Math.PI / 4, 10], [-TX - 1, OZ - TZ - 1, -3 * Math.PI / 4, 10]]) {
+    paHang(root, { x, y: RIG - 1, z, boxes, width: 1.2, yaw, roofY: H });
+  }
+
+  // ── people ──
+  // the floor one standing crowd, from the barrier out to the stands' fronts,
+  // the FOH riser kept clear; every seat in the stands taken
+  const clear = (x, z) => [[0, 0], [1.2, 0], [-1.2, 0], [0, 1.2], [0, -1.2]].every(([dx, dz]) => stands.topAt(x + dx, z + dz) < 0.05);
+  const avoid = (x, z) => (Math.abs(x) < BX + 0.4 && Math.abs(z - OZ) < BZ + 0.4) || (Math.abs(x - eye.x) < 4.4 && Math.abs(z - eye.z) < 3.6);
+  const standing = packFloor({ x0: -30, x1: 30, z0: OZ - 44, z1: OZ + 44, avoid, inside: clear, seed: 245 });
+  bigCrowd(root, cu, q, standing.concat(stands.people.map((p) => ({ ...p, h: 0.97 }))), { seed: 21 });
+  const aisleField = lightPoints(stands.aisleLights.map((a) => ({ ...a, white: true, size: 0.03 })), cu, { maxPx: 3 });
+  aisleField.material.uniforms.uGain.value = 0.3;
+  root.add(aisleField);
+  root.add(lightPoints(fohPosition(pipe, root, eye), cu, { maxPx: 4 }));
+
+  return {
+    root, eye, seatNear: stands.seatNear,
+    camera: { pos: eye, target: V3(0, 9, OZ), fov: 58, near: 0.15, far: 400 },
+    background: new THREE.Color(0),
+    fog: new THREE.FogExp2(0x060508, 0.0045),
+    hazeDensity: 0.0016, beamGain: 0.55, hazeAmb: new THREE.Color(0x040306), hazeAmbDist: 160,
+    bloom: { strength: 0.7, radius: 0.65, threshold: 1.15 },
+    grade: { exposure: 1.2, vignette: 0.4, ca: 0.005, grain: 0.04, sat: 1.08, lift: [0.004, 0.004, 0.008] },
+    env: { w: X1 - X0, h: H, d: Z1 - Z0, eye, wall: 0x0a0a10, floor: 0x050507, emitters: cubes.map((g) => (
+      { w: CUBE, h: CUBE, pos: V3(g.position.x, CY, OZ + CUBE / 2), normal: V3(0, 0, 1), screen: true, power: 1.2, aspect: 1 })) },
+    envIntensity: 0.6,
+    update(f) {
+      stands.update(f);
+      const show = 1 - f.house;
+      for (const sd of sides) {
+        runShow(rig, sd.spots, f, { house: sd.low, stage: C, span: 30 });
+        runShow(rig, sd.beams, f, { house: sd.high, stage: C, span: 40 });
+      }
+      runShow(rig, washes, f, { house: V3(0, 0, OZ + 8), stage: C, span: 14, strobe: false });
+      runShow(rig, ups, f, { house: V3(0, 30, OZ), stage: C, up: true });
+      washes.forEach(({ fx }) => { fx.angle = 0.3; });
+      follows.forEach((l, i) => { l.intensity = (i ? 9000 : 16000) * show; });
+      stageWash.color.copy(f.pal.a); stageWash.intensity = (4000 + 5000 * f.energy + 2500 * f.kick) * show;
+      fill.forEach((l, i) => { l.color.copy(i % 2 ? f.pal.b : f.pal.a); l.intensity = (120 + 300 * f.energy) * show; });
+      house.forEach((l) => { l.intensity = 9000 * f.house; });
+      houseFix.forEach((h) => { h.intensity = 1.5 * f.house; });
+      ringTint(ringM.color, f.pal.a).multiplyScalar((0.6 + 0.8 * f.kick) * show + 0.2);
+      cu.uRimColor.value.copy(f.pal.a).lerp(new THREE.Color(1, 1, 1), 0.3).multiplyScalar((0.22 + 0.25 * f.kick) * show);
+      cu.uStage.value.set(0, 10, OZ);
       cu.uWash.value.copy(f.pal.b).multiplyScalar(0.012 * show + 0.2 * f.house);
       flashOnCrowd(cu.uWash.value, runBlinders(blinders, f), runStrobes(strobes, f));
       cu.uAmb.value.setRGB(0.004, 0.004, 0.006).multiplyScalar(1 + f.house * 8);
