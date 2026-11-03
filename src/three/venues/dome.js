@@ -687,16 +687,19 @@ export function buildDome(ctx) {
   // meets it, whole rows and columns at a time; one cut down to a sliver is
   // left out, and so is a row the field's edge cuts to a few chairs.
   const SEAT = 0.5, PITCH = 0.9, NX = 16, NZ = 15, BW = NX * SEAT, BD = NZ * PITCH, AX = 1.2, AZ = 1.6;
+  // (the floor kept GAP clear of the stage, the runway and the cross, so the
+  // front rows see over them to the far side)
+  const GAP = 3.5;
   const bands = [];
-  for (let z = RW0 + 3.5; z + 4 * PITCH < CZ - 1.4; z += BD + AZ) bands.push([z, Math.min(z + BD, CZ - 1.6)]);
+  for (let z = RW0 + GAP + 2; z + 4 * PITCH < CZ - GAP; z += BD + AZ) bands.push([z, Math.min(z + BD, CZ - GAP)]);
   // beside the walkway across, past its ends, a short band fills the gap
   // between the front blocks and the ones behind the cross
-  bands.push([bands[bands.length - 1][1] + AZ, CZ + XD + 1.8 - AZ]);
-  for (let z = CZ + XD + 1.8; z < 136; z += BD + AZ) bands.push([z, z + BD]);
+  bands.push([bands[bands.length - 1][1] + AZ, CZ + XD + GAP - AZ]);
+  for (let z = CZ + XD + GAP; z < 136; z += BD + AZ) bands.push([z, z + BD]);
   const obst = [
-    [-2.2 - 1.4, 2.2 + 1.4, RW0, RW1 + 1.4],                     // the runway
-    [-XW - 1.4, XW + 1.4, CZ - 1.4, CZ + XD + 1.4],               // the walkway across
-    [-TIP / 2 - 1.4, TIP / 2 + 1.4, RW1 - TIP - 1.4, RW1 + 1.4], // the end stage
+    [-2.2 - GAP, 2.2 + GAP, RW0, RW1 + GAP],                     // the runway
+    [-XW - GAP, XW + GAP, CZ - GAP, CZ + XD + GAP],               // the walkway across
+    [-TIP / 2 - GAP, TIP / 2 + GAP, RW1 - TIP - GAP, RW1 + GAP], // the end stage
   ];
   // the desk only takes the chairs it stands on; the towers stand in aisles
   // of their own (below), TB either side of each clear of chairs
@@ -716,7 +719,7 @@ export function buildDome(ctx) {
   const blocks = [];
   bands.forEach(([z0, z1], r) => {
     // past the end stage the middle is open: a block on the centre line
-    const open = z0 > RW1 + 1.4;
+    const open = z0 > RW1 + GAP;
     const x0s = [];
     // a band the delay towers stand in: each tower in an aisle of its own, the
     // blocks between the centre one and the tower resized to fill that span

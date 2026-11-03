@@ -228,7 +228,9 @@ function arenaEnd(ctx) {
   // the runway out to a cross on the floor: a walkway either side two-thirds
   // of the way, the runway on past it to a square end stage in the middle
   const RW0 = 16 + SZ, RW1 = 52, CZ = 38;
-  const cross = crossThrust(root, { z0: RW0, z1: RW1, w: 3.6, crossZ: CZ, crossD: 3.6, crossW: 12, tip: 6, h: DECK });
+  // (lower than the stage, 1.4 m, so the floor sees over it to the far side)
+  const XH = 1.4;
+  const cross = crossThrust(root, { z0: RW0, z1: RW1, w: 3.6, crossZ: CZ, crossD: 3.6, crossW: 12, tip: 6, h: XH });
   const ringM = stageRing(root, [{ x: 0, z: 8.5 + SZ, w: 34, d: 15, h: DECK, back: true }, ...cross.parts]);
   // one wide wall across the set (an arena tour's panoramic LED), and the
   // IMAG either side for the far end of the room
@@ -311,9 +313,9 @@ function arenaEnd(ctx) {
   // clear of the corners' fans)
   const clear = (x, z) => [[0, 0], [1.4, 0], [-1.4, 0], [0, 1.4], [0, -1.4], [1, 1], [1, -1], [-1, 1], [-1, -1]]
     .every(([dx, dz]) => stands.topAt(x + dx, z + dz) < 0.05);
-  const keep = (x, z) => Math.abs(x) < 29.2 && z < OZ + 39.5 && !cross.inside(x, z, 1.4) && !(Math.abs(x - eye.x) < 4.6 && Math.abs(z - eye.z) < 4.2) && clear(x, z);
+  const keep = (x, z) => Math.abs(x) < 29.2 && z < OZ + 39.5 && !cross.inside(x, z, 4.0) && !(Math.abs(x - eye.x) < 4.6 && Math.abs(z - eye.z) < 4.2) && clear(x, z);
   const floorSeats = floorBlocks(blockGrid(
-    [[19.5 + SZ, 29.4], [31.0, 41.8], [43.4, 54.2], [55.8, 66.6], [68.2, 79.0], [80.6, 84.8]],
+    [[21.5 + SZ, 29.4], [31.0, 41.8], [43.4, 54.2], [55.8, 66.6], [68.2, 79.0], [80.6, 84.8]],
     [[-29.2, -14.9], [-13.5, -1.0], [1.0, 13.5], [14.9, 29.2]],
   ), { keep, seed: 3 });
   root.add(floorChairs(floorSeats.chairs));
