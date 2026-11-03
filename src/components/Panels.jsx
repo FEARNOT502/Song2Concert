@@ -4,11 +4,11 @@
 import { memo } from 'react';
 
 // Left rail — the venue
-function LeftDataPanel({ venue }) {
+function LeftDataPanel({ venue, venueMode = 'general' }) {
   return (
     <div className="absolute top-[100px] left-10 z-20 text-[12px] tracking-[0.2em] uppercase text-neutral-500 max-w-[260px] font-mono">
       <div className="text-neutral-300">VENUE</div>
-      <div className="text-white text-[34px] font-light tracking-tight normal-case mt-1 leading-tight font-tight">{venue.name}</div>
+      <div className="text-white text-[34px] font-light tracking-tight normal-case mt-1 leading-tight font-tight">{venue.name}{venueMode === '360' && <span className="ml-1.5 text-[0.62em] tracking-[0.2em] text-[oklch(0.78_0.16_55)] align-middle">360</span>}</div>
     </div>
   );
 }

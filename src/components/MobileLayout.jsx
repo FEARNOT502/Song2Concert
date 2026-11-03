@@ -71,7 +71,7 @@ function StatRow({ k, v }) {
 }
 
 export default function MobileLayout({
-  venue, displayFile, coverSrc, pulseRef, upload, hasAudio, decoding = false,
+  venue, venueMode = 'general', displayFile, coverSrc, pulseRef, upload, hasAudio, decoding = false,
   // transport
   playing, onToggle, onPrev, onNext, hasNext, hasPrev,
   time, durSec, wetDry, onWetChange, onSeek, onExport, exporting, exportProgress = 0,
@@ -108,6 +108,7 @@ export default function MobileLayout({
         <div className="relative w-full" style={{ height: '46vh', minHeight: 260 }}>
           <Scene
             venueId={venue.id}
+            venueMode={venueMode}
             coverId={displayFile.cover}
             coverSrc={coverSrc}
             pulseRef={pulseRef}
@@ -152,7 +153,7 @@ export default function MobileLayout({
             <Card title="Venue · tap to change">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-white text-[22px] font-light leading-tight font-tight">{venue.name}</div>
+                  <div className="text-white text-[22px] font-light leading-tight font-tight">{venue.name}{venueMode === '360' && <span className="ml-1.5 text-[0.62em] tracking-[0.2em] text-[oklch(0.78_0.16_55)] align-middle">360</span>}</div>
                   <div className="text-[12px] text-neutral-500 mt-0.5">{venue.type}</div>
                 </div>
                 <span className="text-neutral-600 text-lg">▾</span>

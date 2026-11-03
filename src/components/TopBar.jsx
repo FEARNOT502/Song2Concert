@@ -88,7 +88,7 @@ export function CrowdLightToggle({ mode, onChange, className = '' }) {
 }
 
 function TopBar({
-  file, venue, onFileClick, onVenueClick, effects = true, onEffectsChange,
+  file, venue, venueMode = 'general', onFileClick, onVenueClick, effects = true, onEffectsChange,
   crowdLight = 'stick', onCrowdLightChange, desk = false,
 }) {
   return (
@@ -109,7 +109,7 @@ function TopBar({
         <div className="w-px h-3 bg-white/15" />
         <button onClick={onVenueClick} className="px-3 py-1.5 hover:bg-white/5 rounded transition-colors flex items-center gap-2 group">
           <span className="text-neutral-500">Venue</span>
-          <span className="text-neutral-200 text-[15px] normal-case tracking-normal font-tight">{venue.name}</span>
+          <span className="text-neutral-200 text-[15px] normal-case tracking-normal font-tight">{venue.name}{venueMode === '360' && <span className="ml-1.5 text-[0.62em] tracking-[0.2em] text-[oklch(0.78_0.16_55)] align-middle">360</span>}</span>
           <span className="text-neutral-600 group-hover:text-neutral-300">▾</span>
         </button>
       </div>
