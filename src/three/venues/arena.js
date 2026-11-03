@@ -183,7 +183,8 @@ export function buildArena(ctx) {
   // north end's stands the drapes' folds, the chains, the braces and the cases
   // are out of sight, and nothing shows between the drop and the masking.
   {
-    const BZ = 2.9, o = 0.35;
+    // (BZ just in front of the north end's front row)
+    const BZ = 3.5, o = 0.35;
     const back = [[-76, SZF - o], [-SX, SZF - o], [-MX - 0.3, MZ - 0.2], [-MX - 0.3, BZ], [MX + 0.3, BZ], [MX + 0.3, MZ - 0.2], [SX, SZF - o], [76, SZF - o]];
     const pts = [];
     for (let i = 0; i + 1 < back.length; i++) {
@@ -200,7 +201,7 @@ export function buildArena(ctx) {
   root.add(deck);
   // the backstage deck behind it, under the drop, the towers' braces and the
   // cases (they stood in the air off the deck's back edge)
-  root.add(stageDeck({ w: 34, d: 4.1, h: DECK, z: 5.0, lip: false }));
+  root.add(stageDeck({ w: 34, d: 3.4, h: DECK, z: 5.35, lip: false }));
   for (const s of [-1, 1]) root.add(stageSteps({ x: s * 17.75, z: 16 + SZ, h: DECK, dir: [0, -1] }));
   // the runway out to a cross on the floor: a walkway either side two-thirds
   // of the way, the runway on past it to a square end stage in the middle

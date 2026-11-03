@@ -752,7 +752,7 @@ export function stageSet(root, { w, h, z, deck, towerX, backdropW, backdropH, wi
   for (const x of [-towerX, towerX]) latticeInto(parts, V3(x, deck, z - 0.6), V3(x, deck + h, z - 0.6), 1.0, 0.05);
   latticeInto(parts, V3(-towerX, deck + h - 0.5, z - 0.6), V3(towerX, deck + h - 0.5, z - 0.6), 1.0, 0.05);
   // raked braces back to the deck
-  for (const x of [-towerX, towerX]) latticeInto(parts, V3(x, deck, z - 4.5), V3(x, deck + h * 0.6, z - 0.9), 0.5, 0.03);
+  for (const x of [-towerX, towerX]) latticeInto(parts, V3(x, deck, z - 4.0), V3(x, deck + h * 0.6, z - 0.9), 0.5, 0.03);
   root.add(new THREE.Mesh(mergeGeometries(parts), M.trussBlack));
   // the black drop behind the set and the wings either side (a stage out in
   // the open of a ballpark has none)
