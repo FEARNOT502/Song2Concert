@@ -44,7 +44,11 @@ export function mats() {
   MATS.trussBlack = holdAtDistance(blackSteel());
   MATS.paint = std({ color: 0x0c0c0e, roughness: 0.55, metalness: 0.2 });
   MATS.cab = std({ color: 0x0a0a0b, roughness: 0.7, metalness: 0.1 });
-  MATS.grille = std({ ...grilleTex(), color: 0xffffff, roughness: 1, metalness: 0.3 });
+  // (cloth over steel mesh: matte, no sheen to throw the rig's light back;
+  // with the mesh's own roughness and a little metal it lit up white under a
+  // light hung over it)
+  MATS.grille = std({ ...grilleTex(), roughnessMap: null, color: 0xffffff, roughness: 0.95, metalness: 0, envMapIntensity: 0.3 });
+  MATS.cab.envMapIntensity = 0.4;
   MATS.rubber = std({ color: 0x050505, roughness: 0.9 });
   MATS.chrome = std({ color: 0xd8d8dc, metalness: 1, roughness: 0.18 });
   MATS.brass = std({ color: 0xc9a050, metalness: 1, roughness: 0.3 });
@@ -329,7 +333,8 @@ export function lineArray({ boxes = 12, width = 1.3, depth = 0.7, height = 0.38,
   const g = new THREE.Group();
   g.add(new THREE.Mesh(mergeGeometries(cab), M.cab));
   g.add(new THREE.Mesh(mergeGeometries(front), M.grille));
-  g.add(new THREE.Mesh(mergeGeometries(rig), M.alu));
+  // (the fly bar and the boxes' rigging in black, as a touring PA's is)
+  g.add(new THREE.Mesh(mergeGeometries(rig), M.black));
   g.userData.height = -y;
   return g;
 }

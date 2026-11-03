@@ -12,7 +12,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { APP, KELVIN, V3, std, concreteTex, ringTint, withRepeat } from '../core.js';
 import { lightPoints } from '../people.js';
 import { ampStack, chainInto, drumKit, guitar, hoists, keyboardRig, ledScreen, mats, micStand, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, blockGrid, crossThrust, fixtureRow, flashOnCrowd, flashUnits, floorBlocks, floorChairs, fohPosition, fromRow, maskingDrapes, packFloor, paHang, runBlinders, runShow, runStrobes, screenHang, stageRing, stageSet, subLine, thinRow, wallStrip } from '../show.js';
+import { bigCrowd, bigScreens, crossThrust, fixtureRow, flashOnCrowd, flashUnits, floorBlocks, floorChairs, fohPosition, fromRow, maskingDrapes, packFloor, paHang, runBlinders, runShow, runStrobes, screenHang, stageRing, stageSet, subLine, thinRow, wallStrip } from '../show.js';
 import { buildStands } from '../stands.js';
 import { SSA_STANDS } from './ssa-data.js';
 
@@ -46,7 +46,8 @@ function arenaRoom(ctx, { stage, sold }) {
     // front; the suites' balconies behind glass
     materials: { levelRail: {
       300: std({ color: 0x141518, roughness: 0.55, metalness: 0.4, side: THREE.DoubleSide }),
-      '300S': new THREE.MeshPhysicalMaterial({ color: 0xa8bcc6, roughness: 0.06, metalness: 0, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false }),
+      // (a soft sheen, not a mirror: glossy, the ceiling's downlights stood in it as two suns)
+      '300S': new THREE.MeshPhysicalMaterial({ color: 0xa8bcc6, roughness: 0.35, metalness: 0, specularIntensity: 0.4, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false }),
     } },
     crowd: !!q.crowd,
     sold,
@@ -131,7 +132,7 @@ function arenaRoom(ctx, { stage, sold }) {
     for (let z = z0 + 3; z < z1 - 2; z += 6) box(lit, SU.xc0 + 0.5, SU.xc1 - 0.5, SU.yc - 0.04, SU.yc, z - 0.6, z + 0.6);
     for (const c of zc) box(lit, SU.xc1 - 0.05, SU.xc1, SU.y + dh + 0.1, SU.y + dh + 0.3, c - dw, c + dw);   // a lit panel over each room's door
     root.add(new THREE.Mesh(mergeGeometries(g), std({ color: 0x2c2d31, roughness: 0.7 })));
-    root.add(new THREE.Mesh(mergeGeometries(glassG), new THREE.MeshPhysicalMaterial({ color: 0x3e4c55, roughness: 0.05, metalness: 0.3, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false })));
+    root.add(new THREE.Mesh(mergeGeometries(glassG), new THREE.MeshPhysicalMaterial({ color: 0x3e4c55, roughness: 0.35, metalness: 0, specularIntensity: 0.4, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false })));
     root.add(new THREE.Mesh(mergeGeometries(lit), std({ color: 0x1a1612, emissive: 0xc79a6a, emissiveIntensity: 0.35 })));
   }
 
@@ -313,11 +314,19 @@ function arenaEnd(ctx) {
   // clear of the corners' fans)
   const clear = (x, z) => [[0, 0], [1.4, 0], [-1.4, 0], [0, 1.4], [0, -1.4], [1, 1], [1, -1], [-1, 1], [-1, -1]]
     .every(([dx, dz]) => stands.topAt(x + dx, z + dz) < 0.05);
-  const keep = (x, z) => Math.abs(x) < 29.2 && z < OZ + 39.5 && !cross.inside(x, z, 4.0) && !(Math.abs(x - eye.x) < 4.6 && Math.abs(z - eye.z) < 4.2) && clear(x, z);
-  const floorSeats = floorBlocks(blockGrid(
-    [[21.5 + SZ, 29.4], [31.0, 41.8], [43.4, 54.2], [55.8, 66.6], [68.2, 79.0], [80.6, 84.8]],
-    [[-29.2, -14.9], [-13.5, -1.0], [1.0, 13.5], [14.9, 29.2]],
-  ), { keep, seed: 3 });
+  const keep = (x, z) => Math.abs(x) < 29.2 && z < OZ + 39.5 && !cross.inside(x, z, 2.0) && !(Math.abs(x - eye.x) < 4.6 && Math.abs(z - eye.z) < 4.2) && clear(x, z);
+  // The blocks laid out round the runway, not cut by it: the inner ones
+  // start 2.2 m off the runway (and the end stage), none in the cross's band
+  // but the outer ones; 3 m clear of the stage's front. Mirrored either side.
+  const half = [
+    // the outer column, the whole length
+    ...[[25.0, 34.0], [35.6, 44.6], [46.2, 55.2], [56.8, 65.8], [67.4, 76.4], [78.0, 84.8]].map(([z0, z1]) => ({ x0: 14.9, x1: 29.2, z0, z1 })),
+    // the inner: in front of the cross, between the cross and the end stage, and past it
+    { x0: 4.0, x1: 13.5, z0: 25.0, z1: 34.0 },
+    { x0: 5.4, x1: 13.5, z0: 44.4, z1: 54.4 },
+    ...[[56.0, 65.8], [67.4, 76.4], [78.0, 84.8]].map(([z0, z1]) => ({ x0: 1.0, x1: 13.5, z0, z1 })),
+  ];
+  const floorSeats = floorBlocks(half.flatMap((b) => [b, { ...b, x0: -b.x1, x1: -b.x0 }]), { keep, seed: 3 });
   root.add(floorChairs(floorSeats.chairs));
   bigCrowd(root, cu, q, floorSeats.people.concat(stands.people.map((p) => ({ ...p, h: 0.97 }))), { seed: 21 });
   const aisleField = lightPoints(stands.aisleLights.map((a) => ({ ...a, white: true, size: 0.03 })), cu, { maxPx: 3 });
@@ -427,17 +436,19 @@ function arenaRound(ctx) {
 
   // ── the cubes ──
   // two LED boxes over the stage's two halves, long the way the stage runs
-  // (16 m), 9 m across and 7 m deep, the art on every face but the top, hung
-  // level and square to the stage on chains from the truss
-  const BW = 9, BH = 7, BL = 16, CY = 16;
+  // (16 m), 9 m across and 6.5 m deep, hung level and square to the stage on
+  // chains from the truss. Screens on their long sides (wide: the art on the
+  // left, the track on the right) and on their outer ends (the art over the
+  // track); none underneath or on the ends that face each other
+  const BW = 9, BH = 6.5, BL = 16, CY = 16;
   const cubes = [];
   for (const cz of [-9.5, 9.5]) {
     const g = new THREE.Group();
     g.add(new THREE.Mesh(new THREE.BoxGeometry(BW - 0.1, BH - 0.1, BL - 0.1), std({ color: 0x050506, roughness: 0.6 })));
-    // [w, h, rotation x, rotation y, out]: the long sides, the ends, the underside
-    for (const [w, h, ax, ay, out] of [[BL, BH, 0, Math.PI / 2, BW / 2], [BL, BH, 0, -Math.PI / 2, BW / 2], [BW, BH, 0, 0, BL / 2], [BW, BH, 0, Math.PI, BL / 2], [BW, BL, Math.PI / 2, 0, BH / 2]]) {
+    // [w, h, rotation y, out]: the long sides, the outer end
+    for (const [w, h, ay, out] of [[BL, BH, Math.PI / 2, BW / 2], [BL, BH, -Math.PI / 2, BW / 2], [BW, BH, cz < 0 ? Math.PI : 0, BL / 2]]) {
       const sc = ledScreen({ w, h, tex: ctx.art.texture(w / h), pitch: 0.006, bright: 1.3, frame: 0, light: false });
-      const pv = new THREE.Group(); pv.rotation.set(ax, ay, 0); sc.position.z = out; pv.add(sc); g.add(pv);
+      const pv = new THREE.Group(); pv.rotation.y = ay; sc.position.z = out; pv.add(sc); g.add(pv);
       ctx.addScreen(sc, w / h, 'main');
     }
     g.position.set(0, CY, OZ + cz);
