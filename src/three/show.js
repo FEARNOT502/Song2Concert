@@ -942,8 +942,10 @@ export function floorChairs(chairs, { color = 0x1a1c22 } = {}) {
 // The crowd of a big room: silhouettes and their lights, thinned on Low.
 // The floor's blocks for the lightstick control: a seated floor's own blocks
 // (`p.fblock`), a standing floor cut into pens about as big; numbered across
-// the floor from one side to the other and in rows from the stage back.
-export function floorZones(people) {
+// the floor from one side to the other and in rows from the stage back. Round a
+// centre stage (`round`, its middle), the floor's place runs round the stage
+// instead (0..1 once round), as the stands' blocks do.
+export function floorZones(people, round = null) {
   const floor = people.filter((p) => !p.zone);
   if (!floor.length) return;
   const key = (p) => (p.fblock ? [(p.fblock.x0 + p.fblock.x1) / 2, p.fblock.z0] : [Math.round(p.x / 10) * 10, Math.floor(p.z / 15) * 15]);
@@ -954,13 +956,14 @@ export function floorZones(people) {
     const c = xs.indexOf(Math.round(kx * 2) / 2), r = zs.indexOf(Math.round(kz * 2) / 2);
     // (row times an odd number, so the blocks' numbers alternate down a
     // column as well as along a row: a chequerboard, not stripes)
-    p.zone = { lv: 0, u: xs.length > 1 ? c / (xs.length - 1) : 0.5, block: r * 65 + c, row: r };
+    const u = round ? (Math.atan2(kx - round.x, kz - round.z) + Math.PI) / (2 * Math.PI) : xs.length > 1 ? c / (xs.length - 1) : 0.5;
+    p.zone = { lv: 0, u, block: r * 65 + c, row: r };
   }
 }
 
-export function bigCrowd(root, cu, q, people, { seed = 21 } = {}) {
+export function bigCrowd(root, cu, q, people, { seed = 21, round = null } = {}) {
   if (!q.crowd) return 0;
-  floorZones(people);
+  floorZones(people, round);
   const all = withCells(people, seed);
   const shown = q.crowd < 1 ? thin(all, Math.round(all.length * 0.7)) : all;
   root.add(silhouettes(shown, cu, { seed }));

@@ -530,7 +530,7 @@ function arenaRound(ctx) {
   const clear = (x, z) => [[0, 0], [1.2, 0], [-1.2, 0], [0, 1.2], [0, -1.2]].every(([dx, dz]) => stands.topAt(x + dx, z + dz) < 0.05);
   const avoid = (x, z) => (Math.abs(x) < BX + 0.4 && Math.abs(z - OZ) < BZ + 0.4) || (Math.abs(x - eye.x) < 4.4 && Math.abs(z - eye.z) < 3.6);
   const standing = packFloor({ x0: -30, x1: 30, z0: OZ - 44, z1: OZ + 44, avoid, inside: clear, seed: 245 });
-  bigCrowd(root, cu, q, standing.concat(stands.people.map((p) => ({ ...p, h: 0.97 }))), { seed: 21 });
+  bigCrowd(root, cu, q, standing.concat(stands.people.map((p) => ({ ...p, h: 0.97 }))), { seed: 21, round: C });
   const aisleField = lightPoints(stands.aisleLights.map((a) => ({ ...a, white: true, size: 0.03 })), cu, { maxPx: 3 });
   aisleField.material.uniforms.uGain.value = 0.3;
   root.add(aisleField);

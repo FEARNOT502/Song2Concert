@@ -793,7 +793,7 @@ export function buildStadium(ctx) {
       || (Math.abs(x - feye.x) < 4.4 && Math.abs(z - feye.z) < 3.6);
     const seats = roundBlocks({ c: STAGE, hd: 20 + 3.5, x0: -60, x1: 60, z0: ZC - 70, z1: ZC + 70, skip, seed: 177 });
     root.add(floorChairs(seats.chairs));
-    bigCrowd(root, cu, q, seats.people.concat(stands.people.map((p) => ({ ...p, h: 0.97 }))), { seed: 21 });
+    bigCrowd(root, cu, q, seats.people.concat(stands.people.map((p) => ({ ...p, h: 0.97 }))), { seed: 21, round: STAGE });
     const aisleField = lightPoints(stands.aisleLights.map((a) => ({ ...a, white: true, size: 0.05 })), cu, { maxPx: 3 });
     aisleField.material.uniforms.uGain.value = 0.25;
     root.add(aisleField);
