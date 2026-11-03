@@ -187,6 +187,8 @@ export function buildDome(ctx) {
   const underMV = (p) => Math.hypot(p.x, p.z) > 110 && (() => { const a = Math.atan2(p.x, -p.z) / DEG; return a >= MV.a0 && a <= MV.a1; })();
   const TD = { ...TD_STANDS, pillars: TD_STANDS.pillars.map((p) => (underMV(p) ? { ...p, y1: MV.y0 - 0.4 } : p)) };
   const stands = buildStands(TD, {
+    // (the lightsticks' blocks by the stands' own aisles)
+    byAisle: true,
     offset: OFF, stage: STAGE, seed: 400, concreteTone: 0.28, roofY: (x, z) => ringY(z + ZH) + 0.3,
     seatColors: { A: 0x1d3c86, B: 0x1d3c86, F: 0x1d3c86, K: 0x1d3c86, G: 0x1d3c86, C: 0x5a5d63, D: 0x1d3c86, E: 0x1d3c86 },
     seatColorAt: (name, x, z, row) => (inBox(name, x, z, row) ? 0x6a6b6e : null),

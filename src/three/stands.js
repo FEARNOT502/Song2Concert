@@ -283,6 +283,69 @@ export function roomMaterials(materials) {
   };
 }
 
+// A level's blocks by its aisles: each seat placed along the level by the
+// nearest point of its front row (its seats in order round the level's
+// middle, the distance along them), so an aisle square to the front, or one
+// fanning round a corner, keeps one place all the way up. The aisles are
+// where hardly a seat sits at that place in any row; a block is the run of
+// seats between two, one narrower than `minW` joining its neighbour. Blocks
+// numbered in order along the level, so neighbours alternate.
+export function aisleBlocks(S, sk, ox, oz, { bin = 0.3, minW = 3 } = {}) {
+  const n = S.length / 4;
+  const X = new Float64Array(n), Z = new Float64Array(n), R = new Int32Array(n);
+  let cx = 0, cz = 0, r0 = Infinity;
+  for (let k = 0; k < n; k++) { X[k] = S[k * 4] / sk + ox; Z[k] = S[k * 4 + 1] / sk + oz; R[k] = S[k * 4 + 2]; cx += X[k]; cz += Z[k]; r0 = Math.min(r0, R[k]); }
+  cx /= n; cz /= n;
+  // the front row's seats in order round the middle, thinned to one a metre
+  const fr = [];
+  for (let k = 0; k < n; k++) if (R[k] === r0) fr.push([X[k], Z[k], Math.atan2(X[k] - cx, Z[k] - cz)]);
+  fr.sort((a, b) => a[2] - b[2]);
+  const ring = [];
+  for (const p of fr) if (!ring.length || Math.hypot(p[0] - ring[ring.length - 1][0], p[1] - ring[ring.length - 1][1]) > 1) ring.push(p);
+  const arc = [0];
+  for (let i = 1; i < ring.length; i++) arc.push(arc[i - 1] + Math.min(4, Math.hypot(ring[i][0] - ring[i - 1][0], ring[i][1] - ring[i - 1][1])));
+  // each seat's place: its nearest ring point's, plus how far past it along the ring
+  const along = new Float64Array(n);
+  // (a level whose front row is a single seat or two: one block)
+  if (ring.length < 2) return { block: new Int32Array(n), count: 1 };
+  for (let k = 0; k < n; k++) {
+    // (searched among the ring points near its own bearing round the middle)
+    const a = Math.atan2(X[k] - cx, Z[k] - cz);
+    let l = 0, h = ring.length - 1;
+    while (l < h) { const m = (l + h) >> 1; if (ring[m][2] < a) l = m + 1; else h = m; }
+    let best = l, bd = Infinity;
+    for (let i = Math.max(0, l - 40); i < Math.min(ring.length, l + 40); i++) { const d = (ring[i][0] - X[k]) ** 2 + (ring[i][1] - Z[k]) ** 2; if (d < bd) { bd = d; best = i; } }
+    const j = Math.min(ring.length - 1, best + 1), i0 = j === best ? best - 1 : best;
+    const ux = ring[j][0] - ring[i0][0], uz = ring[j][1] - ring[i0][1], ul = Math.hypot(ux, uz) || 1;
+    along[k] = arc[best] + ((X[k] - ring[best][0]) * ux + (Z[k] - ring[best][1]) * uz) / ul;
+  }
+  let lo = Infinity, hi = -Infinity;
+  for (let k = 0; k < n; k++) { lo = Math.min(lo, along[k]); hi = Math.max(hi, along[k]); }
+  const nb = Math.max(1, Math.ceil((hi - lo) / bin) + 1), hist = new Float64Array(nb);
+  for (let k = 0; k < n; k++) hist[Math.floor((along[k] - lo) / bin)]++;
+  const sorted = [...hist].filter((v) => v > 0).sort((a, b) => a - b), med = sorted[sorted.length >> 1] || 1;
+  // the aisles: bins nearly empty; a cut at the middle of each run of them
+  const cuts = [];
+  for (let i = 0; i < nb;) {
+    if (hist[i] > med * 0.2) { i++; continue; }
+    let e = i; while (e < nb && hist[e] <= med * 0.2) e++;
+    cuts.push(lo + (i + e) / 2 * bin);
+    i = e;
+  }
+  // blocks too narrow join the one after (or before, at the end)
+  let edges = [lo - 1, ...cuts, hi + 1];
+  for (let changed = true; changed;) {
+    changed = false;
+    for (let i = 0; i + 1 < edges.length; i++) {
+      if (edges[i + 1] - edges[i] >= minW || edges.length <= 2) continue;
+      edges.splice(i + 1 < edges.length - 1 ? i + 1 : i, 1); changed = true; break;
+    }
+  }
+  const block = new Int32Array(n);
+  for (let k = 0; k < n; k++) { let b = 0; while (b + 2 < edges.length && along[k] >= edges[b + 1]) b++; block[k] = b; }
+  return { block, count: edges.length - 1 };
+}
+
 // The building's aisle signs (Tokyo Dome's hang black over each portal: the
 // number large, 通路 AISLE under it): one plate drawn in the cell (x, y, w, h).
 export function drawAisleSign(g, x, y, w, h, label, bg, fg) {
@@ -985,7 +1048,7 @@ export function buildStands(data, {
   offset = V3(0, 0, 0), stage = V3(0, 2, 0), seatColors = {}, seatColor = 0x22262e,
   concreteTone = 0.22, sold = () => true, occupancy = 0.97, seed = 5, roofY = 36, crowd = true,
   materials = {}, seatMesh = null, seatColorAt = null, tiers = null, wedges = null,
-  seatKeep = null,
+  seatKeep = null, byAisle = false,
 }) {
   const g = new THREE.Group();
   const ox = offset.x, oz = offset.z;
@@ -1173,7 +1236,7 @@ export function buildStands(data, {
     const S = decodeSeats(L.seats), sk = L.seatScale ?? 10;      // (x, z in dm, or 1/seatScale m)
     // the level's blocks, for the lightsticks' control
     const anchors = (L.voms || []).filter((v) => v.label).map((v) => ({ x: v.p[0] + ox, z: v.p[1] + oz, label: v.label }));
-    const blocks = crowd ? seatBlocks(S, sk, ox, oz, stage, { anchors, tidy: !!tiers, wedges: wedges && { x: wedges.x + ox, z: wedges.z + oz } }) : null;
+    const blocks = !crowd ? null : byAisle ? aisleBlocks(S, sk, ox, oz) : seatBlocks(S, sk, ox, oz, stage, { anchors, tidy: !!tiers, wedges: wedges && { x: wedges.x + ox, z: wedges.z + oz } });
     if (blocks) levelBlocks.push({ count: blocks.count, ySum: 0, n: 0, name: L.name, at: new Map() });
     const lvRaw = levelBlocks.length - 1;
     for (let i = 0; i < S.length; i += 4) {

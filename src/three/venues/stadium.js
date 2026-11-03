@@ -146,6 +146,8 @@ export function buildStadium(ctx) {
     return { b, nx, nz, cx, cz, ux, uz, T, D, Sf, wl, wr, Db, yaw: Math.atan2(nx, nz) };
   });
   const stands = buildStands(WB_STANDS, {
+    // (the lightsticks' blocks by the stands' own aisles)
+    byAisle: true,
     offset: OFF, stage: STAGE, seatColor: 0x9a1418, concreteTone: 0.26, seed: 600, roofY: ROOF,
     // the lightsticks' blocks: each level's numbered blocks, run front to
     // back between the aisles, round the bowl from its middle

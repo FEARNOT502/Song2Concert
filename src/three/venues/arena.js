@@ -40,6 +40,8 @@ function arenaRoom(ctx, { stage, sold }) {
   // pipeline/ssa_north.py.)
   const OZ = 45;                       // the floor's centre, in this room's coordinates
   const stands = buildStands(SSA_STANDS, {
+    // (the lightsticks' blocks by the stands' own aisles)
+    byAisle: true,
     offset: V3(0, 0, OZ), stage, seed: 200, concreteTone: 0.2, roofY: H,
     seatColors: { 200: 0x1c1d22, 300: 0xc8341e, 400: 0x1c1d22, 500: 0x1c1d22, '300S': 0x2a1d17 },
     // the 300 level, the VIP balcony: red seats in boxes behind a dark mesh
