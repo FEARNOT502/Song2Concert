@@ -153,7 +153,37 @@ export function buildDome(ctx) {
     if (f < BOX.phi[0] || f > BOX.phi[1]) return false;
     return row >= (boxTop.get(`${Math.sign(x)}:${Math.floor(f)}`) ?? 99) - 1;
   };
-  const stands = buildStands(TD_STANDS, {
+  // ── the main screen's line (built further on) ──
+  // Along the curve of the outfield stand's back, over its back rows, where
+  // the columns at the heads of its aisles stand: they carry it.
+  const MV = (() => {
+    const F = TD_STANDS.levels.find((l) => l.name === 'F');
+    let ftop = 0;
+    const far = new Map();                 // the stand's back, by the angle from home (0 at centre field)
+    for (const r of F.rows) {
+      ftop = Math.max(ftop, r.y);
+      for (const p of r.polys) for (const ring of p) for (const [x, z] of ring) {
+        const a = Math.round(Math.atan2(x, -z) / DEG * 2) / 2, d = Math.hypot(x, z);
+        if (!(far.get(a) >= d)) far.set(a, d);
+      }
+    }
+    const angs = [...far.keys()].filter((a) => Math.abs(a) <= 44).sort((u, v) => u - v);
+    const back = angs.map((a) => { let sm = 0, w = 0; for (const b of angs) if (Math.abs(b - a) <= 3) { sm += far.get(b); w++; } return { a, d: sm / w - 3.0 }; });
+    const pts = back.map(({ a, d }) => ({ x: Math.sin(a * DEG) * d, z: ZH - Math.cos(a * DEG) * d, a }));
+    const len = [0];
+    for (let i = 1; i < pts.length; i++) len.push(len[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z));
+    const mid = len[back.findIndex((b) => b.a >= 0)];
+    const along = (w) => pts.filter((_, i) => Math.abs(len[i] - mid) <= w / 2);
+    const band = along(125.6), lower = along(20);
+    // level, its top 2 m under the floods where the ring is lowest over it
+    // (room for the sign over its middle)
+    const y1 = Math.min(...band.map((p) => ringY(p.z))) - 1.6 - 2.0, y0 = y1 - 7.5, yl = y0 - 5.4;
+    return { F, ftop, pts, len, mid, band, lower, y0, y1, yl, a0: band[0].a, a1: band[band.length - 1].a };
+  })();
+  // (the columns under it end at its frame)
+  const underMV = (p) => Math.hypot(p.x, p.z) > 110 && (() => { const a = Math.atan2(p.x, -p.z) / DEG; return a >= MV.a0 && a <= MV.a1; })();
+  const TD = { ...TD_STANDS, pillars: TD_STANDS.pillars.map((p) => (underMV(p) ? { ...p, y1: MV.y0 - 0.4 } : p)) };
+  const stands = buildStands(TD, {
     offset: OFF, stage: STAGE, seed: 400, concreteTone: 0.28, roofY: (x, z) => ringY(z + ZH) + 0.3,
     seatColors: { A: 0x1d3c86, B: 0x1d3c86, F: 0x1d3c86, K: 0x1d3c86, G: 0x1d3c86, C: 0x5a5d63, D: 0x1d3c86, E: 0x1d3c86 },
     seatColorAt: (name, x, z, row) => (inBox(name, x, z, row) ? 0x6a6b6e : null),
@@ -433,35 +463,15 @@ export function buildDome(ctx) {
 
   // The main screen (2022), as the photographs show it: LED in two parts. A
   // band 125.6 × 7.5 m across the outfield from right to left, along the
-  // curve of the stand's back and level, standing on columns from its back
-  // rows (the crowd sits under it), a dark frame behind it; and in its middle
-  // a lower part, 20 × 5.4 m, hung under the band over the backscreen (about
-  // 1,050 m² in all). Over the band's middle the TOKYO DOME sign in green;
+  // curve of the stand's back and level, over its back rows on the columns at
+  // the heads of its aisles (the crowd sits under it), a dark frame behind it;
+  // and in its middle a lower part, 20 × 5.4 m, hung under the band over the
+  // backscreen (about 1,050 m² in all). Over the band's middle the TOKYO DOME sign in green;
   // over all of it, the floods on the ring. Either side of the lower part a
   // dark box stands on the backscreen's steps. Off for a concert: the set
   // stands in front of its middle.
   {
-    const F = TD_STANDS.levels.find((l) => l.name === 'F');
-    let ftop = 0;
-    const far = new Map();                 // the stand's back, by the angle from home (0 at centre field)
-    for (const r of F.rows) {
-      ftop = Math.max(ftop, r.y);
-      for (const p of r.polys) for (const ring of p) for (const [x, z] of ring) {
-        const a = Math.round(Math.atan2(x, -z) / DEG * 2) / 2, d = Math.hypot(x, z);
-        if (!(far.get(a) >= d)) far.set(a, d);
-      }
-    }
-    const angs = [...far.keys()].filter((a) => Math.abs(a) <= 44).sort((u, v) => u - v);
-    const back = angs.map((a) => { let sm = 0, w = 0; for (const b of angs) if (Math.abs(b - a) <= 3) { sm += far.get(b); w++; } return { a, d: sm / w - 0.6 }; });
-    const pts = back.map(({ a, d }) => ({ x: Math.sin(a * DEG) * d, z: ZH - Math.cos(a * DEG) * d }));
-    const len = [0];
-    for (let i = 1; i < pts.length; i++) len.push(len[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z));
-    const mid = len[back.findIndex((b) => b.a >= 0)];
-    const along = (w) => pts.filter((_, i) => Math.abs(len[i] - mid) <= w / 2);
-    const band = along(125.6), lower = along(20);
-    // level, its top 2 m under the floods where the ring is lowest over it
-    // (room for the sign over its middle)
-    const y1 = Math.min(...band.map((p) => ringY(p.z))) - 1.6 - 2.0, y0 = y1 - 7.5, yl = y0 - 5.4;
+    const { F, ftop, pts, len, mid, band, lower, y0, y1, yl } = MV;
     const out = (p, k) => { const l = Math.hypot(p.x, p.z - ZH) || 1; return { x: p.x + p.x / l * k, z: p.z + (p.z - ZH) / l * k }; };
     const face = std({ color: 0x050506, roughness: 0.3, metalness: 0.2 });
     const frame = std({ color: 0x1c1d21, roughness: 0.7 });
@@ -469,17 +479,6 @@ export function buildDome(ctx) {
     root.add(new THREE.Mesh(wallStrip(lower, lower.map(() => y0), { y0: yl, thick: 0.25, ease: 0 }), face));
     root.add(new THREE.Mesh(wallStrip(band.map((p) => out(p, 0.7)), band.map(() => y1 + 0.4), { y0: y0 - 0.4, thick: 1.0, ease: 0 }), frame));
     root.add(new THREE.Mesh(wallStrip(lower.map((p) => out(p, 0.7)), lower.map(() => y0), { y0: yl - 0.3, thick: 1.0, ease: 0 }), frame));
-    // the columns under the band, every 11 m along it (clear of the lower
-    // part), from the stand's back rows
-    const cols = [];
-    const L = len[len.length - 1];
-    for (let s = mid - 125.6 / 2 + 3; s <= mid + 125.6 / 2 - 3; s += 11) {
-      if (Math.abs(s - mid) < 14) continue;
-      const i = len.findIndex((v) => v >= s), p = out(pts[Math.max(0, Math.min(pts.length - 1, i))], -0.3);
-      const yb = stands.topAt(p.x, p.z);
-      const c = new THREE.BoxGeometry(0.9, y0 - 0.4 - yb, 0.9); c.translate(p.x, (yb + y0 - 0.4) / 2, p.z); cols.push(c);
-    }
-    if (L > 0 && cols.length) root.add(new THREE.Mesh(mergeGeometries(cols), std({ color: 0x8a8780, roughness: 0.85 })));
     // the dark boxes either side of the lower part, on the backscreen's steps
     for (const sd of [-1, 1]) {
       const i = len.findIndex((v) => v >= mid + sd * 14), p = pts[i], q = pts[Math.min(pts.length - 1, i + 1)];

@@ -357,11 +357,13 @@ export function signSheet(list, ox, oz, bg = '#15181f', fg = '#f2f2ee') {
   return m;
 }
 
-// The columns at the heads of the 1st floor's aisles (data.pillars: {x, z, r, y0, y1}):
-// round, in one mesh.
+// The columns at the heads of the 1st floor's aisles (data.pillars: {x, z, r,
+// y0, y1, and the aisle's direction ax, az}): square, as the building's are,
+// 2r across, square to their aisle; in one mesh.
 export function pillars(list, ox, oz, mat) {
   const parts = list.map((p) => {
-    const g = new THREE.CylinderGeometry(p.r, p.r, p.y1 - p.y0, 24, 1, false);
+    const g = new THREE.BoxGeometry(2 * p.r, p.y1 - p.y0, 2 * p.r);
+    g.rotateY(Math.atan2(p.ax ?? 0, p.az ?? 1));
     g.translate(p.x + ox, (p.y0 + p.y1) / 2, p.z + oz);
     return g.toNonIndexed();
   });
