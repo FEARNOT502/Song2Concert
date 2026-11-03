@@ -10,9 +10,9 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { APP, KELVIN, V3, glowMat, prng, std, thin, velvet } from './core.js';
+import { APP, KELVIN, V3, glowMat, prng, ringTint, std, thin, velvet } from './core.js';
 import { crowdLights, silhouettes, withCells } from './people.js';
-import { chainInto, drapeGeometry, latticeInto, ledScreen, lineArray, mats, rodInto, seatField, stageDeck, truss } from './rig.js';
+import { chainInto, drapeGeometry, latticeInto, ledScreen, lineArray, mats, micStand, rodInto, seatField, shadowSpot, stageDeck, stageSteps, truss } from './rig.js';
 
 // The simulated song's shape: verse, pre-chorus, chorus, break over 24 bars.
 // A real track brings its own (`f.sec`, from the beat follower).
@@ -957,4 +957,160 @@ export function bigCrowd(root, cu, q, people, { seed = 21 } = {}) {
   root.add(silhouettes(shown, cu, { seed }));
   root.add(crowdLights(shown, cu));
   return shown.length;
+}
+
+// ── a centre stage, for the big open rooms ──
+// After TWICE's THIS IS FOR tour in the Tokyo Dome and the National Stadium:
+// the house sold all round a rectangular stage in the middle of the field,
+// long the way the field runs (+z); a roof of its own on four lattice towers
+// over it, a box of LED screens hung under the roof's middle (the art on all
+// four faces), the rig on the roof's four sides, each side lighting its own
+// side of the house; the PA hung at the roof's sides and corners, turned out;
+// followspots from four sides of the house. `c` is the stage's middle on the
+// floor; `top` the roof's height. Returns the parts the venue runs each frame
+// (`run(f)`), what the floor's crowd keeps clear of (`inside(x, z, pad)`) and
+// the stage's middle at deck height (`stage`).
+export function roundStage(ctx, root, { c, w = 16, d = 40, deck = 2.2, top = 26, box = [20, 10], follow = 70, followY = 24 }) {
+  const { q } = ctx;
+  const M = mats();
+  const stage = V3(c.x, deck, c.z);
+  root.add(stageDeck({ w, d, h: deck, z: c.z, x: c.x, lip: false }));
+  const ringM = stageRing(root, [{ x: c.x, z: c.z, w, d, h: deck }]);
+  for (const s of [-1, 1]) root.add(stageSteps({ x: c.x + 3, z: c.z + s * (d / 2 + Math.ceil(deck / 0.2) * 0.28 + 0.05), h: deck, dir: [0, -s], width: 2 }));
+  // the barrier, 2.5 m out all round
+  const PIT = 2.5, BX = w / 2 + PIT, BZ = d / 2 + PIT;
+  {
+    const bar = [];
+    const run = (x0, z0, x1, z1) => {
+      const len = Math.hypot(x1 - x0, z1 - z0), yaw = -Math.atan2(z1 - z0, x1 - x0);
+      for (const y of [0.25, 1.1]) { const b = new THREE.BoxGeometry(len, 0.05, 0.05); b.rotateY(yaw); b.translate(c.x + (x0 + x1) / 2, y, c.z + (z0 + z1) / 2); bar.push(b); }
+      const n = Math.round(len / 0.5);
+      for (let k = 0; k <= n; k++) { const b = new THREE.BoxGeometry(0.03, 0.85, 0.03); b.translate(c.x + x0 + (x1 - x0) * k / n, 0.68, c.z + z0 + (z1 - z0) * k / n); bar.push(b); }
+    };
+    run(-BX, -BZ, BX, -BZ); run(BX, -BZ, BX, BZ); run(BX, BZ, -BX, BZ); run(-BX, BZ, -BX, -BZ);
+    root.add(new THREE.Mesh(mergeGeometries(bar), M.alu));
+  }
+  // the mics out at the four edges, each turned in (the singer faces out over it)
+  for (const [x, z, rot] of [[0, d / 2 - 1.5, 0], [0, -d / 2 + 1.5, Math.PI], [-w / 2 + 1.2, 0, -Math.PI / 2], [w / 2 - 1.2, 0, Math.PI / 2]]) {
+    const m = micStand({ height: 1.5 }); m.position.set(c.x + x, deck, c.z + z); m.rotation.y = rot + Math.PI; root.add(m);
+  }
+  // the roof over it on four towers, a beam across every 10 m
+  const TX = w / 2 + 6, TZ = d / 2 + 4;
+  const zs = [];
+  for (let k = 0, n = Math.round(2 * TZ / 10); k <= n; k++) zs.push(c.z - TZ + 2 * TZ * k / n);
+  const roof = new THREE.Group(); roof.position.x = c.x; root.add(roof);
+  groundRoof(roof, { tx: TX, zs, top });
+  // the LED box under the roof's middle: a screen on each of its four faces
+  const [BW, BH] = box, BY = top - 3 - BH / 2;
+  const screens = [];
+  const core = new THREE.Mesh(new THREE.BoxGeometry(BW - 0.2, BH - 0.2, BW - 0.2), std({ color: 0x050506, roughness: 0.6 }));
+  core.position.set(c.x, BY, c.z); root.add(core);
+  for (const ay of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+    const sc = ledScreen({ w: BW, h: BH, tex: ctx.art.texture(BW / BH), pitch: 0.0059, bright: 1.3, frame: 0.2, light: false });
+    const pv = new THREE.Group(); pv.position.set(c.x, BY, c.z); pv.rotation.y = ay; sc.position.z = BW / 2; pv.add(sc); root.add(pv);
+    ctx.addScreen(sc, BW / BH, 'main');
+    screens.push(sc);
+  }
+  const ch = [];
+  for (const [dx, dz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) chainInto(ch, c.x + dx * BW / 2 * 0.9, BY + BH / 2, c.z + dz * BW / 2 * 0.9, top - 0.8, { motor: false });
+  root.add(new THREE.Mesh(mergeGeometries(ch), M.chain));
+  // the rig on the roof's four sides, a truss under each
+  const rig = ctx.rig({ finish: 'black' });
+  const RY = top - 1.6;
+  for (const s of [-1, 1]) {
+    const tl = truss(2 * TZ - 2, { size: 0.76, finish: 'black' }); tl.rotation.y = Math.PI / 2; tl.position.set(c.x + s * (TX - 1.5), RY, c.z); root.add(tl);
+    const tc = truss(2 * TX - 4, { size: 0.76, finish: 'black' }); tc.position.set(c.x, RY, c.z + s * (TZ - 1.5)); root.add(tc);
+  }
+  const sides = [
+    { out: [0, 1], at: (u) => V3(c.x + u * (2 * TX - 6), RY - 0.5, c.z + TZ - 1.5), n: 10 },
+    { out: [0, -1], at: (u) => V3(c.x - u * (2 * TX - 6), RY - 0.5, c.z - TZ + 1.5), n: 10 },
+    { out: [1, 0], at: (u) => V3(c.x + TX - 1.5, RY - 0.5, c.z - u * (2 * TZ - 6)), n: 16 },
+    { out: [-1, 0], at: (u) => V3(c.x - TX + 1.5, RY - 0.5, c.z + u * (2 * TZ - 6)), n: 16 },
+  ];
+  for (const sd of sides) {
+    const [ox, oz] = sd.out;
+    sd.spots = fixtureRow(q, sd.n, (i) => ({ fx: rig.add({ kind: 'spot', pos: sd.at(i / (sd.n - 1) - 0.5).add(V3(-ox * 0.6, 0, -oz * 0.6)), length: 70, angle: 0.08, beamGain: 1.0 }), group: 0 }));
+    sd.beams = fixtureRow(q, sd.n, (i) => ({ fx: rig.add({ kind: 'beam', pos: sd.at((i + 0.5) / sd.n - 0.5).add(V3(ox * 0.6, 0, oz * 0.6)), length: 90, beamGain: 1.2 }), group: 1 }));
+    sd.low = V3(c.x + ox * 55, 1, c.z + oz * 55);
+    sd.high = V3(c.x + ox * 90, 22, c.z + oz * 90);
+  }
+  const washes = fixtureRow(q, 10, (i) => ({ fx: rig.add({ kind: 'wash', pos: V3(c.x + (i < 5 ? -1 : 1) * (BW / 2 + 1.5), RY - 0.5, c.z + (i % 5 - 2) * (d / 5)), length: 35, beamGain: 0.4, flareGain: 0.15 }), group: 2 }));
+  const ups = [];
+  for (const [x, z, n, dx, dz] of [[0, d / 2 - 0.3, 3, 1, 0], [0, -d / 2 + 0.3, 3, 1, 0], [w / 2 - 0.3, 0, 8, 0, 1], [-w / 2 + 0.3, 0, 8, 0, 1]]) {
+    const span = dx ? w - 4 : d - 4;
+    ups.push(...fixtureRow(q, n, (i) => ({ fx: rig.add({ kind: 'beam', pos: V3(c.x + x + dx * (i / (n - 1) - 0.5) * span, deck, c.z + z + dz * (i / (n - 1) - 0.5) * span), hang: 'up', length: 70 }), group: 3 })));
+  }
+  const bu = [], st = [];
+  for (const sd of sides) {
+    const [ox, oz] = sd.out;
+    for (const u of [-0.4, -0.13, 0.13, 0.4]) { const p = sd.at(u); bu.push({ pos: V3(p.x + ox * 0.5, RY - 0.9, p.z + oz * 0.5), dir: V3(ox * 40, 2 - RY, oz * 40), mount: RY - 0.5 }); }
+    for (const u of [-0.25, 0.25]) { const p = sd.at(u); st.push({ pos: V3(p.x, RY - 0.65, p.z), dir: V3(ox, -0.5, oz), mount: RY - 0.5 }); }
+  }
+  const blinders = flashUnits(rig, root, thinRow(q, bu), { kind: 'blinder' });
+  const strobes = flashUnits(rig, root, thinRow(q, st), { kind: 'strobe' });
+  for (const sd of sides) rig.light(fromRow(sd.spots, 3, 8).fx, shadowSpot(0xffffff, 0, { cast: false, penumbra: 0.5 }), 14000);
+  const follows = [];
+  for (const [x, z, cast] of [[0, follow, true], [0, -follow, false], [follow * 0.8, 0, false], [-follow * 0.8, 0, false]]) {
+    const l = shadowSpot(KELVIN(5600), 0, { angle: 0.08, penumbra: 0.6, size: q.shadowSize, far: 160, cast: cast && q.shadows });
+    l.position.set(c.x + x, followY, c.z + z); l.target.position.set(c.x, deck + 1, c.z);
+    root.add(l, l.target); follows.push(l);
+  }
+  const stageWash = shadowSpot(0xffffff, 0, { angle: 0.75, penumbra: 1, cast: false });
+  stageWash.position.set(c.x, RY - 1, c.z); stageWash.target.position.set(c.x, deck, c.z);
+  root.add(stageWash, stageWash.target);
+  // the PA: a hang at each end, two down each side, one at each corner, turned out
+  for (const [x, z, yaw, boxes] of [[0, TZ + 1, 0, 18], [0, -TZ - 1, Math.PI, 18],
+    [TX + 1, -d / 4, Math.PI / 2, 18], [TX + 1, d / 4, Math.PI / 2, 18], [-TX - 1, -d / 4, -Math.PI / 2, 18], [-TX - 1, d / 4, -Math.PI / 2, 18],
+    [TX + 0.8, TZ + 0.8, Math.PI / 4, 14], [-TX - 0.8, TZ + 0.8, -Math.PI / 4, 14], [TX + 0.8, -TZ - 0.8, 3 * Math.PI / 4, 14], [-TX - 0.8, -TZ - 0.8, -3 * Math.PI / 4, 14]]) {
+    paHang(root, { x: c.x + x, y: RY - 0.8, z: c.z + z, boxes, width: 1.3, yaw, roofY: top - 0.8 });
+  }
+  const inside = (x, z, pad = 0) => Math.abs(x - c.x) < BX + pad && Math.abs(z - c.z) < BZ + pad;
+  // the show each frame; `lift` the venue's brightness for its own size
+  const run = (f, { follow: fl = 60000, wash = 14000 } = {}) => {
+    const show = 1 - f.house;
+    for (const sd of sides) {
+      runShow(rig, sd.spots, f, { house: sd.low, stage, span: 50 });
+      runShow(rig, sd.beams, f, { house: sd.high, stage, span: 70 });
+    }
+    runShow(rig, washes, f, { house: V3(c.x, 0, c.z + 10), stage, span: 20, strobe: false });
+    runShow(rig, ups, f, { house: V3(c.x, 40, c.z), stage, up: true });
+    washes.forEach(({ fx }) => { fx.angle = 0.3; });
+    follows.forEach((l, i) => { l.intensity = (i ? 0.6 : 1) * fl * show; });
+    stageWash.color.copy(f.pal.a); stageWash.intensity = (wash + wash * f.energy + wash * 0.5 * f.kick) * show;
+    ringTint(ringM.color, f.pal.a).multiplyScalar((0.6 + 0.8 * f.kick) * show + 0.2);
+    return [runBlinders(blinders, f), runStrobes(strobes, f)];
+  };
+  return { stage, inside, run, screens, BY, BW, BH, top };
+}
+
+// The field round a centre stage seated in square blocks with aisles between,
+// tiled out from the stage's middle (`c`) over x0..x1, z0..z1; each block's
+// chairs in rows facing the stage: the blocks off its ends face along the
+// field, the ones beside it across. No chair where `skip(x, z)`.
+// Returns { chairs, people } as floorBlocks does.
+export function roundBlocks({ c, hd, x0, x1, z0, z1, skip, size = 8.6, aisle = 1.4, seed = 5, occupancy = 0.97 }) {
+  const rnd = prng(seed);
+  const chairs = [], people = [];
+  const P = size + aisle;
+  for (let bx = Math.floor((x0 - c.x) / P); bx * P + c.x < x1; bx++) for (let bz = Math.floor((z0 - c.z) / P); bz * P + c.z < z1; bz++) {
+    const b = { x0: c.x + bx * P + aisle / 2, x1: c.x + bx * P + aisle / 2 + size, z0: c.z + bz * P + aisle / 2, z1: c.z + bz * P + aisle / 2 + size };
+    const mx = (b.x0 + b.x1) / 2 - c.x, mz = (b.z0 + b.z1) / 2 - c.z;
+    // facing the stage: along the field off its ends, across it beside it
+    const [fx, fz] = Math.abs(mz) > hd ? [0, -Math.sign(mz)] : [-Math.sign(mx), 0];
+    const along = fz ? [1, 0] : [0, 1];
+    const L = size, n = Math.floor(L / 0.5), rows = Math.floor(L / 0.9);
+    const cols = [], turn = Math.atan2(fx, fz);
+    for (let j = 0; j < rows; j++) for (let i = 0; i < n; i++) {
+      const u = -L / 2 + (i + 0.5) * (L / n), v = -L / 2 + (j + 0.5) * 0.9 + (L - rows * 0.9) / 2;
+      const x = c.x + mx + along[0] * u - fx * v, z = c.z + mz + along[1] * u - fz * v;
+      if (skip(x, z)) continue;
+      cols.push([x, z]);
+    }
+    if (cols.length < 24) continue;
+    for (const [x, z] of cols) {
+      chairs.push({ x: x - fx * 0.16, y: 0, z: z - fz * 0.16, turn });
+      if (rnd() < occupancy) people.push({ x: x + fx * 0.16 + (rnd() - 0.5) * 0.08, y: 0, z: z + fz * 0.16 + (rnd() - 0.5) * 0.06, h: 0.92 + rnd() * 0.14, full: true, fblock: b });
+    }
+  }
+  return { chairs, people };
 }

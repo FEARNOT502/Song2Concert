@@ -14,7 +14,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { APP, DEG, KELVIN, V3, clamp, lerp, prng, std, floorPanelTex, glowMat, ringTint } from '../core.js';
 import { lightPoints } from '../people.js';
 import { hoists, micStand, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, crossThrust, delayTower, fixtureRow, flashOnCrowd, flashUnits, floorChairs, fohPosition, fromRow, groundRoof, paHang, paWing, runBlinders, runShow, runStrobes, scaffoldMasking, screenHang, section, stageRing, subLine, thinRow, wallStrip } from '../show.js';
+import { bigCrowd, bigScreens, crossThrust, roundBlocks, roundStage, delayTower, fixtureRow, flashOnCrowd, flashUnits, floorChairs, fohPosition, fromRow, groundRoof, paHang, paWing, runBlinders, runShow, runStrobes, scaffoldMasking, screenHang, section, stageRing, subLine, thinRow, wallStrip } from '../show.js';
 import { buildStands, decodeSeats } from '../stands.js';
 import { TD_STANDS } from './td-data.js';
 
@@ -66,13 +66,16 @@ export function buildDome(ctx) {
   // FOH, and the listener there: at the very back of the field's seats, in
   // the middle, the blocks either side of it
   const eye = V3(0, 1.6 + 1.0, 122);
-  const STAGE = V3(0, DECK, 28);
+  // (the end stage's; round, the field's middle: set below)
+  let STAGE = V3(0, DECK, 28);
+  const round = ctx.mode === '360';
   // The ballpark as the official seating map draws it: the field is the open
   // ground inside the 1st floor's front rows; home plate is behind FOH, the
   // stage stands in front of the centre-field fence.
   const ZH = 114;                 // home plate
   const OFF = V3(0, 0, ZH);
   const fieldRing = TD_STANDS.field[0][0].map(([x, z]) => ({ x, z: z + ZH }));
+  if (round) { const zs = fieldRing.map((p) => p.z); STAGE = V3(0, DECK, (Math.min(...zs) + Math.max(...zs)) / 2); }
   // the fence round the field and, along the lines, behind the excite seats
   const fenceRing = (TD_STANDS.fence ? TD_STANDS.fence[0][0] : TD_STANDS.field[0][0]).map(([x, z]) => ({ x, z: z + ZH }));
   const inRing = (ring, x, z) => {
@@ -195,7 +198,8 @@ export function buildDome(ctx) {
     // the front]: the 1st floor (the field-level seats, A, B behind it, and
     // the outfield's F beside them), the balcony, the 2nd floor (D, E behind)
     tiers: { G: [1, 0], A: [1, 1], B: [1, 2], F: [1, 1], C: [2, 0], D: [3, 0], E: [3, 1] },
-    sold: (x, z) => z - 19.6 > Math.max(4, 0.12 * (Math.abs(x) - 33)),   // in front of the wall (face z 19.6, 66 m wide)
+    // (round, every seat; else those in front of the wall: face z 19.6, 66 m wide)
+    sold: round ? () => true : (x, z) => z - 19.6 > Math.max(4, 0.12 * (Math.abs(x) - 33)),
     // the side walls where a stand drops away: the stands' own concrete,
     // not dark steel
     materials: { rail: std({ color: 0x77736c, roughness: 0.92, side: THREE.DoubleSide }) },
@@ -523,6 +527,8 @@ export function buildDome(ctx) {
     }
   }
 
+  if (round) return domeRound();
+
   // ── stage ──
   // As the dome tours set it: the stage across the outfield, its front about
   // level with the foul poles (100 m down the lines; the set's back yard
@@ -838,4 +844,80 @@ export function buildDome(ctx) {
       cu.uAmb.value.setRGB(0.004, 0.004, 0.007).multiplyScalar(1 + f.house * 8);
     },
   };
+  // ── the centre stage (360) ──
+  // After TWICE's THIS IS FOR at the Tokyo Dome (September 2025): every seat
+  // sold, a rectangular stage in the middle of the field on its own roof with
+  // a box of screens under it (roundStage), the field seated round it in
+  // blocks facing it, four delay towers on the diagonals, FOH towards home.
+  function domeRound() {
+    const RC = roundStage(ctx, root, { c: STAGE, w: 16, d: 40, deck: DECK, top: 27, box: [22, 11], follow: 75, followY: 26 });
+    const inF = (x, z) => inRing(fieldRing, x, z) && inRing(fieldRing, -x, z);
+    const edgeD = (x, z) => {
+      let m = Infinity;
+      for (let i = 0; i < fieldRing.length; i++) {
+        const a = fieldRing[i], b = fieldRing[(i + 1) % fieldRing.length];
+        const dx = b.x - a.x, dz = b.z - a.z, l2 = dx * dx + dz * dz || 1;
+        const t = clamp(((x - a.x) * dx + (z - a.z) * dz) / l2);
+        m = Math.min(m, Math.hypot(x - a.x - dx * t, z - a.z - dz * t));
+      }
+      return m;
+    };
+    // the delay towers on the diagonals, each aimed out, an aisle of its own
+    const DTR = [[-32, STAGE.z - 36], [32, STAGE.z - 36], [-32, STAGE.z + 36], [32, STAGE.z + 36]];
+    const towerLights = [];
+    for (const [x, z] of DTR) towerLights.push(...delayTower(root, { x, z, h: 20, boxes: 16, width: 1.3, yaw: Math.atan2(x - STAGE.x, z - STAGE.z) }));
+    const rig = ctx.rig({ finish: 'black' });
+    const tw = fixtureRow(q, towerLights.length, (i) => ({ fx: rig.add({ pos: towerLights[i], kind: 'beam', length: 70, beamGain: 0.9 }), group: 5 }));
+    const feye = V3(0, 1.6 + 1.0, STAGE.z + 46);
+    const skip = (x, z) => !inF(x, z) || Math.min(edgeD(x, z), edgeD(-x, z)) < 2.2 || RC.inside(x, z, 3.5)
+      || DTR.some(([tx, tz]) => Math.abs(x - tx) < 4.5 && Math.abs(z - tz) < 4.5)
+      || (Math.abs(x - feye.x) < 4.4 && Math.abs(z - feye.z) < 3.6);
+    const seats = roundBlocks({ c: STAGE, hd: 20 + 3.5, x0: -80, x1: 80, z0: -10, z1: 140, skip, seed: 55 });
+    root.add(floorChairs(seats.chairs));
+    bigCrowd(root, cu, q, seats.people.concat(stands.people.map((p) => ({ ...p, h: 0.97 }))), { seed: 21 });
+    const aisleField = lightPoints(stands.aisleLights.map((a) => ({ ...a, white: true, size: 0.04 })), cu, { maxPx: 3 });
+    aisleField.material.uniforms.uGain.value = 0.25;
+    root.add(aisleField);
+    root.add(lightPoints(fohPosition(pipe, root, feye, { riser: 1.0 }), cu, { maxPx: 4 }));
+    // the house lights: the ring's floods, all round
+    const house = [];
+    for (let i = 0; i < 9; i++) {
+      const p = LIGHTS[Math.round(i / 8 * (LIGHTS.length - 1))];
+      const l = new THREE.SpotLight(KELVIN(5200), 0, 0, 0.8, 1, 0);
+      l.position.copy(p).y -= 1.0;
+      l.target.position.set(p.x * 0.2, 0, ZC + (p.z - ZC) * 0.2);
+      l.userData.offWhenDark = 'house'; root.add(l, l.target); house.push(l);
+    }
+    root.add(new THREE.HemisphereLight(0x181a24, 0x050508, 0.35));
+    return {
+      root, eye: feye, seatNear: stands.seatNear,
+      camera: { pos: feye, target: V3(0, RC.BY, STAGE.z), fov: 60, near: 0.2, far: 800 },
+      background: new THREE.Color(0),
+      fog: new THREE.FogExp2(0x07070b, 0.002),
+      hazeDensity: 0.0011, beamGain: 0.5, hazeAmb: new THREE.Color(0x05050a), hazeAmbDist: 260,
+      bloom: { strength: 0.75, radius: 0.7, threshold: 1.15 },
+      grade: { exposure: 1.2, vignette: 0.4, ca: 0.005, grain: 0.04, sat: 1.1, lift: [0.004, 0.004, 0.009] },
+      env: { w: 236, h: 56, d: 236, eye: feye, wall: 0x0c0c12, floor: 0x0a0a0c, emitters: [
+        { w: RC.BW, h: RC.BH, pos: V3(0, RC.BY, STAGE.z + RC.BW / 2), normal: V3(0, 0, 1), screen: true, power: 1.5, aspect: RC.BW / RC.BH },
+        { w: 200, h: 200, pos: V3(0, 55, 52), normal: V3(0, -1, 0), color: 0x202028, power: 1 },
+      ] },
+      envIntensity: 0.55,
+      update(f) {
+        stands.update(f);
+        const show = 1 - f.house;
+        const [bl, sb] = RC.run(f, { follow: 90000, wash: 12000 });
+        runShow(rig, tw, f, { house: V3(0, 30, STAGE.z), stage: RC.stage, span: 60 });
+        floodM.color.copy(KELVIN(5200)).multiplyScalar(0.03 + 2.6 * f.house);
+        for (const g of floodGlow) g.intensity = 0.9 * f.house;
+        house.forEach((l) => { l.intensity = 1.6 * f.house; });
+        const sh = membrane.userData.shader;
+        if (sh) sh.uniforms.uBounce.value.copy(f.pal.a).lerp(f.pal.b, 0.5 + 0.5 * Math.sin(f.t * 0.3)).multiplyScalar((0.012 + 0.02 * f.energy + 0.015 * f.kick) * show).add(new THREE.Color(0.2, 0.16, 0.11).multiplyScalar(0.02 + 0.49 * f.house));
+        cu.uRimColor.value.copy(f.pal.a).lerp(new THREE.Color(1, 1, 1), 0.3).multiplyScalar((0.2 + 0.25 * f.kick) * show);
+        cu.uStage.value.set(0, 14, STAGE.z);
+        cu.uWash.value.copy(f.pal.b).multiplyScalar(0.012 * show + 0.25 * f.house);
+        flashOnCrowd(cu.uWash.value, bl, sb);
+        cu.uAmb.value.setRGB(0.004, 0.004, 0.007).multiplyScalar(1 + f.house * 8);
+      },
+    };
+  }
 }
