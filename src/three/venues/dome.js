@@ -127,22 +127,39 @@ export function buildDome(ctx) {
   // ── the 2nd floor's box seats (the 2022 renewal) ──
   // Two rows across the 2nd floor on the 1st- and 3rd-base sides, in the
   // infield (about six of its blocks, as the photographs show it, not out
-  // towards the outfield): the first two rows of E over the walkway between
+  // towards the outfield): the last two rows of D, under the walkway between
   // D and E, made into boxes of four seats. Each row has a long light-wood counter at table height in front
   // of its seats, with cup holes, on a wooden front down to the tread; light-wood
   // half-height partitions between the boxes; the seats grey, not blue. Phi is
   // the angle from the centre-field line seen from home plate (the foul lines
-  // at 45).
-  const BOX = { level: 'E', rows: [0, 1], phi: [85, 115], per: 4 };
+  // at 45). (D's last row stops short of the run in most of it: the two rows
+  // are the two highest at each degree round.)
+  const BOX = { level: 'D', phi: [85, 115], per: 4 };
+  // the backscreen's sector of the outfield stand, either side of the
+  // centre-field line (the official map's F09 and F12 begin at 8.4°)
+  const BSC = 8.4;
+  const inBackscreen = (x, z) => Math.abs(Math.atan2(x, -z)) / DEG < BSC;
+  const boxTop = new Map();
+  {
+    const L = TD_STANDS.levels.find((l) => l.name === BOX.level), S = decodeSeats(L.seats), sk = L.seatScale ?? 10;
+    for (let i = 0; i < S.length; i += 4) {
+      const x = S[i] / sk, z = S[i + 1] / sk, key = `${Math.sign(x)}:${Math.floor(Math.abs(Math.atan2(x, -z)) / DEG)}`;
+      boxTop.set(key, Math.max(boxTop.get(key) ?? 0, S[i + 2]));
+    }
+  }
   const inBox = (name, x, z, row) => {
-    if (name !== BOX.level || !BOX.rows.includes(row)) return false;
+    if (name !== BOX.level) return false;
     const f = Math.abs(Math.atan2(x, -z)) / DEG;
-    return f >= BOX.phi[0] && f <= BOX.phi[1];
+    if (f < BOX.phi[0] || f > BOX.phi[1]) return false;
+    return row >= (boxTop.get(`${Math.sign(x)}:${Math.floor(f)}`) ?? 99) - 1;
   };
   const stands = buildStands(TD_STANDS, {
     offset: OFF, stage: STAGE, seed: 400, concreteTone: 0.28, roofY: (x, z) => ringY(z + ZH) + 0.3,
     seatColors: { A: 0x1d3c86, B: 0x1d3c86, F: 0x1d3c86, K: 0x1d3c86, G: 0x1d3c86, C: 0x5a5d63, D: 0x1d3c86, E: 0x1d3c86 },
     seatColorAt: (name, x, z, row) => (inBox(name, x, z, row) ? 0x6a6b6e : null),
+    // the backscreen: the outfield stand's middle, between F09 and F12, has
+    // no seats (its steps are painted dark, below)
+    seatKeep: (name, x, z) => !(name === 'F' && inBackscreen(x, z)),
     crowd: !!q.crowd,
     // the lightsticks' floors as the building counts them, [floor, band from
     // the front]: the 1st floor (the field-level seats, A, B behind it, and
@@ -321,14 +338,21 @@ export function buildDome(ctx) {
       }
     }
   }
-  // the foul poles, where the lines meet the fence: flat paint and a net
-  // screen, lit by the room like the rest of it (no shine, no glow of their own)
+  // the foul poles, on the lines just behind the fence: each stands in the
+  // outfield stand's front rows, from its treads (not the field), up to 26 m;
+  // flat paint and a net screen, lit by the room like the rest of it (no
+  // shine, no glow of their own)
   for (const sd of [-1, 1]) {
-    const r = 100, x = sd * r * Math.SQRT1_2, z = ZH - r * Math.SQRT1_2;
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.36, 26, 12), std({ color: 0xd9b81a, roughness: 1, metalness: 0, envMapIntensity: 0 }));
-    pole.position.set(x, 13, z); root.add(pole);
-    const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 20), std({ color: 0xd9b81a, roughness: 1, metalness: 0, envMapIntensity: 0, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false }));
-    flag.position.set(x - sd * 0.8, 14, z); flag.rotation.y = sd * Math.PI / 4; root.add(flag);
+    const at = (r) => [sd * r * Math.SQRT1_2, ZH - r * Math.SQRT1_2];
+    let r = 98;
+    while (r < 115 && stands.topAt(...at(r)) < 1) r += 0.1;
+    const [x, z] = at(r + 0.6), y0 = stands.topAt(x, z), top = 26;
+    const paint = { color: 0xd9b81a, roughness: 1, metalness: 0, envMapIntensity: 0 };
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.36, top - y0, 12), std(paint));
+    pole.position.set(x, (y0 + top) / 2, z); root.add(pole);
+    const fy0 = y0 + 2.5, fy1 = top - 2;
+    const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.2, fy1 - fy0), std({ ...paint, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false }));
+    flag.position.set(x - sd * 0.8, (fy0 + fy1) / 2, z); flag.rotation.y = sd * Math.PI / 4; root.add(flag);
   }
 
   // ── the membrane ──
@@ -407,10 +431,15 @@ export function buildDome(ctx) {
     root.add(new THREE.Mesh(fg, std({ color: 0x0c0c0e, roughness: 1 })));
   }
 
-  // The main screen (2022): LED, 125.6 m wide and about 1,050 m², over the
-  // outfield stands from the old backscreen out across nearly all of them,
-  // along the curve of their back; off for a concert, the set standing in
-  // front of its middle.
+  // The main screen (2022), as the photographs show it: LED in two parts. A
+  // band 125.6 × 7.5 m across the outfield from right to left, along the
+  // curve of the stand's back and level, standing on columns from its back
+  // rows (the crowd sits under it), a dark frame behind it; and in its middle
+  // a lower part, 20 × 5.4 m, hung under the band over the backscreen (about
+  // 1,050 m² in all). Over the band's middle the TOKYO DOME sign in green;
+  // over all of it, the floods on the ring. Either side of the lower part a
+  // dark box stands on the backscreen's steps. Off for a concert: the set
+  // stands in front of its middle.
   {
     const F = TD_STANDS.levels.find((l) => l.name === 'F');
     let ftop = 0;
@@ -423,17 +452,76 @@ export function buildDome(ctx) {
       }
     }
     const angs = [...far.keys()].filter((a) => Math.abs(a) <= 44).sort((u, v) => u - v);
-    const back = angs.map((a) => { let sm = 0, w = 0; for (const b of angs) if (Math.abs(b - a) <= 3) { sm += far.get(b); w++; } return { a, d: sm / w + 1.0 }; });
+    const back = angs.map((a) => { let sm = 0, w = 0; for (const b of angs) if (Math.abs(b - a) <= 3) { sm += far.get(b); w++; } return { a, d: sm / w - 0.6 }; });
     const pts = back.map(({ a, d }) => ({ x: Math.sin(a * DEG) * d, z: ZH - Math.cos(a * DEG) * d }));
     const len = [0];
     for (let i = 1; i < pts.length; i++) len.push(len[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z));
     const mid = len[back.findIndex((b) => b.a >= 0)];
-    const on = pts.filter((_, i) => Math.abs(len[i] - mid) <= 125.6 / 2);
-    const y0 = ftop + 1.6, y1 = y0 + 1050 / 125.6;
-    const scrG = wallStrip(on, on.map(() => y1), { y0, thick: 0.25, ease: 0 });
-    const boxG = wallStrip(on.map((p) => { const l = Math.hypot(p.x, p.z - ZH) || 1; return { x: p.x + p.x / l * 0.7, z: p.z + (p.z - ZH) / l * 0.7 }; }), on.map(() => y1 + 0.5), { y0: y0 - 0.6, thick: 1.0, ease: 0 });
-    if (scrG) root.add(new THREE.Mesh(scrG, std({ color: 0x050506, roughness: 0.3, metalness: 0.2 })));
-    if (boxG) root.add(new THREE.Mesh(boxG, std({ color: 0x1c1d21, roughness: 0.7 })));
+    const along = (w) => pts.filter((_, i) => Math.abs(len[i] - mid) <= w / 2);
+    const band = along(125.6), lower = along(20);
+    // level, its top 2 m under the floods where the ring is lowest over it
+    // (room for the sign over its middle)
+    const y1 = Math.min(...band.map((p) => ringY(p.z))) - 1.6 - 2.0, y0 = y1 - 7.5, yl = y0 - 5.4;
+    const out = (p, k) => { const l = Math.hypot(p.x, p.z - ZH) || 1; return { x: p.x + p.x / l * k, z: p.z + (p.z - ZH) / l * k }; };
+    const face = std({ color: 0x050506, roughness: 0.3, metalness: 0.2 });
+    const frame = std({ color: 0x1c1d21, roughness: 0.7 });
+    root.add(new THREE.Mesh(wallStrip(band, band.map(() => y1), { y0, thick: 0.25, ease: 0 }), face));
+    root.add(new THREE.Mesh(wallStrip(lower, lower.map(() => y0), { y0: yl, thick: 0.25, ease: 0 }), face));
+    root.add(new THREE.Mesh(wallStrip(band.map((p) => out(p, 0.7)), band.map(() => y1 + 0.4), { y0: y0 - 0.4, thick: 1.0, ease: 0 }), frame));
+    root.add(new THREE.Mesh(wallStrip(lower.map((p) => out(p, 0.7)), lower.map(() => y0), { y0: yl - 0.3, thick: 1.0, ease: 0 }), frame));
+    // the columns under the band, every 11 m along it (clear of the lower
+    // part), from the stand's back rows
+    const cols = [];
+    const L = len[len.length - 1];
+    for (let s = mid - 125.6 / 2 + 3; s <= mid + 125.6 / 2 - 3; s += 11) {
+      if (Math.abs(s - mid) < 14) continue;
+      const i = len.findIndex((v) => v >= s), p = out(pts[Math.max(0, Math.min(pts.length - 1, i))], -0.3);
+      const yb = stands.topAt(p.x, p.z);
+      const c = new THREE.BoxGeometry(0.9, y0 - 0.4 - yb, 0.9); c.translate(p.x, (yb + y0 - 0.4) / 2, p.z); cols.push(c);
+    }
+    if (L > 0 && cols.length) root.add(new THREE.Mesh(mergeGeometries(cols), std({ color: 0x8a8780, roughness: 0.85 })));
+    // the dark boxes either side of the lower part, on the backscreen's steps
+    for (const sd of [-1, 1]) {
+      const i = len.findIndex((v) => v >= mid + sd * 14), p = pts[i], q = pts[Math.min(pts.length - 1, i + 1)];
+      const yb = stands.topAt(...Object.values(out(p, -3))) || ftop;
+      const bx = new THREE.Mesh(new THREE.BoxGeometry(6, y0 - 0.6 - yb, 3.4), std({ color: 0x16171a, roughness: 0.6 }));
+      const o = out(p, -1.2);
+      bx.position.set(o.x, (yb + y0 - 0.6) / 2, o.z); bx.rotation.y = Math.atan2(q.z - p.z, -(q.x - p.x)) + Math.PI;
+      root.add(bx);
+    }
+    // the sign over the middle: TOKYO DOME in green on black
+    {
+      const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 160;
+      const g = cv.getContext('2d');
+      g.fillStyle = '#060807'; g.fillRect(0, 0, 1024, 160);
+      g.fillStyle = '#3ddc84'; g.font = 'bold 112px Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText('TOKYO DOME', 512, 84);
+      const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+      const sign = new THREE.Mesh(new THREE.PlaneGeometry(10, 1.56), new THREE.MeshBasicMaterial({ map: tex, toneMapped: true }));
+      const i = len.findIndex((v) => v >= mid), p = pts[i], q = pts[i + 1], o = out(p, -0.2);
+      sign.position.set(o.x, y1 + 1.1, o.z); sign.rotation.y = Math.atan2(-(q.z - p.z), q.x - p.x);
+      root.add(sign);
+    }
+    // the backscreen's steps, painted dark: a strip along each of the
+    // outfield stand's rows across its middle
+    {
+      const S = decodeSeats(F.seats), sk = F.seatScale ?? 10, rows = new Map();
+      for (let i = 0; i < S.length; i += 4) {
+        const x = S[i] / sk, z = S[i + 1] / sk;
+        if (!inBackscreen(x, z)) continue;
+        const r = S[i + 2];
+        if (!rows.has(r)) rows.set(r, []);
+        rows.get(r).push({ x, z: z + ZH, a: Math.atan2(x, -z) });
+      }
+      const strips = [];
+      for (const [r, ps] of rows) {
+        ps.sort((u, v) => u.a - v.a);
+        const y = F.hs[Math.min(r, F.hs.length - 1)];
+        const g = ps.length > 1 && wallStrip(ps, ps.map(() => y + 0.02), { y0: y + 0.002, thick: 0.72, ease: 0 });
+        if (g) strips.push(g);
+      }
+      if (strips.length) root.add(new THREE.Mesh(mergeGeometries(strips), std({ color: 0x0e1a14, roughness: 0.95 })));
+    }
   }
 
   // ── stage ──

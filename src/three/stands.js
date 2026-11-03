@@ -992,6 +992,7 @@ export function buildStands(data, {
   offset = V3(0, 0, 0), stage = V3(0, 2, 0), seatColors = {}, seatColor = 0x22262e,
   concreteTone = 0.22, sold = () => true, occupancy = 0.97, seed = 5, roofY = 36, crowd = true,
   materials = {}, seatMesh = null, seatColorAt = null, tiers = null, wedges = null,
+  seatKeep = null,
 }) {
   const g = new THREE.Group();
   const ox = offset.x, oz = offset.z;
@@ -1185,6 +1186,8 @@ export function buildStands(data, {
     for (let i = 0; i < S.length; i += 4) {
       const x = S[i] / sk + ox, z = S[i + 1] / sk + oz, yaw = S[i + 3] * DEG;
       const y = L.hs ? L.hs[Math.min(S[i + 2], L.hs.length - 1)] : L.h0 + L.rise * S[i + 2];
+      // a venue can leave seats out (their treads stay)
+      if (seatKeep && !seatKeep(L.name, x - ox, z - oz, S[i + 2])) continue;
       // a venue can pick out a row in another colour
       const c = seatColorAt ? seatColorAt(L.name, x - ox, z - oz, S[i + 2]) : null;
       if (c != null && c !== col) { if (!odd.has(c)) odd.set(c, []); odd.get(c).push({ x, y, z, yaw }); }
