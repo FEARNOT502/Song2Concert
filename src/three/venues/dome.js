@@ -14,7 +14,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { APP, DEG, KELVIN, V3, clamp, lerp, prng, std, floorPanelTex, glowMat, ringTint } from '../core.js';
 import { lightPoints } from '../people.js';
 import { hoists, micStand, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, crossThrust, roundBlocks, roundStage, delayTower, fixtureRow, flashOnCrowd, flashUnits, floorChairs, fohPosition, fromRow, groundRoof, paHang, paWing, runBlinders, runShow, runStrobes, scaffoldMasking, screenHang, section, stageRing, subLine, thinRow, wallStrip } from '../show.js';
+import { bigCrowd, bigScreens, crossThrust, diagonalTowers, roundBlocks, roundStage, delayTower, fixtureRow, flashOnCrowd, flashUnits, floorChairs, fohPosition, fromRow, groundRoof, paHang, paWing, runBlinders, runShow, runStrobes, scaffoldMasking, screenHang, section, stageRing, subLine, thinRow, wallStrip } from '../show.js';
 import { buildStands, decodeSeats } from '../stands.js';
 import { TD_STANDS } from './td-data.js';
 
@@ -697,7 +697,8 @@ export function buildDome(ctx) {
   // front rows see over them to the far side)
   const GAP = 3.5;
   const bands = [];
-  for (let z = RW0 + GAP + 2; z + 4 * PITCH < CZ - GAP; z += BD + AZ) bands.push([z, Math.min(z + BD, CZ - GAP)]);
+  // (the first blocks 9 m back from the stage's front, as the photographs show it)
+  for (let z = RW0 + 9; z + 4 * PITCH < CZ - GAP; z += BD + AZ) bands.push([z, Math.min(z + BD, CZ - GAP)]);
   // beside the walkway across, past its ends, a short band fills the gap
   // between the front blocks and the ones behind the cross
   bands.push([bands[bands.length - 1][1] + AZ, CZ + XD + GAP - AZ]);
@@ -851,7 +852,8 @@ export function buildDome(ctx) {
   // blocks facing it, four delay towers on the diagonals, FOH towards home.
   function domeRound() {
     // (a runway 8 m wide out from each end, towards home and centre field)
-    const RC = roundStage(ctx, root, { c: STAGE, w: 16, d: 40, deck: DECK, top: 27, box: [22, 11], follow: 75, followY: 26, runway: { w: 8, len: 22 } });
+    // (the deck 1.8 m, as the end stage's runways)
+    const RC = roundStage(ctx, root, { c: STAGE, w: 16, d: 40, deck: 1.8, top: 27, box: [22, 11], follow: 75, followY: 26, runway: { w: 8, len: 22 } });
     const inF = (x, z) => inRing(fieldRing, x, z) && inRing(fieldRing, -x, z);
     const edgeD = (x, z) => {
       let m = Infinity;
@@ -864,7 +866,8 @@ export function buildDome(ctx) {
       return m;
     };
     // the delay towers on the diagonals, each aimed out, an aisle of its own
-    const DTR = [[-32, STAGE.z - 36], [32, STAGE.z - 36], [-32, STAGE.z + 36], [32, STAGE.z + 36]];
+    // (on the field, 12 m clear of its edge: never into the stands)
+    const DTR = diagonalTowers(STAGE, { r: 52, ax: 0.62, az: 0.78, ok: (x, z) => inF(x, z) && Math.min(edgeD(x, z), edgeD(-x, z)) > 12 });
     const towerLights = [];
     for (const [x, z] of DTR) towerLights.push(...delayTower(root, { x, z, h: 20, boxes: 16, width: 1.3, yaw: Math.atan2(x - STAGE.x, z - STAGE.z) }));
     const rig = ctx.rig({ finish: 'black' });
@@ -872,7 +875,7 @@ export function buildDome(ctx) {
     // (well back from the runway's end, towards home)
     const feye = V3(0, 1.6 + 1.0, STAGE.z + 60);
     const skip = (x, z) => !inF(x, z) || Math.min(edgeD(x, z), edgeD(-x, z)) < 2.2 || RC.inside(x, z, 3.5)
-      || DTR.some(([tx, tz]) => Math.abs(x - tx) < 4.5 && Math.abs(z - tz) < 4.5)
+      || DTR.some(([tx, tz]) => Math.abs(x - tx) < 7 && Math.abs(z - tz) < 7)
       || (Math.abs(x - feye.x) < 4.4 && Math.abs(z - feye.z) < 3.6);
     const seats = roundBlocks({ c: STAGE, hd: 20 + 3.5, x0: -80, x1: 80, z0: -10, z1: 140, skip, seed: 55 });
     root.add(floorChairs(seats.chairs));

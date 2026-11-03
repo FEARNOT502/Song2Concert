@@ -1109,27 +1109,64 @@ export function roundStage(ctx, root, { c, w = 16, d = 40, deck = 2.2, top = 26,
 // Returns { chairs, people } as floorBlocks does.
 export function roundBlocks({ c, hd, x0, x1, z0, z1, skip, size = 8.6, aisle = 1.4, seed = 5, occupancy = 0.97 }) {
   const rnd = prng(seed);
-  const chairs = [], people = [];
   const P = size + aisle;
+  // the chairs of a rectangle facing (fx, fz), rows across the facing
+  const fill = (b, fx, fz) => {
+    const along = fz ? [1, 0] : [0, 1];
+    const Lu = fz ? b.x1 - b.x0 : b.z1 - b.z0, Lv = fz ? b.z1 - b.z0 : b.x1 - b.x0;
+    const n = Math.floor(Lu / 0.5), rows = Math.floor(Lv / 0.9);
+    const mx = (b.x0 + b.x1) / 2, mz = (b.z0 + b.z1) / 2, out = [];
+    for (let j = 0; j < rows; j++) for (let i = 0; i < n; i++) {
+      const u = -Lu / 2 + (i + 0.5) * (Lu / n), v = -Lv / 2 + (j + 0.5) * 0.9 + (Lv - rows * 0.9) / 2;
+      const x = mx + along[0] * u - fx * v, z = mz + along[1] * u - fz * v;
+      if (!skip(x, z)) out.push([x, z]);
+    }
+    return out;
+  };
+  const blocks = new Map();
   for (let bx = Math.floor((x0 - c.x) / P); bx * P + c.x < x1; bx++) for (let bz = Math.floor((z0 - c.z) / P); bz * P + c.z < z1; bz++) {
     const b = { x0: c.x + bx * P + aisle / 2, x1: c.x + bx * P + aisle / 2 + size, z0: c.z + bz * P + aisle / 2, z1: c.z + bz * P + aisle / 2 + size };
     const mx = (b.x0 + b.x1) / 2 - c.x, mz = (b.z0 + b.z1) / 2 - c.z;
     // facing the stage: along the field off its ends, across it beside it
     const [fx, fz] = Math.abs(mz) > hd ? [0, -Math.sign(mz)] : [-Math.sign(mx), 0];
-    const along = fz ? [1, 0] : [0, 1];
-    const L = size, n = Math.floor(L / 0.5), rows = Math.floor(L / 0.9);
-    const cols = [], turn = Math.atan2(fx, fz);
-    for (let j = 0; j < rows; j++) for (let i = 0; i < n; i++) {
-      const u = -L / 2 + (i + 0.5) * (L / n), v = -L / 2 + (j + 0.5) * 0.9 + (L - rows * 0.9) / 2;
-      const x = c.x + mx + along[0] * u - fx * v, z = c.z + mz + along[1] * u - fz * v;
-      if (skip(x, z)) continue;
-      cols.push([x, z]);
-    }
-    if (cols.length < 24) continue;
-    for (const [x, z] of cols) {
+    const seats = fill(b, fx, fz);
+    if (seats.length) blocks.set(`${bx},${bz}`, { bx, bz, b, fx, fz, seats });
+  }
+  // a block the field's edge, a tower or the stage cuts down to a sliver
+  // joins the block beside it nearer the stage, the aisle between them seated
+  const full = Math.floor(size / 0.5) * Math.floor(size / 0.9);
+  const order = [...blocks.values()].sort((p, q) => p.seats.length - q.seats.length);
+  for (const k of order) {
+    if (!blocks.has(`${k.bx},${k.bz}`) || k.seats.length >= full * 0.45) continue;
+    const cands = [[k.bx - Math.sign(k.bx || 1), k.bz], [k.bx, k.bz - Math.sign(k.bz || 1)], [k.bx + Math.sign(k.bx || 1), k.bz], [k.bx, k.bz + Math.sign(k.bz || 1)]]
+      .map(([i, j]) => blocks.get(`${i},${j}`)).filter((n) => n && n.fx === k.fx && n.fz === k.fz);
+    blocks.delete(`${k.bx},${k.bz}`);
+    const n = cands[0];
+    if (!n) continue;
+    n.b = { x0: Math.min(n.b.x0, k.b.x0), x1: Math.max(n.b.x1, k.b.x1), z0: Math.min(n.b.z0, k.b.z0), z1: Math.max(n.b.z1, k.b.z1) };
+    n.seats = fill(n.b, n.fx, n.fz);
+  }
+  const chairs = [], people = [];
+  for (const { b, fx, fz, seats } of blocks.values()) {
+    if (seats.length < 24) continue;
+    const turn = Math.atan2(fx, fz);
+    for (const [x, z] of seats) {
       chairs.push({ x: x - fx * 0.16, y: 0, z: z - fz * 0.16, turn });
       if (rnd() < occupancy) people.push({ x: x + fx * 0.16 + (rnd() - 0.5) * 0.08, y: 0, z: z + fz * 0.16 + (rnd() - 0.5) * 0.06, h: 0.92 + rnd() * 0.14, full: true, fblock: b });
     }
   }
   return { chairs, people };
+}
+
+// Delay towers on a centre stage's four diagonals: each set `r` out from the
+// stage's middle `c` along its diagonal (`ax`, `az` the diagonal's spread),
+// brought in until it stands on the floor (`ok`) clear of its edge by `clear`.
+export function diagonalTowers(c, { r = 48, ax = 0.6, az = 0.8, ok }) {
+  const out = [];
+  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    let k = r;
+    while (k > 20 && !ok(c.x + sx * ax * k, c.z + sz * az * k)) k -= 0.5;
+    out.push([c.x + sx * ax * k, c.z + sz * az * k]);
+  }
+  return out;
 }

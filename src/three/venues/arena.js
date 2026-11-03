@@ -229,8 +229,8 @@ function arenaEnd(ctx) {
   // the runway out to a cross on the floor: a walkway either side two-thirds
   // of the way, the runway on past it to a square end stage in the middle
   const RW0 = 16 + SZ, RW1 = 52, CZ = 38;
-  // (lower than the stage, 1.4 m, so the floor sees over it to the far side)
-  const XH = 1.4;
+  // (lower than the stage: 1.8 m, as the dome's runways)
+  const XH = 1.8;
   const cross = crossThrust(root, { z0: RW0, z1: RW1, w: 3.6, crossZ: CZ, crossD: 3.6, crossW: 12, tip: 6, h: XH });
   const ringM = stageRing(root, [{ x: 0, z: 8.5 + SZ, w: 34, d: 15, h: DECK, back: true }, ...cross.parts]);
   // one wide wall across the set (an arena tour's panoramic LED), and the

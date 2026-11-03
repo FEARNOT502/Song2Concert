@@ -9,7 +9,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { APP, DEG, KELVIN, V3, clamp, prng, std, floorPanelTex, glowMat, noise3D, ringTint, withRepeat } from '../core.js';
 import { lightPoints } from '../people.js';
 import { ampStack, drumKit, guitar, hoists, holdAtDistance, keyboardRig, ledScreen, micStand, prismInto, rodInto, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, crossThrust, roundBlocks, roundStage, delayTower, fixtureRow, flashOnCrowd, flashUnits, floorChairs, fohPosition, fromRow, groundRoof, packFloor, paHang, paWing, runBlinders, runShow, runStrobes, scaffoldMasking, screenHang, stageRing, subLine, thinRow } from '../show.js';
+import { bigCrowd, bigScreens, crossThrust, diagonalTowers, roundBlocks, roundStage, delayTower, fixtureRow, flashOnCrowd, flashUnits, floorChairs, fohPosition, fromRow, groundRoof, packFloor, paHang, paWing, runBlinders, runShow, runStrobes, scaffoldMasking, screenHang, stageRing, subLine, thinRow } from '../show.js';
 import { buildStands } from '../stands.js';
 import { WB_STANDS } from './wb-data.js';
 
@@ -768,7 +768,8 @@ export function buildStadium(ctx) {
       return c;
     };
     // (a runway 8 m wide out from each end, towards the two goals)
-    const RC = roundStage(ctx, root, { c: STAGE, w: 16, d: 40, deck: DECK, top: 30, box: [24, 12], follow: 95, followY: 30, runway: { w: 8, len: 22 } });
+    // (the deck 1.8 m, as the dome's runways)
+    const RC = roundStage(ctx, root, { c: STAGE, w: 16, d: 40, deck: 1.8, top: 30, box: [24, 12], follow: 95, followY: 30, runway: { w: 8, len: 22 } });
     const inF = (x, z) => inRing(field, x, z) && inRing(field, -x, z);
     const edgeD = (x, z) => {
       let m = Infinity;
@@ -780,14 +781,15 @@ export function buildStadium(ctx) {
       }
       return m;
     };
-    const DTR = [[-34, ZC - 42], [34, ZC - 42], [-34, ZC + 42], [34, ZC + 42]];
+    // (on the pitch, 10 m clear of its edge)
+    const DTR = diagonalTowers(STAGE, { r: 56, ax: 0.6, az: 0.8, ok: (x, z) => inF(x, z) && Math.min(edgeD(x, z), edgeD(-x, z)) > 10 });
     const towerLights = [];
     for (const [x, z] of DTR) towerLights.push(...delayTower(root, { x, z, h: 22, boxes: 16, width: 1.3, yaw: Math.atan2(x - STAGE.x, z - STAGE.z) }));
     const rig = ctx.rig({ finish: 'black' });
     const tw = fixtureRow(q, towerLights.length, (i) => ({ fx: rig.add({ pos: towerLights[i], kind: 'beam', length: 80, beamGain: 0.9 }), group: 5 }));
     const feye = V3(0, 1.6 + 1.2, ZC + 60);
     const skip = (x, z) => !inF(x, z) || Math.min(edgeD(x, z), edgeD(-x, z)) < 3.5 || RC.inside(x, z, 3.5)
-      || DTR.some(([tx, tz]) => Math.abs(x - tx) < 4.5 && Math.abs(z - tz) < 4.5)
+      || DTR.some(([tx, tz]) => Math.abs(x - tx) < 7 && Math.abs(z - tz) < 7)
       || (Math.abs(x - feye.x) < 4.4 && Math.abs(z - feye.z) < 3.6);
     const seats = roundBlocks({ c: STAGE, hd: 20 + 3.5, x0: -60, x1: 60, z0: ZC - 70, z1: ZC + 70, skip, seed: 177 });
     root.add(floorChairs(seats.chairs));
