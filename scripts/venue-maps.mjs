@@ -16,13 +16,14 @@ import { chromium } from 'playwright';
 
 const URL = process.argv[2] || 'http://localhost:5173/Song2Concert/';
 const OUT = path.resolve('public/venue-maps');
-const VENUES = (process.env.ONLY ? process.env.ONLY.split(',') : ['club', 'theater', 'concerthall', 'arena', 'dome', 'stadium']);
+// (`<id>-360`: the big rooms laid out round a centre stage)
+const VENUES = (process.env.ONLY ? process.env.ONLY.split(',') : ['club', 'theater', 'concerthall', 'arena', 'dome', 'stadium', 'arena-360', 'dome-360', 'stadium-360']);
 // the plan is cut here (metres): the roof, the ceiling and what hangs from them
 // are above it
 const CUT = { club: 2.6, theater: 24, concerthall: 12, arena: 28, dome: 33, stadium: 40 };
 // rooms whose floor is a standing floor, up to this height: it is tinted as an
 // audience area where it lies inside the seats (the pitch's cover is 1.5 m up)
-const STANDING = { club: 0.3, stadium: 2 };
+const STANDING = { club: 0.3, stadium: 2, 'arena-360': 0.3 };
 
 fs.mkdirSync(OUT, { recursive: true });
 const browser = await chromium.launch({ args: ['--use-angle=d3d11', '--ignore-gpu-blocklist', '--enable-webgl'] });
@@ -32,10 +33,11 @@ await page.waitForFunction(() => window.__stage && document.querySelector('.s2c-
 await page.evaluate(() => window.__stage.setEffects(false));
 
 for (const id of VENUES) {
-  await page.evaluate((v) => window.__stage.setVenue(v), id);
+  const [vid, mode = 'general'] = id.split('-');
+  await page.evaluate(([v, m]) => window.__stage.setVenue(v, m === '360' ? '360' : 'general'), [vid, mode]);
   await page.waitForTimeout(300);
-  await page.waitForFunction((v) => window.__stage.stats().venue === v && document.querySelector('.s2c-load.is-done'), id, { timeout: 120000 });
-  const { url, note } = await page.evaluate(drawPlan, { cut: CUT[id], standing: STANDING[id] || 0 });
+  await page.waitForFunction(([v, m]) => window.__stage.stats().venue === v && window.__stage.stats().mode === (m === '360' ? '360' : 'general') && document.querySelector('.s2c-load.is-done'), [vid, mode], { timeout: 180000 });
+  const { url, note } = await page.evaluate(drawPlan, { cut: CUT[vid], standing: STANDING[id] ?? STANDING[vid] ?? 0 });
   if (process.env.DEBUG) console.log(note);
   const file = path.join(OUT, `${id}.webp`);
   fs.writeFileSync(file, Buffer.from(url.split(',')[1], 'base64'));
