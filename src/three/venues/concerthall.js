@@ -86,17 +86,25 @@ export function buildConcertHall(ctx) {
   const bumps = plasterTex({ key: 'hallbumps', base: [0.7, 0.58, 0.45], bumps: 5 });
   const wallMat = std({ ...withRepeat(bumps, 1 / 2.4, 1 / 2.4), roughness: 1, normalScale: new THREE.Vector2(1.6, 1.6) });
 
-  // ── shell: a rounded plan, walls of bumped timber ──
+  // ── shell: a rounded plan, walls of bumped timber, a door behind each block ──
   const plan = planXZ;
+  const doors = hallDoors(LOTTE_STANDS, plan);
+  wallMat.side = THREE.DoubleSide;
   for (let i = 0; i < plan.length; i++) {
     const [x0, z0] = plan[i], [x1, z1] = plan[(i + 1) % plan.length];
     const len = Math.hypot(x1 - x0, z1 - z0);
-    const geo = new THREE.PlaneGeometry(len, HH);
-    const uv = geo.attributes.uv; for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getX(k) * len / 2.4, uv.getY(k) * HH / 2.4);
+    const sh = new THREE.Shape();
+    sh.moveTo(0, 0); sh.lineTo(len, 0); sh.lineTo(len, HH); sh.lineTo(0, HH); sh.lineTo(0, 0);
+    for (const d of doors.filter((q) => q.seg === i)) {
+      const u0 = d.u - DOOR_W / 2, u1 = d.u + DOOR_W / 2;
+      const h = new THREE.Path(); h.moveTo(u0, d.y); h.lineTo(u1, d.y); h.lineTo(u1, d.y + DOOR_H); h.lineTo(u0, d.y + DOOR_H); h.lineTo(u0, d.y); sh.holes.push(h);
+    }
+    const geo = new THREE.ShapeGeometry(sh, 1);
+    const uv = geo.attributes.uv; for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getX(k) / 2.4, uv.getY(k) / 2.4);
+    const P = geo.attributes.position, ux = (x1 - x0) / len, uz = (z1 - z0) / len;
+    for (let k = 0; k < P.count; k++) { const u = P.getX(k), v = P.getY(k); P.setXYZ(k, x0 + ux * u, v, z0 + uz * u); }
+    geo.computeVertexNormals();
     const w = new THREE.Mesh(geo, wallMat);
-    w.position.set((x0 + x1) / 2, HH / 2, (z0 + z1) / 2);
-    w.rotation.y = Math.atan2(x0 - x1, z0 - z1) + Math.PI / 2;
-    w.material.side = THREE.DoubleSide;
     w.receiveShadow = true;
     root.add(w);
   }
@@ -165,6 +173,9 @@ export function buildConcertHall(ctx) {
     seatMesh: (spots) => seatField(spots, { fabric: velvet(0x8e1018, 'lotteseat'), frame: std({ color: 0x5a3c22, roughness: 0.45 }) }),
   });
   root.add(stands.group);
+  // the doors' landings, the concourses round the hall behind its walls, and
+  // the stair between them
+  root.add(concourses(plan, doors));
   // we sit in C, the 10th row, on the centre line
   const stalls = LOTTE_STANDS.levels.find((l) => l.name === 'STALLS');
   let mine = null;
@@ -259,4 +270,167 @@ export function buildConcertHall(ctx) {
       cu.uAmb.value.setRGB(0.01, 0.008, 0.006).multiplyScalar(1 + f.house * 3);
     },
   };
+}
+
+
+// ── the ways in ──
+//
+// In the hall every terrace is entered from behind: a door in the wall at the
+// height of its back row, onto a concourse that runs round the hall outside
+// its walls. Here: a door behind every block, a short landing from its back
+// row to the door, and two concourses round the outside of the walls, one for
+// the 1st floor's terraces (its floor rising and falling round the hall from
+// door to door, about 4-5 m up) and one over it for the 2nd floor (the side
+// galleries and the rear balcony, 8.8-11.1 m), joined by a stair behind the
+// back wall. Everything is walkable from the seat we start in.
+const DOOR_W = 1.6, DOOR_H = 2.3, RING_W = 3.0;
+
+// For each block: its back row's height and the point of the wall behind it
+// (the segment, how far along it). Pieces of a level whose back rows lie
+// apart (the stalls' back blocks) get a door each.
+function hallDoors(data, plan) {
+  const near = (x, z) => {
+    let best = null;
+    for (let i = 0; i < plan.length; i++) {
+      const [x0, z0] = plan[i], [x1, z1] = plan[(i + 1) % plan.length];
+      const dx = x1 - x0, dz = z1 - z0, L2 = dx * dx + dz * dz, len = Math.sqrt(L2);
+      if (len < DOOR_W + 0.3) continue;
+      const lo = (DOOR_W / 2 + 0.1) / len, t = Math.max(lo, Math.min(1 - lo, ((x - x0) * dx + (z - z0) * dz) / L2));
+      const px = x0 + dx * t, pz = z0 + dz * t, d = Math.hypot(x - px, z - pz);
+      if (!best || d < best.d) best = { d, seg: i, u: t * len, x: px, z: pz };
+    }
+    return best;
+  };
+  const out = [];
+  for (const L of data.levels) {
+    const top = L.rows.reduce((a, r) => (r.y > a.y ? r : a), L.rows[0]);
+    for (const polys of top.polys) {
+      const ring = polys[0];
+      const c = ring.reduce((a, [x, z]) => [a[0] + x / ring.length, a[1] + z / ring.length], [0, 0]);
+      const w = near(c[0], c[1]);
+      if (!w) continue;
+      // the row's point nearest the door: where the landing starts
+      let from = ring[0], fd = Infinity;
+      for (const [x, z] of ring) { const d = Math.hypot(x - w.x, z - w.z); if (d < fd) { fd = d; from = [x, z]; } }
+      // (only where the row comes to the wall: a front block's top row stands
+      // clear of it and is reached up the block behind; none behind the organ)
+      if (fd > 3.5 || (Math.abs(w.x) < 9.5 && w.z < -12)) continue;
+      if (out.some((q) => q.seg === w.seg && Math.abs(q.u - w.u) < DOOR_W + 0.6 && Math.abs(q.y - top.y) < DOOR_H)) continue;
+      out.push({ level: L.name, ring: top.y > 7 ? 2 : 1, y: top.y, seg: w.seg, u: w.u, x: w.x, z: w.z, from });
+    }
+  }
+  return out;
+}
+
+function concourses(plan, doors) {
+  const g = new THREE.Group();
+  const slab = [], rails = [], frames = [], lamps = [];
+  const N = plan.length;
+  // the outline's length round to each vertex, and the outward normals
+  const cx = plan.reduce((a, p) => a + p[0], 0) / N, cz = plan.reduce((a, p) => a + p[1], 0) / N;
+  const S = [0];
+  for (let i = 1; i <= N; i++) { const [x0, z0] = plan[i - 1], [x1, z1] = plan[i % N]; S.push(S[i - 1] + Math.hypot(x1 - x0, z1 - z0)); }
+  const TOT = S[N];
+  const segN = (i) => {
+    const [x0, z0] = plan[i], [x1, z1] = plan[(i + 1) % N];
+    let nx = z1 - z0, nz = -(x1 - x0); const l = Math.hypot(nx, nz) || 1; nx /= l; nz /= l;
+    if (nx * ((x0 + x1) / 2 - cx) + nz * ((z0 + z1) / 2 - cz) < 0) { nx = -nx; nz = -nz; }
+    return [nx, nz];
+  };
+  const vN = plan.map((_, i) => { const a = segN((i - 1 + N) % N), b = segN(i); const x = a[0] + b[0], z = a[1] + b[1], l = Math.hypot(x, z) || 1; return [x / l, z / l]; });
+  // a ring's floor height round the loop: through its doors, straight between them
+  const heights = (rg) => {
+    const ctl = doors.filter((d) => d.ring === rg).map((d) => ({ s: S[d.seg] + d.u, y: d.y })).sort((a, b) => a.s - b.s);
+    return (s) => {
+      if (ctl.length < 2) return ctl.length ? ctl[0].y : 0;
+      for (let k = 0; k < ctl.length; k++) {
+        const a = ctl[k], b = ctl[(k + 1) % ctl.length];
+        const sb = b.s + (k + 1 === ctl.length ? TOT : 0), ss = s < a.s ? s + TOT : s;
+        if (ss >= a.s && ss <= sb) return a.y + (b.y - a.y) * (ss - a.s) / (sb - a.s);
+      }
+      return ctl[0].y;
+    };
+  };
+  const box = (out, x0, x1, y0, y1, z0, z1, rot = 0, px = 0, pz = 0) => {
+    const b = new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0); b.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+    if (rot) b.rotateY(rot);
+    b.translate(px, 0, pz);
+    const nb = b.toNonIndexed(); nb.deleteAttribute('uv'); out.push(nb);   // (the rings carry none)
+  };
+  // a ring: a slab from the wall's outside out RING_W, its floor at h(s), in
+  // pieces of at most a metre along the outline; a rail along its outer edge
+  // the stair's place, behind the middle of the back wall (the rails stay
+  // open where it meets the rings)
+  const zb = Math.max(...plan.map((p) => p[1])), SW = 1.6, SX0 = -7, SX1 = 7;
+  const gaps = { 1: [SX0 - SW - 0.1, SX0 + 0.1], 2: [SX0 - SW - 2.1, SX0 - SW + 0.1] };
+  const ring = (h, rg) => {
+    const pos = [], idx = [], pts = [];
+    for (let i = 0; i < N; i++) {
+      const [x0, z0] = plan[i], [x1, z1] = plan[(i + 1) % N], len = S[i + 1] - S[i], n = Math.max(1, Math.ceil(len));
+      for (let k = 0; k < n; k++) {
+        const t = k / n, a = vN[i], b = vN[(i + 1) % N];
+        const nx = a[0] + (b[0] - a[0]) * t, nz = a[1] + (b[1] - a[1]) * t, nl = Math.hypot(nx, nz) || 1;
+        pts.push({ x: x0 + (x1 - x0) * t, z: z0 + (z1 - z0) * t, nx: nx / nl, nz: nz / nl, y: h(S[i] + len * t) });
+      }
+    }
+    for (const p of pts) {
+      const ix = p.x + p.nx * 0.02, iz = p.z + p.nz * 0.02, ox = p.x + p.nx * RING_W, oz = p.z + p.nz * RING_W;
+      pos.push(ix, p.y, iz, ox, p.y, oz, ix, p.y - 0.3, iz, ox, p.y - 0.3, oz);
+    }
+    const M = pts.length;
+    for (let k = 0; k < M; k++) {
+      const a = k * 4, b = ((k + 1) % M) * 4;
+      idx.push(a, b, a + 1, a + 1, b, b + 1, a + 2, a + 3, b + 2, a + 3, b + 3, b + 2, a + 1, b + 1, a + 3, a + 3, b + 1, b + 3);
+      const p = pts[k], q = pts[(k + 1) % M];
+      const rx0 = p.x + p.nx * (RING_W - 0.05), rz0 = p.z + p.nz * (RING_W - 0.05), rx1 = q.x + q.nx * (RING_W - 0.05), rz1 = q.z + q.nz * (RING_W - 0.05);
+      const l = Math.hypot(rx1 - rx0, rz1 - rz0);
+      const gx = (rx0 + rx1) / 2, gp = gaps[rg];
+      if (l > 0.01 && !((rz0 + rz1) / 2 > zb + 1 && gx > gp[0] && gx < gp[1])) { const r = new THREE.BoxGeometry(0.06, 1.05, l); r.rotateY(Math.atan2(rx1 - rx0, rz1 - rz0)); r.translate((rx0 + rx1) / 2, (p.y + q.y) / 2 + 0.52, (rz0 + rz1) / 2); rails.push(r.toNonIndexed()); }
+      if (k % 6 === 0) { const lm = new THREE.BoxGeometry(0.5, 0.06, 0.5); lm.translate(p.x + p.nx * RING_W * 0.5, p.y + 2.9, p.z + p.nz * RING_W * 0.5); lamps.push(lm.toNonIndexed()); }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setIndex(idx); geo.computeVertexNormals();
+    slab.push(geo.toNonIndexed());
+    return pts;
+  };
+  const h1 = heights(1), h2 = heights(2);
+  const r1 = ring(h1, 1), r2 = ring(h2, 2);
+  // each door: its frame, and a landing from the block's back row through it
+  // onto the concourse (the ring's floor is at the row's height at its door)
+  for (const d of doors) {
+    const [nx, nz] = segN(d.seg);
+    const fx = d.from[0], fz = d.from[1], tx = d.x + nx * 0.8, tz = d.z + nz * 0.8;
+    const L = Math.hypot(tx - fx, tz - fz);
+    if (L > 0.05) box(slab, -DOOR_W / 2, DOOR_W / 2, d.y - 0.3, d.y, -L / 2, L / 2, Math.atan2(tx - fx, tz - fz), (fx + tx) / 2, (fz + tz) / 2);
+    const along = Math.atan2(nx, nz) + Math.PI / 2;
+    for (const s of [-1, 1]) box(frames, s * DOOR_W / 2 - 0.06, s * DOOR_W / 2 + 0.06, d.y, d.y + DOOR_H + 0.08, -0.12, 0.12, along, d.x, d.z);
+    box(frames, -DOOR_W / 2 - 0.06, DOOR_W / 2 + 0.06, d.y + DOOR_H, d.y + DOOR_H + 0.1, -0.12, 0.12, along, d.x, d.z);
+  }
+  // the stair between them, behind the back wall: off the rings' outer edge,
+  // up along the wall, a turn, and back up onto the 2nd floor's ring
+  {
+    let k1 = 0;
+    r1.forEach((p, k) => { if (Math.abs(p.x) + Math.abs(p.z - zb) * 4 < Math.abs(r1[k1].x) + Math.abs(r1[k1].z - zb) * 4) k1 = k; });
+    const y0 = r1[k1].y, y1 = r2[k1].y, mid = (y0 + y1) / 2;
+    const oz = zb + RING_W;
+    const W = SW, X0 = SX0, X1 = SX1;
+    const run = (yA, yB, xFrom, xTo, zA, zB) => {
+      const n = Math.ceil(Math.abs(yB - yA) / 0.18), dx = (xTo - xFrom) / n;
+      for (let i = 0; i < n; i++) { const a = xFrom + dx * i, b = xFrom + dx * (i + 1); box(slab, Math.min(a, b), Math.max(a, b), yA - 0.25, yA + (yB - yA) * (i + 1) / n, zA, zB); }
+    };
+    box(slab, X0 - W, X0, y0 - 0.3, y0, oz - 0.3, oz + W);               // the foot, off the 1st floor's ring
+    run(y0, mid, X0, X1, oz, oz + W);                                      // up along the wall
+    box(slab, X1, X1 + W, mid - 0.3, mid, oz, oz + 2 * W + 0.2);           // the turn
+    run(mid, y1, X1, X0 - W, oz + W + 0.2, oz + 2 * W + 0.2);              // and back, up to the 2nd floor's height
+    box(slab, X0 - W - 2, X0 - W, y1 - 0.3, y1, oz - RING_W + 0.1, oz + 2 * W + 0.2);   // the head, onto its ring
+    box(rails, X0 - W, X1 + W, mid + 1.0, mid + 1.06, oz + 2 * W + 0.2, oz + 2 * W + 0.26);
+  }
+  for (const q of [...slab, ...rails, ...frames, ...lamps]) if (q.attributes.uv) q.deleteAttribute('uv');
+  const m = new THREE.Mesh(mergeGeometries(slab), std({ color: 0x6a4630, roughness: 0.85 })); m.receiveShadow = true;
+  g.add(m);
+  g.add(new THREE.Mesh(mergeGeometries(rails), std({ color: 0x3a2818, roughness: 0.6 })));
+  g.add(new THREE.Mesh(mergeGeometries(frames), std({ color: 0x2a1a10, roughness: 0.6 })));
+  g.add(new THREE.Mesh(mergeGeometries(lamps), std({ color: 0x1a1612, emissive: 0xc79a6a, emissiveIntensity: 0.8 })));
+  return g;
 }
