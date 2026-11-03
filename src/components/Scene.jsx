@@ -22,19 +22,19 @@ import { BrandMark } from './TopBar.jsx';
 import { createStage } from '../three/stage.js';
 import { findVenue } from '../data.js';
 
-function LoadingCover({ venueId, done }) {
+function LoadingCover({ venueId, mode, done }) {
   return (
     <div className={`s2c-load ${done ? 'is-done' : ''}`} aria-hidden={done} role="status">
       <span className="s2c-load-mark"><BrandMark size={34} /></span>
       <div className="s2c-load-label">Loading venue</div>
-      <div className="s2c-load-name">{findVenue(venueId).name}</div>
+      <div className="s2c-load-name">{findVenue(venueId).name}{mode === '360' ? ' 360' : ''}</div>
       <div className="s2c-load-bar"><span /></div>
     </div>
   );
 }
 
 function Scene({
-  venueId, coverId, coverSrc, pulse = 0, pulseRef = null, title, artist,
+  venueId, venueMode = 'general', coverId, coverSrc, pulse = 0, pulseRef = null, title, artist,
   strain = 0, effects = true, playing = false, crowdLight = 'stick', analyser = null,
   songMap = null, clock = null, part = null, apiRef = null,
 }) {
@@ -47,8 +47,8 @@ function Scene({
   const effectsAtMount = useRef(effects);
   const [host, setHost] = useState({ w: 0, h: 0 });
   const [ok, setOk] = useState(true);
-  // the room being built, or null once it is drawn
-  const [loading, setLoading] = useState(venueId);
+  // the room being built ({ id, mode }), or null once it is drawn
+  const [loading, setLoading] = useState({ id: venueId, mode: venueMode });
 
   // ── the stage lives as long as the component does ──
   useEffect(() => {
@@ -57,7 +57,7 @@ function Scene({
     const quality = window.matchMedia?.('(max-width: 900px)').matches ? 'low' : 'high';
     const stage = createStage(canvasRef.current, {
       quality, effects: effectsAtMount.current,
-      onLoading: (on, id) => setLoading(on ? id : null),
+      onLoading: (on, id, mode) => setLoading(on ? { id, mode } : null),
     });
     const el = hostRef.current;
     if (stage) stageRef.current = stage;
@@ -83,7 +83,7 @@ function Scene({
     };
   }, []);
 
-  useEffect(() => { stageRef.current?.setVenue(venueId); }, [venueId]);
+  useEffect(() => { stageRef.current?.setVenue(venueId, venueMode); }, [venueId, venueMode]);
   useEffect(() => { stageRef.current?.setArt({ coverId, coverSrc, title, artist }); }, [coverId, coverSrc, title, artist]);
   // Stopped, the house lights are up; playing, they go down for the show.
   useEffect(() => { stageRef.current?.setPlaying(playing); }, [playing]);
@@ -117,7 +117,7 @@ function Scene({
         style={{ display: ok ? 'block' : 'none' }}
         aria-label="공연장 3D 장면. 드래그해서 둘러보고 W A S D로 걸어 다닐 수 있습니다."
       />
-      {ok && <LoadingCover venueId={loading || venueId} done={!loading} />}
+      {ok && <LoadingCover venueId={loading?.id || venueId} mode={loading ? loading.mode : venueMode} done={!loading} />}
       {!ok && (
         <StageArt
           rect={box}

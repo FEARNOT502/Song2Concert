@@ -54,7 +54,7 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
   // sleeve stay sharp on a wall tens of metres wide), 2048 on a phone
   const art = createArt(() => { if (venue) applyArt(); }, { W: qName === 'low' ? 2048 : 4096 });
 
-  let venue = null, ctx = null, venueId = null, envRT = null;
+  let venue = null, ctx = null, venueId = null, venueMode = 'general', envRT = null;
   let buildGen = 0;
   let pulse = 0, pulseRef = null, analyser = null;
   let songMap = null, songClock = null;
@@ -118,6 +118,8 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     const cu = crowdUniforms();
     return {
       pipe, cu, screens, rigs,
+      // the big rooms' layout: 'general' (an end stage) or '360' (a centre stage)
+      mode: venueMode,
       // the crowd is decided at build time: off, it is not built at all
       q: fx ? pipe.q : { ...pipe.q, crowd: 0 },
       art: { texture: (aspect) => art.texture(aspect), cover: () => art.cover() },
@@ -142,12 +144,12 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     pointMats = []; lightMats = []; fogMats = []; dimLights = [];
   }
 
-  async function setVenue(id) {
-    venueId = id;
+  async function setVenue(id, mode = venueMode) {
+    venueId = id; venueMode = mode;
     const gen = ++buildGen;
     // the page's loading cover goes up first: the build below holds the
     // thread, and without it the room would sit black and still meanwhile
-    onLoading?.(true, id);
+    onLoading?.(true, id, mode);
     await fade(0, venue ? 180 : 0);
     if (gen !== buildGen || !running) return;
     teardown();
@@ -426,7 +428,7 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
   document.fonts?.ready?.then(() => { if (running) art.refresh(); });
 
   return {
-    setVenue(id) { if (id !== venueId || !venue) setVenue(id); },
+    setVenue(id, mode = 'general') { if (id !== venueId || mode !== venueMode || !venue) setVenue(id, mode); },
     setPulse: (p) => { pulse = p; },
     setPulseRef: (ref) => { pulseRef = ref || null; },
     // () => AnalyserNode | null — read for the kick, never connected to
@@ -472,7 +474,7 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
       raf = requestAnimationFrame(tick);
       if (venueId && !venue) setVenue(venueId);
     },
-    stats: () => ({ drawn, heavy, strain, effects: fx, frameMs: +frameBudget.toFixed(2), gpuMs: Number.isFinite(pipe.gpuMs) ? +pipe.gpuMs.toFixed(2) : null, scale: pipe.scale, dpr: pipe.renderer.getPixelRatio(), sceneDpr: +pipe.sceneDpr.toFixed(3), venue: venueId, walker: walker.feet.toArray().map((v) => +v.toFixed(2)) }),
+    stats: () => ({ drawn, heavy, strain, effects: fx, frameMs: +frameBudget.toFixed(2), gpuMs: Number.isFinite(pipe.gpuMs) ? +pipe.gpuMs.toFixed(2) : null, scale: pipe.scale, dpr: pipe.renderer.getPixelRatio(), sceneDpr: +pipe.sceneDpr.toFixed(3), venue: venueId, mode: venueMode, walker: walker.feet.toArray().map((v) => +v.toFixed(2)) }),
     // for tests and the walk-through: the walker and the pipeline
     debug: { walker, pipe, art, beat },
     dispose() {

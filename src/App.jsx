@@ -14,6 +14,7 @@ import LightPanel, { DESK } from './components/LightPanel.jsx';
 import MobileLayout from './components/MobileLayout.jsx';
 import { useSceneEffects } from './useSceneEffects.js';
 import { CROWD_LIGHT_VENUES, useCrowdLight } from './useCrowdLight.js';
+import { modeOf, useVenueModes } from './useVenueModes.js';
 import { useIsMobile } from './useIsMobile.js';
 import { useMediaSession } from './useMediaSession.js';
 import { useEngine } from './audio/useEngine.js';
@@ -65,6 +66,8 @@ const PLACEHOLDER_FILE = {
 export default function App() {
   // ── state model (CLAUDE_PROMPT.md §3) ───────────────────────────────────
   const [venueId, setVenueId] = useState('stadium');
+  // the big rooms' layout, each remembered: an end stage or a centre stage
+  const [venueModes, setVenueMode] = useVenueModes();
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
   const [wetDry, setWetDry] = useState(findVenue('stadium').position.wet);
@@ -116,6 +119,7 @@ export default function App() {
 
   // derived
   const venue = findVenue(venueId);
+  const venueMode = modeOf(venueModes, venueId);
   const desk = CROWD_LIGHT_VENUES.includes(venueId);
   const liveAuto = !!upload?.liveAuto;
   const live = liveOverride ?? liveAuto;
@@ -233,10 +237,12 @@ export default function App() {
   }, [hasAudio, engine]);
 
   // ── pickers / state transitions ─────────────────────────────────────────
-  const handlePickVenue = useCallback((id) => {
+  // (`mode`: the layout picked with it; none keeps the one the room had)
+  const handlePickVenue = useCallback((id, mode) => {
     setVenueId(id);
+    if (mode) setVenueMode(id, mode);
     setWetDry(findVenue(id).position.wet); // reset wet/dry to the venue default
-  }, []);
+  }, [setVenueMode]);
   // Stable, so the memoised chrome that takes them is not re-rendered by the
   // playback clock.
   const openFilePicker = useCallback(() => setFilePickerOpen(true), []);
@@ -532,7 +538,7 @@ export default function App() {
         onClose={closeFilePicker}
         onUpload={handleUpload}
       />
-      <VenuePicker open={venuePickerOpen} onClose={closeVenuePicker} current={venueId} onPick={handlePickVenue} />
+      <VenuePicker open={venuePickerOpen} onClose={closeVenuePicker} current={venueId} currentMode={venueMode} modes={venueModes} onPick={handlePickVenue} />
     </>
   );
 
@@ -541,6 +547,7 @@ export default function App() {
       <>
         <MobileLayout
           venue={venue}
+          venueMode={venueMode}
           displayFile={displayFile}
           coverSrc={coverSrc}
           pulseRef={pulseRef}
@@ -586,6 +593,7 @@ export default function App() {
     <div className="w-screen h-screen bg-black text-neutral-200 overflow-hidden relative font-mono">
       <Scene
         venueId={venueId}
+        venueMode={venueMode}
         coverId={displayFile.cover}
         coverSrc={coverSrc}
         pulseRef={pulseRef}
@@ -605,13 +613,14 @@ export default function App() {
       <TopBar
         file={displayFile}
         venue={venue}
+        venueMode={venueMode}
         onFileClick={openFilePicker}
         onVenueClick={openVenuePicker}
         effects={effects}
         onEffectsChange={setEffects}
         desk={desk}
       />
-      <LeftDataPanel venue={venue} />
+      <LeftDataPanel venue={venue} venueMode={venueMode} />
       {desk && (
         <LightPanel
           part={lightPart}
