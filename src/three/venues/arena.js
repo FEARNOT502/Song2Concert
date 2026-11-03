@@ -424,27 +424,25 @@ function arenaRound(ctx) {
   }
 
   // ── the cubes ──
-  // two LED cubes, 9 m a side, over the stage's two halves, the art on every
-  // face but the top, hung level and square to the stage on chains from the truss
-  const CUBE = 9, CY = 16;
+  // two LED boxes over the stage's two halves, long the way the stage runs
+  // (16 m), 9 m across and 7 m deep, the art on every face but the top, hung
+  // level and square to the stage on chains from the truss
+  const BW = 9, BH = 7, BL = 16, CY = 16;
   const cubes = [];
-  for (const cz of [-10, 10]) {
+  for (const cz of [-9.5, 9.5]) {
     const g = new THREE.Group();
-    g.add(new THREE.Mesh(new THREE.BoxGeometry(CUBE - 0.1, CUBE - 0.1, CUBE - 0.1), std({ color: 0x050506, roughness: 0.6 })));
-    for (const [ax, ay] of [[0, 0], [0, Math.PI / 2], [0, Math.PI], [0, -Math.PI / 2], [Math.PI / 2, 0]]) {
-      const sc = ledScreen({ w: CUBE, h: CUBE, tex: ctx.art.texture(1), pitch: 0.006, bright: 1.3, frame: 0, light: false });
-      const pv = new THREE.Group(); pv.rotation.set(ax, ay, 0); sc.position.z = CUBE / 2; pv.add(sc); g.add(pv);
-      ctx.addScreen(sc, 1, 'main');
+    g.add(new THREE.Mesh(new THREE.BoxGeometry(BW - 0.1, BH - 0.1, BL - 0.1), std({ color: 0x050506, roughness: 0.6 })));
+    // [w, h, rotation x, rotation y, out]: the long sides, the ends, the underside
+    for (const [w, h, ax, ay, out] of [[BL, BH, 0, Math.PI / 2, BW / 2], [BL, BH, 0, -Math.PI / 2, BW / 2], [BW, BH, 0, 0, BL / 2], [BW, BH, 0, Math.PI, BL / 2], [BW, BL, Math.PI / 2, 0, BH / 2]]) {
+      const sc = ledScreen({ w, h, tex: ctx.art.texture(w / h), pitch: 0.006, bright: 1.3, frame: 0, light: false });
+      const pv = new THREE.Group(); pv.rotation.set(ax, ay, 0); sc.position.z = out; pv.add(sc); g.add(pv);
+      ctx.addScreen(sc, w / h, 'main');
     }
     g.position.set(0, CY, OZ + cz);
     root.add(g); cubes.push(g);
     // a chain from each top corner up to the truss
-    g.updateMatrixWorld(true);
     const ch = [];
-    for (const [dx, dz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-      const p = V3(dx * CUBE / 2 * 0.9, CUBE / 2, dz * CUBE / 2 * 0.9).applyMatrix4(g.matrixWorld);
-      chainInto(ch, p.x, p.y, p.z, RIG - 0.4, { motor: false });
-    }
+    for (const [dx, dz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) chainInto(ch, dx * BW / 2 * 0.9, CY + BH / 2, OZ + cz + dz * BL / 2 * 0.9, RIG - 0.4, { motor: false });
     root.add(new THREE.Mesh(mergeGeometries(ch), mats().chain));
   }
 
@@ -534,7 +532,7 @@ function arenaRound(ctx) {
     bloom: { strength: 0.7, radius: 0.65, threshold: 1.15 },
     grade: { exposure: 1.2, vignette: 0.4, ca: 0.005, grain: 0.04, sat: 1.08, lift: [0.004, 0.004, 0.008] },
     env: { w: X1 - X0, h: H, d: Z1 - Z0, eye, wall: 0x0a0a10, floor: 0x050507, emitters: cubes.map((g) => (
-      { w: CUBE, h: CUBE, pos: V3(CUBE / 2, CY, g.position.z), normal: V3(1, 0, 0), screen: true, power: 1.2, aspect: 1 })) },
+      { w: BL, h: BH, pos: V3(BW / 2, CY, g.position.z), normal: V3(1, 0, 0), screen: true, power: 1.2, aspect: BL / BH })) },
     envIntensity: 0.6,
     update(f) {
       stands.update(f);
