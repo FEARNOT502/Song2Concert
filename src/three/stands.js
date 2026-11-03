@@ -315,8 +315,8 @@ export function vomSignTexture(label, bg = '#15181f', fg = '#f2f2ee', aisle = fa
 }
 
 // The aisle numbers (data.signs: {x, y, z, yaw, w, label}, a plate facing (sin yaw,
-// cos yaw); with `r` it is bent round a pillar of that radius about (x, z), w the
-// arc's length), every plate of them on one sheet and in one mesh.
+// cos yaw); with `r` it is on a pillar of that half-width about (x, z), on the
+// face it looks out of), every plate of them on one sheet and in one mesh.
 export function signSheet(list, ox, oz, bg = '#15181f', fg = '#f2f2ee') {
   const labels = [...new Set(list.map((s) => s.label))];
   const cols = 8, cw = 256, ch = 96, rows = Math.ceil(labels.length / cols);
@@ -331,21 +331,12 @@ export function signSheet(list, ox, oz, bg = '#15181f', fg = '#f2f2ee') {
     const i = labels.indexOf(s.label);
     const u0 = ((i % cols) * cw) / c.width, u1 = u0 + cw / c.width;
     const v1 = 1 - (Math.floor(i / cols) * ch) / c.height, v0 = v1 - ch / c.height;
-    const hh = (s.w * ch / cw) / 2;
-    if (s.r) {
-      // round a pillar: a strip of segments along the arc (the angle runs the way the plate's u does, to the right of a viewer facing it)
-      const seg = 10, rs = s.r + 0.012, span = s.w / s.r;
-      for (let k = 0; k < seg; k++) {
-        const t0 = k / seg, t1 = (k + 1) / seg, a0 = s.yaw + (t0 - 0.5) * span, a1 = s.yaw + (t1 - 0.5) * span;
-        const p0 = [s.x + ox + rs * Math.sin(a0), s.z + oz + rs * Math.cos(a0)], p1 = [s.x + ox + rs * Math.sin(a1), s.z + oz + rs * Math.cos(a1)];
-        const ua = u0 + (u1 - u0) * t0, ub = u0 + (u1 - u0) * t1;
-        const q = [[p0[0], s.y - hh, p0[1], ua, v0], [p1[0], s.y - hh, p1[1], ub, v0], [p1[0], s.y + hh, p1[1], ub, v1], [p0[0], s.y + hh, p0[1], ua, v1]];
-        for (const j of [0, 1, 2, 0, 2, 3]) { P.push(q[j][0], q[j][1], q[j][2]); U.push(q[j][3], q[j][4]); }
-      }
-      continue;
-    }
-    const rx = Math.cos(s.yaw) * s.w / 2, rz = -Math.sin(s.yaw) * s.w / 2;
-    const x = s.x + ox, z = s.z + oz;
+    // (on a pillar, flat on the face of it the plate looks out of, as wide as
+    // the face at the most)
+    const w = s.r ? Math.min(s.w, 2 * s.r) : s.w, off = s.r ? s.r + 0.012 : 0;
+    const hh = (w * ch / cw) / 2;
+    const rx = Math.cos(s.yaw) * w / 2, rz = -Math.sin(s.yaw) * w / 2;
+    const x = s.x + ox + Math.sin(s.yaw) * off, z = s.z + oz + Math.cos(s.yaw) * off;
     const q = [[x - rx, s.y - hh, z - rz, u0, v0], [x + rx, s.y - hh, z + rz, u1, v0], [x + rx, s.y + hh, z + rz, u1, v1], [x - rx, s.y + hh, z - rz, u0, v1]];
     for (const k of [0, 1, 2, 0, 2, 3]) { P.push(q[k][0], q[k][1], q[k][2]); U.push(q[k][3], q[k][4]); }
   }
