@@ -10,7 +10,7 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { KELVIN, V3, glowMat, prng, std, thin, velvet } from './core.js';
+import { APP, KELVIN, V3, glowMat, prng, std, thin, velvet } from './core.js';
 import { crowdLights, silhouettes, withCells } from './people.js';
 import { chainInto, drapeGeometry, latticeInto, ledScreen, lineArray, mats, rodInto, seatField, stageDeck, truss } from './rig.js';
 
@@ -575,21 +575,60 @@ export function crossThrust(root, { z0, z1, w, crossZ, crossD, crossW, tip = 0, 
   // the runway in pieces either side of the walkway and short of the end
   // stage, so no two decks lie in one plane over the same floor (their tops
   // would fight for the pixels as the view turns)
-  const run = (a, b) => (b - a > 0.01 ? [{ x: 0, z: (a + b) / 2, w, d: b - a, lip: false }] : []);
+  const run = (a, b) => (b - a > 0.01 ? [{ x: 0, z: (a + b) / 2, w, d: b - a, h }] : []);
   const end = tip ? z1 - tip : z1;
   const parts = [
     ...run(z0, crossZ),
-    { x: 0, z: crossZ + crossD / 2, w: crossW * 2, d: crossD, lip: true },
+    { x: 0, z: crossZ + crossD / 2, w: crossW * 2, d: crossD, h },
     ...run(crossZ + crossD, end),
   ];
-  if (tip) parts.push({ x: 0, z: z1 - tip / 2, w: tip, d: tip, lip: true });
+  if (tip) parts.push({ x: 0, z: z1 - tip / 2, w: tip, d: tip, h });
+  // (no lips of their own: stageRing lights the whole stage's edge at once)
   const decks = parts.map((p) => {
-    const d = stageDeck({ w: p.w, d: p.d, h, z: p.z, lip: p.lip });
+    const d = stageDeck({ w: p.w, d: p.d, h, z: p.z, lip: false });
     root.add(d);
     return d;
   });
   const inside = (x, z, pad = 0) => parts.some((p) => Math.abs(x - p.x) < p.w / 2 + pad && Math.abs(z - p.z) < p.d / 2 + pad);
-  return { decks, inside };
+  return { decks, inside, parts };
+}
+
+// The stage's edge lights: a thin glowing line along every edge of the stage
+// the audience can see, round the main deck and every piece of the runway,
+// walkway and end stage, wherever the top drops away (to the floor, or to a
+// lower deck beside it); not along the main deck's back (`back: true`), which
+// the set hides. `rects` are { x, z, w, d, h, back }, axis-aligned, +z towards
+// the audience. Returns the material, for the venue to colour each frame.
+export function stageRing(root, rects, { t = 0.035 } = {}) {
+  const mat = glowMat(APP.accent, 1.2);
+  const geos = [], STEP = 0.1, EPS = 0.06;
+  const higher = (x, z, h, self) => rects.some((r) => r !== self && r.h >= h - 0.05 && Math.abs(x - r.x) < r.w / 2 && Math.abs(z - r.z) < r.d / 2);
+  for (const r of rects) {
+    const x0 = r.x - r.w / 2, x1 = r.x + r.w / 2, z0 = r.z - r.d / 2, z1 = r.z + r.d / 2;
+    // each edge: its two ends, and which way is out
+    const edges = [[[x0, z1], [x1, z1], [0, 1]], [[x1, z0], [x1, z1], [1, 0]], [[x0, z0], [x0, z1], [-1, 0]]];
+    if (!r.back) edges.push([[x0, z0], [x1, z0], [0, -1]]);
+    for (const [[ax, az], [bx, bz], [nx, nz]] of edges) {
+      const len = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.round(len / STEP));
+      let s0 = null;
+      for (let i = 0; i <= n; i++) {
+        const u = Math.min(1, (i + 0.5) / n), px = ax + (bx - ax) * u, pz = az + (bz - az) * u;
+        const open = i < n && !higher(px + nx * EPS, pz + nz * EPS, r.h, r);
+        if (open && s0 === null) s0 = i / n;
+        if ((!open || i === n) && s0 !== null) {
+          const e = i / n, L = (e - s0) * len;
+          if (L > 0.05) {
+            const g = new THREE.BoxGeometry(nx ? t : L + t, t, nx ? L + t : t);
+            g.translate(ax + (bx - ax) * (s0 + e) / 2 + nx * t / 2, r.h - t, az + (bz - az) * (s0 + e) / 2 + nz * t / 2);
+            geos.push(g);
+          }
+          s0 = null;
+        }
+      }
+    }
+  }
+  if (geos.length) root.add(new THREE.Mesh(mergeGeometries(geos), mat));
+  return mat;
 }
 
 // A flown hang with its bridle chains up to the roof (or the stage's own

@@ -296,17 +296,18 @@ export function buildTheater(ctx) {
     root.add(new THREE.Mesh(mergeGeometries(fronts), balconyFront));
     for (const x of [-8.5, -3, 3, 8.5]) lampSpots.push(V3(x, B.y0 + B.front + 0.05, B.z0 - KNEE - 0.3 - Math.max(0, Math.abs(x) - 5.95) * Math.tan(12.3 * DEG)));
   }
-  concourses(root, { X, D, H, CY1, CZW, levels, slabMat, wallMat: std({ ...withRepeat(walnut, 1 / 1.2, 1 / 4), roughness: 1 }), SIDE_DOOR, SIDE_OPEN });
+  const conc = concourses(root, { X, D, H, CY1, CZW, levels, slabMat, wallMat: std({ ...withRepeat(walnut, 1 / 1.2, 1 / 4), roughness: 1 }), SIDE_DOOR, SIDE_OPEN });
   root.add(seatField(spots, { fabric: seatVel, frame: seatFrame }));
   if (q.crowd) root.add(crowd3D(people, cu, { kind: 'seated', detail: 1, seed: 5 }));
   // aisle step lights
   const steps = lightPoints(stepPts.map((p) => ({ ...p, white: true, size: 0.02, phase: 0 })), cu, { maxPx: 5 });
   steps.material.uniforms.uGain.value = 0.35;
   root.add(steps);
-  // exit signs
-  for (const side of [-1, 1]) for (const z of [9.5, 30]) {
+  // exit signs: over the doors in the side walls at the front of the stalls
+  // (the doors in the walls behind each floor carry their own)
+  for (const side of [-1, 1]) {
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.18), glowMat(0x19c26a, 2.2));
-    sign.position.set(side * (X - 0.03), 2.6, z); sign.rotation.y = -side * Math.PI / 2; root.add(sign);
+    sign.position.set(side * (X - 0.03), 2.62, (SIDE_DOOR[0] + SIDE_DOOR[1]) / 2); sign.rotation.y = -side * Math.PI / 2; root.add(sign);
   }
 
   // ── lighting rig ──
@@ -365,7 +366,8 @@ export function buildTheater(ctx) {
     const l = new THREE.PointLight(KELVIN(2800), 0, 30, 2);
     l.position.set(x, H - 1, z); l.userData.offWhenDark = 'house'; root.add(l); houseLights.push(l);
   }
-  root.add(new THREE.HemisphereLight(0x1a1418, 0x080506, 0.12));
+  const hemi = new THREE.HemisphereLight(0x1a1418, 0x080506, 0.12);
+  root.add(hemi);
   // what the stage throws back into the house: a broad soft source in the
   // opening, coloured by the show
   const bounce = new THREE.RectAreaLight(0xffffff, 0, OW, OT - OB);
@@ -447,10 +449,18 @@ export function buildTheater(ctx) {
       houseLights.forEach((l) => { l.intensity = 420 * f.house; });
       bounce.color.copy(tung).lerp(a, 0.4).lerp(b, 0.2);
       bounce.intensity = (0.9 + f.energy * 0.6 + f.kick * 0.2) * show + 0.3 * f.house;
-      warmers.forEach((w) => { w.intensity = 60 * show + 120 * f.house; });
-      wallWash.forEach((l) => { l.intensity = 6 + 20 * f.house; });
-      grazers.forEach((g) => { g.intensity = 18 + 40 * f.house; });
-      steps.material.uniforms.uGain.value = 0.3 + 0.2 * f.house;
+      // in the show only what lights the stage stays on (and the exit signs
+      // and the aisles' step lights, brighter then): the curtain warmers, the
+      // walls' washes and grazers, the balcony lamps go out with the house
+      warmers.forEach((w) => { w.intensity = 120 * f.house; });
+      wallWash.forEach((l) => { l.intensity = 26 * f.house; });
+      grazers.forEach((g) => { g.intensity = 58 * f.house; });
+      lampMat.color.copy(KELVIN(2500)).multiplyScalar(3.5 * f.house);
+      lampFl.forEach((l) => { l.intensity = 0.35 * f.house; });
+      hemi.intensity = 0.02 + 0.1 * f.house;
+      steps.material.uniforms.uGain.value = 0.7 + 0.2 * f.house;
+      // the concourses: lit with the house; in the show only while someone is in one
+      conc.set(Math.max(f.house, conc.inside(f.cam) ? 1 : 0));
       ringTint(lipM.color, f.pal.a).multiplyScalar(0.25 + 0.3 * f.kick * show);
       hzBooth.forEach((h) => { h.power = 30 * show; });
       hzStage.power = (20 + f.energy * 20) * show + 6 * f.house;
@@ -589,5 +599,19 @@ function concourses(root, { X, D, H, CY1, CZW, levels, slabMat, wallMat, SIDE_DO
   const sm = new THREE.Mesh(mergeGeometries(stairs), slabMat); sm.receiveShadow = true;
   root.add(sm);
   root.add(new THREE.Mesh(mergeGeometries(rails), std({ color: 0x1a1210, roughness: 0.5, metalness: 0.4 })));
-  root.add(new THREE.Mesh(mergeGeometries(lit), std({ color: 0x1a1612, emissive: 0xc79a6a, emissiveIntensity: 0.6 })));
+  const litM = std({ color: 0x1a1612, emissive: 0xc79a6a, emissiveIntensity: 0.6 });
+  root.add(new THREE.Mesh(mergeGeometries(lit), litM));
+  // a light down each floor's concourse, and the side passages
+  const fills = [];
+  for (const [y, z0] of [[0, CZW], [L2.y, CZW], [L3.y, L3.z + 0.3]]) {
+    const l = new THREE.PointLight(0xffe2c0, 0, 22, 2); l.position.set(0, y + 2.4, (z0 + D) / 2); root.add(l); fills.push([l, 260]);
+  }
+  for (const side of [-1, 1]) for (const z of [12, 26]) {
+    const l = new THREE.PointLight(0xffe2c0, 0, 14, 2); l.position.set(side * (X + 0.95), 2.4 + CY1 * (z - 7) / 26, z); root.add(l); fills.push([l, 90]);
+  }
+  return {
+    set(k) { litM.emissiveIntensity = 0.6 * k; for (const [l, p] of fills) l.intensity = p * k; },
+    // behind a floor's back wall, or out in a side passage
+    inside: (c) => c.z > CZW + 0.15 || Math.abs(c.x) > X + 0.1,
+  };
 }

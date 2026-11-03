@@ -50,7 +50,9 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
 
   const walker = new Walker(canvas);
   const beat = new BeatFollower();
-  const art = createArt(() => { if (venue) applyArt(); });
+  // the screens' content at 4096 px across on a computer (the type and the
+  // sleeve stay sharp on a wall tens of metres wide), 2048 on a phone
+  const art = createArt(() => { if (venue) applyArt(); }, { W: qName === 'low' ? 2048 : 4096 });
 
   let venue = null, ctx = null, venueId = null, envRT = null;
   let buildGen = 0;

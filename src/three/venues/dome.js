@@ -14,7 +14,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { APP, DEG, KELVIN, V3, clamp, lerp, prng, std, floorPanelTex, glowMat, ringTint } from '../core.js';
 import { lightPoints } from '../people.js';
 import { hoists, micStand, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, crossThrust, delayTower, floorChairs, fohPosition, fixtureRow, flashOnCrowd, flashUnits, fromRow, groundRoof, paHang, paWing, runBlinders, runShow, runStrobes, scaffoldMasking, screenHang, section, subLine, thinRow, wallStrip } from '../show.js';
+import { bigCrowd, bigScreens, crossThrust, delayTower, fixtureRow, flashOnCrowd, flashUnits, floorChairs, fohPosition, fromRow, groundRoof, paHang, paWing, runBlinders, runShow, runStrobes, scaffoldMasking, screenHang, section, stageRing, subLine, thinRow, wallStrip } from '../show.js';
 import { buildStands, decodeSeats } from '../stands.js';
 import { TD_STANDS } from './td-data.js';
 
@@ -125,15 +125,15 @@ export function buildDome(ctx) {
   // the stage and the outfield's ends past the poles included; the outfield
   // behind the set not.
   // ── the 2nd floor's box seats (the 2022 renewal) ──
-  // One row across the 2nd floor on the 1st- and 3rd-base sides, in the
+  // Two rows across the 2nd floor on the 1st- and 3rd-base sides, in the
   // infield (about six of its blocks, as the photographs show it, not out
-  // towards the outfield): the first row of E over the walkway between D and
-  // E, made into boxes of four seats. Each row has a long light-wood counter at table height in front
+  // towards the outfield): the first two rows of E over the walkway between
+  // D and E, made into boxes of four seats. Each row has a long light-wood counter at table height in front
   // of its seats, with cup holes, on a wooden front down to the tread; light-wood
   // half-height partitions between the boxes; the seats grey, not blue. Phi is
   // the angle from the centre-field line seen from home plate (the foul lines
   // at 45).
-  const BOX = { level: 'E', rows: [0], phi: [85, 115], per: 4 };
+  const BOX = { level: 'E', rows: [0, 1], phi: [85, 115], per: 4 };
   const inBox = (name, x, z, row) => {
     if (name !== BOX.level || !BOX.rows.includes(row)) return false;
     const f = Math.abs(Math.atan2(x, -z)) / DEG;
@@ -186,7 +186,7 @@ export function buildDome(ctx) {
         }
       });
     }
-    const birch = std({ color: 0xc9a06a, roughness: 0.55 });
+    const birch = std({ color: 0xc9a06a, roughness: 0.9, envMapIntensity: 0.3 });
     const wm = new THREE.Mesh(mergeGeometries(wood), birch); wm.receiveShadow = true; wm.castShadow = true;
     root.add(wm, new THREE.Mesh(mergeGeometries(holes), std({ color: 0x141414, roughness: 0.9 })));
   }
@@ -444,7 +444,7 @@ export function buildDome(ctx) {
   // brings its own roof on towers, and the PA its own wings.
   const SZ = 16;                                  // the stage's front at z 38
   const WW = 66, WH = 16, WY = DECK + 2.4 + WH / 2, WZ = 3.6 + SZ;
-  const deck = stageDeck({ w: 72, d: 20, h: DECK, z: 12 + SZ });
+  const deck = stageDeck({ w: 72, d: 20, h: DECK, z: 12 + SZ, lip: false });
   root.add(deck);
   // (as the photographs from the 2nd floor show it) a runway out from the
   // stage's middle, crossed a third of the way down the field by a long
@@ -456,12 +456,7 @@ export function buildDome(ctx) {
   const cross = crossThrust(root, { z0: RW0, z1: RW1, w: 4.4, crossZ: CZ, crossD: XD, crossW: XW, tip: TIP, h: XH });
   // the stairs up either side of the deck, beside it (it is 72 m wide), 3 m wide
   for (const s of [-1, 1]) root.add(stageSteps({ x: s * 37.55, z: RW0, h: DECK, dir: [0, -1], width: 3 }));
-  const bRimM = glowMat(APP.accent, 1);
-  {
-    const g = new THREE.BoxGeometry(XW * 2 + 0.1, 0.05, 0.05); g.translate(0, XH, CZ + XD + 0.02);
-    const g2 = new THREE.BoxGeometry(TIP + 0.1, 0.05, 0.05); g2.translate(0, XH, RW1 + 0.02);
-    const bRim = new THREE.Mesh(mergeGeometries([g, g2]), bRimM); root.add(bRim);
-  }
+  const ringM = stageRing(root, [{ x: 0, z: 12 + SZ, w: 72, d: 20, h: DECK, back: true }, ...cross.parts]);
   const scr = bigScreens(ctx, root, { w: WW, h: WH, y: WY, z: WZ, pitch: 0.0059 });
   // the stage's roof on its towers, the wall on chains from its back beam
   const TX = WW / 2 + 4, SR = 27, LT = 23;
@@ -483,9 +478,6 @@ export function buildDome(ctx) {
     }
     root.add(new THREE.Mesh(mergeGeometries(cases), std({ color: 0x141416, roughness: 0.5, metalness: 0.3 })));
   }
-  // a microphone waiting at the end of the runway
-  const star = micStand({ height: 1.6 });
-  star.position.set(0, XH, RW1 - 1.2); root.add(star);
   for (let i = 0; i < 12; i++) { const w = wedge({ w: 0.8 }); w.position.set(-22 + i * 4, DECK, RW0 - 0.4); w.rotation.y = Math.PI; root.add(w); }
   // the subs in a row on the field under the barrier, the front fills on the lip
   subLine(root, { x0: -30, x1: 30, z: RW0 + 1.0, gap: 3.4, count: 2, fills: { xs: [-33, -26, -19, -12, -6, 6, 12, 19, 26, 33], y: DECK, z: RW0 - 0.35 } });
@@ -561,12 +553,18 @@ export function buildDome(ctx) {
   const house = [];
   // the house lights are the ring's floods: aimed down at the field and the
   // stands, so the membrane above them only gets what bounces back up
+  // (not the ones behind the set: they would shine across the stage straight
+  // at the house, a glare off the decks; the set stands in front of them)
   for (let i = 0; i < 9; i++) {
     const p = LIGHTS[Math.round(i / 8 * (LIGHTS.length - 1))];
-    const l = new THREE.SpotLight(KELVIN(5200), 0, 300, 0.8, 1, 2);
+    if (p.z < 20 + SZ) continue;
+    // (no fall-off with distance: a long-throw flood lights the field and the
+    // stands near it alike; with it, the stands nearest a flood took a hot spot)
+    const l = new THREE.SpotLight(KELVIN(5200), 0, 0, 0.8, 1, 0);
     l.position.copy(p).y -= 1.0;
-    // each across to the far side of the field, so the bowl is lit evenly from round its edge
-    l.target.position.set(-p.x * 0.35, 0, ZC - (p.z - ZC) * 0.35);
+    // each down at the field, just its own side of the middle: aimed across,
+    // the far stands sat on its axis and took a hot spot
+    l.target.position.set(p.x * 0.2, 0, ZC + (p.z - ZC) * 0.2);
     l.userData.offWhenDark = 'house'; root.add(l, l.target); house.push(l);
   }
   root.add(new THREE.HemisphereLight(0x181a24, 0x050508, 0.35));
@@ -735,11 +733,10 @@ export function buildDome(ctx) {
       // too much of them back)
       floodM.color.copy(KELVIN(5200)).multiplyScalar(0.03 + 2.6 * f.house);
       for (const g of floodGlow) g.intensity = 0.9 * f.house;
-      house.forEach((l) => { l.intensity = 22500 * f.house; });
+      house.forEach((l) => { l.intensity = 1.6 * f.house; });
       hzWash[0].color.copy(f.pal.a); hzWash[1].color.copy(f.pal.b); hzWash[2].color.copy(f.pal.d);
       hzWash.forEach((h) => { h.power = 600 * (0.4 + 0.6 * f.energy + 0.3 * f.kick) * show; });
-      ringTint(bRimM.color, f.pal.a).multiplyScalar((0.6 + 0.9 * f.kick) * show + 0.2);
-      ringTint(deck.userData.lip.color, f.pal.a).multiplyScalar((0.6 + 0.8 * f.kick) * show + 0.2);
+      ringTint(ringM.color, f.pal.a).multiplyScalar((0.6 + 0.8 * f.kick) * show + 0.2);
       const sh = membrane.userData.shader;
       if (sh) {
         // the house lights wash the membrane warm; in the show it takes the stage's colour back

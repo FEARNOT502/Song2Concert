@@ -685,7 +685,7 @@ export const appPalette = () => ({
 // What a screen shows: the art on a field made from itself, the way a show's
 // content team frames a sleeve on a wide wall, with the same label/title/artist
 // block the app puts under it.
-export function screenContent(cover, meta, aspect, { W = 2048, frame = true } = {}) {
+export function screenContent(cover, meta, aspect, { W = 2048, frame = true, accent = '#ffae6e' } = {}) {
   const H = Math.round(W / aspect);
   const c = document.createElement('canvas'); c.width = W; c.height = H;
   const g = c.getContext('2d');
@@ -711,7 +711,7 @@ export function screenContent(cover, meta, aspect, { W = 2048, frame = true } = 
   const wide = aspect >= 2.4;
   const s = wide ? H * 0.78 : Math.min(H * 0.52, W * 0.5);
   const MONO = '"JetBrains Mono", ui-monospace, monospace', SANS = '"Inter Tight", system-ui, sans-serif';
-  const fs = { label: s * (wide ? 0.055 : 0.048), title: s * (wide ? 0.14 : 0.15), artist: s * (wide ? 0.068 : 0.066) };
+  const fs = { label: s * (wide ? 0.07 : 0.062), title: s * (wide ? 0.18 : 0.19), artist: s * (wide ? 0.088 : 0.085) };
   const maxW = wide ? W - (W / 2 + H * 0.22) - s * 0.08 : W * 0.86;
   g.font = `300 ${Math.round(fs.title)}px ${SANS}`;
   const title = wrapText(g, meta.title || '', maxW, 2);
@@ -737,7 +737,7 @@ export function screenContent(cover, meta, aspect, { W = 2048, frame = true } = 
   g.textAlign = wide ? 'left' : 'center';
   let ty = wide ? (H - typeH) / 2 : y + s + s * 0.07;
   if (meta.label) {
-    g.fillStyle = '#ffae6e';
+    g.fillStyle = accent;
     g.font = `500 ${Math.round(fs.label)}px ${MONO}`; g.letterSpacing = `${Math.round(fs.label * 0.3)}px`;
     g.fillText(meta.label, tx, ty + fs.label);
     g.letterSpacing = '0px';

@@ -9,7 +9,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { APP, DEG, KELVIN, V3, clamp, prng, std, floorPanelTex, glowMat, noise3D, ringTint, withRepeat } from '../core.js';
 import { lightPoints } from '../people.js';
 import { ampStack, drumKit, guitar, hoists, holdAtDistance, keyboardRig, ledScreen, micStand, prismInto, rodInto, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, crossThrust, delayTower, fohPosition, fixtureRow, flashOnCrowd, flashUnits, fromRow, groundRoof, paHang, paWing, packFloor, runBlinders, runShow, runStrobes, scaffoldMasking, screenHang, subLine, thinRow } from '../show.js';
+import { bigCrowd, bigScreens, crossThrust, delayTower, fixtureRow, flashOnCrowd, flashUnits, fohPosition, fromRow, groundRoof, packFloor, paHang, paWing, runBlinders, runShow, runStrobes, scaffoldMasking, screenHang, stageRing, subLine, thinRow } from '../show.js';
 import { buildStands } from '../stands.js';
 import { WB_STANDS } from './wb-data.js';
 
@@ -570,18 +570,14 @@ export function buildStadium(ctx) {
   // lattice towers carrying a roof grid, the lighting trusses on chains under
   // it, the mains from its front corners — and the side PA on towers of their
   // own, bridged to the roof. A runway out to a cross on the pitch.
-  const deck = stageDeck({ w: 78, d: 26, h: DECK, z: 20 });
+  const deck = stageDeck({ w: 78, d: 26, h: DECK, z: 20, lip: false });
   root.add(deck);
   for (const s of [-1, 1]) root.add(stageSteps({ x: s * 39.75, z: 33, h: DECK, dir: [0, -1] }));
   // the walkway across 29 m out from the deck, and nothing past it: the
   // runway ends at the walkway (no runway on, no end stage)
   const RW0 = 33, CZ = 62, XW = 30, XD = 5.2, RW1 = CZ + XD, XH = DECK - 0.8;
   const cross = crossThrust(root, { z0: RW0, z1: RW1, w: 5, crossZ: CZ, crossD: XD, crossW: XW, h: XH });
-  const bRimM = glowMat(APP.accent, 1);
-  {
-    const g = new THREE.BoxGeometry(XW * 2 + 0.1, 0.05, 0.05); g.translate(0, XH, CZ + XD + 0.02);
-    root.add(new THREE.Mesh(g, bRimM));
-  }
+  const ringM = stageRing(root, [{ x: 0, z: 20, w: 78, d: 26, h: DECK, back: true }, ...cross.parts]);
   const WZ = 8, WW = 62, WH = 21, Y0 = DECK + 1.6;   // the wall's face, size and foot
   const scr = bigScreens(ctx, root, { w: WW, h: WH, y: Y0 + WH / 2, z: WZ, pitch: 0.0059 });
   // the stage's own roof: towers at the corners, beams across at each truss
@@ -604,9 +600,7 @@ export function buildStadium(ctx) {
     const t = truss(2 * TX - 4, { size: 1.0, finish: 'black' }); t.position.set(0, LT, z); root.add(t);
     root.add(hoists([-28, -14, 0, 14, 28], LT, z, SR - 0.8));
   }
-  // no one on stage: the backline set, the microphone out on the walkway
-  const star = micStand({ height: 1.6 });
-  star.position.set(0, XH, RW1 - 1.2); root.add(star);
+  // no one on stage: the backline set (nothing out on the runway)
   for (const [x, z, col] of [[-10, 18, 0x5a1a0e], [10, 18, 0x1a1a1c]]) {
     const gt = guitar({ color: col, bass: x > 0 }); gt.scale.setScalar(0.8); gt.position.set(x, DECK + 0.5, z); gt.rotation.x = -0.28; root.add(gt);
     const m = micStand({ height: 1.5 }); m.position.set(x, DECK, z + 1.4); m.rotation.y = Math.PI; root.add(m);
@@ -665,7 +659,9 @@ export function buildStadium(ctx) {
   const house = [];
   // house lights from the roof's leading edge, aimed down into the bowl rather
   // than lighting the underside of the roof they hang from
-  for (const [x, z] of [[-70, 20], [70, 20], [-70, 110], [70, 110], [0, -10], [0, 150]]) {
+  // (none from behind the set: it shone across the stage straight at the
+  // pitch, a glare off the decks; the set stands in front of it)
+  for (const [x, z] of [[-70, 20], [70, 20], [-70, 110], [70, 110], [0, 150]]) {
     const l = new THREE.SpotLight(KELVIN(5600), 0, 320, 1.1, 1, 2);
     l.position.set(x, ROOF - 2, z); l.target.position.set(x * 0.7, 0, ZC + (z - ZC) * 0.7);
     l.userData.offWhenDark = 'house'; root.add(l, l.target); house.push(l);
@@ -734,7 +730,7 @@ export function buildStadium(ctx) {
       runShow(rig, tw, f, { house: V3(0, 40, 90), stage: V3(0, DECK, RW1), span: 80 });
       runShow(rig, ups, f, { house: V3(0, 120, 60), stage: STAGE, up: true });
       washes.forEach(({ fx }) => { fx.angle = 0.3; });
-      front1.intensity = 60000 * show + 20000 * f.house;
+      front1.intensity = 60000 * show;   // (not with the house up: a glare off the stage)
       stageWash.color.copy(f.pal.a); stageWash.intensity = (26000 + 30000 * f.energy + 12000 * f.kick) * show;
       fill.forEach((l, i) => { l.color.copy(i ? f.pal.b : f.pal.a); l.intensity = (600 + 1600 * f.energy) * show; });
       house.forEach((l) => { l.intensity = 38000 * f.house; });
@@ -744,8 +740,7 @@ export function buildStadium(ctx) {
       steelMat.emissiveIntensity = 0.12 + 0.5 * f.house;
       hzWash[0].color.copy(f.pal.a); hzWash[1].color.copy(f.pal.b); hzWash[2].color.copy(f.pal.d);
       hzWash.forEach((h) => { h.power = 260 * (0.4 + 0.6 * f.energy + 0.3 * f.kick) * show; });
-      ringTint(deck.userData.lip.color, f.pal.a).multiplyScalar((0.6 + 0.8 * f.kick) * show + 0.2);
-      ringTint(bRimM.color, f.pal.a).multiplyScalar((0.6 + 0.8 * f.kick) * show + 0.2);
+      ringTint(ringM.color, f.pal.a).multiplyScalar((0.6 + 0.8 * f.kick) * show + 0.2);
       cu.uRimColor.value.copy(f.pal.a).lerp(new THREE.Color(1, 1, 1), 0.3).multiplyScalar((0.2 + 0.25 * f.kick) * show);
       cu.uStage.value.set(0, 18, 16);
       cu.uWash.value.copy(f.pal.b).multiplyScalar(0.012 * show + 0.3 * f.house);

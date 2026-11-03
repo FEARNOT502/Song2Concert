@@ -407,7 +407,9 @@ function ledScreen({ w, h, tex, pitch, bright = 2.2, kind = 'main', frame = 0.25
 function stageDeck({ w, d, h, z, x = 0, lip = true, fascia = 0x060607, round = 0 }) {
   const g = new THREE.Group();
   const set = withRepeat(stageTex(), w / 2.44, d / 2.44);
-  const top = std({ ...set, roughness: 1, metalness: 0 });
+  // matte, as a stage's painted deck is (the texture's own roughness, about
+  // 0.5, threw the house lights straight back off the runways as a glare)
+  const top = std({ ...set, roughnessMap: null, roughness: 0.88, metalness: 0 });
   let body;
   if (round > 0) {
     // a deck with a curved front, as a concert platform or an apron

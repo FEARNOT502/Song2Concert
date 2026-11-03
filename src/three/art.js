@@ -10,7 +10,7 @@
 // file is loaded, and for a file that carries no picture.
 
 import * as THREE from 'three';
-import { APP, appPalette, drawCover, extractPalette, screenContent } from './core.js';
+import { APP, appPalette, drawCover, extractPalette, ringTint, screenContent } from './core.js';
 
 // The screens before anything is playing: black, with the app's mark small in
 // the middle, so the wall reads as switched on and waiting.
@@ -44,7 +44,7 @@ function loadSleeve(src, S = 1024) {
   });
 }
 
-export function createArt(onChange) {
+export function createArt(onChange, { W = 2048 } = {}) {
   const art = {
     canvas: idleSleeve(),
     meta: { title: '', artist: '', label: '' },
@@ -58,8 +58,16 @@ export function createArt(onChange) {
     // Screen content at a given aspect: built once per aspect per sleeve.
     texture(aspect) {
       const k = aspect.toFixed(3);
-      if (!this.cache.has(k)) this.cache.set(k, screenContent(this.canvas, this.meta, aspect));
+      if (!this.cache.has(k)) this.cache.set(k, screenContent(this.canvas, this.meta, aspect, { W, accent: this.labelColor() }));
       return this.cache.get(k);
+    },
+
+    // The NOW PLAYING label's colour: the sleeve's lead colour, as the ring
+    // lights take it, at full brightness and lifted a little towards white so
+    // it reads on the wall (the app's accent before any art).
+    labelColor() {
+      const c = ringTint(new THREE.Color(), this.palette.a).lerp(new THREE.Color(1, 1, 1), 0.25);
+      return `#${c.getHexString()}`;
     },
 
     // The sleeve alone, for the narrow columns and ribbons.
@@ -94,7 +102,7 @@ export function createArt(onChange) {
         : { title: '', artist: '', label: '' };
       if (coverSrc) {
         try {
-          const c = await loadSleeve(coverSrc);
+          const c = await loadSleeve(coverSrc, W / 2);
           if (token === this.token) this.install(c, meta, true);
           return;
         } catch { /* an unreadable picture: fall through to the drawn sleeve */ }

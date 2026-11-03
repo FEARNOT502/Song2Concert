@@ -493,13 +493,13 @@ function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
   people.forEach((p, i) => {
     const up = (p.cell ?? 0) > 0;
     const hs = p.h ?? 1;
-    // in the stands, held lower (sitting): at the chest, or raised to the
-    // height of the head (a seated head's top is about 1.25 m up), out in
+    // in the stands, held lower (sitting): at the chest, or raised no higher
+    // than the eyes (a seated eye is about 1.1 m over the tread), out in
     // front of the body towards the stage, where a seated hand holds it
     const jx = (rnd() - 0.5) * 0.3, jz = (rnd() - 0.5) * 0.2;
     if (p.seat) {
       const fx = p.turn != null ? Math.sin(p.turn) : 0, fz = p.turn != null ? Math.cos(p.turn) : 0;
-      pos[i * 3] = p.x + jx * 0.6 + fx * 0.28; pos[i * 3 + 1] = p.y + (up ? 1.2 : 0.82) * hs; pos[i * 3 + 2] = p.z + jz * 0.6 + fz * 0.28;
+      pos[i * 3] = p.x + jx * 0.6 + fx * 0.28; pos[i * 3 + 1] = p.y + (up ? 1.08 : 0.82) * hs; pos[i * 3 + 2] = p.z + jz * 0.6 + fz * 0.28;
     } else {
       pos[i * 3] = p.x + jx; pos[i * 3 + 1] = p.y + (up ? 1.95 : 1.3) * hs; pos[i * 3 + 2] = p.z + jz;
     }

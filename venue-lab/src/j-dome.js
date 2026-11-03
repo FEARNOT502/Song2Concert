@@ -123,7 +123,7 @@ function buildDome(ctx) {
   // half-height partitions between the boxes; the seats grey, not blue. Phi is
   // the angle from the centre-field line seen from home plate (the foul lines
   // at 45).
-  const BOX = { level: 'E', rows: [0], phi: [85, 115], per: 4 };
+  const BOX = { level: 'E', rows: [0, 1], phi: [85, 115], per: 4 };
   const inBox = (name, x, z, row) => {
     if (name !== BOX.level || !BOX.rows.includes(row)) return false;
     const f = Math.abs(Math.atan2(x, -z)) / DEG;

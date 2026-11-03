@@ -12,7 +12,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { APP, KELVIN, V3, std, concreteTex, ringTint, withRepeat } from '../core.js';
 import { lightPoints } from '../people.js';
 import { ampStack, drumKit, guitar, hoists, keyboardRig, micStand, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, blockGrid, crossThrust, floorBlocks, floorChairs, fixtureRow, flashOnCrowd, flashUnits, fohPosition, fromRow, maskingDrapes, paHang, runBlinders, runShow, runStrobes, screenHang, stageSet, subLine, thinRow } from '../show.js';
+import { bigCrowd, bigScreens, blockGrid, crossThrust, fixtureRow, flashOnCrowd, flashUnits, floorBlocks, floorChairs, fohPosition, fromRow, maskingDrapes, paHang, runBlinders, runShow, runStrobes, screenHang, stageRing, stageSet, subLine, thinRow } from '../show.js';
 import { buildStands } from '../stands.js';
 import { SSA_STANDS } from './ssa-data.js';
 
@@ -178,13 +178,14 @@ export function buildArena(ctx) {
     bottomAt: (x, z) => (Math.abs(x) < 16 ? DECK + 16 : stands.topAt(x, z)) });
 
   // ── stage ──
-  const deck = stageDeck({ w: 34, d: 15, h: DECK, z: 8.5 + SZ });
+  const deck = stageDeck({ w: 34, d: 15, h: DECK, z: 8.5 + SZ, lip: false });
   root.add(deck);
   for (const s of [-1, 1]) root.add(stageSteps({ x: s * 17.75, z: 16 + SZ, h: DECK, dir: [0, -1] }));
   // the runway out to a cross on the floor: a walkway either side two-thirds
   // of the way, the runway on past it to a square end stage in the middle
   const RW0 = 16 + SZ, RW1 = 52, CZ = 38;
   const cross = crossThrust(root, { z0: RW0, z1: RW1, w: 3.6, crossZ: CZ, crossD: 3.6, crossW: 12, tip: 6, h: DECK });
+  const ringM = stageRing(root, [{ x: 0, z: 8.5 + SZ, w: 34, d: 15, h: DECK, back: true }, ...cross.parts]);
   // one wide wall across the set (an arena tour's panoramic LED), and the
   // IMAG either side for the far end of the room
   const WW = 30, WH = 10.5;
@@ -309,7 +310,7 @@ export function buildArena(ctx) {
       runShow(rig, washes, f, { house: V3(0, 0, 18 + SZ), stage: STAGE, span: 20, strobe: false });
       runShow(rig, ups, f, { house: V3(0, 30, 40), stage: STAGE, up: true });
       washes.forEach(({ fx }) => { fx.angle = 0.3; });
-      front1.intensity = 26000 * show + 4000 * f.house;
+      front1.intensity = 26000 * show;   // (not with the house up: it lit the runway white)
       front2.intensity = 9000 * show;
       stageWash.color.copy(f.pal.a); stageWash.intensity = (5000 + 6000 * f.energy + 3000 * f.kick) * show;
       fill.forEach((l, i) => { l.color.copy(i ? f.pal.b : f.pal.a); l.intensity = (120 + 300 * f.energy) * show; });
@@ -317,7 +318,7 @@ export function buildArena(ctx) {
       houseFix.forEach((h) => { h.intensity = 1.5 * f.house; });
       hzWash[0].color.copy(f.pal.a); hzWash[1].color.copy(f.pal.b); hzWash[2].color.copy(f.pal.d);
       hzWash.forEach((h, i) => { h.power = (i < 2 ? 260 : 120) * (0.4 + 0.6 * f.energy + 0.3 * f.kick) * show; });
-      ringTint(deck.userData.lip.color, f.pal.a).multiplyScalar((0.6 + 0.8 * f.kick) * show + 0.2);
+      ringTint(ringM.color, f.pal.a).multiplyScalar((0.6 + 0.8 * f.kick) * show + 0.2);
       cu.uRimColor.value.copy(f.pal.a).lerp(new THREE.Color(1, 1, 1), 0.3).multiplyScalar((0.22 + 0.25 * f.kick) * show);
       cu.uStage.value.set(0, 10, 4 + SZ);
       cu.uWash.value.copy(f.pal.b).multiplyScalar(0.012 * show + 0.2 * f.house);
