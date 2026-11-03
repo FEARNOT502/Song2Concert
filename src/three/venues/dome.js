@@ -850,7 +850,8 @@ export function buildDome(ctx) {
   // a box of screens under it (roundStage), the field seated round it in
   // blocks facing it, four delay towers on the diagonals, FOH towards home.
   function domeRound() {
-    const RC = roundStage(ctx, root, { c: STAGE, w: 16, d: 40, deck: DECK, top: 27, box: [22, 11], follow: 75, followY: 26 });
+    // (a runway 8 m wide out from each end, towards home and centre field)
+    const RC = roundStage(ctx, root, { c: STAGE, w: 16, d: 40, deck: DECK, top: 27, box: [22, 11], follow: 75, followY: 26, runway: { w: 8, len: 22 } });
     const inF = (x, z) => inRing(fieldRing, x, z) && inRing(fieldRing, -x, z);
     const edgeD = (x, z) => {
       let m = Infinity;

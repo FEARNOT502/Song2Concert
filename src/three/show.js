@@ -969,17 +969,35 @@ export function bigCrowd(root, cu, q, people, { seed = 21 } = {}) {
 // followspots from four sides of the house. `c` is the stage's middle on the
 // floor; `top` the roof's height. Returns the parts the venue runs each frame
 // (`run(f)`), what the floor's crowd keeps clear of (`inside(x, z, pad)`) and
-// the stage's middle at deck height (`stage`).
-export function roundStage(ctx, root, { c, w = 16, d = 40, deck = 2.2, top = 26, box = [20, 10], follow = 70, followY = 24 }) {
+// the stage's middle at deck height (`stage`). `runway` ({ w, len }): a
+// narrower runway out from each end, along the field.
+export function roundStage(ctx, root, { c, w = 16, d = 40, deck = 2.2, top = 26, box = [20, 10], follow = 70, followY = 24, runway = null }) {
   const { q } = ctx;
   const M = mats();
   const stage = V3(c.x, deck, c.z);
-  root.add(stageDeck({ w, d, h: deck, z: c.z, x: c.x, lip: false }));
-  const ringM = stageRing(root, [{ x: c.x, z: c.z, w, d, h: deck }]);
-  for (const s of [-1, 1]) root.add(stageSteps({ x: c.x + 3, z: c.z + s * (d / 2 + Math.ceil(deck / 0.2) * 0.28 + 0.05), h: deck, dir: [0, -s], width: 2 }));
-  // the barrier, 2.5 m out all round
+  const rects = [{ x: c.x, z: c.z, w, d, h: deck }];
+  const RW = runway ? runway.w : w, RL = runway ? runway.len : 0, ends = d / 2 + RL;
+  if (runway) for (const s of [-1, 1]) rects.push({ x: c.x, z: c.z + s * (d / 2 + RL / 2), w: RW, d: RL, h: deck });
+  for (const r of rects) root.add(stageDeck({ w: r.w, d: r.d, h: deck, z: r.z, x: r.x, lip: false }));
+  const ringM = stageRing(root, rects);
+  for (const s of [-1, 1]) root.add(stageSteps({ x: c.x, z: c.z + s * (ends + Math.ceil(deck / 0.2) * 0.28 + 0.05), h: deck, dir: [0, -s], width: 2 }));
+  // the barrier, 2.5 m out all round the stage and its runways
   const PIT = 2.5, BX = w / 2 + PIT, BZ = d / 2 + PIT;
-  {
+  if (runway) {
+    // round the outline (the stage, the runways off its ends), each corner
+    // moved PIT out from both its sides
+    const out = (x, z) => [Math.sign(x) * (Math.abs(x) + PIT), Math.sign(z) * (Math.abs(z) + PIT)];
+    const P = [[-RW / 2, -ends], [RW / 2, -ends], [RW / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [RW / 2, d / 2], [RW / 2, ends], [-RW / 2, ends], [-RW / 2, d / 2], [-w / 2, d / 2], [-w / 2, -d / 2], [-RW / 2, -d / 2]].map(([x, z]) => out(x, z));
+    const bar = [];
+    for (let i = 0; i < P.length; i++) {
+      const [x0, z0] = P[i], [x1, z1] = P[(i + 1) % P.length];
+      const len = Math.hypot(x1 - x0, z1 - z0), yaw = -Math.atan2(z1 - z0, x1 - x0);
+      for (const y of [0.25, 1.1]) { const b = new THREE.BoxGeometry(len, 0.05, 0.05); b.rotateY(yaw); b.translate(c.x + (x0 + x1) / 2, y, c.z + (z0 + z1) / 2); bar.push(b); }
+      const n = Math.max(1, Math.round(len / 0.5));
+      for (let k = 0; k <= n; k++) { const b = new THREE.BoxGeometry(0.03, 0.85, 0.03); b.translate(c.x + x0 + (x1 - x0) * k / n, 0.68, c.z + z0 + (z1 - z0) * k / n); bar.push(b); }
+    }
+    root.add(new THREE.Mesh(mergeGeometries(bar), M.alu));
+  } else {
     const bar = [];
     const run = (x0, z0, x1, z1) => {
       const len = Math.hypot(x1 - x0, z1 - z0), yaw = -Math.atan2(z1 - z0, x1 - x0);
@@ -1064,7 +1082,8 @@ export function roundStage(ctx, root, { c, w = 16, d = 40, deck = 2.2, top = 26,
     [TX + 0.8, TZ + 0.8, Math.PI / 4, 14], [-TX - 0.8, TZ + 0.8, -Math.PI / 4, 14], [TX + 0.8, -TZ - 0.8, 3 * Math.PI / 4, 14], [-TX - 0.8, -TZ - 0.8, -3 * Math.PI / 4, 14]]) {
     paHang(root, { x: c.x + x, y: RY - 0.8, z: c.z + z, boxes, width: 1.3, yaw, roofY: top - 0.8 });
   }
-  const inside = (x, z, pad = 0) => Math.abs(x - c.x) < BX + pad && Math.abs(z - c.z) < BZ + pad;
+  const inside = (x, z, pad = 0) => (Math.abs(x - c.x) < BX + pad && Math.abs(z - c.z) < BZ + pad)
+    || (runway && Math.abs(x - c.x) < RW / 2 + PIT + pad && Math.abs(z - c.z) < ends + PIT + pad);
   // the show each frame; `lift` the venue's brightness for its own size
   const run = (f, { follow: fl = 60000, wash = 14000 } = {}) => {
     const show = 1 - f.house;
