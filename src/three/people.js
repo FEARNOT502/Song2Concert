@@ -579,21 +579,23 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
         int i = int(mod(k, 5.0));
         return i == 0 ? uPal[0] : i == 1 ? uPal[1] : i == 2 ? uPal[2] : i == 3 ? uPal[3] : mix(vec3(1.0), uPal[0], 0.15);
       }
-      // scene s: which colour this stick's level takes (k turns them over).
-      // A level is always one colour: the floor one, each tier of the stands
-      // one, as a house is run from the desk tier by tier.
+      // scene s: which colour this stick's block takes (k turns them over).
+      // A block is always one colour: each block of the stands and of the
+      // floor its own, as a house is run from the desk block by block.
       vec3 sceneCol(float s, float k) {
         float sd = s * 1.37 + uLook * 7.1;
         float lay = floor(h1(sd) * 5.0);
         float c0 = floor(h1(sd + 3.3) * 4.0), st = 1.0 + floor(h1(sd + 5.9) * 3.0);
-        // most scenes keep to the sleeve's colours; some light one tier white
+        // most scenes keep to the sleeve's colours; some light a set of blocks white
         float wht = step(h1(sd + 8.1), 0.25);
-        float lv = aZone.x;
-        float idx = lay < 0.5 ? lv                                   // every level its own colour
-                  : lay < 1.5 ? mod(lv, 2.0)                         // levels alternating
-                  : lay < 2.5 ? (lv < 0.5 ? 1.0 : 0.0)               // the floor against the stands
-                  : lay < 3.5 ? (lv < 0.5 ? 0.0 : 1.0 + mod(lv + 1.0, 2.0)) // the floor, then the tiers in two
-                  : 0.0;                                             // the whole house as one
+        float lv = aZone.x, bk = aZone.z;
+        // block by block, as a house is run from the desk: never a whole
+        // level as one
+        float idx = lay < 0.5 ? mod(bk, 4.0)                         // every block its own, four colours round
+                  : lay < 1.5 ? mod(bk, 2.0)                         // blocks alternating
+                  : lay < 2.5 ? mod(bk + lv, 2.0)                    // alternating, and against the level below
+                  : lay < 3.5 ? mod(bk + lv, 3.0)                    // three colours stepping round and up
+                  : (lv < 0.5 ? 2.0 : mod(bk, 2.0));                 // the floor one, the stands' blocks alternating
         float ci = c0 + (idx + k) * st;
         if (wht > 0.5 && mod(idx + k, 3.0) == 2.0) return col(4.0);
         return col(ci);
@@ -616,7 +618,7 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
         if (sec < 1.5) {
           // verse: the scene, each level breathing once in eight beats, out
           // of step with the level below
-          return sc * (0.5 + 0.22 * sin(ph * 0.785 + lv * 1.6));
+          return sc * (0.5 + 0.22 * sin(ph * 0.785 + lv * 1.6 + aZone.z * 0.9));
         }
         if (sec < 2.5) {
           // pre-chorus: a chase up the levels, floor to the top and round
@@ -646,7 +648,7 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
         }
         if (sec < 5.5) {
           // break: one colour, dim, the levels swelling one after another
-          return col(floor(h1(s * 1.37 + uLook * 7.1 + 3.3) * 4.0)) * (0.22 + 0.16 * sin(lv * 1.3 - ph * 0.393));
+          return col(floor(h1(s * 1.37 + uLook * 7.1 + 3.3) * 4.0)) * (0.22 + 0.16 * sin(lv * 1.3 + aZone.z * 0.7 - ph * 0.393));
         }
         if (sec < 6.5) {
           // bridge: two colours of its own, flipped each bar, a pulse running
