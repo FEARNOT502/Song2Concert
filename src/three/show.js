@@ -1175,13 +1175,16 @@ export function roundBlocks({ c, hd, x0, x1, z0, z1, skip, size = 8.6, aisle = 1
 // brought in until it stands on the floor (`ok`) clear of its edge by `clear`.
 // With `cell` (roundBlocks' block and aisle), each in the middle of a block's
 // place on the grid, so it takes one block whole and leaves the rest square.
-export function diagonalTowers(c, { r = 48, ax = 0.6, az = 0.8, ok, cell = 0 }) {
-  const out = [];
+// Each pair is set out as mirror images across the field's long axis (both
+// must stand); `same` sets all four the same distance out.
+export function diagonalTowers(c, { r = 48, ax = 0.6, az = 0.8, ok, cell = 0, same = false }) {
   const snap = (v, o) => (cell ? o + (Math.round((v - o) / cell - 0.5) + 0.5) * cell : v);
-  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-    let k = r, p;
-    do { p = [snap(c.x + sx * ax * k, c.x), snap(c.z + sz * az * k, c.z)]; k -= 0.5; } while (k > 20 && !ok(...p));
-    out.push(p);
-  }
+  const at = (sz, k) => [snap(c.x + ax * k, c.x), snap(c.z + sz * az * k, c.z)];
+  const fits = (sz, k) => { const [x, z] = at(sz, k); return ok(x, z) && ok(2 * c.x - x, z); };
+  const reach = (sz) => { let k = r; while (k > 20 && !fits(sz, k)) k -= 0.5; return k; };
+  let ks = [reach(-1), reach(1)];
+  if (same) { const k = Math.min(...ks); ks = [k, k]; }
+  const out = [];
+  [-1, 1].forEach((sz, j) => { const [x, z] = at(sz, ks[j]); out.push([2 * c.x - x, z], [x, z]); });
   return out;
 }

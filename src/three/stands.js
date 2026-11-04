@@ -286,20 +286,26 @@ export function roomMaterials(materials) {
 // A level's blocks by its aisles: each seat placed along the level by the
 // nearest point of its front row (its seats in order round the level's
 // middle, the distance along them), so an aisle square to the front, or one
-// fanning round a corner, keeps one place all the way up. The aisles are
-// where hardly a seat sits at that place in any row; a block is the run of
-// seats between two, one narrower than `minW` joining its neighbour. Blocks
+// fanning round a corner, keeps one place all the way up. The aisles are the
+// places the rows keep breaking at; a block is the run of seats between two,
+// one narrower than `minW` (a few seats
+// by a vomitory) joining its neighbour. Blocks
 // numbered in order along the level, so neighbours alternate.
-export function aisleBlocks(S, sk, ox, oz, { bin = 0.3, minW = 3 } = {}) {
+export function aisleBlocks(S, sk, ox, oz, { bin = 0.25, minW = 5 } = {}) {
   const n = S.length / 4;
   const X = new Float64Array(n), Z = new Float64Array(n), R = new Int32Array(n);
-  let cx = 0, cz = 0, r0 = Infinity;
-  for (let k = 0; k < n; k++) { X[k] = S[k * 4] / sk + ox; Z[k] = S[k * 4 + 1] / sk + oz; R[k] = S[k * 4 + 2]; cx += X[k]; cz += Z[k]; r0 = Math.min(r0, R[k]); }
+  let cx = 0, cz = 0;
+  for (let k = 0; k < n; k++) { X[k] = S[k * 4] / sk + ox; Z[k] = S[k * 4 + 1] / sk + oz; R[k] = S[k * 4 + 2]; cx += X[k]; cz += Z[k]; }
   cx /= n; cz /= n;
-  // the front row's seats in order round the middle, thinned to one a metre
-  const fr = [];
-  for (let k = 0; k < n; k++) if (R[k] === r0) fr.push([X[k], Z[k], Math.atan2(X[k] - cx, Z[k] - cz)]);
-  fr.sort((a, b) => a[2] - b[2]);
+  // the front: at each half degree round the middle, its nearest seat; in
+  // order round, thinned to one a metre
+  const nearest = new Map();
+  for (let k = 0; k < n; k++) {
+    const a = Math.atan2(X[k] - cx, Z[k] - cz), key = Math.round(a / 0.0087), d = (X[k] - cx) ** 2 + (Z[k] - cz) ** 2;
+    const o = nearest.get(key);
+    if (!o || d < o[3]) nearest.set(key, [X[k], Z[k], a, d]);
+  }
+  const fr = [...nearest.values()].sort((a, b) => a[2] - b[2]);
   const ring = [];
   for (const p of fr) if (!ring.length || Math.hypot(p[0] - ring[ring.length - 1][0], p[1] - ring[ring.length - 1][1]) > 1) ring.push(p);
   const arc = [0];
@@ -321,15 +327,27 @@ export function aisleBlocks(S, sk, ox, oz, { bin = 0.3, minW = 3 } = {}) {
   }
   let lo = Infinity, hi = -Infinity;
   for (let k = 0; k < n; k++) { lo = Math.min(lo, along[k]); hi = Math.max(hi, along[k]); }
-  const nb = Math.max(1, Math.ceil((hi - lo) / bin) + 1), hist = new Float64Array(nb);
-  for (let k = 0; k < n; k++) hist[Math.floor((along[k] - lo) / bin)]++;
-  const sorted = [...hist].filter((v) => v > 0).sort((a, b) => a - b), med = sorted[sorted.length >> 1] || 1;
-  // the aisles: bins nearly empty; a cut at the middle of each run of them
+  // the aisles: where the rows break. In each row, every break between two
+  // seats wider than a seat's pitch is counted at its place; a place where
+  // the rows break again and again (in a quarter of them, or 3) is an aisle
+  const rows = new Map();
+  for (let k = 0; k < n; k++) { if (!rows.has(R[k])) rows.set(R[k], []); rows.get(R[k]).push(along[k]); }
+  const nb = Math.max(1, Math.ceil((hi - lo) / bin) + 1), hist = new Float64Array(nb), cov = new Float64Array(nb);
+  for (const r of rows.values()) {
+    r.sort((p, q) => p - q);
+    for (let i = Math.floor((r[0] - lo) / bin); i <= Math.floor((r[r.length - 1] - lo) / bin); i++) cov[i]++;
+    for (let i = 1; i < r.length; i++) if (r[i] - r[i - 1] > 0.8) hist[Math.floor(((r[i] + r[i - 1]) / 2 - lo) / bin)]++;
+  }
+  // (smoothed over a metre either way: an aisle's place wanders a little row to row)
+  const w = Math.round(1 / bin), sm = new Float64Array(nb);
+  for (let i = 0; i < nb; i++) for (let d = -w; d <= w; d++) if (i + d >= 0 && i + d < nb) sm[i] += hist[i + d];
+  // (three in ten of the rows that reach that place)
+  const need = (i) => Math.max(3, cov[i] * 0.3);
   const cuts = [];
   for (let i = 0; i < nb;) {
-    if (hist[i] > med * 0.2) { i++; continue; }
-    let e = i; while (e < nb && hist[e] <= med * 0.2) e++;
-    cuts.push(lo + (i + e) / 2 * bin);
+    if (sm[i] < need(i)) { i++; continue; }
+    let e = i, pk = i; while (e < nb && sm[e] >= need(e)) { if (sm[e] > sm[pk]) pk = e; e++; }
+    cuts.push(lo + (pk + 0.5) * bin);
     i = e;
   }
   // blocks too narrow join the one after (or before, at the end)

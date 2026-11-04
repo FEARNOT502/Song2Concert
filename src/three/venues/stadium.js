@@ -784,7 +784,7 @@ export function buildStadium(ctx) {
       return m;
     };
     // (on the pitch, 10 m clear of its edge)
-    const DTR = diagonalTowers(STAGE, { r: 56, ax: 0.6, az: 0.8, cell: 10, ok: (x, z) => inF(x, z) && Math.min(edgeD(x, z), edgeD(-x, z)) > 10 });
+    const DTR = diagonalTowers(STAGE, { r: 56, ax: 0.6, az: 0.8, cell: 10, same: true, ok: (x, z) => inF(x, z) && Math.min(edgeD(x, z), edgeD(-x, z)) > 10 });
     const towerLights = [];
     for (const [x, z] of DTR) towerLights.push(...delayTower(root, { x, z, h: 34, boxes: 18, width: 1.3, yaw: Math.atan2(x - STAGE.x, z - STAGE.z) }));
     const rig = ctx.rig({ finish: 'black' });

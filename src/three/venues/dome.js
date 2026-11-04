@@ -871,7 +871,8 @@ export function buildDome(ctx) {
     // (on the field, 12 m clear of its edge: never into the stands)
     const DTR = diagonalTowers(STAGE, { r: 52, ax: 0.62, az: 0.78, cell: 10, ok: (x, z) => inF(x, z) && Math.min(edgeD(x, z), edgeD(-x, z)) > 12 });
     const towerLights = [];
-    for (const [x, z] of DTR) towerLights.push(...delayTower(root, { x, z, h: 30, boxes: 18, width: 1.3, yaw: Math.atan2(x - STAGE.x, z - STAGE.z) }));
+    // (the outfield's pair as high as the outfield stand they play to; home's to the 2nd floor)
+    for (const [x, z] of DTR) towerLights.push(...delayTower(root, { x, z, h: z < STAGE.z ? 20 : 30, boxes: z < STAGE.z ? 14 : 18, width: 1.3, yaw: Math.atan2(x - STAGE.x, z - STAGE.z) }));
     const rig = ctx.rig({ finish: 'black' });
     const tw = fixtureRow(q, towerLights.length, (i) => ({ fx: rig.add({ pos: towerLights[i], kind: 'beam', length: 70, beamGain: 0.9 }), group: 5 }));
     // (well back from the runway's end, towards home)
