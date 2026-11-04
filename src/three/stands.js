@@ -288,9 +288,9 @@ export function roomMaterials(materials) {
 // aisle is further) and to the one straight in front or behind in the next
 // row (no more than `lat` off its line, within `depth`), never across a step
 // of the level's stairs (`steps`). A block is one group of seats held
-// together; groups of a few seats join the nearest big one. Numbered in order
+// together; groups of fewer than `minSeats` join the nearest big one. Numbered in order
 // round the level's middle, so neighbours alternate.
-export function aisleBlocks(S, sk, ox, oz, steps = [], { gap = 0.68, lat = 0.3, depth = 1.4, minSeats = 16 } = {}) {
+export function aisleBlocks(S, sk, ox, oz, steps = [], { gap = 0.68, lat = 0.3, depth = 1.4, minSeats = 60 } = {}) {
   const n = S.length / 4;
   const X = new Float64Array(n), Z = new Float64Array(n), R = new Int32Array(n), FX = new Float64Array(n), FZ = new Float64Array(n);
   let cx = 0, cz = 0;
@@ -327,7 +327,8 @@ export function aisleBlocks(S, sk, ox, oz, steps = [], { gap = 0.68, lat = 0.3, 
       const ex = X[j] - X[k], ez = Z[j] - Z[k];
       const al = Math.abs(ex * FZ[k] - ez * FX[k]), fw = Math.abs(ex * FX[k] + ez * FZ[k]);
       const dr = Math.abs(R[j] - R[k]);
-      const ok = (dr === 0 && al <= gap && fw < 0.3) || (dr === 1 && al <= lat && fw <= depth);
+      // (and facing the same way: a corner's fan, turned, is a block of its own)
+      const ok = FX[j] * FX[k] + FZ[j] * FZ[k] > 0.97 && ((dr === 0 && al <= gap && fw < 0.3) || (dr === 1 && al <= lat && fw <= depth));
       if (ok && !cross(X[k], Z[k], X[j], Z[j])) up[find(j)] = find(k);
     }
   }
@@ -379,7 +380,9 @@ export function aisleBlocks(S, sk, ox, oz, steps = [], { gap = 0.68, lat = 0.3, 
   if (bigSeats.length) for (let k = 0; k < n; k++) {
     if (big(piece[k])) continue;
     let best = bigSeats[0], bd = Infinity;
-    for (const j of bigSeats) { const d = (X[j] - X[k]) ** 2 + (Z[j] - Z[k]) ** 2; if (d < bd) { bd = d; best = j; } }
+    // (the nearest facing its way: a sliver beside a tunnel's mouth joins
+    // the block it sits in line with, not the corner's fan)
+    for (const j of bigSeats) { const d = (X[j] - X[k]) ** 2 + (Z[j] - Z[k]) ** 2 + (FX[j] * FX[k] + FZ[j] * FZ[k] > 0.97 ? 0 : 400); if (d < bd) { bd = d; best = j; } }
     piece[k] = piece[best];
   }
   // a level's cross-aisle (front to back) does not divide it: a group behind
@@ -407,6 +410,37 @@ export function aisleBlocks(S, sk, ox, oz, steps = [], { gap = 0.68, lat = 0.3, 
   }
   for (let k = 0; k < n; k++) piece[k] = root(piece[k]);
   for (const p of grp) { const r = root(p); if (r === p) continue; count.set(r, count.get(r) + count.get(p)); const m = mid.get(r), m2 = mid.get(p); m[0] += m2[0]; m[1] += m2[1]; }
+  // a block far wider than the level's others (a stretch whose aisles the
+  // data lacks) is cut into as many of their width as fit, along it
+  {
+    const mem2 = new Map();
+    for (let k = 0; k < n; k++) (mem2.get(piece[k]) || mem2.set(piece[k], []).get(piece[k])).push(k);
+    const wid = new Map();
+    for (const [p, ks] of mem2) {
+      const fx0 = ks.reduce((a, k) => a + FX[k], 0), fz0 = ks.reduce((a, k) => a + FZ[k], 0), l = Math.hypot(fx0, fz0) || 1;
+      // (measured along its rows: the length of its longest row)
+      const rows = new Map();
+      for (const k of ks) (rows.get(R[k]) || rows.set(R[k], []).get(R[k])).push(k);
+      let w = 0, best = null;
+      for (const r of rows.values()) { let a = 0; for (let i = 1; i < r.length; i++) a = Math.max(a, Math.hypot(X[r[i]] - X[r[0]], Z[r[i]] - Z[r[0]])); if (a > w) { w = a; best = r; } }
+      wid.set(p, { w, ks, fx: fx0 / l, fz: fz0 / l });
+    }
+    const ws = [...wid.values()].map((v) => v.w).sort((a, b) => a - b), med = ws[ws.length >> 1] || 0;
+    let next = n * 4;
+    for (const [p, v] of wid) {
+      if (!med || v.w < 2.5 * med) continue;
+      const parts = Math.round(v.w / med);
+      // along the level: each seat's bearing round the middle, or along its
+      // rows if it is straight
+      const a = Math.abs(v.ks.reduce((m, k) => Math.max(m, Math.abs(FX[k] * v.fz - FZ[k] * v.fx)), 0)) < 0.1
+        ? (k) => X[k] * v.fz - Z[k] * v.fx : (k) => Math.atan2(X[k] - cx, Z[k] - cz);
+      const as = v.ks.map(a).sort((x, y) => x - y), lo = as[0], hi = as[as.length - 1];
+      for (const k of v.ks) { piece[k] = next + Math.min(parts - 1, Math.floor((a(k) - lo) / (hi - lo + 1e-9) * parts)); }
+      for (let i = 0; i < parts; i++) { count.set(next + i, 0); mid.set(next + i, [0, 0]); }
+      for (const k of v.ks) { count.set(piece[k], count.get(piece[k]) + 1); const m = mid.get(piece[k]); m[0] += X[k]; m[1] += Z[k]; }
+      next += parts;
+    }
+  }
   const ang = (p) => { const m = mid.get(p), c = count.get(p); return Math.atan2(m[0] / c - cx, m[1] / c - cz); };
   const ids = [...new Set(piece)].sort((p, q) => ang(p) - ang(q));
   const num = new Map(ids.map((p, i) => [p, i]));
