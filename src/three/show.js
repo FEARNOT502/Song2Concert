@@ -714,11 +714,13 @@ export function paCorner(root, { px, pz, r = 2.5, yaws, boxes, bar, ...o }) {
 }
 // flown subs: a straight column of sub cabinets on its own fly bar
 export function subHang(root, o) { return paHang(root, { width: 1.3, ...o, depth: 1.0, height: 0.55, splay: 0 }); }
+// A pair of hangs with the flown subs between them: a speaker hang, a
+// column of subs, a speaker hang, side by side along the bar at (x, z)
 export function paPair(root, o) {
-  const a = paHang(root, o);
-  const g = (o.width ?? 1.3) + 0.3, yaw = o.yaw ?? 0;
-  paHang(root, { ...o, x: o.x - Math.cos(yaw) * g, z: o.z + Math.sin(yaw) * g, boxes: Math.round(o.boxes * 0.65), depth: 1.0, splay: 0.006 });
-  return a;
+  const w = o.width ?? 1.3, yaw = o.yaw ?? 0, g = (w + 1.3) / 2 + 0.3;
+  subHang(root, { ...o, boxes: Math.round(o.boxes * 0.6) });
+  const out = [-1, 1].map((s) => paHang(root, { ...o, x: o.x + s * Math.cos(yaw) * g, z: o.z - s * Math.sin(yaw) * g }));
+  return out[0];
 }
 
 // A screen's rigging: a truss along its top edge (`y` the top, `z` its face,
@@ -806,18 +808,22 @@ export function delayTower(root, { x, z, h, boxes = 16, width = 1.3, from }) {
   latticeInto(steel, V3(x, 0, z), V3(x, h, z), 1.6, 0.07);
   // the outriggers to the ballast, four ways
   for (const [dx, dz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) latticeInto(steel, V3(x + dx * 3.2, 0.3, z + dz * 3.2), V3(x + dx * 0.6, h * 0.3, z + dz * 0.6), 0.4, 0.03);
-  // the head: a short truss out over each of the tower's two outer faces
-  // (the ones turned away from the stage, `from`) and one out across the
-  // corner between them, an array hung from the end of each, aimed straight
-  // out along it: three ways out over the house behind
-  const sx = Math.sign(x - from.x) || 1, sz = Math.sign(z - from.z) || 1;
-  const faces = [[sx, 0], [sx * Math.SQRT1_2, sz * Math.SQRT1_2], [0, sz]];
-  for (const [fx, fz] of faces) latticeInto(steel, V3(x - fx * 0.8, h, z - fz * 0.8), V3(x + fx * 2.0, h, z + fz * 2.0), 0.8, 0.05);
+  // the head: a square roof of truss on the column's top, 7 m a side, with
+  // a skin over it, and the arrays hung under it: two, side by side, turned
+  // a little either way off the line out from the stage (`from`) to the
+  // house behind
+  const Hs = 3.5;
+  const C = [[-Hs, -Hs], [Hs, -Hs], [Hs, Hs], [-Hs, Hs]].map(([a, b]) => V3(x + a, h, z + b));
+  for (let i = 0; i < 4; i++) latticeInto(steel, C[i], C[(i + 1) % 4], 0.6, 0.04);
+  for (const c of C) latticeInto(steel, V3(x, h, z), c, 0.6, 0.04);
   root.add(new THREE.Mesh(mergeGeometries(steel), M.trussBlack));
+  const skin = new THREE.Mesh(new THREE.BoxGeometry(2 * Hs + 0.6, 0.15, 2 * Hs + 0.6), std({ color: 0x0a0a0c, roughness: 0.85 }));
+  skin.position.set(x, h + 0.38, z); skin.userData.beamStop = true; root.add(skin);
   const base = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.3, 7.2), std({ color: 0x1a1b1e, roughness: 0.8 }));
   base.position.set(x, 0.15, z); root.add(base);
-  for (const [fx, fz] of faces) paHang(root, { x: x + fx * 1.9, y: h - 1.1, z: z + fz * 1.9, boxes, width, yaw: Math.atan2(fx, fz), splay: 0.025, roofY: h - 0.4 });
-  return [-1.6, -0.55, 0.55, 1.6].map((d) => V3(x + d * Math.abs(sz) * 0.7, h + 0.7, z + d * 0.7));
+  const out = Math.atan2(x - from.x, z - from.z);
+  for (const a of [out - 0.45, out + 0.45]) paHang(root, { x: x + Math.sin(a) * 2.8, y: h - 1.1, z: z + Math.cos(a) * 2.8, boxes, width, yaw: a, splay: 0.01, roofY: h - 0.3 });
+  return [-1.6, -0.55, 0.55, 1.6].map((d) => V3(x + d * Math.cos(out), h + 0.7, z - d * Math.sin(out)));
 }
 
 // A ground-supported set for a big stage: two lattice towers carrying a header

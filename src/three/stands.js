@@ -1151,7 +1151,7 @@ export function buildStands(data, {
   offset = V3(0, 0, 0), stage = V3(0, 2, 0), seatColors = {}, seatColor = 0x22262e,
   concreteTone = 0.22, sold = () => true, occupancy = 0.97, seed = 5, roofY = 36, crowd = true,
   materials = {}, seatMesh = null, seatColorAt = null, tiers = null, wedges = null,
-  seatKeep = null, byAisle = false, sectors = null,
+  seatKeep = null, byAisle = false, sectors = null, sectorSplit = false, sectorMin = 0.3, sectorWhole = 0.35,
 }) {
   const g = new THREE.Group();
   const ox = offset.x, oz = offset.z;
@@ -1573,15 +1573,19 @@ export function buildStands(data, {
       lines.sort((x, y) => x.m - y.m);
       // where each line crosses the circle a seat sits on round the middle (its
       // own bearing if it never gets there), and the run the seat falls in
+      // (unwrapped about the line's own bearing, so one near the back's seam stays there)
+      const cross = (k, r) => {
+        const L2 = lines[(k + lines.length) % lines.length], ox2 = L2.cx - mx, oz2 = L2.cz - mz;
+        const bq = ox2 * L2.ux + oz2 * L2.uz, cq = ox2 * ox2 + oz2 * oz2 - r * r, D = bq * bq - cq;
+        const tk = D < 0 ? L2.m : (() => { const s2 = -bq + Math.sqrt(D); return Math.atan2(ox2 + L2.ux * s2, oz2 + L2.uz * s2); })();
+        return L2.m + dA(tk, L2.m);
+      };
+      // (in order round: a line that crosses its neighbour nearer the middle
+      // is held at it, so the wedge between closes rather than turns over)
       const cut = (p) => {
         const r = Math.hypot(p.x - mx, p.z - mz), t = Math.atan2(p.x - mx, p.z - mz);
-        for (let k = 0; k < lines.length; k++) {
-          const L2 = lines[k], ox2 = L2.cx - mx, oz2 = L2.cz - mz;
-          const bq = ox2 * L2.ux + oz2 * L2.uz, cq = ox2 * ox2 + oz2 * oz2 - r * r, D = bq * bq - cq;
-          const tk = D < 0 ? L2.m : (() => { const s2 = -bq + Math.sqrt(D); return Math.atan2(ox2 + L2.ux * s2, oz2 + L2.uz * s2); })();
-          // (unwrapped about the line's own bearing, so one near the back's seam stays there)
-          if (L2.m + dA(tk, L2.m) >= t) return k;
-        }
+        let last = -Infinity;
+        for (let k = 0; k < lines.length; k++) { last = Math.max(last, cross(k, r)); if (last >= t) return k; }
         return 0;
       };
       const baseCut = base.map((p) => cut(p));
@@ -1601,24 +1605,68 @@ export function buildStands(data, {
       }
       const of = new Map();
       runs.forEach((r, i) => r.ks.forEach((k) => of.set(k, i)));
-      const n = runs.length;
-      // numbered round from the widest gap between them (the open end)
+      // each run's middle bearing; and (`sectorSplit`) a run far bigger than
+      // the usual (a corner's fan, all one block on the level below) cut into
+      // pieces of the usual size, as many as it holds
       const ms = runs.map(() => [0, 0]);
       base.forEach((p, i) => { const r = of.get(baseCut[i]); ms[r][0] += Math.sin(ang(p)); ms[r][1] += Math.cos(ang(p)); });
-      const mid = ms.map(([sx, sz]) => Math.atan2(sx, sz));
-      const order = mid.map((t, i) => [t, i]).sort((x, y) => x[0] - y[0]);
+      const rm = ms.map(([sx, sz]) => Math.atan2(sx, sz));
+      // (cut evenly between the aisle lines either side of it, so the pieces
+      // run as the wedges do)
+      const parts = runs.map((r) => (sectorSplit && r.n > med * 1.6 ? Math.round(r.n / med) : 1));
+      const pieces = [];
+      runs.forEach((r, i) => { for (let j = 0; j < parts[i]; j++) pieces.push({ run: i, j, mid: rm[i] + (j + 0.5 - parts[i] / 2) * 0.01 }); });
+      const n = pieces.length;
+      const at0 = new Map(pieces.map((q, i) => [q.run + ':' + q.j, i]));
+      // numbered round from the widest gap between them (the open end)
+      const order = pieces.map((q, i) => [Math.atan2(Math.sin(q.mid), Math.cos(q.mid)), i]).sort((x, y) => x[0] - y[0]);
       let gap = -1, at = 0;
       order.forEach(([t], j) => { const nx = order[(j + 1) % n][0]; const g = (nx - t + 2 * Math.PI) % (2 * Math.PI); if (g > gap) { gap = g; at = (j + 1) % n; } });
       const num = new Map(order.map(([, i], j) => [i, (j - at + n) % n]));
       // a seat on any level off the base's bearings goes to the nearest run
       const wedge = (p) => {
         const k = cut(p), t = ang(p);
-        if (of.has(k)) return num.get(of.get(k));
-        let best = 0, bd = Infinity;
-        mid.forEach((m, i) => { const d = Math.abs(dA(t, m)); if (d < bd) { bd = d; best = i; } });
-        return num.get(best);
+        let r = of.get(k);
+        if (r == null) {
+          let bd = Infinity;
+          rm.forEach((m, i) => { const d = Math.abs(dA(t, m)); if (d < bd) { bd = d; r = i; } });
+        }
+        let j = 0;
+        if (parts[r] > 1) {
+          const ks = runs[r].ks, rr = Math.hypot(p.x - mx, p.z - mz);
+          const tl = cross(Math.min(...ks) - 1, rr), tr = cross(Math.max(...ks), rr), w = dA(tr, tl);
+          j = Math.max(0, Math.min(parts[r] - 1, Math.floor(dA(t, tl) / (w || 1) * parts[r])));
+        }
+        return num.get(at0.get(r + ':' + j));
       };
       for (const p of seated) { const w = wedge(p); p.zone = { ...p.zone, block: w, u: n > 1 ? w / (n - 1) : 0.5 }; }
+      // a block of its own level's (between its own aisles) stays in one
+      // wedge but where a good share of it (`sectorWhole` and more) lies
+      // across the line: the odd corner of it over the line goes with the rest
+      const groups = new Map();
+      for (const p of seated) { const g = p.lvRaw * 4096 + p.block; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(p); }
+      for (const ps of groups.values()) {
+        const c = new Map();
+        for (const p of ps) c.set(p.zone.block, (c.get(p.zone.block) || 0) + 1);
+        const [top] = [...c].sort((x, y) => y[1] - x[1])[0];
+        for (const p of ps) if (p.zone.block !== top && c.get(p.zone.block) < sectorWhole * ps.length) p.zone = { ...p.zone, block: top, u: n > 1 ? top / (n - 1) : 0.5 };
+      }
+      // a wedge left with only a scrap of the house (under `sectorMin` of
+      // the usual) goes in with the smaller of the wedges beside it; then
+      // numbered round again without gaps
+      const tally = () => { const c = new Map(); for (const p of seated) c.set(p.zone.block, (c.get(p.zone.block) || 0) + 1); return c; };
+      let cnt2 = tally();
+      const usual = [...cnt2.values()].sort((x, y) => x - y)[cnt2.size >> 1] || 1;
+      for (const [w, k] of [...cnt2].sort((x, y) => x[1] - y[1])) {
+        if (k >= usual * sectorMin || !cnt2.has(w)) continue;
+        const nb = [w - 1, w + 1].map((v) => (v + n) % n).filter((v) => cnt2.has(v) && v !== w);
+        if (!nb.length) continue;
+        const into = nb.sort((x, y) => cnt2.get(x) - cnt2.get(y))[0];
+        for (const p of seated) if (p.zone.block === w) p.zone.block = into;
+        cnt2 = tally();
+      }
+      const left = [...cnt2.keys()].sort((x, y) => x - y), re = new Map(left.map((w, i) => [w, i]));
+      for (const p of seated) { const w = re.get(p.zone.block); p.zone = { ...p.zone, block: w, u: left.length > 1 ? w / (left.length - 1) : 0.5 }; }
     }
   }
   // what the walker sits down in

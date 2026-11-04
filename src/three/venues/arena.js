@@ -44,6 +44,9 @@ function arenaRoom(ctx, { stage, sold }) {
     byAisle: true,
     // (one wedge across every level, cut where the 200 level's aisles run)
     sectors: ['200'],
+    // (round a centre stage, the corners' fans and the balconies over them
+    // one block each: the scraps the fans' aisles cut off go in with them)
+    sectorMin: ctx.mode === '360' ? 0.6 : 0.3,
     offset: V3(0, 0, OZ), stage, seed: 200, concreteTone: 0.2, roofY: H,
     seatColors: { 200: 0x1c1d22, 300: 0xc8341e, 400: 0x1c1d22, 500: 0x1c1d22, '300S': 0x2a1d17 },
     // the 300 level, the VIP balcony: red seats in boxes behind a dark mesh
@@ -543,7 +546,9 @@ function arenaRound(ctx) {
   // the FOH riser kept clear; every seat in the stands taken
   const clear = (x, z) => [[0, 0], [1.2, 0], [-1.2, 0], [0, 1.2], [0, -1.2]].every(([dx, dz]) => stands.topAt(x + dx, z + dz) < 0.05);
   const avoid = (x, z) => (Math.abs(x) < BX + 0.4 && Math.abs(z - OZ) < BZ + 0.4) || (Math.abs(x - eye.x) < 4.4 && Math.abs(z - eye.z) < 3.6);
-  const standing = packFloor({ x0: -30, x1: 30, z0: OZ - 44, z1: OZ + 44, avoid, inside: clear, seed: 245 });
+  // (kept to the floor itself, as the seated layout is: none out into the
+  // tunnels' mouths at the corners)
+  const standing = packFloor({ x0: -29.2, x1: 29.2, z0: OZ - 39.5, z1: OZ + 39.5, avoid, inside: clear, seed: 245 });
   bigCrowd(root, cu, q, standing.concat(stands.people.map((p) => ({ ...p, h: 0.97 }))), { seed: 21, round: C });
   const aisleField = lightPoints(stands.aisleLights.map((a) => ({ ...a, white: true, size: 0.03 })), cu, { maxPx: 3 });
   aisleField.material.uniforms.uGain.value = 0.3;
