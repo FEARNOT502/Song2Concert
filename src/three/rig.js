@@ -196,6 +196,13 @@ export class Rig {
     this.lights = [];
     this.finish = finish;
     this.group = new THREE.Group();
+    // what a beam stops on (the stage roof, the LED boxes, the screens), each
+    // { box, inv, mat } in its own frame, set by the stage once the room is
+    // up; and how far a moving head's beam reaches in the open air, so it
+    // fades out into the haze rather than ending short in mid-air (0: its own
+    // length)
+    this.blockers = []; this.reach = 0;
+    this._ray = new THREE.Ray(); this._hit = V3(); this._o = V3();
     this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._s = V3(1, 1, 1); this._p = V3();
   }
   // kind: 'spot' (moving head spot), 'beam' (tight beam), 'wash', 'profile'
@@ -224,6 +231,17 @@ export class Rig {
     return spot;
   }
   aim(f, target) { f.dir.copy(target).sub(f.pos).normalize(); }
+  // how far a beam from `o` along `d` runs before it meets a blocker (up to `len`)
+  clip(o, d, len) {
+    const R = this._ray, H = this._hit, L = this._o;
+    for (const b of this.blockers) {
+      L.copy(o).applyMatrix4(b.inv);
+      if (b.box.containsPoint(L)) continue;
+      R.origin.copy(L); R.direction.copy(d).transformDirection(b.inv);
+      if (R.intersectBox(b.box, H)) len = Math.min(len, H.applyMatrix4(b.mat).distanceTo(o));
+    }
+    return len;
+  }
   build() {
     const M = mats();
     const withBody = this.fx.filter((f) => f.body);
@@ -281,7 +299,7 @@ export class Rig {
       f.beam.color.copy(f.color);
       f.beam.intensity = lvl * f.beamGain;
       f.beam.angle = f.angle;
-      f.beam.length = f.length;
+      f.beam.length = this.clip(origin, f.dir, f.body ? Math.max(f.length, this.reach) : f.length);
       f.flare.pos.copy(origin).addScaledVector(f.dir, 0.05);
       f.flare.color.copy(f.color);
       if (camPos) {
@@ -432,6 +450,7 @@ export function ledScreen({ w, h, tex, pitch, bright = 2.2, kind = 'main', frame
   const M = mats();
   const face = new THREE.Mesh(new THREE.PlaneGeometry(w, h), ledMaterial({ tex, pitch, w, h, bright, kind }));
   face.position.z = 0.06;
+  face.userData.beamStop = true;
   g.add(face);
   if (frame > 0) {
     const back = new THREE.Mesh(new THREE.BoxGeometry(w + frame * 2, h + frame * 2, 0.12), M.paint);

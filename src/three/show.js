@@ -70,6 +70,7 @@ const _g = new THREE.Color(), _t = new THREE.Color();
 // how long one part takes to fade into the next, in seconds
 const XFADE = 1.2;
 const ease = (k) => k * k * (3 - 2 * k);
+const clamp01 = (k) => Math.max(0, Math.min(1, k));
 export function runShow(rig, list, f, opts) {
   if (f.look) return runMovers(list, f, opts);
   const { house, stage, span = 30, up = false, strobe = true, lift = 1 } = opts;
@@ -208,6 +209,8 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
   const spread = 1 + wrap(phrase + L.move, 3);
   const pos = wrap(Math.floor(bar / 2) + L.move, 4);
   const tmp = V3();
+  // the palette as one blend round its four colours (x 0..4, and on round)
+  const grad = (x) => { const k = wrap(x, 4), k0 = Math.floor(k); return _g.copy(cols[k0]).lerp(cols[(k0 + 1) % 4], k - k0); };
   for (const it of list) {
     const { fx, i, n } = it;
     const u = n > 1 ? i / (n - 1) - 0.5 : 0;
@@ -237,51 +240,79 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
     const hz = (k) => { const v = Math.sin((i + 1) * 12.9898 + (it.group || 0) * 78.233 + k * 37.719) * 43758.5453; return v - Math.floor(v); };
     const own = { p: (hz(1) - 0.5) * 0.45, t: (hz(2) - 0.5) * 0.24, a: 0.7 + 0.6 * hz(3), k: hz(4) < 0.3 ? 0.5 : 1, ph: hz(5) * Math.PI * 1.2 };
     let p0, t0, amp = 0, beats = 8, s = 'circle', lvl, col, chase = false;
+    // the rows' parts: the spots key the stage and wash the floor, the beams
+    // draw in the air, the floor's heads stand up out of the deck
+    const isBeam = fx.kind === 'beam' && !up, isSpot = !up && !isBeam;
+    // a head's place from the middle of its row out (0 .. 1)
+    const mid = Math.min(1, Math.abs(u) * 2);
     if (part === 'intro') {
-      // the room waiting: the heads parked up and dark, a few on the stage
-      // coming up as the intro runs
-      const lit = i % 3 === 1;
-      [p0, t0] = up ? [u * 0.6, 0.15] : lit ? aim(stage.x + u * span * 0.2, stage.y, stage.z + 4) : [u * 0.6, 0.05];
+      // the room waiting: the beams stood still as a fan of shafts high over
+      // the house in one colour, coming up from the middle of the row out as
+      // the intro runs, the floor's heads straight up as pillars, the spots
+      // finding the stage only at its end
+      const on = clamp01((prog * 1.6 - mid) * 3);
+      if (up) [p0, t0] = [u * 0.5, 0.06 + mid * 0.12];
+      else if (isBeam) { const [hp, ht] = aim(house.x, house.y + 24, house.z); [p0, t0] = [hp + u * 1.6, ht]; }
+      else [p0, t0] = aim(stage.x + u * span * 0.2, stage.y, stage.z + 4);
       amp = 0.03; beats = 16;
-      lvl = up ? 0.08 * prog : lit ? 0.5 * prog * eS : 0;
-      col = cols[0];
+      lvl = (up ? 0.35 * on : isBeam ? 0.45 * on : 0.55 * clamp01((prog - 0.6) * 3)) * eS;
+      col = isSpot ? WHITE : cols[0];
     } else if (part === 'verse') {
-      // the stage picked out, a few heads at a time, turning slowly
-      [p0, t0] = up ? [u * 0.8, 0.25] : aim(stage.x + u * span * 0.35, stage.y, stage.z + 6);
-      amp = 0.06; beats = 8;
-      lvl = i % 2 ? 0 : 0.4 + 0.3 * E;
-      col = cols[it.group % 2 ? 3 : 0];
+      // held back, so the chorus has somewhere to go: the spots keying the
+      // stage in a pale tint, every other one; the beams a still fan low over
+      // the house, the palette laid across them as a gradient that drifts a
+      // step every bar, breathing in tilt once in four bars; the floor's
+      // heads low, every other one
+      if (up) [p0, t0] = [u * 0.8, 0.25];
+      else if (isBeam) { const [hp, ht] = aim(house.x, house.y + 6, house.z); [p0, t0] = [hp + u * 1.3, ht]; }
+      else [p0, t0] = aim(stage.x + u * span * 0.35, stage.y, stage.z + 6);
+      amp = isBeam ? 0.08 : 0.05; beats = 16; s = isBeam ? 'tiltWave' : 'circle';
+      lvl = (isSpot ? (i % 2 ? 0 : 0.45 + 0.3 * E) : isBeam ? 0.32 + 0.15 * E : (i % 2 ? 0 : 0.22)) * eS;
+      col = isSpot ? _g.copy(cols[3]).lerp(WHITE, 0.5) : isBeam ? grad((u + 0.5) * 1.5 + bar / 4) : cols[0];
     } else if (part === 'pre') {
-      // fanned out over the house, a wave in tilt running along the row,
-      // wider and quicker as it builds: a wave every four beats, then two
+      // the build: the beams fanned over the house, a wave in tilt running
+      // along the row, wider and quicker as it builds (a wave every four
+      // beats, then two); the heads coming on from the middle of the row out;
+      // over its last bar the whole rig closing to one point in the air over
+      // the stage, and dark for the beat before the chorus lands
       const build = buildOf(f, secT);
+      const shut = f.next === 'chorus' && f.toNext != null && f.toNext < 60 / bps;
+      const close = f.next === 'chorus' && f.toNext != null ? clamp01(1 - f.toNext / (4 * 60 / bps)) : clamp01((prog - 0.88) * 8);
       [p0, t0] = up ? [side * Math.PI / 2, 0.35 + Math.abs(u) * 0.5] : ((a) => [a[0] + u * 1.3, a[1]])(aim(house.x, house.y, house.z));
-      amp = 0.2 + 0.15 * build; beats = 4 / (0.6 + 0.9 * build); s = 'tiltWave';
-      lvl = (0.55 + 0.35 * (wrap(f.beat, 2) === (i % 2) ? f.kick : 0.2)) * build * eS;
+      if (close > 0) {
+        const [fp, ft] = up ? [0, 0.02] : aim(stage.x, stage.y + 22, stage.z + 8);
+        p0 += angDiff(fp, p0) * close; t0 += (ft - t0) * close;
+      }
+      amp = (0.2 + 0.15 * build) * (1 - close); beats = 4 / (0.6 + 0.9 * build); s = 'tiltWave';
+      const on = clamp01((build * 1.5 - 0.4 - mid) * 4);
+      lvl = shut ? 0 : (0.55 + 0.35 * (wrap(f.beat, 2) === (i % 2) ? f.kick : 0.2)) * build * eS * (0.25 + 0.75 * on);
       col = cols[(i % 2) ? 1 : 0];
     } else if (part === 'chorus') {
       // a new position every two bars, a wide circle or figure of eight over
-      // it, once round a bar (the last chorus wider still)
+      // it, once round a bar (the last chorus wider still); the colours split
+      // odd against even across the rig, trading every bar
       [p0, t0] = chorusPos(pos);
       amp = f.final ? 0.58 : 0.46; beats = 4;
       // (every third head draws the other figure)
       s = i % 3 === 2 ? (big === 'circle' ? 'eight' : 'circle') : big;
       lvl = ((f.final ? 0.85 : 0.75) + 0.35 * f.kick) * eS;
-      col = cols[wrap(i + Math.floor(f.beat / 4), 3)];
+      col = cols[wrap(i + bar, 2) + (up ? 2 : 0)];
       const first = secT < 0.35;
       if (L.hit === 0 && strobe && (first || (f.kick > 0.85 && wrap(i + f.beat, 3) === 0))) lvl = 1.6;
       if (L.hit === 1 && (first || f.kick > 0.85)) lvl = 1.15 + 0.2 * f.kick;
     } else if (part === 'post') {
       // the chorus ringing on: lifted high over the house, a wide slow
-      // circle, the colours trading every two bars; no hits
+      // circle, the palette laid across the rig as a gradient that turns
+      // round it a step every two bars; no hits
       if (up) [p0, t0] = [u * 1.4, 0.5];
       else { const [hp, ht] = aim(house.x, house.y + 18, house.z); [p0, t0] = [hp + u * 1.2, ht]; }
       amp = 0.36; beats = 8;
       lvl = (0.75 + 0.12 * f.kick) * eS;
-      col = cols[wrap(i + Math.floor(bar / 2), 2)];
+      col = grad((u + 0.5) * 2 + bar / 2);
     } else if (part === 'dance') {
       // the hardest: a new position on every beat, odd heads mirrored against
-      // even, a tilt flick each beat, two colours trading on the beat
+      // even, a tilt flick each beat, two colours as a chequer, odd against
+      // even, trading on the beat
       const k = wrap(Math.floor(beat) + L.move, 4);
       [p0, t0] = chorusPos(k);
       if (i % 2) p0 = (up ? 0 : 2 * aim(house.x, house.y, house.z)[0]) - p0;
@@ -299,11 +330,16 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
       col = (side < 0) !== (bar % 2 === 1) ? cols[2] : cols[3];
       if (roll != null) lvl *= 0.8 + 0.4 * roll;
     } else if (part === 'solo') {
-      // every head held on the middle of the stage, white, steady, a little
-      // brighter on the kick: the player lit, the house left to the sticks
-      [p0, t0] = up ? [0, 0.08] : aim(stage.x, stage.y, stage.z);
-      lvl = (0.85 + 0.2 * f.kick) * eS;
-      col = beam && i % 3 ? WHITE : cols[0];
+      // the player lit: the spots held on the middle of the stage, white,
+      // steady; the beams a fan high over the house turning slowly through
+      // the palette as one gradient; the floor's heads stood straight up
+      // behind the player, white
+      if (up) [p0, t0] = [u * 0.3, 0.04];
+      else if (isBeam) { const [hp, ht] = aim(house.x, house.y + 20, house.z); [p0, t0] = [hp + u * 1.5, ht]; }
+      else [p0, t0] = aim(stage.x, stage.y, stage.z);
+      amp = isBeam ? 0.14 : 0; beats = 16; s = 'panWave'; chase = true;
+      lvl = (isBeam ? 0.55 + 0.25 * f.kick : 0.85 + 0.2 * f.kick) * eS;
+      col = isBeam ? grad((u + 0.5) * 1.5 + beat / 8) : WHITE;
     } else if (part === 'interlude') {
       // the band on its own: spread wide over the house, a wave in pan
       // running along the row once in two bars, the palette laid across the
@@ -312,18 +348,21 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
       else { const [hp, ht] = aim(house.x, house.y + 8, house.z); [p0, t0] = [hp + u * 1.5, ht]; }
       amp = 0.3; beats = 8; s = 'panWave'; chase = true;
       lvl = (0.6 + 0.15 * f.kick) * eS;
-      const x = wrap((u + 0.5) * 3 + beat / 8, 4), k0 = Math.floor(x);
-      col = _g.copy(cols[k0]).lerp(cols[(k0 + 1) % 4], x - k0);
+      col = grad((u + 0.5) * 3 + beat / 8);
     } else if (part === 'outro') {
-      // gathering up over the middle of the stage, going out as it ends
-      [p0, t0] = up ? [0, 0.05] : aim(stage.x, stage.y + 25, stage.z + 10);
-      amp = 0.1; beats = 8;
-      lvl = 0.8 * Math.pow(1 - prog, 1.5) * eS;
-      col = cols[wrap(i + Math.floor(bar / 2), 3)];
+      // gathering in: the whole rig closing on one point in the air over the
+      // middle of the stage in one colour, the floor's heads straight up,
+      // going out from the ends of the rows in as it ends
+      [p0, t0] = up ? [0, 0.04] : aim(stage.x, stage.y + 25, stage.z + 10);
+      amp = 0.06; beats = 16;
+      lvl = 0.8 * Math.pow(1 - prog, 1.2) * clamp01((1 - prog) * 2.5 - mid * 0.8) * eS;
+      col = cols[0];
     } else {
-      // break: straight down (or up), still, one colour, a few on
+      // break: the spots straight down on the stage, one colour, a few on,
+      // breathing once in two bars; the beams and the floor dark
       [p0, t0] = [u * 0.2, 0.08];
-      lvl = i % 3 === 0 ? 0.3 * eS : 0;
+      amp = 0; beats = 8;
+      lvl = isSpot && i % 3 === 0 ? (0.22 + 0.12 * Math.sin(beat / 8 * Math.PI * 2)) * eS : 0;
       col = cols[3];
     }
     // the effect, spread across the row, wider the louder the song runs
@@ -350,7 +389,7 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
     const st = Math.sin(it.tilt);
     fx.dir.set(st * Math.sin(it.pan), (up ? 1 : -1) * Math.cos(it.tilt), st * Math.cos(it.pan)).normalize();
     // the song's look recolours the sections it has always played
-    if (part === 'verse' || part === 'pre' || part === 'chorus') {
+    if (part === 'pre' || part === 'chorus') {
       const k = part === 'chorus' ? Math.floor(f.beat / 4) : 0;
       if (L.col === 0) col = (i + k) % 5 === 0 ? cols[1] : cols[0];
       else if (L.col === 1) col = cols[wrap(i + k, 2)];
@@ -454,6 +493,12 @@ export function runBlinders(B, f) {
     } else if (part === 'bridge' && f.kick > 0.8 && wrap(f.beat, 4) === 0) {
       // the bridge: each downbeat, one half then the other
       to = it.i % 2 === bar % 2 ? 1 : 0;
+    } else if (part === 'pre' && f.look) {
+      // the end of the build: the filaments swelling up over its last bars
+      to = 0.3 * clamp01((progOf(f, secT) - 0.75) * 4);
+    } else if (part === 'dance' && f.look && secT < 0.45) {
+      // the dance break lands on them
+      to = 1;
     }
     it.l = Math.max(to, it.l * fade) * show;
     it.fx.intensity = it.l * 1.3;
@@ -495,6 +540,9 @@ export function runStrobes(S, f) {
     } else if (part === 'dance' && f.kick > 0.85) {
       // the dance break: every bar on every kick
       to = 1;
+    } else if (part === 'pre' && f.look && progOf(f, secT) > 0.85) {
+      // the build's last stretch: sixteenths, the bars odd against even
+      to = ((f.phase ?? f.t * 2) * 4 + (it.i % 2) * 0.5) % 1 < 0.3 ? 0.45 : 0;
     } else if (roll != null) {
       // the bridge's roll: eighths, then sixteenths, then thirty-seconds,
       // locked to the beat
@@ -689,7 +737,7 @@ export function groundRoof(root, { tx, zs, y0 = 0, top }) {
   for (const z of zs) latticeInto(steel, V3(-tx, top, z), V3(tx, top, z), 1.6, 0.07);
   root.add(new THREE.Mesh(mergeGeometries(steel), mats().trussBlack));
   const skin = new THREE.Mesh(new THREE.BoxGeometry(2 * tx + 3, 0.25, z1 - z0 + 3), std({ color: 0x0a0a0c, roughness: 0.85 }));
-  skin.position.set(0, top + 1.0, (z0 + z1) / 2); root.add(skin);
+  skin.position.set(0, top + 1.0, (z0 + z1) / 2); skin.userData.beamStop = true; root.add(skin);
 }
 
 // A PA wing: a lattice tower on its own ballast at (x, z), `h` high, a head
@@ -1034,7 +1082,7 @@ export function roundStage(ctx, root, { c, w = 16, d = 40, deck = 2.2, top = 26,
   const [BW, BH] = box, BY = top - 3 - BH / 2;
   const screens = [];
   const core = new THREE.Mesh(new THREE.BoxGeometry(BW - 0.2, BH - 0.2, BW - 0.2), std({ color: 0x050506, roughness: 0.6 }));
-  core.position.set(c.x, BY, c.z); root.add(core);
+  core.position.set(c.x, BY, c.z); core.userData.beamStop = true; root.add(core);
   for (const ay of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
     const sc = ledScreen({ w: BW, h: BH, tex: ctx.art.texture(BW / BH), pitch: 0.0059, bright: 1.3, frame: 0.2, light: false });
     const pv = new THREE.Group(); pv.position.set(c.x, BY, c.z); pv.rotation.y = ay; sc.position.z = BW / 2; pv.add(sc); root.add(pv);

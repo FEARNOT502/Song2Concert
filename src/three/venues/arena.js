@@ -159,7 +159,8 @@ function arenaRoom(ctx, { stage, sold }) {
     const x = X0 + (X1 - X0) * i / PX, z = Z0 + (Z1 - Z0) * j / (PZ * 3);
     const b = new THREE.BoxGeometry(0.25, 0.7, 0.25); b.translate(x, H - 0.1, z); hooks.push(b.toNonIndexed());
   }
-  root.add(new THREE.Mesh(mergeGeometries(roofParts), std({ color: 0x1a1b1f, roughness: 0.85 })));
+  const roofSlab = new THREE.Mesh(mergeGeometries(roofParts), std({ color: 0x1a1b1f, roughness: 0.85 }));
+  roofSlab.userData.beamStop = true; root.add(roofSlab);
   root.add(new THREE.Mesh(mergeGeometries(hooks), std({ color: 0x2a2c32, metalness: 0.6, roughness: 0.5 })));
   // the downlights in the ceiling's panels, in rows over the floor and stands
   const houseFix = [];
@@ -446,7 +447,8 @@ function arenaRound(ctx) {
   const cubes = [];
   for (const cz of [-9.5, 9.5]) {
     const g = new THREE.Group();
-    g.add(new THREE.Mesh(new THREE.BoxGeometry(BW - 0.1, BH - 0.1, BL - 0.1), std({ color: 0x050506, roughness: 0.6 })));
+    const core = new THREE.Mesh(new THREE.BoxGeometry(BW - 0.1, BH - 0.1, BL - 0.1), std({ color: 0x050506, roughness: 0.6 }));
+    core.userData.beamStop = true; g.add(core);
     // [w, h, rotation y, out]: the long sides, the outer end
     for (const [w, h, ay, out] of [[BL, BH, Math.PI / 2, BW / 2], [BL, BH, -Math.PI / 2, BW / 2], [BW, BH, cz < 0 ? Math.PI : 0, BL / 2]]) {
       const sc = ledScreen({ w, h, tex: ctx.art.texture(w / h), pitch: 0.006, bright: 1.3, frame: 0, light: false });

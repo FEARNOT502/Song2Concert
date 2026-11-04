@@ -163,6 +163,17 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     const c = makeCtx();
     const v = buildVenue(id, c);
     for (const r of c.rigs) { const g = r.build(); g.userData.plan = 'rig'; v.root.add(g); }
+    // the beams stop on the stage roof, the LED boxes and the screens rather
+    // than shining on through them; in the big rooms they reach on into the
+    // haze until it takes them
+    v.root.updateMatrixWorld(true);
+    const stops = [];
+    v.root.traverse((o) => {
+      if (!o.userData.beamStop || !o.geometry) return;
+      o.geometry.computeBoundingBox();
+      stops.push({ box: o.geometry.boundingBox.clone(), mat: o.matrixWorld.clone(), inv: o.matrixWorld.clone().invert() });
+    });
+    for (const r of c.rigs) { r.blockers = stops; r.reach = LOOK_ROOMS.has(id) ? 260 : 0; }
     dropDegenerateTriangles(v.root);
     pipe.scene.add(v.root);
     pipe.scene.add(pipe.flares.mesh);
