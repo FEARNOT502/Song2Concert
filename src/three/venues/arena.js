@@ -44,6 +44,7 @@ function arenaRoom(ctx, { stage, sold }) {
     byAisle: true,
     // (one wedge across every level, cut where the 200 level's aisles run)
     sectors: ['200'],
+    sectorFollow: true,
     // (round a centre stage, the corners' fans and the balconies over them
     // one block each: the scraps the fans' aisles cut off go in with them)
     sectorMin: ctx.mode === '360' ? 0.6 : 0.3,

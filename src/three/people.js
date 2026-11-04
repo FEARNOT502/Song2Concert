@@ -594,12 +594,14 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
         float c0 = floor(h1(sd + 3.3) * 4.0), st = 1.0 + floor(h1(sd + 5.9) * 3.0);
         // most scenes keep to the sleeve's colours; some light a set of blocks white
         float wht = step(h1(sd + 8.1), 0.25);
-        float lv = aZone.x, bk = sb();
-        float idx = lay < 0.5 ? mod(bk, 4.0)                         // every stripe its own, four colours round
-                  : lay < 1.5 ? mod(bk, 2.0)                         // stripes alternating
-                  : lay < 2.5 ? mod(floor(bk / 2.0), 2.0)            // stripes alternating in pairs
-                  : lay < 3.5 ? mod(bk, 3.0)                         // three colours stepping round
-                  : (lv < 0.5 ? 2.0 : mod(bk, 2.0));                 // the floor one, the stands' stripes alternating
+        float lv = aZone.x, bk = sb(), u = aZone.y;
+        // (mostly big areas of one colour, as a desk plays a house: stripes
+        // are one look among several, not the rule)
+        float idx = lay < 0.5 ? 0.0                                   // the whole house one colour
+                  : lay < 1.5 ? (lv < 0.5 ? 0.0 : 1.0)                // the floor against the stands
+                  : lay < 2.5 ? mod(bk, 2.0)                         // stripes alternating
+                  : lay < 3.5 ? floor(u * 4.0)                       // four great arcs round the house
+                  : floor(u * 2.0);                                  // the two halves
         float ci = c0 + (idx + k) * st;
         if (wht > 0.5 && mod(idx + k, 3.0) == 2.0) return col(4.0);
         return col(ci);
@@ -673,10 +675,11 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
           // colours as stripes, trading on every beat; or the scene's block
           // colours turning over a step a beat (round: the four faces of the
           // house each a step on); or the sleeve's colours as one gradient
-          // round the house, turning all the while
+          // round the house, or up it from the stage, turning all the while
           vec3 c;
-          float m = mod(floor(v * 3.0) + uLook, 3.0);
-          if (m < 0.5) c = stp(bt) < 0.5 ? col(c0 + bar) : col(c0 + 1.0 + bar) * 0.8;
+          float m = mod(floor(v * 4.0) + uLook, 4.0);
+          if (m > 2.5) c = grad(c0 + dp * 0.6 - ph * 0.5);
+          else if (m < 0.5) c = stp(bt) < 0.5 ? col(c0 + bar) : col(c0 + 1.0 + bar) * 0.8;
           else if (m < 1.5) c = sceneCol(s, bt + uRound * floor(u * 4.0));
           else c = grad(u * 4.0 - ph * 0.5 + lv * 0.5);
           float turn = mod(uLook, 2.0) < 0.5 ? 1.0 : 0.6 + 0.4 * step(mod(uBeat - lv, 4.0), 0.5);
