@@ -1151,7 +1151,7 @@ export function buildStands(data, {
   offset = V3(0, 0, 0), stage = V3(0, 2, 0), seatColors = {}, seatColor = 0x22262e,
   concreteTone = 0.22, sold = () => true, occupancy = 0.97, seed = 5, roofY = 36, crowd = true,
   materials = {}, seatMesh = null, seatColorAt = null, tiers = null, wedges = null,
-  seatKeep = null, byAisle = false, sectors = null, sectorEven = 0, sectorJoin = null, sectorMin = 0.5, sectorWhole = 0.35, round = false,
+  seatKeep = null, byAisle = false, sectors = null, sectorEven = 0, sectorFacing = 0, sectorJoin = null, sectorMin = 0.5, sectorWhole = 0.35, round = false,
 }) {
   const g = new THREE.Group();
   const ox = offset.x, oz = offset.z;
@@ -1527,9 +1527,9 @@ export function buildStands(data, {
   // blocks. Each aisle is found where it really runs, the middle of the gap
   // between the two blocks' end seats row by row, and drawn on as a straight
   // line through every tier above and below it. `sectorEven`: a block of
-  // those levels more than that many times the size of the blocks either
-  // side (two run together where an aisle went unseen) is cut across its
-  // rows into pieces of their size first. `sectorJoin(a, b)` (two blocks side by side, each
+  // those levels more than that many times the usual width (two run
+  // together where an aisle went unseen) is cut across its rows into pieces
+  // of the usual width first. `sectorJoin(a, b)` (two blocks side by side, each
   // { x, z (from the bowl's middle), face (degrees), n }): no line between
   // them. Then a block of another level lying almost all in one wedge goes
   // whole to it (`sectorWhole`: the share of it over a line that stays where
@@ -1563,19 +1563,26 @@ export function buildStands(data, {
       by.clear();
       for (const b of out) by.set(b.k, b.es);
     }
-    // (`sectorEven`: measured against the blocks either side of it)
+    // (`sectorEven`: measured by width across its rows, against the usual
+    // width of the blocks, and cut into equal widths)
     if (sectorEven) {
-      const list = [...by];
-      list.forEach(([k, es], i) => {
-        const near = (list[(i - 1 + list.length) % list.length][1].length + list[(i + 1) % list.length][1].length) / 2;
-        const parts = es.length > near * sectorEven ? Math.round(es.length / near) : 1;
-        if (parts < 2) return;
+      const list = [...by].map(([k, es]) => {
         const fx = es.reduce((q, e) => q + Math.sin(e.yaw), 0), fz = es.reduce((q, e) => q + Math.cos(e.yaw), 0);
-        const along = (e) => e.x * fz - e.z * fx;
-        es.sort((a, b) => along(a) - along(b));
-        by.delete(k);
-        for (let j = 0; j < parts; j++) by.set(`${k}:${j}`, es.slice(Math.floor(j * es.length / parts), Math.floor((j + 1) * es.length / parts)));
+        const along = (e) => e.x * fz - e.z * fx, l = Math.hypot(fx, fz) || 1;
+        const v = es.map((e) => along(e) / l).sort((x, y) => x - y);
+        return { k, es, along: (e) => along(e) / l, lo: v[Math.floor(v.length * 0.03)], hi: v[Math.ceil(v.length * 0.97) - 1] };
       });
+      const nMed = list.map((b) => b.es.length).sort((x, y) => x - y)[list.length >> 1] || 1;
+      const ws = list.filter((b) => b.es.length >= 0.5 * nMed).map((b) => b.hi - b.lo).sort((x, y) => x - y);
+      const usual = ws[ws.length >> 1] || 1;
+      for (const b of list) {
+        const w = b.hi - b.lo, parts = w > usual * sectorEven ? Math.round(w / usual) : 1;
+        if (parts < 2) continue;
+        by.delete(b.k);
+        const piece = Array.from({ length: parts }, () => []);
+        for (const e of b.es) piece[Math.max(0, Math.min(parts - 1, Math.floor((b.along(e) - b.lo) / (w / parts))))].push(e);
+        piece.forEach((es, j) => by.set(`${b.k}:${j}`, es));
+      }
     }
     // each block: its middle, its bearing, which way it faces, and each row's
     // two end seats (the one furthest round each way)
@@ -1594,8 +1601,9 @@ export function buildStands(data, {
     }).sort((a, b) => a.m - b.m);
     // the aisle between two blocks side by side: through the middles of the
     // gap, row by row, fitted as a line (along its longest way, pointed out
-    // from the middle); with too few rows in common, straight back the way
-    // the seats face
+    // from the middle); with too few rows in common, or (`sectorFacing`) a
+    // fit more than that many degrees off it, straight back the way the
+    // seats face
     const aisle = (A, B) => {
       const pts = [];
       for (const [r, a] of A.rows) { const b = B.rows.get(r); if (b) pts.push([(a.hi.x + b.lo.x) / 2, (a.hi.z + b.lo.z) / 2]); }
@@ -1603,9 +1611,17 @@ export function buildStands(data, {
       const cx = pts.reduce((q, p) => q + p[0], 0) / pts.length, cz = pts.reduce((q, p) => q + p[1], 0) / pts.length;
       let sxx = 0, sxz = 0, szz = 0;
       for (const [x, z] of pts) { sxx += (x - cx) ** 2; sxz += (x - cx) * (z - cz); szz += (z - cz) ** 2; }
-      let ux, uz;
-      if (pts.length >= 3 && sxx + szz > 1) { const th = 0.5 * Math.atan2(2 * sxz, sxx - szz); ux = Math.cos(th); uz = Math.sin(th); }
-      else { ux = -(A.fx + B.fx); uz = -(A.fz + B.fz); const l = Math.hypot(ux, uz) || 1; ux /= l; uz /= l; }
+      // (the way the seats face, back: what an aisle runs along, and what it
+      // keeps to where the gap's middles stray, a block's back rows set off
+      // to one side behind a vomitory)
+      let fx2 = -(A.fx + B.fx), fz2 = -(A.fz + B.fz);
+      const fl = Math.hypot(fx2, fz2) || 1; fx2 /= fl; fz2 /= fl;
+      let ux = fx2, uz = fz2;
+      if (pts.length >= 3 && sxx + szz > 1) {
+        const th = 0.5 * Math.atan2(2 * sxz, sxx - szz);
+        const px = Math.cos(th), pz = Math.sin(th);
+        if (!sectorFacing || Math.abs(px * fx2 + pz * fz2) > Math.cos(sectorFacing * DEG)) { ux = px; uz = pz; }
+      }
       if (ux * (cx - mx) + uz * (cz - mz) < 0) { ux = -ux; uz = -uz; }
       return { m: bear(cx, cz), cx, cz, ux, uz };
     };

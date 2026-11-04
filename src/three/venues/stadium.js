@@ -148,12 +148,11 @@ export function buildStadium(ctx) {
   const stands = buildStands(WB_STANDS, {
     // (the lightsticks' blocks by the stands' own aisles)
     byAisle: true,
-    // (one wedge across every level, cut where the top tier's aisles run,
-    // each drawn on down through the tiers below)
-    sectors: ['L5'],
-    // (the lines straight down from the top tier's aisles; a block there that
-    // is two run together cut in two)
-    sectorEven: 1.6, sectorWhole: 0.12, round,
+    // (one wedge across every level, cut where Level 1's aisles run)
+    sectors: ['L1'],
+    // (the lines straight up from Level 1's aisles through the tiers over
+    // it; a block there that is two run together cut in two)
+    sectorEven: 1.6, sectorFacing: 12, sectorWhole: 0.12, round,
     offset: OFF, stage: STAGE, seatColor: 0x9a1418, concreteTone: 0.26, seed: 600, roofY: ROOF,
     // the lightsticks' blocks: each level's numbered blocks, run front to
     // back between the aisles, round the bowl from its middle
