@@ -377,13 +377,26 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
     else if (s === 'panWave') { dp = Math.sin(a); }
     else { dp = Math.sin(a * 0.73 + i * 1.9) * Math.cos(a * 0.41 + i); dtl = Math.sin(a * 0.59 + i * 2.7); }
     const A = amp * (0.75 + 0.4 * E) * (free ? own.a : 1);
+    // a new effect (a new part, or the phrase's next figure or spread) takes
+    // over from the last over a second or so, where the last one stood, so
+    // the heads swing into it rather than jump
+    const key = `${part}|${s}|${spread}|${beats}`;
+    let eP = A * dp * mir * 1.4, eT = A * dtl;
+    if (it.fk !== key) { if (it.fk != null) { it.f0 = [it.eP ?? eP, it.eT ?? eT]; it.ft = 0; } it.fk = key; }
+    if (it.f0) {
+      it.ft += dt;
+      const fk = ease(Math.min(1, it.ft / XFADE));
+      eP = it.f0[0] + (eP - it.f0[0]) * fk; eT = it.f0[1] + (eT - it.f0[1]) * fk;
+      if (fk >= 1) it.f0 = null;
+    }
+    it.eP = eP; it.eT = eT;
     if (free) { p0 += own.p; t0 = Math.max(0, t0 + own.t); }
     // the position glides to a new one rather than jumping there (quicker in
     // a dance break, which moves on the beat); the effect over it stays crisp
     const glide = 1 - Math.exp(-dt * (part === 'dance' ? 14 : 3.5));
     if (it.bp == null) { it.bp = p0; it.bt = t0; }
     it.bp += angDiff(p0, it.bp) * glide; it.bt += (t0 - it.bt) * glide;
-    const wantP = it.bp + A * dp * mir * 1.4, wantT = Math.max(0, Math.min(up ? 1.2 : 2.1, it.bt + A * dtl));
+    const wantP = it.bp + eP, wantT = Math.max(0, Math.min(up ? 1.2 : 2.1, it.bt + eT));
     [it.pan, it.vp] = motor(it.pan, it.vp, wantP, PAN_MAX, dt, true);
     [it.tilt, it.vt] = motor(it.tilt, it.vt, wantT, TILT_MAX, dt, false);
     const st = Math.sin(it.tilt);

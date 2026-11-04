@@ -328,10 +328,16 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     const si = Math.max(0, PARTS.indexOf(f.part || f.sec || section(f.bar)));
     // (counted from the section's own first bar when the song is mapped)
     const slot = Math.floor((f.secBar ?? B.bar) / (QUICK.has(PARTS[si]) ? 4 : 8));
-    if (si !== cue.sec) cue.t = 0;
+    // (the scene going out keeps how far its section had got: a new section
+    // starts its own from nothing, but the last one's fill or ripple should
+    // fade out as it stood, not fall back to its start as it goes)
+    const prog = f.secProg ?? Math.min(1, f.secT / 16);
     if (si !== cue.sec || slot !== cue.slot || cue.sceneT > 20) {
+      cue.progPrev = si !== cue.sec ? cue.prog : null;
+      if (si !== cue.sec) cue.t = 0;
       cue.prev = cue.sec; cue.sec = si; cue.slot = slot; cue.scene++; cue.sceneT = 0;
     }
+    cue.prog = prog;
     cue.t += dt; cue.sceneT += dt;
     // the pre-chorus's chase up the levels steps on the beat: a level every
     // other beat as it starts, every beat over its second half
@@ -346,7 +352,7 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
       U.uMode.value = mode; U.uHouse.value = house;
       U.uScene.value = cue.scene; U.uSec.value = cue.sec; U.uSecPrev.value = cue.prev; U.uSecMix.value = smooth(cue.sceneT / 2); U.uSecT.value = cue.t;
       U.uBeat.value = B.beat; U.uLook.value = look;
-      U.uPhase.value = B.phase; U.uProg.value = f.secProg ?? Math.min(1, f.secT / 16); U.uRoll.value = rollOf(f) ?? -1;
+      U.uPhase.value = B.phase; U.uProg.value = prog; U.uProgPrev.value = cue.progPrev ?? prog; U.uRoll.value = rollOf(f) ?? -1;
       U.uStep.value = chase.step; U.uStepT.value = clamp((B.phase - chase.at) / chase.len);
     }
     if (pipe.scene.fog) for (const U of fogMats) { U.fogDensity.value = pipe.scene.fog.density ?? 0; U.fogColor.value.copy(pipe.scene.fog.color); }
@@ -367,7 +373,7 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
   const QUICK = new Set(['chorus', 'post', 'bridge', 'dance', 'solo']);
   // one scene of the lightsticks into the next over two seconds, eased
   const smooth = (x) => { const k = clamp(x); return k * k * (3 - 2 * k); };
-  const cue = { sec: 1, prev: 1, t: 10, slot: 0, scene: 1, sceneT: 10 };
+  const cue = { sec: 1, prev: 1, t: 10, slot: 0, scene: 1, sceneT: 10, prog: 0, progPrev: 1 };
   // the chase: its step, the beat it was taken on, how many beats it lasts
   const chase = { beat: 0, step: 0, at: 0, len: 2 };
   const wrap2 = (b) => ((b % 2) + 2) % 2;

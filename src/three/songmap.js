@@ -547,7 +547,7 @@ function cluster(M, nb, segs, th) {
 }
 
 // the functions, the way a pop song is built
-function name(segs, label, E, nb, F = null) {
+function name(segs, label, E, nb, F = null, M = null, th = 0.5) {
   const n = segs.length;
   const segE = segs.map(([a, b]) => { let s = 0; for (let j = a; j < b; j++) s += E[j]; return s / (b - a); });
   // how much of the sound is the low end (kick and bass), against the whole,
@@ -561,7 +561,12 @@ function name(segs, label, E, nb, F = null) {
   const sorted = [...segE].sort((a, b) => a - b);
   const eMed = sorted[n >> 1];
 
-  // the chorus: comes back, and hits hardest
+  // the chorus: comes back, and hits hardest; and comes after the verse, so
+  // of two groups that take turns (verse, chorus, verse, chorus) it is the
+  // one that follows, and the first group to come back is rarely it (a song
+  // opens on its verse more often than its chorus)
+  const repeats = (g) => groups[g].length >= 2;
+  const opener = label.find((g) => repeats(g));
   let chorus = -1, cv = -Infinity;
   for (let g = 0; g < k; g++) {
     const m = groups[g];
@@ -569,7 +574,9 @@ function name(segs, label, E, nb, F = null) {
     const e = m.reduce((s, i) => s + segE[i], 0) / m.length;
     const bars = m.reduce((s, i) => s + segs[i][1] - segs[i][0], 0);
     const late = m.filter((i) => mid(i) > 0.3).length / m.length;
-    const v = 1.3 * e + 0.35 * Math.log2(m.length) + 0.15 * Math.log2(bars / 8 + 1) + 0.3 * late;
+    const after = m.filter((i) => i > 0 && label[i - 1] !== g && repeats(label[i - 1])).length / m.length;
+    const end = m.some((i) => mid(i) > 0.65) ? 1 : 0;
+    const v = 1.3 * e + 0.35 * Math.log2(m.length) + 0.1 * Math.log2(bars / 8 + 1) + 0.3 * late + 0.35 * after + 0.2 * end - (g === opener ? 0.45 : 0);
     if (v > cv) { cv = v; chorus = g; }
   }
   if (chorus >= 0) {
@@ -583,16 +590,27 @@ function name(segs, label, E, nb, F = null) {
     const th = sorted[Math.floor(n * 0.7)];
     segE.forEach((e, i) => { if (e >= th && e > 0.3) role[i] = 'chorus'; });
   }
+  // a chorus played another way (the last, doubled, or with the band
+  // pulled back for a line): like the chorus, if not as like as its repeats
+  const like = (i, r) => {
+    if (!M) return -1;
+    const m = role.map((x, j) => (x === r && j !== i ? j : -1)).filter((j) => j >= 0);
+    return m.length ? Math.max(...m.map((j) => segSim(M, nb, segs[i], segs[j]))) : -1;
+  };
+  if (M) for (let i = 0; i < n; i++) if (!role[i] && mid(i) > 0.25 && segE[i] > eMed - 0.2 && like(i, 'chorus') > th - 0.15) role[i] = 'chorus';
   const chE = (() => { const c = segE.filter((_, i) => role[i] === 'chorus'); return c.length ? c.reduce((s, v) => s + v, 0) / c.length : 1; })();
 
   // a loud stretch straight after a chorus and as loud as it: the chorus's
   // second half, or a post-chorus drop; played as chorus
   for (let i = 1; i < n; i++) {
-    if (!role[i] && role[i - 1] === 'chorus' && segE[i] > chE - 0.35 && segs[i][1] - segs[i][0] <= 8) role[i] = 'post';
+    // (it comes back, or it is as loud as the chorus itself: a one-off a
+    // little quieter after the chorus is more often the bridge)
+    if (!role[i] && role[i - 1] === 'chorus' && segE[i] > chE - 0.35 && segs[i][1] - segs[i][0] <= 8 && (groups[label[i]].length >= 2 || segE[i] > chE - 0.15)) role[i] = 'post';
   }
 
   // the pre-chorus: what leads into a chorus, if it is not a verse running
-  // straight into it
+  // straight into it: something else comes before it since the last chorus
+  // (not the song's opening, not the chorus itself), and it is not quiet
   const into = [];
   for (let i = 1; i < n; i++) if ((role[i] === 'chorus') && role[i - 1] !== 'chorus' && role[i - 1] !== 'post') into.push(i - 1);
   const preCount = {};
@@ -604,6 +622,8 @@ function name(segs, label, E, nb, F = null) {
     // its group turns up only in front of choruses, or it is short and rising
     const elsewhere = groups[g].filter((i) => !into.includes(i) && !role[i]).length;
     const rise = E[segs[p][1] - 1] - E[segs[p][0]];
+    const led = groups[g].filter((i) => into.includes(i)).every((i) => i >= 2 && role[i - 1] !== 'chorus' && role[i - 1] !== 'post');
+    if (!led || segE[p] < eMed - 0.5) continue;
     if ((elsewhere === 0 && (preCount[g] >= 2 || len <= 8)) || (len <= 8 && rise > 0.4)) role[p] = 'pre';
   }
 
@@ -639,7 +659,20 @@ function name(segs, label, E, nb, F = null) {
   for (let i = n - 1; i >= 0; i--) if (role[i] === 'chorus' || role[i] === 'post') { lastCh = i; break; }
   if (lastCh >= 0) for (let i = lastCh + 1; i < n; i++) if (!role[i] && segs[i][0] / nb > 0.8 && (segE[i] < chE - 0.3 || i === n - 1)) role[i] = 'outro';
 
-  // the rest: by how hard it plays
+  // the rest: first, like a section already named (a verse played another
+  // way, a pre-chorus cut short)
+  if (M) for (let i = 0; i < n; i++) {
+    if (role[i]) continue;
+    for (const r of ['verse', 'pre']) if (like(i, r) > th - 0.12) { role[i] = r; break; }
+  }
+  // the last loud stretch before the end, with nothing named after it but
+  // the outro: the last chorus
+  {
+    let i = n - 1;
+    while (i > 0 && role[i] === 'outro') i--;
+    if (!role[i] && mid(i) > 0.6 && segE[i] > chE - 0.3) role[i] = 'chorus';
+  }
+  // then by how hard it plays
   const chLow = (() => { const c = segLow.filter((_, i) => role[i] === 'chorus'); return c.length ? c.reduce((s, v) => s + v, 0) / c.length : null; })();
   for (let i = 0; i < n; i++) {
     if (role[i]) continue;
@@ -647,8 +680,11 @@ function name(segs, label, E, nb, F = null) {
     // a solo: once only, past the middle, not quiet, the low end well back of
     // the chorus's (a dance break keeps its kick)
     else if (F && chLow != null && mid(i) > 0.45 && groups[label[i]].length === 1 && segE[i] >= eMed - 0.2 && segLow[i] < chLow - 2.5) role[i] = 'solo';
-    else if (segE[i] > chE - 0.25 && mid(i) > 0.45) role[i] = 'dance';
+    // (a dance break plays as hard as the chorus; a bridge a little back)
+    else if (segE[i] > chE - 0.1 && mid(i) > 0.45) role[i] = 'dance';
     else if (mid(i) > 0.45 && groups[label[i]].length === 1) role[i] = 'bridge';
+    // (loud enough, just before a chorus: leading into it)
+    else if (role[i + 1] === 'chorus' && segE[i] > eMed && segs[i][1] - segs[i][0] <= 8) role[i] = 'pre';
     else role[i] = 'verse';
   }
   // a last segment that is only a bar or two of ringing out
@@ -691,12 +727,13 @@ export function analyzeSong(x, sr, opts = {}) {
     else { segs.push(s); lab.push(label[i]); }
   });
   label = lab;
-  const { role, segE } = name(segs, label, energy, F.nb, F);
+  const { role, segE } = name(segs, label, energy, F.nb, F, M, P.th);
 
   // neighbours with the same name are one section (two intro groups, a verse
-  // in two halves); a chorus straight after a chorus stays its own, for the hit
+  // in two halves), while that keeps it to a phrase of 32 bars; a chorus
+  // straight after a chorus stays its own, for the hit
   for (let i = segs.length - 1; i > 0; i--) {
-    if (role[i] === role[i - 1] && role[i] !== 'chorus') {
+    if (role[i] === role[i - 1] && role[i] !== 'chorus' && (segs[i][1] - segs[i - 1][0] <= 32 || role[i] === 'intro' || role[i] === 'outro' || role[i] === 'break')) {
       segE[i - 1] = (segE[i - 1] * (segs[i - 1][1] - segs[i - 1][0]) + segE[i] * (segs[i][1] - segs[i][0])) / (segs[i][1] - segs[i - 1][0]);
       segs[i - 1] = [segs[i - 1][0], segs[i][1]];
       segs.splice(i, 1); role.splice(i, 1); label.splice(i, 1); segE.splice(i, 1);
