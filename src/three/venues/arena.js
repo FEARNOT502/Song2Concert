@@ -539,7 +539,7 @@ function arenaRound(ctx) {
   root.add(lightPoints(fohPosition(pipe, root, eye), cu, { maxPx: 4 }));
 
   return {
-    root, eye, seatNear: stands.seatNear,
+    root, eye, seatNear: stands.seatNear, round: true,
     camera: { pos: eye, target: V3(0, 9, OZ), fov: 58, near: 0.15, far: 400 },
     background: new THREE.Color(0),
     fog: new THREE.FogExp2(0x060508, 0.0045),

@@ -187,7 +187,7 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
       const U = o.material?.uniforms;
       if (!U) return;
       if (o.isPoints && U.uPal) pointMats.push(U);
-      if (o.userData.crowdLights) lightMats.push(U);
+      if (o.userData.crowdLights) { lightMats.push(U); U.uRound.value = v.round ? 1 : 0; }
       if (U.fogDensity) fogMats.push(U);
     });
     v.root.traverse((o) => { if (o.isLight && o.userData.offWhenDark) dimLights.push({ l: o, peak: 0 }); });

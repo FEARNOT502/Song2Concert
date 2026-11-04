@@ -553,6 +553,8 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
       uTime: cu.uTime, uKick: cu.uKick, uEnergy: cu.uEnergy, uStage: cu.uStage,
       uScale: { value: 800 }, uMax: { value: maxPx }, uGain: { value: 1 },
       uMode: { value: 0 }, uHouse: { value: 0 },
+      // round a centre stage (1): the house in four faces round it
+      uRound: { value: 0 },
       // the operator's cue: this scene (its number and section) and the last,
       // crossfading; how long the section has run, the beat count, the song's look
       uScene: { value: 1 }, uSec: { value: 0 }, uSecPrev: { value: 0 }, uSecMix: { value: 1 }, uSecT: { value: 0 },
@@ -567,6 +569,7 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
     },
     vertexShader: /* glsl */`
       attribute vec4 aLook, aZone;
+      uniform float uRound;
       uniform float uTime, uScale, uMax, uMode, uHouse, uKick, uEnergy, uScene, uSec, uSecPrev, uSecMix, uSecT, uBeat, uLook, uPhase, uProg, uRoll, uStep, uStepT;
       uniform vec3 uPal[4], uStage;
       varying vec3 vC;
@@ -621,14 +624,16 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
           // it starts, every beat as it builds), each lit level fading
           // through its step
           float lit = mod(uStep, 4.0);
-          float on = 1.0 - step(0.5, abs(mod(lv, 4.0) - lit));
+          // (round: a quarter of the house a step, round it, as well as up)
+          float on = uRound > 0.5 ? 1.0 - step(0.5, abs(floor(u * 4.0) - lit)) : 1.0 - step(0.5, abs(mod(lv, 4.0) - lit));
           float glow = on * (0.4 + 0.6 * exp(-uStepT * 2.5));
           return mix(sc * 0.3, sceneCol(s, 1.0) * 1.15, glow);
         }
         if (sec < 3.5) {
           // chorus: the whole house on the kick, the levels trading colours
           // each bar; in some looks the levels hit in turn, a beat apart
-          vec3 c = sceneCol(s, bar);
+          // (round: the four faces of the house trading colours each bar)
+          vec3 c = sceneCol(s, bar + uRound * floor(u * 4.0));
           if (uLook > 1.5) c = mix(c, vec3(1.0), 0.45 * uKick);
           float turn = mod(uLook, 2.0) < 0.5 ? 1.0 : 0.6 + 0.4 * step(mod(uBeat - lv, 4.0), 0.5);
           return c * (0.55 + 0.75 * uKick) * turn;

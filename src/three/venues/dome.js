@@ -897,7 +897,7 @@ export function buildDome(ctx) {
     }
     root.add(new THREE.HemisphereLight(0x181a24, 0x050508, 0.35));
     return {
-      root, eye: feye, seatNear: stands.seatNear,
+      root, eye: feye, seatNear: stands.seatNear, round: true,
       camera: { pos: feye, target: V3(0, RC.BY, STAGE.z), fov: 60, near: 0.2, far: 800 },
       background: new THREE.Color(0),
       fog: new THREE.FogExp2(0x07070b, 0.002),

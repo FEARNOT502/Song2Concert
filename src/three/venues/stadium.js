@@ -810,7 +810,7 @@ export function buildStadium(ctx) {
     const hemi = new THREE.HemisphereLight(0x10131e, 0x040406, 0.25);
     root.add(hemi);
     return {
-      root, eye: feye, seatNear: stands.seatNear,
+      root, eye: feye, seatNear: stands.seatNear, round: true,
       camera: { pos: feye, target: V3(0, RC.BY, ZC), fov: 62, near: 0.2, far: 2000 },
       background: new THREE.Color(0x020306),
       fog: new THREE.FogExp2(0x090708, 0.0015),
