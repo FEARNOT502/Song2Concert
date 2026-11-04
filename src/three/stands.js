@@ -1151,7 +1151,7 @@ export function buildStands(data, {
   offset = V3(0, 0, 0), stage = V3(0, 2, 0), seatColors = {}, seatColor = 0x22262e,
   concreteTone = 0.22, sold = () => true, occupancy = 0.97, seed = 5, roofY = 36, crowd = true,
   materials = {}, seatMesh = null, seatColorAt = null, tiers = null, wedges = null,
-  seatKeep = null, byAisle = false, sectors = null, sectorSplit = false, sectorMin = 0.3, sectorWhole = 0.35,
+  seatKeep = null, byAisle = false, sectors = null, sectorSplit = false, sectorMin = 0.3, sectorWhole = 0.12,
 }) {
   const g = new THREE.Group();
   const ox = offset.x, oz = offset.z;
