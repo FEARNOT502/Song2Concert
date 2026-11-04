@@ -9,7 +9,7 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { APP, KELVIN, V3, std, concreteTex, ringTint, withRepeat } from '../core.js';
+import { APP, DEG, KELVIN, V3, std, concreteTex, ringTint, withRepeat } from '../core.js';
 import { lightPoints } from '../people.js';
 import { ampStack, chainInto, drumKit, guitar, hoists, keyboardRig, ledScreen, mats, micStand, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
 import { bigCrowd, bigScreens, crossThrust, fixtureRow, flashOnCrowd, flashUnits, floorBlocks, floorChairs, fohPosition, fromRow, maskingDrapes, packFloor, paCorner, paHang, paPair, subHang, runBlinders, runShow, runStrobes, screenHang, stageRing, stageSet, subLine, thinRow, wallStrip } from '../show.js';
@@ -44,10 +44,16 @@ function arenaRoom(ctx, { stage, sold }) {
     byAisle: true,
     // (one wedge across every level, cut where the 200 level's aisles run)
     sectors: ['200'],
-    sectorFollow: true,
-    // (round a centre stage, the corners' fans and the balconies over them
-    // one block each: the scraps the fans' aisles cut off go in with them)
-    sectorMin: ctx.mode === '360' ? 0.6 : 0.3,
+    // (each corner's fan one block, however many aisles cut it, with the
+    // stub of the side behind the tunnel's mouth beside it; the end's short
+    // block by the fan its own)
+    sectorJoin: (a, b) => {
+      const fan = (f) => Math.abs(Math.asin(Math.sin(2 * f * DEG)) / 2) / DEG > 20;
+      const stub = (k) => k.n < 200 && Math.abs(k.x) > 43;
+      return (fan(a.face) && fan(b.face) && Math.abs(Math.atan2(Math.sin((a.face - b.face) * DEG), Math.cos((a.face - b.face) * DEG))) < 12 * DEG)
+        || (stub(a) && fan(b.face)) || (stub(b) && fan(a.face));
+    },
+    sectorMin: 0.2, sectorWhole: 0.12, round: ctx.mode === '360',
     offset: V3(0, 0, OZ), stage, seed: 200, concreteTone: 0.2, roofY: H,
     seatColors: { 200: 0x1c1d22, 300: 0xc8341e, 400: 0x1c1d22, 500: 0x1c1d22, '300S': 0x2a1d17 },
     // the 300 level, the VIP balcony: red seats in boxes behind a dark mesh

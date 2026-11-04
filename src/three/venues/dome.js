@@ -202,7 +202,7 @@ export function buildDome(ctx) {
     // (the lightsticks' blocks by the stands' own aisles)
     byAisle: true,
     // (one wedge across every level, cut where the 1st floor's aisles run)
-    sectors: ['A', 'F'],
+    sectors: ['A', 'F'], round,
     offset: OFF, stage: STAGE, seed: 400, concreteTone: 0.28, roofY: (x, z) => ringY(z + ZH) + 0.3,
     seatColors: { A: 0x1d3c86, B: 0x1d3c86, F: 0x1d3c86, K: 0x1d3c86, G: 0x1d3c86, C: 0x5a5d63, D: 0x1d3c86, E: 0x1d3c86 },
     seatColorAt: (name, x, z, row) => (inBox(name, x, z, row) ? 0x6a6b6e : null),

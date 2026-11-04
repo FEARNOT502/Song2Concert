@@ -151,7 +151,9 @@ export function buildStadium(ctx) {
     // (one wedge across every level, cut where the top tier's aisles run,
     // each drawn on down through the tiers below)
     sectors: ['L5'],
-    sectorFollow: true,
+    // (the lines straight down from the top tier's aisles; a block there that
+    // is two run together cut in two)
+    sectorEven: 1.6, sectorWhole: 0.12, round,
     offset: OFF, stage: STAGE, seatColor: 0x9a1418, concreteTone: 0.26, seed: 600, roofY: ROOF,
     // the lightsticks' blocks: each level's numbered blocks, run front to
     // back between the aisles, round the bowl from its middle
