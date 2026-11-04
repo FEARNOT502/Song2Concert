@@ -283,85 +283,136 @@ export function roomMaterials(materials) {
   };
 }
 
-// A level's blocks by its aisles: each seat placed along the level by the
-// nearest point of its front row (its seats in order round the level's
-// middle, the distance along them), so an aisle square to the front, or one
-// fanning round a corner, keeps one place all the way up. The aisles are the
-// places the rows keep breaking at; a block is the run of seats between two,
-// one narrower than `minW` (a few seats
-// by a vomitory) joining its neighbour. Blocks
-// numbered in order along the level, so neighbours alternate.
-export function aisleBlocks(S, sk, ox, oz, { bin = 0.25, minW = 5 } = {}) {
+// A level's blocks by its aisles: the seats that hang together. A seat holds
+// to the one beside it in its row (within `gap` along the row: across an
+// aisle is further) and to the one straight in front or behind in the next
+// row (no more than `lat` off its line, within `depth`), never across a step
+// of the level's stairs (`steps`). A block is one group of seats held
+// together; groups of a few seats join the nearest big one. Numbered in order
+// round the level's middle, so neighbours alternate.
+export function aisleBlocks(S, sk, ox, oz, steps = [], { gap = 0.68, lat = 0.3, depth = 1.4, minSeats = 16 } = {}) {
   const n = S.length / 4;
-  const X = new Float64Array(n), Z = new Float64Array(n), R = new Int32Array(n);
+  const X = new Float64Array(n), Z = new Float64Array(n), R = new Int32Array(n), FX = new Float64Array(n), FZ = new Float64Array(n);
   let cx = 0, cz = 0;
-  for (let k = 0; k < n; k++) { X[k] = S[k * 4] / sk + ox; Z[k] = S[k * 4 + 1] / sk + oz; R[k] = S[k * 4 + 2]; cx += X[k]; cz += Z[k]; }
+  for (let k = 0; k < n; k++) {
+    X[k] = S[k * 4] / sk + ox; Z[k] = S[k * 4 + 1] / sk + oz; R[k] = S[k * 4 + 2];
+    const yaw = S[k * 4 + 3] * DEG; FX[k] = Math.sin(yaw); FZ[k] = Math.cos(yaw);
+    cx += X[k]; cz += Z[k];
+  }
   cx /= n; cz /= n;
-  // the front: at each half degree round the middle, its nearest seat; in
-  // order round, thinned to one a metre
-  const nearest = new Map();
+  // the steps, for a link not to cross one: their outlines' edges in a grid
+  const segs = [];
+  for (const p of steps) for (const r of (typeof p[0][0] === 'number' ? [p] : p)) for (let i = 0, m = r.length - 1; i < r.length; m = i++) segs.push([r[m][0] + ox, r[m][1] + oz, r[i][0] + ox, r[i][1] + oz]);
+  const sg = new Map();
+  segs.forEach((e, i) => { for (const gx of [Math.floor(e[0]), Math.floor(e[2])]) for (const gz of [Math.floor(e[1]), Math.floor(e[3])]) { const key = `${gx},${gz}`; (sg.get(key) || sg.set(key, new Set()).get(key)).add(i); } });
+  const cross = (ax, az, bx, bz) => {
+    const near = new Set();
+    for (const gx of [Math.floor(ax), Math.floor(bx)]) for (const gz of [Math.floor(az), Math.floor(bz)]) for (const i of sg.get(`${gx},${gz}`) || []) near.add(i);
+    for (const i of near) {
+      const [cx_, cz_, dx_, dz_] = segs[i];
+      const o = (px, pz, qx, qz, rx, rz) => Math.sign((qx - px) * (rz - pz) - (qz - pz) * (rx - px));
+      if (o(ax, az, bx, bz, cx_, cz_) !== o(ax, az, bx, bz, dx_, dz_) && o(cx_, cz_, dx_, dz_, ax, az) !== o(cx_, cz_, dx_, dz_, bx, bz)) return true;
+    }
+    return false;
+  };
+  // the seats in a grid a metre and a half across
+  const grid = new Map();
+  for (let k = 0; k < n; k++) { const key = `${Math.floor(X[k] / 1.5)},${Math.floor(Z[k] / 1.5)}`; (grid.get(key) || grid.set(key, []).get(key)).push(k); }
+  const up = new Int32Array(n).map((_, i) => i);
+  const find = (k) => { while (up[k] !== k) { up[k] = up[up[k]]; k = up[k]; } return k; };
   for (let k = 0; k < n; k++) {
-    const a = Math.atan2(X[k] - cx, Z[k] - cz), key = Math.round(a / 0.0087), d = (X[k] - cx) ** 2 + (Z[k] - cz) ** 2;
-    const o = nearest.get(key);
-    if (!o || d < o[3]) nearest.set(key, [X[k], Z[k], a, d]);
-  }
-  const fr = [...nearest.values()].sort((a, b) => a[2] - b[2]);
-  const ring = [];
-  for (const p of fr) if (!ring.length || Math.hypot(p[0] - ring[ring.length - 1][0], p[1] - ring[ring.length - 1][1]) > 1) ring.push(p);
-  const arc = [0];
-  for (let i = 1; i < ring.length; i++) arc.push(arc[i - 1] + Math.min(4, Math.hypot(ring[i][0] - ring[i - 1][0], ring[i][1] - ring[i - 1][1])));
-  // each seat's place: its nearest ring point's, plus how far past it along the ring
-  const along = new Float64Array(n);
-  // (a level whose front row is a single seat or two: one block)
-  if (ring.length < 2) return { block: new Int32Array(n), count: 1 };
-  for (let k = 0; k < n; k++) {
-    // (searched among the ring points near its own bearing round the middle)
-    const a = Math.atan2(X[k] - cx, Z[k] - cz);
-    let l = 0, h = ring.length - 1;
-    while (l < h) { const m = (l + h) >> 1; if (ring[m][2] < a) l = m + 1; else h = m; }
-    let best = l, bd = Infinity;
-    for (let i = Math.max(0, l - 40); i < Math.min(ring.length, l + 40); i++) { const d = (ring[i][0] - X[k]) ** 2 + (ring[i][1] - Z[k]) ** 2; if (d < bd) { bd = d; best = i; } }
-    const j = Math.min(ring.length - 1, best + 1), i0 = j === best ? best - 1 : best;
-    const ux = ring[j][0] - ring[i0][0], uz = ring[j][1] - ring[i0][1], ul = Math.hypot(ux, uz) || 1;
-    along[k] = arc[best] + ((X[k] - ring[best][0]) * ux + (Z[k] - ring[best][1]) * uz) / ul;
-  }
-  let lo = Infinity, hi = -Infinity;
-  for (let k = 0; k < n; k++) { lo = Math.min(lo, along[k]); hi = Math.max(hi, along[k]); }
-  // the aisles: where the rows break. In each row, every break between two
-  // seats wider than a seat's pitch is counted at its place; a place where
-  // the rows break again and again (in a quarter of them, or 3) is an aisle
-  const rows = new Map();
-  for (let k = 0; k < n; k++) { if (!rows.has(R[k])) rows.set(R[k], []); rows.get(R[k]).push(along[k]); }
-  const nb = Math.max(1, Math.ceil((hi - lo) / bin) + 1), hist = new Float64Array(nb), cov = new Float64Array(nb);
-  for (const r of rows.values()) {
-    r.sort((p, q) => p - q);
-    for (let i = Math.floor((r[0] - lo) / bin); i <= Math.floor((r[r.length - 1] - lo) / bin); i++) cov[i]++;
-    for (let i = 1; i < r.length; i++) if (r[i] - r[i - 1] > 0.8) hist[Math.floor(((r[i] + r[i - 1]) / 2 - lo) / bin)]++;
-  }
-  // (smoothed over a metre either way: an aisle's place wanders a little row to row)
-  const w = Math.round(1 / bin), sm = new Float64Array(nb);
-  for (let i = 0; i < nb; i++) for (let d = -w; d <= w; d++) if (i + d >= 0 && i + d < nb) sm[i] += hist[i + d];
-  // (three in ten of the rows that reach that place)
-  const need = (i) => Math.max(3, cov[i] * 0.3);
-  const cuts = [];
-  for (let i = 0; i < nb;) {
-    if (sm[i] < need(i)) { i++; continue; }
-    let e = i, pk = i; while (e < nb && sm[e] >= need(e)) { if (sm[e] > sm[pk]) pk = e; e++; }
-    cuts.push(lo + (pk + 0.5) * bin);
-    i = e;
-  }
-  // blocks too narrow join the one after (or before, at the end)
-  let edges = [lo - 1, ...cuts, hi + 1];
-  for (let changed = true; changed;) {
-    changed = false;
-    for (let i = 0; i + 1 < edges.length; i++) {
-      if (edges[i + 1] - edges[i] >= minW || edges.length <= 2) continue;
-      edges.splice(i + 1 < edges.length - 1 ? i + 1 : i, 1); changed = true; break;
+    const gx = Math.floor(X[k] / 1.5), gz = Math.floor(Z[k] / 1.5);
+    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) for (const j of grid.get(`${gx + dx},${gz + dz}`) || []) {
+      if (j <= k) continue;
+      const ex = X[j] - X[k], ez = Z[j] - Z[k];
+      const al = Math.abs(ex * FZ[k] - ez * FX[k]), fw = Math.abs(ex * FX[k] + ez * FZ[k]);
+      const dr = Math.abs(R[j] - R[k]);
+      const ok = (dr === 0 && al <= gap && fw < 0.3) || (dr === 1 && al <= lat && fw <= depth);
+      if (ok && !cross(X[k], Z[k], X[j], Z[j])) up[find(j)] = find(k);
     }
   }
+  // A group whose front rows run unbroken under several blocks' aisles is
+  // cut along those aisles: across it (square to its seats' facing), where
+  // the rows behind break in two or more of them, every seat goes to the side
+  // it lies on.
+  const lbl = new Int32Array(n);
+  for (let k = 0; k < n; k++) lbl[k] = find(k);
+  {
+    const mem = new Map();
+    for (let k = 0; k < n; k++) (mem.get(lbl[k]) || mem.set(lbl[k], []).get(lbl[k])).push(k);
+    let next = n;
+    for (const ks of mem.values()) {
+      if (ks.length < 200) continue;
+      let fx = 0, fz = 0;
+      for (const k of ks) { fx += FX[k]; fz += FZ[k]; }
+      const l = Math.hypot(fx, fz) || 1; fx /= l; fz /= l;
+      const v = (k) => X[k] * fz - Z[k] * fx;
+      const rows = new Map();
+      for (const k of ks) (rows.get(R[k]) || rows.set(R[k], []).get(R[k])).push(v(k));
+      const breaks = [];
+      for (const r of rows.values()) { r.sort((p, q) => p - q); for (let i = 1; i < r.length; i++) if (r[i] - r[i - 1] > gap) breaks.push((r[i] + r[i - 1]) / 2); }
+      breaks.sort((p, q) => p - q);
+      const cuts = [];
+      // (an aisle: breaks at one place in four in ten of the rows; blocks
+      // at least 5 m across, so a vomitory's gap in a few rows cuts nothing)
+      const all = ks.map(v).sort((p, q) => p - q), lo = all[0], hi = all[all.length - 1];
+      for (let i = 0; i < breaks.length;) {
+        let e = i; while (e + 1 < breaks.length && breaks[e + 1] - breaks[i] < 0.6) e++;
+        const at = (breaks[i] + breaks[e]) / 2;
+        if (e - i + 1 >= Math.max(3, rows.size * 0.4) && at - (cuts.length ? cuts[cuts.length - 1] : lo) >= 5 && hi - at >= 5) cuts.push(at);
+        i = e + 1;
+      }
+      if (!cuts.length) continue;
+      const base = next; next += cuts.length + 1;
+      for (const k of ks) { let c = 0; while (c < cuts.length && v(k) > cuts[c]) c++; lbl[k] = base + c; }
+    }
+  }
+  const piece = new Int32Array(n), count = new Map(), mid = new Map();
+  for (let k = 0; k < n; k++) {
+    const p = lbl[k]; piece[k] = p; count.set(p, (count.get(p) || 0) + 1);
+    const m = mid.get(p) || [0, 0]; m[0] += X[k]; m[1] += Z[k]; mid.set(p, m);
+  }
+  // small groups to the nearest seat of a big one
+  const big = (p) => count.get(p) >= minSeats;
+  const bigSeats = [];
+  for (let k = 0; k < n; k++) if (big(piece[k])) bigSeats.push(k);
+  if (bigSeats.length) for (let k = 0; k < n; k++) {
+    if (big(piece[k])) continue;
+    let best = bigSeats[0], bd = Infinity;
+    for (const j of bigSeats) { const d = (X[j] - X[k]) ** 2 + (Z[j] - Z[k]) ** 2; if (d < bd) { bd = d; best = j; } }
+    piece[k] = piece[best];
+  }
+  // a level's cross-aisle (front to back) does not divide it: a group behind
+  // another (the way their seats face) over much the same width is one block
+  // with it (a group running on behind several is not)
+  const mem = new Map();
+  for (let k = 0; k < n; k++) (mem.get(piece[k]) || mem.set(piece[k], []).get(piece[k])).push(k);
+  const grp = [...mem.keys()], top = new Map(grp.map((p) => [p, p]));
+  const root = (p) => { while (top.get(p) !== p) p = top.get(p); return p; };
+  const info = new Map(grp.map((p) => {
+    const ks = mem.get(p); let mx = 0, mz = 0, fx = 0, fz = 0;
+    for (const k of ks) { mx += X[k]; mz += Z[k]; fx += FX[k]; fz += FZ[k]; }
+    const l = Math.hypot(fx, fz) || 1;
+    return [p, { ks, mx: mx / ks.length, mz: mz / ks.length, fx: fx / l, fz: fz / l }];
+  }));
+  const across = (g, fx, fz) => { let lo = Infinity, hi = -Infinity; for (const k of g.ks) { const v = X[k] * fz - Z[k] * fx; lo = Math.min(lo, v); hi = Math.max(hi, v); } return [lo, hi]; };
+  for (let i = 0; i < grp.length; i++) for (let j = i + 1; j < grp.length; j++) {
+    const A = info.get(grp[i]), B = info.get(grp[j]);
+    if (A.fx * B.fx + A.fz * B.fz < 0.9) continue;
+    const dx = B.mx - A.mx, dz = B.mz - A.mz, fx = A.fx, fz = A.fz;
+    if (Math.abs(dx * fx + dz * fz) < 2 * Math.abs(dx * fz - dz * fx) || Math.hypot(dx, dz) > 30) continue;
+    const a = across(A, fx, fz), b2 = across(B, fx, fz);
+    const ov = Math.min(a[1], b2[1]) - Math.max(a[0], b2[0]);
+    if (ov > 0.6 * Math.max(a[1] - a[0], b2[1] - b2[0])) top.set(root(grp[j]), root(grp[i]));
+  }
+  for (let k = 0; k < n; k++) piece[k] = root(piece[k]);
+  for (const p of grp) { const r = root(p); if (r === p) continue; count.set(r, count.get(r) + count.get(p)); const m = mid.get(r), m2 = mid.get(p); m[0] += m2[0]; m[1] += m2[1]; }
+  const ang = (p) => { const m = mid.get(p), c = count.get(p); return Math.atan2(m[0] / c - cx, m[1] / c - cz); };
+  const ids = [...new Set(piece)].sort((p, q) => ang(p) - ang(q));
+  const num = new Map(ids.map((p, i) => [p, i]));
   const block = new Int32Array(n);
-  for (let k = 0; k < n; k++) { let b = 0; while (b + 2 < edges.length && along[k] >= edges[b + 1]) b++; block[k] = b; }
-  return { block, count: edges.length - 1 };
+  for (let k = 0; k < n; k++) block[k] = num.get(piece[k]);
+  return { block, count: ids.length };
 }
 
 // The building's aisle signs (Tokyo Dome's hang black over each portal: the
@@ -1254,7 +1305,7 @@ export function buildStands(data, {
     const S = decodeSeats(L.seats), sk = L.seatScale ?? 10;      // (x, z in dm, or 1/seatScale m)
     // the level's blocks, for the lightsticks' control
     const anchors = (L.voms || []).filter((v) => v.label).map((v) => ({ x: v.p[0] + ox, z: v.p[1] + oz, label: v.label }));
-    const blocks = !crowd ? null : byAisle ? aisleBlocks(S, sk, ox, oz) : seatBlocks(S, sk, ox, oz, stage, { anchors, tidy: !!tiers, wedges: wedges && { x: wedges.x + ox, z: wedges.z + oz } });
+    const blocks = !crowd ? null : byAisle ? aisleBlocks(S, sk, ox, oz, L.steps.map((st) => st.polys)) : seatBlocks(S, sk, ox, oz, stage, { anchors, tidy: !!tiers, wedges: wedges && { x: wedges.x + ox, z: wedges.z + oz } });
     if (blocks) levelBlocks.push({ count: blocks.count, ySum: 0, n: 0, name: L.name, at: new Map() });
     const lvRaw = levelBlocks.length - 1;
     for (let i = 0; i < S.length; i += 4) {
