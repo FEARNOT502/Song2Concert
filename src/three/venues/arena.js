@@ -12,7 +12,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { APP, KELVIN, V3, std, concreteTex, ringTint, withRepeat } from '../core.js';
 import { lightPoints } from '../people.js';
 import { ampStack, chainInto, drumKit, guitar, hoists, keyboardRig, ledScreen, mats, micStand, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, crossThrust, fixtureRow, flashOnCrowd, flashUnits, floorBlocks, floorChairs, fohPosition, fromRow, maskingDrapes, packFloor, paHang, paPair, runBlinders, runShow, runStrobes, screenHang, stageRing, stageSet, subLine, thinRow, wallStrip } from '../show.js';
+import { bigCrowd, bigScreens, crossThrust, fixtureRow, flashOnCrowd, flashUnits, floorBlocks, floorChairs, fohPosition, fromRow, maskingDrapes, packFloor, paCorner, paHang, paPair, subHang, runBlinders, runShow, runStrobes, screenHang, stageRing, stageSet, subLine, thinRow, wallStrip } from '../show.js';
 import { buildStands } from '../stands.js';
 import { SSA_STANDS } from './ssa-data.js';
 
@@ -42,6 +42,8 @@ function arenaRoom(ctx, { stage, sold }) {
   const stands = buildStands(SSA_STANDS, {
     // (the lightsticks' blocks by the stands' own aisles)
     byAisle: true,
+    // (one wedge across every level, cut where the 200 level's aisles run)
+    sectors: ['200'],
     offset: V3(0, 0, OZ), stage, seed: 200, concreteTone: 0.2, roofY: H,
     seatColors: { 200: 0x1c1d22, 300: 0xc8341e, 400: 0x1c1d22, 500: 0x1c1d22, '300S': 0x2a1d17 },
     // the 300 level, the VIP balcony: red seats in boxes behind a dark mesh
@@ -261,15 +263,17 @@ function arenaEnd(ctx) {
   const rig = ctx.rig({ finish: 'black' });
   const trussZ = [3.2 + SZ, 9.2 + SZ, 15.2 + SZ];
   for (const z of trussZ) { const t = truss(36, { size: 0.76, finish: 'black' }); t.position.set(0, RIG, z); root.add(t); root.add(hoists([-16, -6, 6, 16], RIG, z, H)); }
-  // the PA flown from the roof: the mains just outside the wall, toed in a
-  // little; the side hangs turned out to the side stands; the 270 hangs
-  // further round, at the stands beside and behind the stage's corners; the
-  // flown subs behind the mains; and a pair of delay hangs over the middle of
-  // the floor for the far end and the 400 level, as the big arena shows hang
+  // the PA flown from the roof, all of it clear of the trusses (36 m wide):
+  // at each of the stage's front corners, just past the trusses' ends, three
+  // hangs, from the front round to the side, spaced out on arms from the
+  // front truss's end; the flown subs beside them, behind it; the side hangs turned out to the side
+  // stands; the 270 hangs further round, at the stands beside and behind the
+  // stage's corners; and a pair of delay hangs over the middle of the floor
+  // for the far end and the 400 level, as the big arena shows hang
   const pa = [];
   for (const side of [-1, 1]) {
-    pa.push(paHang(root, { x: side * 17.6, y: RIG - 0.6, z: 16.5 + SZ, boxes: 16, yaw: -side * 0.06, roofY: H }));
-    paHang(root, { x: side * 15.6, y: RIG - 0.6, z: 15.4 + SZ, boxes: 8, depth: 1.0, splay: 0.008, roofY: H });
+    pa.push(...paCorner(root, { px: side * 18, pz: 15.2 + SZ, r: 3.4, yaws: [0, side * 0.6, side * 1.2], boxes: [16, 13, 11], y: RIG - 0.6, bar: RIG }));
+    subHang(root, { x: side * 19.6, y: RIG - 0.6, z: 11.8 + SZ, boxes: 8, roofY: H });
     paPair(root, { x: side * 29.5, y: RIG - 1.0, z: 12 + SZ, boxes: 14, width: 1.2, yaw: side * 0.5, roofY: H });
     paHang(root, { x: side * 33.5, y: RIG - 1.4, z: 15 + SZ, boxes: 10, width: 1.1, yaw: side * 1.2, roofY: H });
     paHang(root, { x: side * 13, y: RIG - 3, z: 56, boxes: 8, width: 1.1, yaw: side * 0.06, roofY: H, splay: 0.03 });
@@ -520,12 +524,18 @@ function arenaRound(ctx) {
   const fill = [];
   for (const [x, y, z] of [[-26, 18, OZ], [26, 18, OZ], [0, 18, OZ - 30], [0, 18, OZ + 30]]) { const l = new THREE.PointLight(0xffffff, 0, 90, 2); l.position.set(x, y, z); l.userData.offWhenDark = 'show'; root.add(l); fill.push(l); }
   root.add(new THREE.HemisphereLight(0x14141c, 0x050508, 0.18));
-  // the PA, hung all round: a hang over each end of the stage, two down each
-  // side, a hang at each corner turned out to the stands between
-  for (const [x, z, yaw, boxes] of [[0, OZ + TZ + 1.2, 0, 14], [0, OZ - TZ - 1.2, Math.PI, 14],
-    [TX + 1.4, OZ - 10, Math.PI / 2, 14], [TX + 1.4, OZ + 10, Math.PI / 2, 14], [-TX - 1.4, OZ - 10, -Math.PI / 2, 14], [-TX - 1.4, OZ + 10, -Math.PI / 2, 14],
-    [TX + 1, OZ + TZ + 1, Math.PI / 4, 10], [-TX - 1, OZ + TZ + 1, -Math.PI / 4, 10], [TX + 1, OZ - TZ - 1, 3 * Math.PI / 4, 10], [-TX - 1, OZ - TZ - 1, -3 * Math.PI / 4, 10]]) {
-    paPair(root, { x, y: RIG - 1, z, boxes, width: 1.2, yaw, roofY: H });
+  // the PA, hung all round and clear of the truss frame: a hang over each
+  // end of the stage, two down each side and one between them; at each
+  // corner three, from one side round to the other, spaced out on arms from
+  // the frame's corner
+  for (const [x, z, yaw] of [[0, OZ + TZ + 1.6, 0], [0, OZ - TZ - 1.6, Math.PI],
+    [TX + 1.6, OZ - 12, Math.PI / 2], [TX + 1.6, OZ + 12, Math.PI / 2], [-TX - 1.6, OZ - 12, -Math.PI / 2], [-TX - 1.6, OZ + 12, -Math.PI / 2]]) {
+    paPair(root, { x, y: RIG - 1, z, boxes: 14, width: 1.2, yaw, roofY: H });
+  }
+  for (const s of [-1, 1]) paHang(root, { x: s * (TX + 1.6), y: RIG - 1, z: OZ, boxes: 12, width: 1.2, yaw: s * Math.PI / 2, roofY: H });
+  for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+    const yaw = Math.atan2(sx, sz);
+    paCorner(root, { px: sx * TX, pz: OZ + sz * TZ, r: 3.4, yaws: [yaw - 0.7, yaw, yaw + 0.7], boxes: [10, 12, 10], y: RIG - 1, bar: RIG, width: 1.2 });
   }
 
   // ── people ──

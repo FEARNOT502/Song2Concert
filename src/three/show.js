@@ -682,8 +682,8 @@ export function stageRing(root, rects, { t = 0.035 } = {}) {
 // A flown hang with its bridle chains up to the roof (or the stage's own
 // steel): a line array of `boxes` cabinets whose top is at `y`, turned `yaw`
 // from facing the room (+z), positive towards +x.
-export function paHang(root, { x, y, z, boxes, width = 1.3, yaw = 0, roofY = 0, splay = 0.035, depth = 0.7 }) {
-  const a = lineArray({ boxes, width, splay, depth });
+export function paHang(root, { x, y, z, boxes, width = 1.3, yaw = 0, roofY = 0, splay = 0.035, depth = 0.7, height = 0.38 }) {
+  const a = lineArray({ boxes, width, splay, depth, height });
   a.position.set(x, y, z); a.rotation.y = yaw;
   root.add(a);
   if (roofY > y + 0.2) {
@@ -697,6 +697,23 @@ export function paHang(root, { x, y, z, boxes, width = 1.3, yaw = 0, roofY = 0, 
 
 // A hang and its flown subs beside it (to its left as it faces, `gap` off),
 // two-thirds as many boxes, deeper, hung straight: a fuller PA, still tidy.
+// A corner of the stage played by three hangs fanned round it: one to
+// either side of the corner and one across it, each hung `r` out from the
+// steel at (px, pz) (a roof's corner tower, a truss's end) on a short
+// lattice arm out to it at `bar`, so they stand side by side, held from
+// something; `yaws` their headings, `boxes` how many boxes each.
+export function paCorner(root, { px, pz, r = 2.5, yaws, boxes, bar, ...o }) {
+  const steel = [];
+  const out = yaws.map((a, k) => {
+    const x = px + Math.sin(a) * r, z = pz + Math.cos(a) * r;
+    latticeInto(steel, V3(px, bar, pz), V3(x, bar, z), 0.5, 0.03);
+    return paHang(root, { ...o, x, z, yaw: a, boxes: boxes[k], roofY: bar });
+  });
+  root.add(new THREE.Mesh(mergeGeometries(steel), mats().trussBlack));
+  return out;
+}
+// flown subs: a straight column of sub cabinets on its own fly bar
+export function subHang(root, o) { return paHang(root, { width: 1.3, ...o, depth: 1.0, height: 0.55, splay: 0 }); }
 export function paPair(root, o) {
   const a = paHang(root, o);
   const g = (o.width ?? 1.3) + 0.3, yaw = o.yaw ?? 0;
@@ -783,20 +800,24 @@ export function subLine(root, { x0, x1, z, gap = 0, pitch = 1.6, count = 2, fill
 // A delay tower on the floor: a lattice mast on a ballasted base, braced, a
 // head frame at the top carrying a line array aimed down the room (+z) at the
 // crowd behind it, and a pod of lights over it. Returns where the lights are.
-export function delayTower(root, { x, z, h, boxes = 16, width = 1.3, yaw = 0 }) {
+export function delayTower(root, { x, z, h, boxes = 16, width = 1.3, from }) {
   const M = mats();
   const steel = [];
   latticeInto(steel, V3(x, 0, z), V3(x, h, z), 1.6, 0.07);
   // the outriggers to the ballast, four ways
   for (const [dx, dz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) latticeInto(steel, V3(x + dx * 3.2, 0.3, z + dz * 3.2), V3(x + dx * 0.6, h * 0.3, z + dz * 0.6), 0.4, 0.03);
-  // the head: a short truss across the top, the array hung from its front
-  latticeInto(steel, V3(x - 2, h, z), V3(x + 2, h, z), 0.8, 0.05);
-  latticeInto(steel, V3(x, h, z - 0.8), V3(x, h, z + 1.8), 0.8, 0.05);
+  // the head: a short truss out over each of the tower's two outer faces
+  // (the ones turned away from the stage, `from`) and one out across the
+  // corner between them, an array hung from the end of each, aimed straight
+  // out along it: three ways out over the house behind
+  const sx = Math.sign(x - from.x) || 1, sz = Math.sign(z - from.z) || 1;
+  const faces = [[sx, 0], [sx * Math.SQRT1_2, sz * Math.SQRT1_2], [0, sz]];
+  for (const [fx, fz] of faces) latticeInto(steel, V3(x - fx * 0.8, h, z - fz * 0.8), V3(x + fx * 2.0, h, z + fz * 2.0), 0.8, 0.05);
   root.add(new THREE.Mesh(mergeGeometries(steel), M.trussBlack));
   const base = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.3, 7.2), std({ color: 0x1a1b1e, roughness: 0.8 }));
   base.position.set(x, 0.15, z); root.add(base);
-  paHang(root, { x, y: h - 1.1, z: z + 1.4, boxes, width, yaw, splay: 0.025, roofY: h - 0.4 });
-  return [-1.6, -0.55, 0.55, 1.6].map((dx) => V3(x + dx, h + 0.7, z + 0.2));
+  for (const [fx, fz] of faces) paHang(root, { x: x + fx * 1.9, y: h - 1.1, z: z + fz * 1.9, boxes, width, yaw: Math.atan2(fx, fz), splay: 0.025, roofY: h - 0.4 });
+  return [-1.6, -0.55, 0.55, 1.6].map((d) => V3(x + d * Math.abs(sz) * 0.7, h + 0.7, z + d * 0.7));
 }
 
 // A ground-supported set for a big stage: two lattice towers carrying a header
@@ -1136,11 +1157,18 @@ export function roundStage(ctx, root, { c, w = 16, d = 40, deck = 2.2, top = 26,
   const stageWash = shadowSpot(0xffffff, 0, { angle: 0.75, penumbra: 1, cast: false });
   stageWash.position.set(c.x, RY - 1, c.z); stageWash.target.position.set(c.x, deck, c.z);
   root.add(stageWash, stageWash.target);
-  // the PA: a hang at each end, two down each side, one at each corner, turned out
-  for (const [x, z, yaw, boxes] of [[0, TZ + 1, 0, 18], [0, -TZ - 1, Math.PI, 18],
-    [TX + 1, -d / 4, Math.PI / 2, 18], [TX + 1, d / 4, Math.PI / 2, 18], [-TX - 1, -d / 4, -Math.PI / 2, 18], [-TX - 1, d / 4, -Math.PI / 2, 18],
-    [TX + 0.8, TZ + 0.8, Math.PI / 4, 14], [-TX - 0.8, TZ + 0.8, -Math.PI / 4, 14], [TX + 0.8, -TZ - 0.8, 3 * Math.PI / 4, 14], [-TX - 0.8, -TZ - 0.8, -3 * Math.PI / 4, 14]]) {
-    paPair(root, { x: c.x + x, y: RY - 0.8, z: c.z + z, boxes, width: 1.3, yaw, roofY: top - 0.8 });
+  // the PA, clear of the trusses and the roof's towers: a hang at each end
+  // and two down each side with one between them, turned out; at each corner
+  // three, from one side round to the other, spaced out on arms from the
+  // roof's corner tower
+  for (const [x, z, yaw] of [[0, TZ + 1.4, 0], [0, -TZ - 1.4, Math.PI],
+    [TX + 1.4, -d / 3, Math.PI / 2], [TX + 1.4, d / 3, Math.PI / 2], [-TX - 1.4, -d / 3, -Math.PI / 2], [-TX - 1.4, d / 3, -Math.PI / 2]]) {
+    paPair(root, { x: c.x + x, y: RY - 0.8, z: c.z + z, boxes: 18, width: 1.3, yaw, roofY: top - 0.8 });
+  }
+  for (const s of [-1, 1]) paHang(root, { x: c.x + s * (TX + 1.4), y: RY - 0.8, z: c.z, boxes: 16, width: 1.3, yaw: s * Math.PI / 2, roofY: top - 0.8 });
+  for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+    const yaw = Math.atan2(sx, sz);
+    paCorner(root, { px: c.x + sx * TX, pz: c.z + sz * TZ, r: 3.4, yaws: [yaw - 0.7, yaw, yaw + 0.7], boxes: [12, 14, 12], y: RY - 0.8, bar: RY + 0.6, width: 1.2 });
   }
   const inside = (x, z, pad = 0) => (Math.abs(x - c.x) < BX + pad && Math.abs(z - c.z) < BZ + pad)
     || (runway && Math.abs(x - c.x) < RW / 2 + PIT + pad && Math.abs(z - c.z) < ends + PIT + pad);

@@ -14,7 +14,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { APP, DEG, KELVIN, V3, clamp, lerp, prng, std, floorPanelTex, glowMat, ringTint } from '../core.js';
 import { lightPoints } from '../people.js';
 import { hoists, micStand, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, crossThrust, diagonalTowers, roundBlocks, roundStage, delayTower, fixtureRow, flashOnCrowd, flashUnits, floorChairs, fohPosition, fromRow, groundRoof, paHang, paPair, paWing, runBlinders, runShow, runStrobes, scaffoldMasking, screenHang, section, stageRing, subLine, thinRow, wallStrip } from '../show.js';
+import { bigCrowd, bigScreens, crossThrust, diagonalTowers, roundBlocks, roundStage, delayTower, fixtureRow, flashOnCrowd, flashUnits, floorChairs, fohPosition, fromRow, groundRoof, paCorner, paHang, paPair, paWing, runBlinders, runShow, runStrobes, scaffoldMasking, screenHang, section, stageRing, subLine, thinRow, wallStrip } from '../show.js';
 import { buildStands, decodeSeats } from '../stands.js';
 import { TD_STANDS } from './td-data.js';
 
@@ -135,27 +135,39 @@ export function buildDome(ctx) {
   // of its seats, with cup holes, on a wooden front down to the tread; light-wood
   // half-height partitions between the boxes; the seats grey, not blue. Phi is
   // the angle from the centre-field line seen from home plate (the foul lines
-  // at 45). (D's last row stops short of the run in most of it: the two rows
-  // are the two highest at each degree round.)
+  // at 45). (D's last rows run ragged: the two rows are the two highest that
+  // run the whole way along it, on each side, and the odd seats that stand
+  // up behind them there are left out, so the boxes run as two clean rows.)
   const BOX = { level: 'D', phi: [85, 115], per: 4 };
   // the backscreen's sector of the outfield stand, either side of the
   // centre-field line (the official map's F09 and F12 begin at 8.4°)
   const BSC = 8.4;
   const inBackscreen = (x, z) => Math.abs(Math.atan2(x, -z)) / DEG < BSC;
+  // (each side's top box row: the highest with a seat in at least four
+  // degrees of every five along the run)
   const boxTop = new Map();
   {
     const L = TD_STANDS.levels.find((l) => l.name === BOX.level), S = decodeSeats(L.seats), sk = L.seatScale ?? 10;
+    const seen = new Map();
     for (let i = 0; i < S.length; i += 4) {
-      const x = S[i] / sk, z = S[i + 1] / sk, key = `${Math.sign(x)}:${Math.floor(Math.abs(Math.atan2(x, -z)) / DEG)}`;
-      boxTop.set(key, Math.max(boxTop.get(key) ?? 0, S[i + 2]));
+      const x = S[i] / sk, z = S[i + 1] / sk, f = Math.floor(Math.abs(Math.atan2(x, -z)) / DEG);
+      if (f < BOX.phi[0] || f > BOX.phi[1]) continue;
+      const key = `${Math.sign(x)}:${S[i + 2]}`;
+      if (!seen.has(key)) seen.set(key, new Set());
+      seen.get(key).add(f);
+    }
+    const span = BOX.phi[1] - BOX.phi[0] + 1;
+    for (const [key, fs] of seen) {
+      const [side, row] = key.split(':').map(Number);
+      if (fs.size >= 0.8 * span) boxTop.set(side, Math.max(boxTop.get(side) ?? 0, row));
     }
   }
-  const inBox = (name, x, z, row) => {
+  const inRun = (name, x, z) => {
     if (name !== BOX.level) return false;
     const f = Math.abs(Math.atan2(x, -z)) / DEG;
-    if (f < BOX.phi[0] || f > BOX.phi[1]) return false;
-    return row >= (boxTop.get(`${Math.sign(x)}:${Math.floor(f)}`) ?? 99) - 1;
+    return f >= BOX.phi[0] && f <= BOX.phi[1];
   };
+  const inBox = (name, x, z, row) => inRun(name, x, z) && (row === boxTop.get(Math.sign(x)) || row === boxTop.get(Math.sign(x)) - 1);
   // ── the main screen's line (built further on) ──
   // Along the curve of the outfield stand's back, over its back rows, where
   // the columns at the heads of its aisles stand: they carry it.
@@ -189,12 +201,14 @@ export function buildDome(ctx) {
   const stands = buildStands(TD, {
     // (the lightsticks' blocks by the stands' own aisles)
     byAisle: true,
+    // (one wedge across every level, cut where the 1st floor's aisles run)
+    sectors: ['A', 'F'],
     offset: OFF, stage: STAGE, seed: 400, concreteTone: 0.28, roofY: (x, z) => ringY(z + ZH) + 0.3,
     seatColors: { A: 0x1d3c86, B: 0x1d3c86, F: 0x1d3c86, K: 0x1d3c86, G: 0x1d3c86, C: 0x5a5d63, D: 0x1d3c86, E: 0x1d3c86 },
     seatColorAt: (name, x, z, row) => (inBox(name, x, z, row) ? 0x6a6b6e : null),
     // the backscreen: the outfield stand's middle, between F09 and F12, has
     // no seats (its steps are painted dark, below)
-    seatKeep: (name, x, z) => !(name === 'F' && inBackscreen(x, z)),
+    seatKeep: (name, x, z, row) => !(name === 'F' && inBackscreen(x, z)) && !(inRun(name, x, z) && row > boxTop.get(Math.sign(x))),
     crowd: !!q.crowd,
     // the lightsticks' floors as the building counts them, [floor, band from
     // the front]: the 1st floor (the field-level seats, A, B behind it, and
@@ -591,7 +605,9 @@ export function buildDome(ctx) {
   const towerLights = [];
   for (const side of [-1, 1]) {
     paWing(root, { x: side * PX, z: PZ, h: PH, bridge: V3(side * (TX + 0.8), SR, BZ[2]) });
-    paHang(root, { x: side * (WW / 2 + 2.6), y: SR - 2.4, z: BZ[3] + 0.2, boxes: 20, width: 1.4, yaw: -side * 0.05, roofY: SR - 0.8 });
+    // the stage's front corner: the main to the front, two more round to
+    // the side, spaced out on arms from the roof's corner tower
+    paCorner(root, { px: side * TX, pz: BZ[3], r: 3.6, yaws: [0, side * 0.6, side * 1.2], boxes: [20, 16, 14], y: SR - 2.4, bar: SR - 1.2, width: 1.4 });
     paHang(root, { x: side * TX, y: SR - 2.4, z: BZ[2] + 1.5, boxes: 10, width: 1.4, depth: 1.0, splay: 0.008, roofY: SR - 0.8 });
     paPair(root, { x: side * (PX - 1.2), y: PH - 1.6, z: PZ + 1.0, boxes: 16, width: 1.3, yaw: side * 0.5, roofY: PH - 0.5 });
     paHang(root, { x: side * (PX + 2.5), y: PH - 1.6, z: PZ + 0.4, boxes: 12, width: 1.2, yaw: side * 1.15, roofY: PH - 0.4 });
@@ -599,7 +615,7 @@ export function buildDome(ctx) {
   }
   // the delay towers on the field, either side of the runway, past the
   // cross: for the back of the field and the stands behind home
-  for (const [x, z] of DT) towerLights.push(...delayTower(root, { x, z, h: 26, boxes: 16, width: 1.3, yaw: -Math.sign(x) * 0.04 }));
+  for (const [x, z] of DT) towerLights.push(...delayTower(root, { x, z, h: 26, boxes: 16, width: 1.3, from: V3(0, 0, 0) }));
   const spots = [], beams = [], washes = [], ups = [], ring2 = [], bst = [];
   spots.push(...fixtureRow(q, 14, (i) => ({ fx: rig.add({ kind: 'spot', pos: V3(-26 + i * 4, LT - 0.7, BZ[3]), length: 70, angle: 0.08 }), group: 0 })));
   beams.push(...fixtureRow(q, 14, (i) => ({ fx: rig.add({ kind: 'beam', pos: V3(-26 + i * 4, LT - 0.7, BZ[2]), length: 90, beamGain: 1.2 }), group: 1 })));
@@ -872,7 +888,7 @@ export function buildDome(ctx) {
     const DTR = diagonalTowers(STAGE, { r: 52, ax: 0.62, az: 0.78, cell: 10, ok: (x, z) => inF(x, z) && Math.min(edgeD(x, z), edgeD(-x, z)) > 12 });
     const towerLights = [];
     // (the outfield's pair as high as the outfield stand they play to; home's to the 2nd floor)
-    for (const [x, z] of DTR) towerLights.push(...delayTower(root, { x, z, h: z < STAGE.z ? 20 : 30, boxes: z < STAGE.z ? 14 : 18, width: 1.3, yaw: Math.atan2(x - STAGE.x, z - STAGE.z) }));
+    for (const [x, z] of DTR) towerLights.push(...delayTower(root, { x, z, h: z < STAGE.z ? 20 : 30, boxes: z < STAGE.z ? 14 : 18, width: 1.3, from: STAGE }));
     const rig = ctx.rig({ finish: 'black' });
     const tw = fixtureRow(q, towerLights.length, (i) => ({ fx: rig.add({ pos: towerLights[i], kind: 'beam', length: 70, beamGain: 0.9 }), group: 5 }));
     // (well back from the runway's end, towards home)

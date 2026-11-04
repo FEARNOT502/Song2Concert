@@ -517,10 +517,10 @@ export function silhouettes(people, cu, { seed = 5 } = {}) {
 // swelling up the levels in a break; and the big rooms' other parts: a ripple
 // out from the stage in an intro, a wave across or up in a post-chorus, a
 // pulse across on every beat in a bridge, the colours drifting across as one
-// blend in an interlude, a chequerboard in a dance break, the colours
-// wheeling round the house with a comet and sparkle in a solo, the house
+// blend in an interlude, stripes trading in a dance break, the colours
+// wheeling round the house with a comet in a solo, the house
 // going out from the top down in an outro. Most parts have more than one
-// way to go (a gradient, a chequerboard, a fill block by block), and each
+// way to go (a gradient, stripes, a fill block by block), and each
 // scene picks one (see cue). `uLook` (fixed per song) seeds which scenes it plays. With the house lights up the
 // sticks are off control: each glows on its own, softly, as before a show.
 // `p.zone` is { lv (0 the floor, 1 up the levels), u (the block's place
@@ -581,6 +581,10 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
         int i = int(mod(k, 5.0));
         return i == 0 ? uPal[0] : i == 1 ? uPal[1] : i == 2 ? uPal[2] : i == 3 ? uPal[3] : mix(vec3(1.0), uPal[0], 0.15);
       }
+      // a stick's stripe: the stands' wedges in turn round the house (every
+      // level of a wedge as one), the floor's blocks by their column, so
+      // alternating ones run as stripes out from the stage, never a chequer
+      float sb() { return aZone.x < 0.5 ? aZone.z - aZone.w * 65.0 : aZone.z; }
       // scene s: which colour this stick's block takes (k turns them over).
       // A block is always one colour: each block of the stands and of the
       // floor its own, as a house is run from the desk block by block.
@@ -590,14 +594,12 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
         float c0 = floor(h1(sd + 3.3) * 4.0), st = 1.0 + floor(h1(sd + 5.9) * 3.0);
         // most scenes keep to the sleeve's colours; some light a set of blocks white
         float wht = step(h1(sd + 8.1), 0.25);
-        float lv = aZone.x, bk = aZone.z;
-        // block by block, as a house is run from the desk: never a whole
-        // level as one
-        float idx = lay < 0.5 ? mod(bk, 4.0)                         // every block its own, four colours round
-                  : lay < 1.5 ? mod(bk, 2.0)                         // blocks alternating
-                  : lay < 2.5 ? mod(bk + lv, 2.0)                    // alternating, and against the level below
-                  : lay < 3.5 ? mod(bk + lv, 3.0)                    // three colours stepping round and up
-                  : (lv < 0.5 ? 2.0 : mod(bk, 2.0));                 // the floor one, the stands' blocks alternating
+        float lv = aZone.x, bk = sb();
+        float idx = lay < 0.5 ? mod(bk, 4.0)                         // every stripe its own, four colours round
+                  : lay < 1.5 ? mod(bk, 2.0)                         // stripes alternating
+                  : lay < 2.5 ? mod(floor(bk / 2.0), 2.0)            // stripes alternating in pairs
+                  : lay < 3.5 ? mod(bk, 3.0)                         // three colours stepping round
+                  : (lv < 0.5 ? 2.0 : mod(bk, 2.0));                 // the floor one, the stands' stripes alternating
         float ci = c0 + (idx + k) * st;
         if (wht > 0.5 && mod(idx + k, 3.0) == 2.0) return col(4.0);
         return col(ci);
@@ -607,10 +609,12 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
       // 10 interlude.
       // Everything that moves runs on the beat (uPhase), not the clock. Each
       // part has a few of the desk's stock effects (a scene of block colours,
-      // a gradient across or up the house, a wave, a chequerboard, the house
-      // filling block by block, a ripple out from the stage, twinkling), and a
-      // scene (s) picks which one it plays, so a part reads differently each
-      // time it comes round.
+      // a gradient across or up the house, a wave, stripes, the house filling
+      // block by block, a ripple out from the stage), and a scene (s) picks
+      // which one it plays, so a part reads differently each time it comes
+      // round. The calm parts (intro, verse, interlude, outro) hold their
+      // colours; every other keeps them moving all the while. Nothing flashes
+      // white.
       // how far from the stage: the floor's rows back, then up the levels
       float dep() { return aZone.x + (aZone.x < 0.5 ? min(aZone.w, 8.0) / 8.0 : 1.0); }
       // the sleeve's colours as one blend: x runs 0..4 round them
@@ -621,31 +625,26 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
       }
       // two colours swept into each other and back as x runs 0..1
       vec3 duo(float x, float a, float b) { return mix(col(a), col(b), 0.5 - 0.5 * cos(x * 6.283)); }
-      // the chequerboard: a block's square (the floor's blocks already
-      // alternate down a column; the stands' against the level below)
-      float chk(float k) { return mod(aZone.z + aZone.x + k, 2.0); }
-      // a stick's own random twinkle: d of them lit at a time, n turns a beat
-      float twk(float d, float n) { return step(1.0 - d, h1(aLook.x * 13.0 + floor(uPhase * n))); }
+      // stripes: alternate blocks, k turning them over
+      float stp(float k) { return mod(sb() + k, 2.0); }
       vec3 cue(float sec, float s) {
         float ph = uPhase, lv = aZone.x, u = aZone.y, dp = dep();
-        float bar = floor(ph / 4.0);
+        float bar = floor(ph / 4.0), bt = floor(ph);
         float sd = s * 1.37 + uLook * 7.1;
         float v = h1(sd + 2.2), c0 = floor(h1(sd + 3.3) * 4.0);
         vec3 sc = sceneCol(s, 0.0);
         if (sec < 0.5) {
-          // intro: the house dark but for a few sticks twinkling white, then
-          // a ripple out from the stage, back across the floor and up the
-          // levels, lighting each block as it passes, its leading edge white
-          float r = uProg * 4.4 - dp;
-          float w = clamp(r / 0.8, 0.0, 1.0), edge = exp(-r * r * 6.0);
+          // intro: the house dark, then a ripple out from the stage, back
+          // across the floor and up the levels, lighting each block as it passes
+          float w = clamp((uProg * 4.4 - dp) / 0.8, 0.0, 1.0);
           vec3 lit = (v < 0.5 ? sc : grad(c0 + dp * 0.5)) * (0.5 + 0.1 * sin(ph * 0.785 + lv));
-          return lit * w + vec3(1.0) * (0.8 * edge + 0.45 * twk(0.06, 1.0) * (1.0 - w));
+          return lit * w;
         }
         if (sec < 1.5) {
           // verse: calm. The scene's block colours, each block breathing out
           // of step; or two colours as a gradient up the house, or across it,
           // drifting a bar at a time
-          if (v < 0.4) return sc * (0.5 + 0.2 * sin(ph * 0.785 + lv * 1.6 + aZone.z * 0.9));
+          if (v < 0.4) return sc * (0.5 + 0.2 * sin(ph * 0.785 + lv * 1.6 + sb() * 0.9));
           if (v < 0.7) return duo(dp * 0.3 - ph / 32.0, c0, c0 + 1.0) * (0.45 + 0.15 * sin(ph * 0.785 - dp));
           return duo(u - ph / 32.0, c0, c0 + 2.0) * (0.45 + 0.15 * sin(ph * 0.785 + u * 6.283));
         }
@@ -653,50 +652,49 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
           // pre-chorus: building, brighter all the while. A chase up the
           // levels, floor to the top and round again, stepping on the beat
           // (every other beat as it starts, every beat as it builds); or the
-          // house filling block by block into the next colour as the build runs
+          // house filling block by block as the build runs, the filled blocks
+          // turning over a colour every beat
           float lift = 0.7 + 0.5 * uProg;
           if (v < 0.5) {
             float lit = mod(uStep, 4.0);
             // (round: a quarter of the house a step, round it, as well as up)
             float on = uRound > 0.5 ? 1.0 - step(0.5, abs(floor(u * 4.0) - lit)) : 1.0 - step(0.5, abs(mod(lv, 4.0) - lit));
             float glow = on * (0.4 + 0.6 * exp(-uStepT * 2.5));
-            return mix(sc * 0.3, sceneCol(s, 1.0) * 1.15, glow) * lift;
+            return mix(sceneCol(s, bar) * 0.3, sceneCol(s, 1.0 + uStep) * 1.15, glow) * lift;
           }
           // (the blocks taken in turn from the middle out, or round the house
           // once round a centre stage, a little out of order)
-          float at = (h1(aZone.z * 3.7 + lv) * 0.15 + (uRound > 0.5 ? u : abs(u - 0.5) * 2.0)) / 1.15;
+          float at = (h1(sb() * 3.7 + lv) * 0.15 + (uRound > 0.5 ? u : abs(u - 0.5) * 2.0)) / 1.15;
           float on = step(at, uProg * 1.05);
-          return mix(sc * 0.25, sceneCol(s, 1.0) * (1.0 + 0.4 * exp(-uStepT * 2.5)), on) * lift;
+          return mix(sc * 0.25, sceneCol(s, 1.0 + bt) * (1.0 + 0.4 * exp(-uStepT * 2.5)), on) * lift;
         }
         if (sec < 3.5) {
-          // chorus: the whole house on the kick. Two colours as a
-          // chequerboard, the squares trading each bar; or the scene's block
-          // colours, the levels trading colours each bar (round: the four faces
-          // of the house trading); or the sleeve's colours as one gradient
-          // round the house, turning a step a beat
+          // chorus: the whole house on the kick, its colours never still. Two
+          // colours as stripes, trading on every beat; or the scene's block
+          // colours turning over a step a beat (round: the four faces of the
+          // house each a step on); or the sleeve's colours as one gradient
+          // round the house, turning all the while
           vec3 c;
           float m = mod(floor(v * 3.0) + uLook, 3.0);
-          if (m < 0.5) c = chk(bar) < 0.5 ? col(c0) : col(c0 + 1.0) * 0.8;
-          else if (m < 1.5) c = sceneCol(s, bar + uRound * floor(u * 4.0));
-          else c = grad(u * 4.0 - floor(ph) * 0.25 + lv * 0.5);
-          if (uLook > 1.5) c = mix(c, vec3(1.0), 0.45 * uKick);
+          if (m < 0.5) c = stp(bt) < 0.5 ? col(c0 + bar) : col(c0 + 1.0 + bar) * 0.8;
+          else if (m < 1.5) c = sceneCol(s, bt + uRound * floor(u * 4.0));
+          else c = grad(u * 4.0 - ph * 0.5 + lv * 0.5);
           float turn = mod(uLook, 2.0) < 0.5 ? 1.0 : 0.6 + 0.4 * step(mod(uBeat - lv, 4.0), 0.5);
           return c * (0.55 + 0.75 * uKick) * turn;
         }
         if (sec < 4.5) {
-          // post-chorus: the chorus's colours held, or a gradient, a wave
-          // running through every two beats in place of the kick: across the
-          // house, or out from the stage and up the levels
-          vec3 c = v < 0.5 ? sceneCol(s, bar) : duo(u * 0.5 + dp * 0.15, c0, c0 + 1.0);
+          // post-chorus: a gradient drifting through the house, a wave running
+          // through every two beats in place of the kick: across the house,
+          // or out from the stage and up the levels
+          vec3 c = v < 0.5 ? grad(c0 + u * 2.0 - ph / 4.0) : duo(u * 0.5 + dp * 0.15 - ph / 16.0, c0, c0 + 1.0);
           float x = mod(floor(v * 4.0), 2.0) < 0.5 ? u * 6.283 : dp * 2.4;
           float w = 0.5 + 0.5 * sin(x - ph * 3.1416);
-          return c * (0.35 + 0.65 * w * w) + vec3(1.0) * 0.25 * pow(w, 8.0);
+          return c * (0.35 + 0.65 * w * w);
         }
         if (sec < 5.5) {
-          // break: one colour, dim, the levels swelling one after another,
-          // a few sticks twinkling white over it
-          vec3 c = col(c0) * (0.22 + 0.16 * sin(lv * 1.3 + aZone.z * 0.7 - ph * 0.393));
-          return c + vec3(1.0) * 0.5 * twk(0.03, 2.0);
+          // break: dim, the levels swelling one after another, the colours
+          // drifting slowly round the house
+          return grad(c0 + u * 1.5 - ph / 16.0) * (0.22 + 0.16 * sin(lv * 1.3 + sb() * 0.7 - ph * 0.393));
         }
         if (sec < 6.5) {
           // bridge: two colours of its own as a gradient up the house, flipped
@@ -712,34 +710,28 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
           if (uRoll >= 0.0) {
             float k = exp2(1.0 + min(2.0, floor(uRoll * 3.0)));
             float on = step(fract(ph * k), 0.5);
-            c = mix(c, mix(hit, vec3(1.0), 0.3) * (0.15 + 1.1 * on), 0.4 + 0.6 * uRoll);
+            c = mix(c, hit * (0.15 + 1.1 * on), 0.4 + 0.6 * uRoll);
           }
           return c;
         }
         if (sec < 7.5) {
-          // dance break: the blocks as a chequerboard, trading on every beat,
-          // two colours hard against each other, a white flash on the kick;
-          // every other bar the lit squares a gradient across the house
-          float on = step(chk(floor(ph)), 0.5);
-          vec3 a = mod(bar, 2.0) < 0.5 ? col(c0) : grad(c0 + u * 2.0);
-          vec3 c = on > 0.5 ? a * 1.15 : col(c0 + 1.0) * 0.18;
-          return mix(c, vec3(1.0), 0.6 * uKick * uKick);
+          // dance break: stripes trading on every beat, two colours hard
+          // against each other, the pair stepping on a colour each bar
+          vec3 c = stp(bt) < 0.5 ? col(c0 + bar) * 1.15 : col(c0 + 1.0 + bar) * 0.25;
+          return c * (0.8 + 0.4 * uKick);
         }
         if (sec < 8.5) {
           // solo: the house is the show. The sleeve's colours in stripes round
           // each level, turning a stripe a beat, the levels turning against
-          // each other; a white comet running round every bar with its tail;
-          // a sweep up the levels on the beat; sticks sparkling on the
-          // sixteenths; the whole house going up white on the kick
+          // each other; a comet of the first colour running round every bar
+          // with its tail; a sweep up the levels on the beat
           float dir = mod(lv, 2.0) < 0.5 ? 1.0 : -1.0;
           float uu = dir > 0.0 ? u : 1.0 - u;
           vec3 c = col(mod(floor(uu * 8.0 - ph), 4.0)) * 0.6;
           float x = fract(uu - ph / 4.0);
-          c += mix(uPal[0], vec3(1.0), 0.7) * 1.3 * exp(-x * 12.0);
+          c += uPal[0] * 1.3 * exp(-x * 12.0);
           float dl = (fract(ph) * 4.0 - lv) * 1.6;
-          c *= 0.75 + 0.6 * exp(-dl * dl);
-          c = mix(c, vec3(1.0), 0.7 * twk(0.14, 4.0));
-          return c + vec3(1.0) * 1.0 * uKick * uKick;
+          return c * (0.75 + 0.6 * exp(-dl * dl)) * (0.85 + 0.3 * uKick);
         }
         if (sec > 9.5) {
           // interlude: the sleeve's colours as one blend across the house,
