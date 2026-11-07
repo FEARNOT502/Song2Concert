@@ -378,6 +378,14 @@ export function buildDome(ctx) {
       const leaf = new THREE.BoxGeometry(0.22, gh, lw);      // (padded, as thick as the wall's padding)
       leaf.rotateY(Math.atan2(dx, dz)); leaf.translate(hx + dx * lw / 2, gh / 2, hz + dz * lw / 2);
       root.add(new THREE.Mesh(leaf, std({ color: 0x0b2a1a, roughness: 0.8 })));
+      // the cut's side padded as the wall is, from the wall back to the roof, up to the rows beside it
+      // (no bare concrete of the stand's fronts showing either side of the mouth)
+      const top = Math.max(gh, ...(t.sides?.[0] ?? []).map(([, y]) => y)), len = (t.deck ?? 1) + 0.4;
+      const pad = new THREE.BoxGeometry(0.36, top, len);
+      pad.rotateY(Math.atan2(t.u[0], t.u[1]));
+      const cx = t.p[0] + vx * sg * (t.w / 2 + 0.18) + t.u[0] * (len / 2 - 0.2), cz = t.p[1] + ZH + vz * sg * (t.w / 2 + 0.18) + t.u[1] * (len / 2 - 0.2);
+      pad.translate(cx, top / 2, cz);
+      root.add(new THREE.Mesh(pad, std({ color: 0x0b2a1a, roughness: 0.8 })));
     }
   }
   // steps from the field up over the low wall into the 1st floor's front

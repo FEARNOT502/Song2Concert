@@ -286,6 +286,18 @@ _frames={b['blk']:(b['f'],b['sA']) for b in ra['blocks'] if b['poly'].mean(0)[0]
 # degrees off the map's frame: their rows face the infield, as the real ones do, and meet the outfield
 # stand's and their neighbours' with less of a step
 T1.ROT.update({1:15.0,2:8.0})
+# (A01's rows and the turned rows of F20 behind the outfield's diagonal run the way B02's kinked half does:
+# A02's frame turned 8 + 20 degrees towards home; A01 turned as far as that takes it from its own frame)
+def _turn(f_,deg_,c_):
+    f_=np.asarray(f_,float); hd_=-np.asarray(c_,float)/np.linalg.norm(c_); t_=hd_-(hd_@f_)*f_; t_=t_/np.linalg.norm(t_); a_=np.radians(deg_)
+    return f_*np.cos(a_)+t_*np.sin(a_)
+_cA2=np.array(_A_ch[2].centroid.coords[0]); _fK=_turn(_frames[2][0],28.0,_cA2)        # (towards the field: the kinked rows' facing)
+_f1=np.asarray(_frames[1][0],float)
+T1.ROT[1]=float(np.degrees(np.arccos(np.clip(_f1@_fK,-1,1))))
+print('A01 turned %.1f degrees, to run with the kinked half of B02'%T1.ROT[1])
+# and the B block behind A02 (A48) kinked: its half towards the pole has its rows turned 20 degrees towards
+# home, the line of the kink running back through the block's middle, as the real one
+T1.KINK.update({2:20.0})
 S1=T1.build(G,_A_ch,_B_ch,_F_ch,_frames,hull1>0,field|EX)
 # The fingers' heights (td_stand1.fit_rake): every block ONE straight slope (no landing, the rake
 # never easing off up the block), the rakes and front heights the ones that make the steps across the
@@ -316,7 +328,7 @@ for _sg in (1,-1):
     _n=np.array([_gxF[_m1].mean(),_gzF[_m1].mean()]); _n=_n/np.linalg.norm(_n)       # into the stand
     _c1=np.array([_Xg[_m1].mean(),_Zg[_m1].mean()]); _hd=-_c1/np.linalg.norm(_c1)
     _fa=-_n; _tp=_hd-(_hd@_fa)*_fa; _tp=_tp/np.linalg.norm(_tp); _a=np.radians(25.0)
-    _n1=-(_fa*np.cos(_a)+_tp*np.sin(_a))                                             # the turned rows' way back
+    _n1=-(_fK*np.array([_sg,1.0]))                                                    # the turned rows' way back: as B02's kinked half
     # (anchored at the front of the boundary between the two blocks: the turned rows start level with the fence's there)
     _bd=_m1&(cv2.dilate(_m2.astype(np.uint8),np.ones((5,5),np.uint8))>0)
     _j=np.argmin(np.where(_bd,_dFence,1e9)); _p0=np.array([_Xg.flat[_j],_Zg.flat[_j]]); _d0=float(_dFence.flat[_j])
@@ -748,7 +760,9 @@ for _k in (2,):
     _ys,_xs=np.nonzero(np.isin(S1['band'],_ids)); _P=np.c_[G.m(_xs,_ys)]
     _f=np.asarray(_fg.f,float); _v=np.array([-_f[1],_f[0]])
     _c=_P.mean(0); _tf=float((_P@_f).max()); _lat=(_P-_c)@_v
-    _w=float(min(6.0,_lat.max()-_lat.min()-0.4))      # (the block's width, less its aisles)
+    # (the block's width at its front, from its outline, less its aisles)
+    _PA=np.array(_fg.pa.exterior.coords); _fr_=_PA[(_PA@_f)>=(_PA@_f).max()-3.0]; _lp=(_fr_-_c)@_v
+    _w=float(np.clip(_lp.max()-_lp.min()-0.6,2.5,6.0)); _c=_c+_v*float((_lp.max()+_lp.min())/2)
     _p=_c+_f*(_tf-float(_c@_f)+0.6); _u=-_f; _L=float(_tf-(_P@_f).min())+6.0
     # (its mouth in the padded wall round the field: where its axis crosses the fence's line)
     _end=_p+_u*_L; _fr=_LS(poly_out(fnw[0])[0]+[poly_out(fnw[0])[0][0]])
@@ -760,9 +774,9 @@ for _k in (2,):
     # the row over the cut's end; the cut's sides walled a rail's height over the rows beside them
     _dk=1.2
     _hy=lambda a_: float(_fg.height(_fg.coord((_p+_u*a_)[None,:])[0]))
-    _dY=_hy(_dk); _h=round(_dY-0.3,2)
+    _dY=_hy(_dk); _h=round(min(_dY,_hy(0.3))-0.6,2)      # (under the lowest row over it, with room for the roof)
     # (the cut's side walls level with the rows beside them, row by row)
-    _sd=[[round(float(a_),2),round(_hy(max(a_,0.05))+0.02,2)] for a_ in np.linspace(-0.4,_dk,8)]
+    _sd=[[round(float(a_),2),round(_hy(max(a_,0.05))+0.02,2)] for a_ in np.linspace(0.2,_dk,8)]      # (from behind the wall's padding)
     _tunnels.append({'p':[round(float(_p[0]),2),round(float(_p[1]),2)],'u':[round(float(_u[0]),4),round(float(_u[1]),4)],'w':round(_w,2),'h':_h,'L':round(_L,2),
                      'deck':_dk,'deckY':round(_dY,2),'sides':[_sd,_sd],'closed':True,'gate':True})
     _vv=np.array([-_u[1],_u[0]]); _hw=_w/2+0.15

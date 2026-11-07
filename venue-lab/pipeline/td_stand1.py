@@ -98,28 +98,41 @@ class Finger:
         allp = np.vstack([PA] + ([np.array(pb.exterior.coords)] if pb is not None else []))
         s.cback = float((allp @ s.f).min())
         s.u = np.array([-s.f[1], s.f[0]]); s.ref = None; s.w = None      # (the rows' bend: see warp_rows)
+        s.kink = None   # (l0, k, sigma): behind the walkway, the rows on the sigma side of p.u = l0 turned (see KINK)
         s._lines()
     def coord(s, p):
         """The row coordinate at the points p (an (n, 2) array or one point): p.f, less the bend of the rows
         (every row is a line of this coordinate: straight, or the parabola warp_rows makes it)."""
         p = np.asarray(p, float); c = p @ s.f
-        if s.w is None: return c
-        lat = (p - s.ref) @ s.u
-        return c - (s.w[0] + s.w[1] * lat + s.w[2] * lat * lat)
+        if s.w is not None:
+            lat = (p - s.ref) @ s.u
+            c = c - (s.w[0] + s.w[1] * lat + s.w[2] * lat * lat)
+        return s._kinked(c, p @ s.u)
     def coord_xz(s, X, Z):
         c = X * s.f[0] + Z * s.f[1]
-        if s.w is None: return c
-        lat = (X - s.ref[0]) * s.u[0] + (Z - s.ref[1]) * s.u[1]
-        return c - (s.w[0] + s.w[1] * lat + s.w[2] * lat * lat)
+        if s.w is not None:
+            lat = (X - s.ref[0]) * s.u[0] + (Z - s.ref[1]) * s.u[1]
+            c = c - (s.w[0] + s.w[1] * lat + s.w[2] * lat * lat)
+        return s._kinked(c, X * s.u[0] + Z * s.u[1])
+    def _kink_d(s, t):
+        l0, k, sg = s.kink
+        return k * np.maximum(0.0, sg * (np.asarray(t, float) - l0))
+    def _kinked(s, c, t):
+        """Behind the walkway, past the line p.u = l0 on its sigma side, the rows turned: the coordinate
+        less k times the distance past the line (the rows there run back at an angle, kinked at the line)."""
+        if s.kink is None: return c
+        return np.where(c < s.sBf, c - s._kink_d(t), c)
     def row_point(s, t, cc):
         """The point(s) of the row whose coordinate is `cc` at the lateral position `t` (p.u)."""
         t = np.asarray(t, float)
+        if s.kink is not None and cc < s.sBf: cc = cc + s._kink_d(t)
         c = cc if s.w is None else cc + s.w[0] + s.w[1] * (t - float(s.ref @ s.u)) + s.w[2] * (t - float(s.ref @ s.u)) ** 2
         return s.u[None, :] * np.atleast_1d(t)[:, None] + s.f[None, :] * np.atleast_1d(c)[:, None]
-    def facing(s, lat):
-        """The direction the rows face at lateral position `lat` (square to the row): the gradient of coord."""
-        if s.w is None: return s.f
-        g = s.f - (s.w[1] + 2 * s.w[2] * lat) * s.u
+    def facing(s, lat, t=None, back=False):
+        """The direction the rows face at lateral position `lat` (square to the row): the gradient of coord
+        (`t` the absolute lateral position p.u and `back` behind the walkway: where the rows are kinked)."""
+        g = s.f.copy() if s.w is None else s.f - (s.w[1] + 2 * s.w[2] * lat) * s.u
+        if back and s.kink is not None and t is not None and s.kink[2] * (t - s.kink[0]) > 0: g = g - s.kink[1] * s.kink[2] * s.u
         return g / np.linalg.norm(g)
     def _lines(s):
         """What follows from the walkway's lines: its depth along the finger, the front row, the section."""
@@ -193,6 +206,7 @@ def sdf(mask, res):
     m = mask > 0
     return (np.where(m, distance_transform_edt(m) - 0.5, -(distance_transform_edt(~m) - 0.5)) * res).astype(np.float32)
 
+KINK = {}       # {n: degrees}: finger n's B block kinked: its half towards the pole has its rows turned that far towards home
 ROT = {}        # {n: degrees}: finger n's rows turned towards home (the wedges at the poles face the infield more than the map's frame)
 
 def fingers_of(A, B, frames):
@@ -201,10 +215,16 @@ def fingers_of(A, B, frames):
     out = {}
     for n in sorted(A):
         f, sA = frames[n]
+        wk = None
         if n in ROT:
             f0 = np.array(f, float); c0 = np.array(A[n].centroid.coords[0]); hd = -c0 / np.linalg.norm(c0)
             t = hd - (hd @ f0) * f0; t = t / (np.linalg.norm(t) + 1e-9); a = np.radians(ROT[n])
             f = tuple(f0 * np.cos(a) + t * np.sin(a))
+            # (the walkway where it was, at the block's middle, and as deep: in the turned frame its line would
+            # otherwise move, and the B block's nearest corner set its far edge, a walkway metres deep)
+            u0 = np.array([-f0[1], f0[0]]); pw = (c0 @ u0) * u0 + sA * f0
+            dep = (sA - float((np.array(B[n].exterior.coords) @ f0).max())) if n in B else 0.0
+            wk = (float(pw @ np.array(f)), dep)
         if n == 25: f = (0.0, -1.0)           # (the centre block's axis is the building's own, along the line from home to centre field: the map's rows there stand 1.7 degrees off it)
         for side in ((1,) if n == 25 else (1, -1)):
             k = n if side > 0 else 50 - n
@@ -212,6 +232,14 @@ def fingers_of(A, B, frames):
             pa = A[n] if side > 0 else mirrored(A[n])
             pb = B.get(n); pb = (pb if side > 0 else mirrored(pb)) if pb is not None else None
             out[k] = Finger(k, n, ff, sA, pa, pb)
+            if wk is not None and n != 1: out[k].set_walkway(wk[0], wk[0] - wk[1])
+            elif wk is not None: out[k].set_walkway(wk[0], wk[0])
+    for n, deg in KINK.items():
+        for k in (n, 50 - n):
+            fg = out.get(k); w1 = out.get(1 if k < 25 else 49)
+            if fg is None or fg.pb is None or w1 is None: continue
+            cb = np.array(fg.pb.centroid.coords[0]); sg = float(np.sign((np.array(w1.pa.centroid.coords[0]) - cb) @ fg.u))
+            fg.kink = (float(cb @ fg.u), float(np.tan(np.radians(deg))), sg)
     return out
 
 def warp_rows(G, F, finger_of, zoneF, blocked, w_pos=4.0, w_dir=60.0, w_dirF=30.0, reg=(15.0, 1.0, 20.0)):
@@ -504,7 +532,7 @@ EXTRA = {'B22': 46, 'B28': 46}
 MIRROR_FILL = {'A02': 'A48'}
 # the blocks at the poles, seated wall to wall as the real ones are (their rows' outfield ends, and the
 # rows the chart leaves out, seated a 0.45 m apart, not left bare)
-DENSE = {'A01', 'A02', 'A03', 'A47', 'A48', 'A49'}
+DENSE = {'A01', 'A02', 'A03', 'A47', 'A48', 'A49', 'B02', 'B48'}
 
 def real_block(fg, kind):
     """The chart's name of a finger's block: A01 / A49 (the wedges at the poles: their rows on past the walkway are A's too) or A/B + key."""
@@ -564,7 +592,7 @@ def lay_real(G, res, real, plim=(0.45, 0.55), pitch=0.5, inset=0.18):
                 if mb and str(rr) in mb['rows']: blk = {'rows': {**mb['rows'], **blk['rows']}}; runs = mb['rows'][str(rr)]
             table = k in TABLE and kind == 'B' and rr >= TABLE[k]
             def put(t, tab):
-                g = fg.facing(t - float(fg.ref @ u) if fg.w is not None else 0.0)
+                g = fg.facing(t - float(fg.ref @ u) if fg.w is not None else 0.0, t, kind == 'B')
                 S.append(fg.row_point(t, cc)[0]); R.append(i); Y.append(np.arctan2(g[0], g[1])); T.append(tab)
             if nm in DENSE and not table:
                 kk = int((L + 0.05) // 0.45)
