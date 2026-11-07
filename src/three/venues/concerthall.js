@@ -153,6 +153,7 @@ export function buildConcertHall(ctx) {
   const stageTop = std({ ...withRepeat(hinoki, 1 / 1.3, 1 / 2.6), roughness: 1 });
   const platMesh = new THREE.Mesh(pg, [stageTop, std({ color: 0x3a2818, roughness: 0.6 })]);
   platMesh.receiveShadow = true;
+  platMesh.userData.plan = 'stage';   // for the venue picker's seat maps
   plat.add(platMesh);
   root.add(plat);
 
