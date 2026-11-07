@@ -346,15 +346,37 @@ export function buildDome(ctx) {
     // never over the outfield's height (td_stand1.fit_rake keeps the fronts under it)
     for (let i = 0; i < n; i++) ringH[i] = Math.max(ringH[i], Math.min(outH, ringTop[i]));
   }
-  // (open over the mouths of the tunnels under the poles' 2nd blocks: the wall a lintel there, over the tunnel's roof)
-  const ringY0 = ringPts.map((p) => {
-    for (const t of TD_STANDS.tunnels ?? []) {
-      const dx = p.x - t.p[0], dz = p.z - ZH - t.p[1], a = dx * t.u[0] + dz * t.u[1], b = -dx * t.u[1] + dz * t.u[0];
-      if (Math.abs(b) < t.w / 2 + 0.05 && a > -3 && a < 3) return t.h + 0.12;
+  // (open at the mouth of the tunnel under A02: the wall stops either side of it, a swing gate between)
+  const tunnels = TD_STANDS.tunnels ?? [];
+  const inMouth = ringPts.map((p) => tunnels.some((t) => {
+    const dx = p.x - t.p[0], dz = p.z - ZH - t.p[1], a = dx * t.u[0] + dz * t.u[1], b = -dx * t.u[1] + dz * t.u[0];
+    return Math.abs(b) < t.w / 2 + 0.05 && a > -3 && a < 3;
+  }));
+  let padGeo;
+  if (!inMouth.some(Boolean)) padGeo = wallStrip(ringPts, ringH, { thick: 0.36, closed: true, ease: 6 });
+  else {
+    const n = ringPts.length, s0 = inMouth.indexOf(true), parts = [];
+    let run = [];
+    for (let k = 1; k <= n; k++) {
+      const i = (s0 + k) % n;
+      if (inMouth[i]) { if (run.length > 1) parts.push(run); run = []; } else run.push(i);
     }
-    return 0;
-  });
-  const padGeo = wallStrip(ringPts, ringH, { thick: 0.36, closed: true, ease: 6, y0: ringY0 });
+    if (run.length > 1) parts.push(run);
+    padGeo = mergeGeometries(parts.map((r) => wallStrip(r.map((i) => ringPts[i]), r.map((i) => ringH[i]), { thick: 0.36, ease: 6 })).filter(Boolean));
+  }
+  for (const t of tunnels) {
+    if (!t.gate) continue;
+    // two padded leaves hinged at the mouth's sides, standing a little open into the tunnel
+    const vx = -t.u[1], vz = t.u[0], lw = t.w / 2 - 0.03, gh = 2.4;
+    for (const sg of [-1, 1]) {
+      const hx = t.p[0] + vx * sg * t.w / 2, hz = t.p[1] + ZH + vz * sg * t.w / 2;
+      const ang = Math.atan2(vx, vz) + sg * 0.35;            // the leaf's run from its hinge, swung 20 degrees in
+      const dx = -Math.sin(ang) * sg, dz = -Math.cos(ang) * sg;
+      const leaf = new THREE.BoxGeometry(0.08, gh, lw);
+      leaf.rotateY(Math.atan2(dx, dz)); leaf.translate(hx + dx * lw / 2, gh / 2, hz + dz * lw / 2);
+      root.add(new THREE.Mesh(leaf, std({ color: 0x0b2a1a, roughness: 0.8 })));
+    }
+  }
   // steps from the field up over the low wall into the 1st floor's front
   // rows, round foul territory either side (the way the field's crowd comes
   // and goes from the stands at a concert)

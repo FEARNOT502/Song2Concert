@@ -370,6 +370,12 @@ F._band0=F.band.copy(); F._d0=F.d.copy(); F.hs=np.concatenate(_hsF)
 F.band=np.where(F._band0>=0,F._band0+_Fc*_nF,-1)
 _gxs,_gzs=G.g(F.seats[:,0],F.seats[:,1])
 F.row=F.row+_Fc[np.clip(np.round(_gzs).astype(int),0,G.H-1),np.clip(np.round(_gxs).astype(int),0,G.W-1)]*_nF
+# the seats of the outfield's blocks at the poles turned towards home, block by block (the nearer the
+# pole, the more: the seats face the infield, changing at each aisle), not square to the fence
+_cF=_Fc[np.clip(np.round(_gzs).astype(int),0,G.H-1),np.clip(np.round(_gxs).astype(int),0,G.W-1)]
+_wturn=np.array([0.0,0.55,0.4,0.25,0.12])[np.clip(_cF,0,4)]
+_dv=np.c_[np.sin(F.yaw),np.cos(F.yaw)]; _hv=-F.seats/np.maximum(np.hypot(*F.seats.T),1e-6)[:,None]
+_nv=(1-_wturn)[:,None]*_dv+_wturn[:,None]*_hv; F.yaw=np.arctan2(_nv[:,0],_nv[:,1])
 def _F_by_class(fn):
     out=[]
     for c_ in range(len(_hsF)):
@@ -700,7 +706,7 @@ for _k in (2,):
     _ys,_xs=np.nonzero(np.isin(S1['band'],_ids)); _P=np.c_[G.m(_xs,_ys)]
     _f=np.asarray(_fg.f,float); _v=np.array([-_f[1],_f[0]])
     _c=_P.mean(0); _tf=float((_P@_f).max()); _lat=(_P-_c)@_v
-    _w=float(min(3.0,_lat.max()-_lat.min()-0.6)); _h=2.4
+    _w=float(min(3.0,_lat.max()-_lat.min()-0.6))
     _p=_c+_f*(_tf-float(_c@_f)+0.6); _u=-_f; _L=float(_tf-(_P@_f).min())+6.0
     # (its mouth in the padded wall round the field: where its axis crosses the fence's line)
     _end=_p+_u*_L; _fr=_LS(poly_out(fnw[0])[0]+[poly_out(fnw[0])[0][0]])
@@ -708,10 +714,19 @@ for _k in (2,):
     _pts=[np.array(q_.coords[0]) for q_ in getattr(_xi,'geoms',[_xi]) if not q_.is_empty]
     if _pts:
         _q=min(_pts,key=lambda q_: np.hypot(*(q_-_p))); _p=_q+_u*0.1; _L=float((_end-_p)@_u)
-    _tunnels.append({'p':[round(float(_p[0]),2),round(float(_p[1]),2)],'u':[round(float(_u[0]),4),round(float(_u[1]),4)],'w':round(_w,2),'h':_h,'L':round(_L,2),'covered':True,'closed':True})
+    # an open cut through its front rows (to `deck`, 3.5 m in), then on under the rows, its roof just under
+    # the row over the cut's end; the cut's sides walled a rail's height over the rows beside them
+    _dk=3.5
+    _hy=lambda a_: float(_fg.height(_fg.coord((_p+_u*a_)[None,:])[0]))
+    _dY=_hy(_dk); _h=round(_dY-0.3,2)
+    _sd=[[-0.4,round(_hy(0.3)+1.0,2)],[_dk,round(_dY+1.0,2)]]
+    _tunnels.append({'p':[round(float(_p[0]),2),round(float(_p[1]),2)],'u':[round(float(_u[0]),4),round(float(_u[1]),4)],'w':round(_w,2),'h':_h,'L':round(_L,2),
+                     'deck':_dk,'deckY':round(_dY,2),'sides':[_sd,_sd],'closed':True,'gate':True})
     _vv=np.array([-_u[1],_u[0]]); _hw=_w/2+0.15
-    _feet.append((Polygon([_p+_u*a_+_vv*b_ for a_,b_ in ((-0.4,-_hw),(_L,-_hw),(_L,_hw),(-0.4,_hw))]),_h+0.12))
-print('tunnels under the poles\' 2nd blocks',[(t_['w'],t_['L']) for t_ in _tunnels])
+    _rect=lambda a0_,a1_: Polygon([_p+_u*a0_-_vv*_hw,_p+_u*a1_-_vv*_hw,_p+_u*a1_+_vv*_hw,_p+_u*a0_+_vv*_hw])
+    _feet.append((_rect(-0.4,_dk),None))          # the cut: no tread
+    _feet.append((_rect(_dk,_L),_h+0.12))         # under the rows: the treads on its roof
+print('tunnel under A02 (width, length, roof, deck)',[(t_['w'],t_['L'],t_['h'],t_['deck']) for t_ in _tunnels])
 _open=unary_union([Polygon(q_[0],q_[1:]).buffer(0) for q_ in mask_polys(G,EXopen&~cv2.erode(EXopen.astype(np.uint8),np.ones((1,1),np.uint8)).astype(bool)|EXopen)])
 for _lvd in levels:
     if _lvd['name']!='G': continue
@@ -731,7 +746,7 @@ for _lvd in levels:
         for _ft,_top in _feet:
             if not _g.intersects(_ft): continue
             _in=_g.intersection(_ft); _g=_g.difference(_ft)
-            if _row['y']>_top+0.05 and not _in.is_empty:
+            if _top is not None and _row['y']>_top+0.05 and not _in.is_empty:
                 _new.append({**_row,'y0':round(_top,3),'polys':T1._polys_of(_in)})
         _row['polys']=T1._polys_of(_g) if not _g.is_empty else []
     _lvd['rows']=[r_ for r_ in _lvd['rows'] if r_['polys']]+_new
