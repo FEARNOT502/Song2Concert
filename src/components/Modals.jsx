@@ -127,23 +127,28 @@ export function VenuePicker({ open, onClose, current, currentMode = 'general', m
           })}
         </div>
 
-        {/* the one chosen */}
-        <div className="min-w-0 flex flex-col">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-3">
-            <div className="min-w-0">
-              <div className="text-white text-[22px] sm:text-[26px] font-light normal-case tracking-tight font-tight leading-none">{v.name}</div>
-              <div className="text-[10px] tracking-[0.3em] text-neutral-500 mt-2 truncate">{v.type} · {v.capacity}</div>
-            </div>
+        {/* the one chosen: its name, its plan under it (as wide as a portrait
+            plan is at that height), and beside them what the room is */}
+        <div className="min-w-0 flex flex-col sm:grid sm:grid-cols-[auto_minmax(240px,1fr)] sm:grid-rows-[auto_1fr] gap-x-7 gap-y-3">
+          <div className="text-white text-[22px] sm:text-[28px] font-light normal-case tracking-tight font-tight leading-none sm:col-start-1 sm:row-start-1">{v.name}</div>
+          <div className="sm:col-start-1 sm:row-start-2">
+            <SeatMap key={`${v.id}-${mode}`} src={mapSrc(v.id, mode)} alt={`${v.name}${mode === '360' ? ' 360' : ''} 좌석배치도`} />
+          </div>
+
+          <div className="min-w-0 flex flex-col sm:col-start-2 sm:row-start-1 sm:row-span-2">
+            <div className="text-[10px] tracking-[0.3em] text-neutral-500 sm:pt-1">{v.type}</div>
+            <div className="text-[11px] text-neutral-400 mt-1 normal-case tracking-normal tabular-nums">{v.capacity}</div>
+
             {round && (
-              <div className="ml-auto flex border border-white/15" role="group" aria-label="배치">
+              <div className="mt-4 grid grid-cols-2 border border-white/15" role="group" aria-label="배치">
                 {VENUE_MODES.map((m) => (
                   <button
                     key={m}
                     type="button"
                     onClick={() => setSelMode(m)}
                     aria-pressed={mode === m}
-                    className={`px-3.5 py-1.5 text-[10px] tracking-[0.25em] transition-colors ${
-                      mode === m ? `bg-[oklch(0.78_0.16_55)]/20 text-white` : 'text-neutral-500 hover:text-neutral-200'
+                    className={`py-2 text-[10px] tracking-[0.25em] transition-colors ${
+                      mode === m ? 'bg-[oklch(0.78_0.16_55)]/20 text-white' : 'text-neutral-500 hover:text-neutral-200'
                     }`}
                   >
                     {MODE_LABEL[m]}
@@ -151,26 +156,24 @@ export function VenuePicker({ open, onClose, current, currentMode = 'general', m
                 ))}
               </div>
             )}
-          </div>
 
-          <SeatMap key={`${v.id}-${mode}`} src={mapSrc(v.id, mode)} alt={`${v.name}${mode === '360' ? ' 360' : ''} 좌석배치도`} />
+            <div className="mt-4 grid grid-cols-2 gap-px bg-white/10 border border-white/10">
+              {facts.map(([k, val]) => (
+                <div key={k} className="bg-[#0a0a0a] px-3 py-2.5">
+                  <div className="text-[9px] tracking-[0.3em] text-neutral-600">{k}</div>
+                  <div className="text-[13px] text-neutral-200 mt-1 normal-case tracking-normal tabular-nums">{val}</div>
+                </div>
+              ))}
+            </div>
 
-          <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-px bg-white/10 border border-white/10">
-            {facts.map(([k, val]) => (
-              <div key={k} className="bg-[#0a0a0a] px-3 py-2.5">
-                <div className="text-[9px] tracking-[0.3em] text-neutral-600">{k}</div>
-                <div className="text-[13px] text-neutral-200 mt-1 normal-case tracking-normal tabular-nums">{val}</div>
-              </div>
-            ))}
-          </div>
+            <div className="mt-4 text-[12.5px] leading-relaxed text-neutral-400 normal-case tracking-normal font-tight">{v.descKo}</div>
 
-          <div className="mt-4 flex items-center gap-4">
-            <div className="text-[12px] text-neutral-500 normal-case tracking-normal font-tight min-w-0 truncate">{v.descKo}</div>
             <button
               type="button"
               onClick={() => enter()}
-              className={`ml-auto shrink-0 px-5 py-2.5 text-[11px] tracking-[0.25em] border transition-colors ${
-                isCurrent ? 'border-white/20 text-neutral-400 hover:text-white hover:border-white/50' : `border-[oklch(0.78_0.16_55)] bg-[oklch(0.78_0.16_55)] text-black hover:brightness-110`
+              // (on a phone it stays at the bottom while the rest scrolls)
+              className={`sticky bottom-0 sm:static mt-5 sm:mt-auto w-full py-3 text-[11px] tracking-[0.25em] border transition-colors shadow-[0_-12px_16px_#0a0a0a] sm:shadow-none ${
+                isCurrent ? 'border-white/20 bg-[#0a0a0a] text-neutral-400 hover:text-white hover:border-white/50' : 'border-[oklch(0.78_0.16_55)] bg-[oklch(0.78_0.16_55)] text-black hover:brightness-110'
               }`}
             >
               {isCurrent ? 'STAY' : 'ENTER →'}
@@ -209,7 +212,12 @@ function SeatMap({ src, alt }) {
   return (
     <div
       ref={box}
-      className={`relative aspect-[16/10] sm:aspect-auto sm:h-[clamp(240px,calc(88vh-380px),620px)] bg-black border border-white/10 overflow-hidden select-none touch-none ${t.k > 1 ? 'cursor-grab active:cursor-grabbing' : 'cursor-zoom-in'}`}
+      // (3:4, as the plans are drawn: on a phone a third of the screen high;
+      // else the modal's height less its header and the name, or what the
+      // window's width leaves beside the list and an info column of 240 px,
+      // and no more than 460 px)
+      style={{ '--map-h': 'min(calc(88vh - 260px), calc((min(1136px, 100vw - 144px) - 560px) * 4 / 3), 460px)' }}
+      className={`relative h-[34vh] sm:h-[var(--map-h)] aspect-[3/4] max-w-full mx-auto sm:mx-0 bg-black border border-white/10 overflow-hidden select-none touch-none ${t.k > 1 ? 'cursor-grab active:cursor-grabbing' : 'cursor-zoom-in'}`}
       onPointerDown={(e) => { if (t.k > 1) { drag.current = { x: e.clientX - t.x, y: e.clientY - t.y }; e.currentTarget.setPointerCapture(e.pointerId); } }}
       onPointerMove={(e) => { if (drag.current) setT((o) => clamp({ k: o.k, x: e.clientX - drag.current.x, y: e.clientY - drag.current.y })); }}
       onPointerUp={() => { drag.current = null; }}
@@ -220,7 +228,7 @@ function SeatMap({ src, alt }) {
         src={src}
         alt={alt}
         draggable={false}
-        className="absolute inset-0 w-full h-full object-contain p-3 origin-top-left"
+        className="absolute inset-0 w-full h-full object-contain p-2 origin-top-left"
         style={{ transform: `translate(${t.x}px, ${t.y}px) scale(${t.k})` }}
       />
       <div className="absolute right-2 bottom-2 flex flex-col border border-white/15 bg-black/70 text-neutral-400 text-[13px] leading-none">

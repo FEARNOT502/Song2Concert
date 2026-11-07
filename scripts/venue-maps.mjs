@@ -6,7 +6,7 @@
 // floors and treads (faces that look up, below the roof) shaded by height, every
 // seat as a dot in its own colour, and the stage in the app's accent. The
 // result is turned so the stage is at the top, as seating charts are drawn, and
-// written to public/venue-maps/<id>.svg (each seat a square, the floors as
+// written to public/venue-maps/<id>.svg, portrait (each seat a square, the floors as
 // their triangles), so it stays sharp when the picker zooms in. Run it again
 // when a room changes.
 //
@@ -50,7 +50,8 @@ await browser.close();
 
 // ── in the page ────────────────────────────────────────────────────────────
 function drawPlan({ cut, standing }) {
-  const W = 1920, H = 1080, PAD = 0.06;
+  // (portrait, every room: a plan's long side runs up the picker)
+  const W = 1080, H = 1440, PAD = 0.06;
   const scene = window.__stage.debug.pipe.scene;
   scene.updateMatrixWorld(true);
   const V = scene.children[0].position.constructor;   // THREE.Vector3, without importing three
@@ -116,9 +117,12 @@ function drawPlan({ cut, standing }) {
   const seatC = [mean(audience.map((s) => s[0])), mean(audience.map((s) => s[1]))];
   const stageC = sn ? [sx / sn, sz / sn] : seatC;
   // turned so the stage is up (the audience's centre → the stage points to
-  // -y), to the nearest quarter turn: the rooms are laid out on their axes
+  // -y), to the nearest quarter turn: the rooms are laid out on their axes.
+  // A stage in the middle points nowhere: then the room's long side runs up.
   const dx = stageC[0] - seatC[0], dz = stageC[1] - seatC[1];
-  const ang = Math.hypot(dx, dz) > 2 ? Math.round(Math.atan2(dx, -dz) / (Math.PI / 2)) * (Math.PI / 2) : 0;
+  const span = (v) => { const s2 = [...v].sort((p2, q2) => p2 - q2); return s2[Math.floor(0.999 * (s2.length - 1))] - s2[Math.floor(0.001 * (s2.length - 1))]; };
+  const ang = Math.hypot(dx, dz) > 2 ? Math.round(Math.atan2(dx, -dz) / (Math.PI / 2)) * (Math.PI / 2)
+    : span(xs) > span(zs) ? Math.PI / 2 : 0;
   const cs = Math.cos(-ang), sn2 = Math.sin(-ang);
   const rot = (x, z) => [x * cs - z * sn2, x * sn2 + z * cs];
   // the audience's 0.1–99.9 % range, so a stray seat far off does not shrink
