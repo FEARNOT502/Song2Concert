@@ -347,7 +347,31 @@ for _sg in ():
     _dF2[_mm]=np.maximum(_dFence[_mm],_dr)
 print('outfield pole blocks: rows turned behind the diagonal, the depth raised by up to %.1f m'%float(np.nanmax(np.where(S1['zoneF'],_dF2-_dFence,0))))
 _FhF=np.where(S1['zoneF'],np.minimum(C1F,H_F+_riseF*np.floor(_dF2/0.74)),np.nan).astype(np.float32)
-_profs,_Fcl=T1.fit_rake(G,S1,_FhF,Fcls=_Fcls,dF=_dF2,nF=_nF)
+_profs,_Fcl=T1.fit_rake(G,S1,_FhF,Fcls=_Fcls,dF=_dF2,nF=_nF,land=(1,5.0),wF=3.0)      # (A01 may reach the concourse before its back, level from there, as F20 beside it does)
+# A01 (and A49) as high as the outfield stand beside it, all along the aisle between them: F20's rows
+# climb faster and reach the concourse sooner, A01's straight slope left its back corner low beside them.
+# Its heights at each knot the outfield's across the aisle (its rows' heights there, rising only), its
+# own beyond what the aisle reaches, up to the concourse
+_rowF2=np.clip(np.floor(_dF2/0.74),0,_nF-1).astype(int); _HF=np.full(_dF2.shape,np.nan,np.float32)
+_HF[S1['zoneF']]=np.minimum(C1F,H_F+_riseF*_rowF2[S1['zoneF']])
+for _j,_h in _Fcl.items(): _HF[_Fcls==_j]=_h[_rowF2[_Fcls==_j]]
+_near=cv2.dilate(S1['zoneF'].astype(np.uint8),disk(1.0/G.res))>0
+for _k in (1,49):
+    _fg=S1['fingers'][_k]; _m=(S1['finger_of']==_k)&_near
+    if _m.sum()<50: continue
+    _ys,_xs=np.nonzero(_m); _P=np.c_[G.m(_xs,_ys)]; _uu=np.clip(_fg.cfront-_fg.coord(_P),0,_fg.ku[-1])
+    # (the outfield's height at the nearest outfield cell)
+    _dz=cv2.distanceTransformWithLabels((~S1['zoneF']).astype(np.uint8),cv2.DIST_L2,5,labelType=cv2.DIST_LABEL_PIXEL)
+    _zy,_zx=np.nonzero(S1['zoneF']); _lab2=np.zeros(_dz[1].max()+1,np.int64); _lab2[_dz[1][_zy,_zx]]=np.ravel_multi_index((_zy,_zx),S1['zoneF'].shape)
+    _hh=_HF.flat[_lab2[_dz[1][_ys,_xs]]]
+    _kh=np.array(_profs[1],float).copy(); _ku=_fg.ku
+    for _i,_u0 in enumerate(_ku):
+        _sel=np.abs(_uu-_u0)<0.75
+        if _sel.sum()>=5: _kh[_i]=float(np.nanmedian(_hh[_sel]))
+    _kh=np.minimum(C1F,np.maximum.accumulate(_kh))
+    _profs[1]=_kh
+    print('A01 laid to the outfield beside it: front %.2f, back %.2f, at the concourse from %.1f m'%(_kh[0],_kh[-1],float(_ku[np.argmax(_kh>=C1F-1e-6)]) if (_kh>=C1F-1e-6).any() else -1))
+    break
 T1.apply_profiles(S1,_profs)
 # no excite seat with its footprint on the stand's treads behind it (they stood in the A blocks'
 # front rows, up to 1 m under them, where the strip runs in under the stand)
