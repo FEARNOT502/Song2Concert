@@ -7,9 +7,10 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { KELVIN, V3, carpetTex, concreteTex, glowMat, phys, plasterTex, prng, std, withRepeat, woodTex } from '../core.js';
+import { KELVIN, V3, carpetTex, concreteTex, glowMat, phys, plasterTex, prng, std, thin, withRepeat, woodTex } from '../core.js';
+import { crowd3D } from '../people.js';
 import { ampStack, drumKit, guitar, keyboardRig, ledScreen, mats, micStand, shadowSpot, stageDeck, subStack, truss, wedge } from '../rig.js';
-import { runShow, section } from '../show.js';
+import { packFloor, runShow, section } from '../show.js';
 
 // Gig posters for the walls: invented bills, bold type on flat colour.
 export function gigPoster(seed) {
@@ -197,7 +198,40 @@ export function buildClub(ctx) {
   }
   root.add(new THREE.Mesh(mergeGeometries(bottles), phys({ color: 0x3a2a14, roughness: 0.1, transmission: 0.3, transparent: true, opacity: 0.85 })));
 
-  // no audience: the floor is empty, the band's gear waiting under the lights
+  // ── the audience: a sold-out live house, standing ──
+  // About 290 on the floor: packed against the stage, easing off down the
+  // room, a few loose at the back by the bar (some of them turned to it). The
+  // corners where the PA stands and the counter are kept clear, and so is the
+  // eye's own spot and a narrow wedge ahead of it: heads stand at eye height
+  // in a crowd, and the ones a step away would fill the frame, so the nearest
+  // in line with the stage are a couple of metres off (a gap opens like that
+  // in any room that isn't crushed).
+  if (q.crowd) {
+    const prnd = prng(57);
+    const clear = (x, z) => {
+      const ahead = eye.z - z;
+      return (Math.abs(x) > 4.6 && z < FRONT + 0.9)                           // PA
+        || (z > 13.7 && x > -4.5 && x < 2.5)                                  // the bar
+        || (ahead > -0.45 && ahead < 1.9 && Math.abs(x - eye.x) < 0.42 + Math.max(0, ahead) * 0.32);   // the eye
+    };
+    const zones = [
+      { z0: FRONT + 0.25, z1: 6.0, spacing: 0.55 },
+      { z0: 6.0, z1: 11.0, spacing: 0.64 },
+      { z0: 11.0, z1: 14.4, spacing: 0.92, loose: true },
+    ];
+    const people = [];
+    zones.forEach((zn, k) => {
+      for (const p of packFloor({ x0: -X + 0.35, x1: X - 0.35, z0: zn.z0, z1: zn.z1, spacing: zn.spacing, avoid: clear, seed: 61 + k })) {
+        const atBar = zn.loose && p.z > 12.6 && prnd() < 0.35;
+        p.turn = atBar ? (prnd() - 0.5) * 0.8 : Math.atan2(-p.x, 1.6 - p.z) + (prnd() - 0.5) * 0.35;
+        if (zn.loose) p.raise = prnd() * 0.5;   // (the back is there for the band, not the jump)
+        p.h = 0.87 + prnd() * 0.13;              // (1.52–1.75 m: a mixed crowd, mostly under the eye)
+        people.push(p);
+      }
+    });
+    const shown = q.crowd < 1 ? thin(people, Math.round(people.length * Math.max(0.6, q.crowd))) : people;
+    root.add(crowd3D(shown, cu, { kind: 'floor', detail: 1, seed: 7 }));
+  }
 
   // haze: a small room, heavily hazed
   const hz = pipe.haze;
