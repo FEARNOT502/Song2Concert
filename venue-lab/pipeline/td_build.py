@@ -248,14 +248,22 @@ S1=T1.build(G,_A_ch,_B_ch,_F_ch,_frames,hull1>0,field|EX)
 # outfield stand's rows climb faster than any infield block's and run another way, so the step
 # across A01's two aisles grows towards the back (to about 1.4 m).
 _FhF=np.where(S1['zoneF'],np.minimum(C1F,H_F+_riseF*np.floor(_dFence/0.74)),np.nan).astype(np.float32)
-_profs=T1.fit_rake(G,S1,_FhF)
+# The outfield stand's four blocks nearest each pole (F20-F17, F01-F04) are fitted with them, each its
+# own front and rise a row: at the pole the outfield's rows (0.33 m a row elsewhere) ease block by block
+# into the infield's, the steps shared out over the aisles either side of the pole rather than left to
+# the one between the outfield and A01 (1.5 m there before). Their backs stop up to 1.5 m under the
+# concourse (a step up at their doors).
+_Fcls=T1.outfield_classes(G,S1,_F_ch,k=4)
+_profs,_Fcl=T1.fit_rake(G,S1,_FhF,Fcls=_Fcls,dF=_dFence,nF=_nF,Fpole=((2.2,4.6),(0.15,0.40),3.0))
 T1.apply_profiles(S1,_profs)
 # no excite seat with its footprint on the stand's treads behind it (they stood in the A blocks'
 # front rows, up to 1 m under them, where the strip runs in under the stand)
 _kx=sample(G,dil(S1['zoneAB']|S1['zoneF'],0.25).astype(np.uint8),Gx.seats)==0
 print('excite seats under the stand dropped',int((~_kx).sum()))
 Gx.seats,Gx.row,Gx.yaw=Gx.seats[_kx],Gx.row[_kx],Gx.yaw[_kx]; Gx.raw=Gx.seats.copy(); Gx.seatmask=seat_mask(G,Gx.seats)
-_st=T1.seam_steps(S1,T1.seam_pairs(G,S1,_FhF)); _cn=sum(v[0] for v in _st.values())
+_FhF2=_FhF.copy(); _rowF=np.clip(np.floor(_dFence/0.74),0,_nF-1).astype(int)
+for _j,_h in _Fcl.items(): _FhF2[_Fcls==_j]=_h[_rowF[_Fcls==_j]]
+_st=T1.seam_steps(S1,T1.seam_pairs(G,S1,_FhF2)); _cn=sum(v[0] for v in _st.values())
 print('steps across the aisles: mean %.3f m, the largest %.2f m (between fingers); into the outfield stand: mean %.2f, largest %.2f m'%(
     sum(v[0]*v[1] for v in _st.values())/_cn,max(v[3] for k,v in _st.items() if -1 not in k),
     np.mean([v[1] for k,v in _st.items() if -1 in k]),max(v[3] for k,v in _st.items() if -1 in k)))
@@ -323,6 +331,27 @@ _Fm=(cv2.erode(_Fm,disk(0.18/G.res))>0)&(F.R>0)
 F.seats,F.row,F.yaw=T1.lay_curved(G,_Fm,_dFence,F.D,F.nrows,O)
 F.raw=F.seats.copy()
 F.seatmask=seat_mask(G,F.seats); F.hull=F.R.copy()
+# the outfield's pole blocks at their own heights: row ids per block class (class c's row r is
+# c*nF + r, its heights after the others'), the treads and aisle steps made class by class
+_Fc=np.where(F.R>0,_Fcls,0).astype(int)
+_hsF=[F.hs]+[_Fcl[j_] for j_ in sorted(_Fcl)]
+F._band0=F.band.copy(); F._d0=F.d.copy(); F.hs=np.concatenate(_hsF)
+F.band=np.where(F._band0>=0,F._band0+_Fc*_nF,-1)
+_gxs,_gzs=G.g(F.seats[:,0],F.seats[:,1])
+F.row=F.row+_Fc[np.clip(np.round(_gzs).astype(int),0,G.H-1),np.clip(np.round(_gxs).astype(int),0,G.W-1)]*_nF
+def _F_by_class(fn):
+    out=[]
+    for c_ in range(len(_hsF)):
+        sv=(F.band,F.hs,F.d); m_=_Fc==c_
+        F.band=np.where(m_,F._band0,-1); F.hs=_hsF[c_]; F.d=np.where(m_,F._d0,-1.0).astype(F._d0.dtype)
+        try:
+            for o_ in fn():
+                if 'r' in o_: o_['r']=o_['r']+c_*_nF
+                out.append(o_)
+        finally: F.band,F.hs,F.d=sv
+    return out
+F.rows_out=lambda: _F_by_class(lambda: Level.rows_out(F))
+F.aisles_out=lambda: _F_by_class(lambda: Level.aisles_out(F))
 LV={'A':A,'B':B,'F':F,'C':LV['C'],'D':LV['D'],'E':LV['E'],'G':LV['G']}
 # no two seats of a level within 0.3 m of each other (a stray double where two
 # blocks' rows meet): the later one goes

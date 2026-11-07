@@ -323,7 +323,9 @@ export function buildDome(ctx) {
     // past the poles), up to the outfield's height at the pole
     const outs = ringH.filter((_, i) => ringOut[i]).sort((a, b) => a - b);
     const outH = outs.length ? outs[outs.length >> 1] : 4.0;
-    for (let i = 0; i < n; i++) if (ringOut[i]) ringH[i] = outH;
+    // (towards the poles the outfield's blocks have their own fronts, a little lower: the fence follows
+    // them down, never over the outfield's own height)
+    for (let i = 0; i < n; i++) if (ringOut[i]) ringH[i] = Math.min(outH, ringH[i]);
     let home = -1, hp = -1;
     for (let i = 0; i < n; i++) if (!ringOut[i]) { const f = phi(ringPts[i].x, ringPts[i].z); if (f > hp) { hp = f; home = i; } }
     for (const step of [1, -1]) {
