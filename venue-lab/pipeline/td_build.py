@@ -238,17 +238,23 @@ import shapely
 _A_ch,_B_ch,_F_ch=T1.chart_blocks(_labc,BOXL,BOXN,G)
 _frames={b['blk']:(b['f'],b['sA']) for b in ra['blocks'] if b['poly'].mean(0)[0]>0 or b['blk']==25}
 S1=T1.build(G,_A_ch,_B_ch,_F_ch,_frames,hull1>0,field|EX)
-# The fingers' heights (td_stand1.fit_rake): every block ONE straight slope from its front row up to
-# the concourse (C1F) at its back, A and B alike: no landing, the rake never easing off up the block.
-# From the 10th block (counted from each pole) on, the front row stands at the building's section
-# (A 1.0 m + 0.17 m a row); the nine nearest each pole, shallower and meeting the outfield stand's
-# steep rows, take the rakes (0.25 m/m rising to about 0.35 at the pole) that make the steps across
-# their aisles least. Where a block's depth changes sharply (the pole's wedge A01, A02, A03: 18, 23
-# and 30 m deep) the step across the aisle grows towards the back, to about 1.4 m beside the shorter
-# block's back: a wall there, as between the outfield stand and the infield's at the pole.
+# The fingers' heights (td_stand1.fit_rake): every block ONE straight slope (no landing, the rake
+# never easing off up the block), the rakes and front heights the ones that make the steps across the
+# aisles between blocks, and into the outfield stand, least; from the 12th block (counted from each
+# pole) on, the front row at the building's section (A 1.0 m + 0.17 m a row), the back at the
+# concourse. Towards the poles the fronts stand higher (to about 5 m at A01-A03, over the excite seats
+# and the outfield's fence) and the rake eases to 0.2 m/m, A01 the steepest (0.31, beside the outfield
+# stand's 0.45); A02 stops 0.4 m under the concourse. The steps that remain are at the poles: the
+# outfield stand's rows climb faster than any infield block's and run another way, so the step
+# across A01's two aisles grows towards the back (to about 1.4 m).
 _FhF=np.where(S1['zoneF'],np.minimum(C1F,H_F+_riseF*np.floor(_dFence/0.74)),np.nan).astype(np.float32)
 _profs=T1.fit_rake(G,S1,_FhF)
 T1.apply_profiles(S1,_profs)
+# no excite seat with its footprint on the stand's treads behind it (they stood in the A blocks'
+# front rows, up to 1 m under them, where the strip runs in under the stand)
+_kx=sample(G,dil(S1['zoneAB']|S1['zoneF'],0.25).astype(np.uint8),Gx.seats)==0
+print('excite seats under the stand dropped',int((~_kx).sum()))
+Gx.seats,Gx.row,Gx.yaw=Gx.seats[_kx],Gx.row[_kx],Gx.yaw[_kx]; Gx.raw=Gx.seats.copy(); Gx.seatmask=seat_mask(G,Gx.seats)
 _st=T1.seam_steps(S1,T1.seam_pairs(G,S1,_FhF)); _cn=sum(v[0] for v in _st.values())
 print('steps across the aisles: mean %.3f m, the largest %.2f m (between fingers); into the outfield stand: mean %.2f, largest %.2f m'%(
     sum(v[0]*v[1] for v in _st.values())/_cn,max(v[3] for k,v in _st.items() if -1 not in k),

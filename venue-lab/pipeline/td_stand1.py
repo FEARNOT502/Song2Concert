@@ -367,49 +367,59 @@ def seam_steps(res, pairs):
         r[key] = (int(m.sum()), float(d[m].mean()), float(np.percentile(d[m], 90)), float(d[m].max()))
     return r
 
-def fit_rake(G, res, Fh, NF=9, wF=1.0, rmin=0.25, rmax=0.6, step=2, verbose=True):
-    """Every finger ONE straight slope from its front row up to the concourse (C1F) at its back: no
-    landing, no change of rake along it. The fingers past NF keep the building's section at the front
-    (the row's height, HIN_A); the NF fingers nearest each pole (fewer rows, the shallow infield stand
-    meeting the steep outfield one) take the rakes that make the steps across the aisles between them,
-    and into the outfield stand (weight wF, its heights Fh), least, the rake never easing off towards
-    the pole (rake_n >= rake_n+1, at least rmin). A straight line through (ub, C1F) is linear in its
-    rake, so this is a bounded least squares: the unknowns are finger NF's rake and the increments
-    from each finger to the next towards the pole. Returns {n: heights at the finger's knots}."""
+def fit_rake(G, res, Fh, wF=1.5, rmin=0.15, rmax=0.6, sec=(3, 12, 10.0), drop=(3, 1.0, 0.3), fmin=2.2, fmax=4.5, land=(0, 0.0), step=2, verbose=True):
+    """Every finger ONE straight slope (no landing, no change of rake along it), h = C1F - d - r (ub - u)
+    (u from the front, ub the back): the rakes r and back drops d that make the steps across the aisles
+    between fingers, and into the outfield stand (weight wF, its heights Fh), least. The rows run on
+    across every aisle, so the step across one is the difference of two such lines: a bounded linear
+    least squares. Each finger's front is pulled to the building's section (HIN_A at its front row) with
+    a weight rising from 0 at finger sec[0] to sec[2] at finger sec[1] (the fingers nearest the poles,
+    between the infield's shallow rows and the outfield's steep ones, free to stand higher); the back
+    reaches the concourse except on the drop[0] fingers nearest each pole, which may stop up to drop[1] m
+    under it (a step up to the concourse behind the last row, weight drop[2] a metre). The land[0]
+    fingers nearest each pole (A01, A49: the wedges beside the outfield stand) may instead climb as
+    steeply as that stand does and reach the concourse's height up to land[1] m before their back,
+    level from there (as the outfield stand's own back rows are): the line's back up to land[1] times
+    its rake over C1F, the heights capped at C1F (the cells past the cap are fitted at C1F, found again
+    after each of a few solves).
+    Returns {n: heights at the finger's knots}."""
     from scipy.optimize import lsq_linear
-    F = res['fingers']
+    F = res['fingers']; NP = 25
     for fg in F.values(): fg._lines()
     ka, kb, pa, pb, fa, fb = seam_pairs(G, res, Fh, step=step)
-    fold = lambda a: a if a <= 25 else 50 - a
-    def section(fg, u):
-        hf = HIN_A(fg.rf) - 0.085
-        return hf + (C1F - hf) * u / fg.ku[-1]
-    def side(kk, p, fh):
-        coef = np.zeros((len(kk), NF)); const = np.array(fh, float)
+    fold = lambda a: a if a <= NP else 50 - a
+    rc = lambda n: n - 1; dc = lambda n: NP + n - 1          # the unknowns: r_n, d_n
+    def side(kk, p, fh, x):
+        coef = np.zeros((len(kk), 2 * NP)); const = np.array(fh, float)
         for key in np.unique(kk):
             if key < 0: continue
             m = kk == key; fg = F[int(key)]; n = fold(int(key)); ub = fg.ku[-1]
-            u = np.clip(fg.cfront - fg.coord(p[m]), 0, ub)
-            if n <= NF:        # h = C1F - rake_n (ub - u), rake_n = x0 + x_n + .. + x_NF-1
-                idx = np.nonzero(m)[0]; c = -(ub - u)
-                for j in [0] + list(range(n, NF)): coef[idx, j] = c
-                const[m] = C1F
-            else:
-                const[m] = section(fg, u)
+            idx = np.nonzero(m)[0]; u = np.clip(fg.cfront - fg.coord(p[m]), 0, ub)
+            capped = (C1F - x[dc(n)] - x[rc(n)] * (ub - u) > C1F) if x is not None else np.zeros(len(u), bool)
+            coef[idx[~capped], rc(n)] = -(ub - u[~capped]); coef[idx[~capped], dc(n)] = -1.0; const[m] = C1F
         return coef, const
-    ca, xa = side(ka, pa, fa); cb, xb = side(kb, pb, fb)
+    reg, rr = [], []
+    for n in range(1, NP + 1):
+        fg = F[n]; ws = float(np.interp(n, sec[:2], [0.0, sec[2]]))
+        if ws > 0:                    # front: C1F - d - r ub = HIN_A(rf) - 0.085
+            e = np.zeros(2 * NP); e[rc(n)] = -ws * fg.ku[-1]; e[dc(n)] = -ws; reg.append(e); rr.append(ws * (max(HIN_A(fg.rf) - 0.085, fmin) - C1F))
+        if n <= drop[0]:
+            e = np.zeros(2 * NP); e[dc(n)] = drop[2]; reg.append(e); rr.append(0.0)
     w = np.where((ka < 0) | (kb < 0), wF, 1.0)
-    sol = lsq_linear((ca - cb) * w[:, None], (xb - xa) * w, bounds=(np.r_[rmin, np.zeros(NF - 1)], np.r_[rmax, np.full(NF - 1, rmax)]))
-    profs = {}
-    for n in range(1, 26):
-        fg = F[n]
-        if n <= NF:
-            rk = sol.x[0] + sol.x[n:NF].sum(); profs[n] = C1F - rk * (fg.ku[-1] - fg.ku)
-        else:
-            profs[n] = section(fg, fg.ku)
+    lo = np.r_[np.full(NP, rmin), [-land[1] * rmax if n <= land[0] else 0.0 for n in range(1, NP + 1)]]
+    hi = np.r_[np.full(NP, rmax), [drop[1] if n <= drop[0] else 1e-9 for n in range(1, NP + 1)]]
+    x = None; held = set()
+    for it in range(6):
+        ca, xa = side(ka, pa, fa, x); cb, xb = side(kb, pb, fb, x)
+        rg, rh = list(reg), list(rr)
+        for n in held:            # front = C1F - d - r ub held at fmax
+            e = np.zeros(2 * NP); e[rc(n)] = -30.0 * F[n].ku[-1]; e[dc(n)] = -30.0; rg.append(e); rh.append(30.0 * (fmax - C1F))
+        M = np.vstack([(ca - cb) * w[:, None]] + [np.array(rg)]); b = np.r_[(xb - xa) * w, rh]
+        x = lsq_linear(M, b, bounds=(lo, hi)).x
+        held |= {n for n in range(1, NP + 1) if C1F - x[dc(n)] - x[rc(n)] * F[n].ku[-1] > fmax + 0.02}
+    profs = {n: np.minimum(C1F, C1F - x[dc(n)] - x[rc(n)] * (F[n].ku[-1] - F[n].ku)) for n in range(1, NP + 1)}
     if verbose:
-        print('rake fit: the fingers nearest the poles', ' '.join('%d:%.3f' % (n, (C1F - profs[n][0]) / F[n].ku[-1]) for n in range(1, NF + 1)),
-              '| fronts', ' '.join('%.2f' % profs[n][0] for n in range(1, NF + 1)))
+        print('rake fit (rake/front/back):', ' '.join('%d:%.2f/%.1f/%.1f' % (n, x[rc(n)], profs[n][0], profs[n][-1]) for n in range(1, 13)))
     return profs
 
 # The 3B side's B31-B33: past their chart's last row (35) the rows behind are the table seats (blue,
@@ -417,6 +427,9 @@ def fit_rake(G, res, Fh, NF=9, wF=1.0, rmin=0.25, rmax=0.6, step=2, verbose=True
 TABLE = {31: 36, 32: 36, 33: 36}
 # rows the official map gives a block past the fan chart's last one (seated as the outline lets)
 EXTRA = {'B22': 46, 'B28': 46}
+# rows a block's chart leaves out that its mirror block has (seated by the mirror's numbers): A02's
+# front rows 14-19, which the 3B side's A48 has
+MIRROR_FILL = {'A02': 'A48'}
 
 def real_block(fg, kind):
     """The chart's name of a finger's block: A01 / A49 (the wedges at the poles: their rows on past the walkway are A's too) or A/B + key."""
@@ -471,6 +484,9 @@ def lay_real(G, res, real, plim=(0.45, 0.55), pitch=0.5, inset=0.18):
             t_lo, t_hi = us[run[0]] - 0.025, us[run[-1]] + 0.025; L = t_hi - t_lo
             nm = real_block(fg, kind); rr = r + off; blk = real.get(nm)
             runs = blk['rows'].get(str(rr)) if blk else None
+            if runs is None and nm in MIRROR_FILL:
+                mb = real.get(MIRROR_FILL[nm])
+                if mb and str(rr) in mb['rows']: blk = {'rows': {**mb['rows'], **blk['rows']}}; runs = mb['rows'][str(rr)]
             table = k in TABLE and kind == 'B' and rr >= TABLE[k]
             def put(t, tab):
                 g = fg.facing(t - float(fg.ref @ u) if fg.w is not None else 0.0)

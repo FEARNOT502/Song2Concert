@@ -294,7 +294,7 @@ export function buildDome(ctx) {
   // yellow line in the outfield, a low padded wall along the lines (for a
   // concert the backstop net behind home plate is taken down)
   // one continuous wall round the field, its height eased along it
-  const ringPts = [], ringH = [], ringOut = [];
+  const ringPts = [], ringH = [], ringOut = [], ringTop = [];
   {
     // the traced ring resampled evenly, every half metre
     const src = fenceRing.concat([fenceRing[0]]);
@@ -315,6 +315,7 @@ export function buildDome(ctx) {
       const outfield = Math.hypot(p.x, p.z - ZH) > 92 && phi(p.x, p.z) < 46;
       ringOut.push(outfield);
       ringH.push(outfield ? Math.max(4.0, top) : Math.max(1.2, top));
+      ringTop.push(top);
     }
     // one height all round the outfield (its stand's front row is level), and
     // from home out to each pole only ever rising with the stands' fronts
@@ -333,6 +334,17 @@ export function buildDome(ctx) {
         h = Math.min(outH, Math.max(h, ringH[j])); ringH[j] = h;
       }
     }
+    // behind home plate (the backstop) the padded wall stands 2.2 m at the least (the stands' front
+    // rows are laid level with it: td_stand1.fit_rake's fmin), easing back to the lines' height
+    // between 25 and 45 degrees off the line behind the catcher
+    for (let i = 0; i < n; i++) {
+      if (ringOut[i]) continue;
+      const off = 180 - phi(ringPts[i].x, ringPts[i].z), t = Math.min(1, Math.max(0, (45 - off) / 20)), w = t * t * (3 - 2 * t);
+      if (w > 0) ringH[i] = Math.max(ringH[i], ringH[i] + w * (Math.max(2.2, ringTop[i]) - ringH[i]));
+    }
+    // and nowhere under the front of the stand behind it (its concrete face showed over the padding),
+    // never over the outfield's height (td_stand1.fit_rake keeps the fronts under it)
+    for (let i = 0; i < n; i++) ringH[i] = Math.max(ringH[i], Math.min(outH, ringTop[i]));
   }
   const padGeo = wallStrip(ringPts, ringH, { thick: 0.36, closed: true, ease: 6 });
   // steps from the field up over the low wall into the 1st floor's front
@@ -386,7 +398,8 @@ export function buildDome(ctx) {
       for (const part of [run.slice(0, L), run.slice(-L)]) {
         const rp = part.map((i) => inward(ringPts[i])), rt = part.map((i) => eased[i]);
         const rg = wallStrip(rp, rt.map((h) => h - 0.15), { y0: rt.map((h) => h - 1.43), thick: 0.06, ease: 0 });
-        if (rg) root.add(new THREE.Mesh(rg, std({ color: 0x060607, roughness: 0.35, metalness: 0.2 })));
+        // (matt, as a screen switched off: glossy it took the room's light and read as the stand's concrete)
+        if (rg) root.add(new THREE.Mesh(rg, std({ color: 0x0a0b0c, roughness: 0.85, metalness: 0, envMapIntensity: 0.1 })));
       }
     }
   }
