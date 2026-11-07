@@ -303,14 +303,36 @@ _FhF=np.where(S1['zoneF'],np.minimum(C1F,H_F+_riseF*np.floor(_dFence/0.74)),np.n
 # steps shared out over the aisles either side of the pole. Every block's back meets the concourse;
 # the infield's blocks may also climb faster behind their walkway than in front (B over A), never slower.
 _Fcls=T1.outfield_classes(G,S1,_F_ch,k=4)
-_profs,_Fcl=T1.fit_rake(G,S1,_FhF,Fcls=_Fcls,dF=_dFence,nF=_nF)
+# The outfield's two blocks at each pole (F20, F19; F01, F02) have their rows turned towards home behind
+# a diagonal across the block next to the pole's (its front rows along the fence, those behind the line
+# turned, as the real one; F20 turned almost all through): the rows are the level lines of the larger
+# of the distance from the fence and a straight row coordinate turned 25 degrees towards home, the two
+# meeting along the diagonal (the rows run on across it, kinked there)
+_dF2=_dFence.copy()
+_gzF,_gxF=np.gradient(cv2.GaussianBlur(_dFence,(0,0),8))
+for _sg in (1,-1):
+    _m1=(_Fcls==1)&S1['zoneF']&(np.sign(_Xg)==_sg); _m2=(_Fcls==2)&S1['zoneF']&(np.sign(_Xg)==_sg)
+    if not (_m1.any() and _m2.any()): continue
+    _n=np.array([_gxF[_m1].mean(),_gzF[_m1].mean()]); _n=_n/np.linalg.norm(_n)       # into the stand
+    _c1=np.array([_Xg[_m1].mean(),_Zg[_m1].mean()]); _hd=-_c1/np.linalg.norm(_c1)
+    _fa=-_n; _tp=_hd-(_hd@_fa)*_fa; _tp=_tp/np.linalg.norm(_tp); _a=np.radians(25.0)
+    _n1=-(_fa*np.cos(_a)+_tp*np.sin(_a))                                             # the turned rows' way back
+    # (anchored at the front of the boundary between the two blocks: the turned rows start level with the fence's there)
+    _bd=_m1&(cv2.dilate(_m2.astype(np.uint8),np.ones((5,5),np.uint8))>0)
+    _j=np.argmin(np.where(_bd,_dFence,1e9)); _p0=np.array([_Xg.flat[_j],_Zg.flat[_j]]); _d0=float(_dFence.flat[_j])
+    _mm=_m1|_m2
+    _dr=(_Xg[_mm]-_p0[0])*_n1[0]+(_Zg[_mm]-_p0[1])*_n1[1]+_d0
+    _dF2[_mm]=np.maximum(_dFence[_mm],_dr)
+print('outfield pole blocks: rows turned behind the diagonal, the depth raised by up to %.1f m'%float(np.nanmax(np.where(S1['zoneF'],_dF2-_dFence,0))))
+_FhF=np.where(S1['zoneF'],np.minimum(C1F,H_F+_riseF*np.floor(_dF2/0.74)),np.nan).astype(np.float32)
+_profs,_Fcl=T1.fit_rake(G,S1,_FhF,Fcls=_Fcls,dF=_dF2,nF=_nF)
 T1.apply_profiles(S1,_profs)
 # no excite seat with its footprint on the stand's treads behind it (they stood in the A blocks'
 # front rows, up to 1 m under them, where the strip runs in under the stand)
 _kx=sample(G,dil(S1['zoneAB']|S1['zoneF'],0.25).astype(np.uint8),Gx.seats)==0
 print('excite seats under the stand dropped',int((~_kx).sum()))
 Gx.seats,Gx.row,Gx.yaw=Gx.seats[_kx],Gx.row[_kx],Gx.yaw[_kx]; Gx.raw=Gx.seats.copy(); Gx.seatmask=seat_mask(G,Gx.seats)
-_FhF2=_FhF.copy(); _rowF=np.clip(np.floor(_dFence/0.74),0,_nF-1).astype(int)
+_FhF2=_FhF.copy(); _rowF=np.clip(np.floor(_dF2/0.74),0,_nF-1).astype(int)
 for _j,_h in _Fcl.items(): _FhF2[_Fcls==_j]=_h[_rowF[_Fcls==_j]]
 _st=T1.seam_steps(S1,T1.seam_pairs(G,S1,_FhF2)); _cn=sum(v[0] for v in _st.values())
 print('steps across the aisles: mean %.3f m, the largest %.2f m (between fingers); into the outfield stand: mean %.2f, largest %.2f m'%(
@@ -367,6 +389,7 @@ B=_shell('B',0.748,_lv['B'],'B',lambda: T1.rows_out(G,S1,_lv['B'],sites=_sites,c
 # the outfield: rows from the fence as before, on the cells of the F blocks' outlines
 F=LV['F']
 F.R=S1['zoneF'].astype(np.uint8)
+F.d=np.where(S1['zoneF'],_dF2,F.d).astype(F.d.dtype)
 F.band=np.where(F.R>0,np.clip(np.floor(F.d/F.D).astype(int),0,F.nrows-1),-1)
 _kf=sample(G,F.R,F.seats)>0
 F.seats,F.row,F.yaw=F.seats[_kf],F.row[_kf],F.yaw[_kf]
@@ -377,7 +400,7 @@ _Fm=np.zeros(F.R.shape,np.uint8)
 for _p in _F_ch:
     _gx,_gz=G.g(*np.array(_p.exterior.coords).T); cv2.fillPoly(_Fm,[np.c_[_gx,_gz].round().astype(np.int32)],1)
 _Fm=(cv2.erode(_Fm,disk(0.18/G.res))>0)&(F.R>0)
-F.seats,F.row,F.yaw=T1.lay_curved(G,_Fm,_dFence,F.D,F.nrows,O)
+F.seats,F.row,F.yaw=T1.lay_curved(G,_Fm,np.where(S1['zoneF'],_dF2,_dFence).astype(np.float32),F.D,F.nrows,O)
 F.raw=F.seats.copy()
 F.seatmask=seat_mask(G,F.seats); F.hull=F.R.copy()
 # the outfield's pole blocks at their own heights: row ids per block class (class c's row r is
@@ -391,7 +414,7 @@ F.row=F.row+_Fc[np.clip(np.round(_gzs).astype(int),0,G.H-1),np.clip(np.round(_gx
 # the seats of the outfield's blocks at the poles turned towards home, block by block (the nearer the
 # pole, the more: the seats face the infield, changing at each aisle), not square to the fence
 _cF=_Fc[np.clip(np.round(_gzs).astype(int),0,G.H-1),np.clip(np.round(_gxs).astype(int),0,G.W-1)]
-_wturn=np.array([0.0,0.55,0.4,0.25,0.12])[np.clip(_cF,0,4)]
+_wturn=np.array([0.0,0.0,0.0,0.2,0.1])[np.clip(_cF,0,4)]      # (the two at the pole: their rows themselves turned, above)
 _dv=np.c_[np.sin(F.yaw),np.cos(F.yaw)]; _hv=-F.seats/np.maximum(np.hypot(*F.seats.T),1e-6)[:,None]
 _nv=(1-_wturn)[:,None]*_dv+_wturn[:,None]*_hv; F.yaw=np.arctan2(_nv[:,0],_nv[:,1])
 def _F_by_class(fn):
@@ -735,7 +758,7 @@ for _k in (2,):
         _q=min(_pts,key=lambda q_: np.hypot(*(q_-_p))); _p=_q+_u*0.1; _L=float((_end-_p)@_u)
     # an open cut through its front rows (to `deck`, 3.5 m in), then on under the rows, its roof just under
     # the row over the cut's end; the cut's sides walled a rail's height over the rows beside them
-    _dk=3.5
+    _dk=1.2
     _hy=lambda a_: float(_fg.height(_fg.coord((_p+_u*a_)[None,:])[0]))
     _dY=_hy(_dk); _h=round(_dY-0.3,2)
     # (the cut's side walls level with the rows beside them, row by row)

@@ -375,7 +375,7 @@ export function buildDome(ctx) {
       ringPts.forEach((q, i) => { if (inMouth[i]) return; const d = Math.hypot(q.x - hx, q.z - hz); if (d < bd) { bd = d; gh = ringH[i]; } });
       const ang = Math.atan2(vx, vz) + sg * 0.35;            // the leaf's run from its hinge, swung 20 degrees in
       const dx = -Math.sin(ang) * sg, dz = -Math.cos(ang) * sg;
-      const leaf = new THREE.BoxGeometry(0.08, gh, lw);
+      const leaf = new THREE.BoxGeometry(0.22, gh, lw);      // (padded, as thick as the wall's padding)
       leaf.rotateY(Math.atan2(dx, dz)); leaf.translate(hx + dx * lw / 2, gh / 2, hz + dz * lw / 2);
       root.add(new THREE.Mesh(leaf, std({ color: 0x0b2a1a, roughness: 0.8 })));
     }
