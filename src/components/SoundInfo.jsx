@@ -49,11 +49,16 @@ export default function SoundInfo({ venue, desk = false }) {
         aria-label="사운드 조정과 단축키 설명"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className={`w-6 h-6 rounded-full border border-[oklch(0.78_0.16_55)]/60 text-[12px] flex items-center justify-center hover:bg-[oklch(0.78_0.16_55)] hover:text-black transition-colors font-mono leading-none ${
+        className={`w-6 h-6 rounded-full border border-[oklch(0.78_0.16_55)]/60 flex items-center justify-center hover:bg-[oklch(0.78_0.16_55)] hover:text-black transition-colors ${
           open ? 'bg-[oklch(0.78_0.16_55)] text-black' : 'text-[oklch(0.78_0.16_55)]'
         }`}
       >
-        ?
+        {/* drawn, not typed: a glyph sits where its font's metrics put it, off
+            the circle's centre; this mark's box is centred on the button's */}
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+          <path d="M3.9 4.1a2.1 2.1 0 1 1 3.2 1.8c-.7.4-1.1.8-1.1 1.6v.3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+          <circle cx="6" cy="10" r="0.85" fill="currentColor" />
+        </svg>
       </button>
 
       {open && (
