@@ -387,6 +387,15 @@ export function buildDome(ctx) {
       pad.translate(cx, top / 2, cz);
       root.add(new THREE.Mesh(pad, std({ color: 0x0b2a1a, roughness: 0.8 })));
     }
+    // a concrete slab over the mouth, level with the stand's front (the walk along the front rows carried
+    // across), the cut behind it open to the roof as the real one, the tunnel proper roofed under the rows
+    if (t.sides?.[0]?.length) {
+      const fy = t.sides[0][0][1], sd = 1.3;
+      const slab = new THREE.BoxGeometry(t.w + 0.72, 0.35, sd);
+      slab.rotateY(Math.atan2(t.u[0], t.u[1]));
+      slab.translate(t.p[0] + t.u[0] * (sd / 2 - 0.2), fy - 0.175, t.p[1] + ZH + t.u[1] * (sd / 2 - 0.2));
+      root.add(new THREE.Mesh(slab, std({ color: 0x8a857c, roughness: 0.9 })));
+    }
   }
   // steps from the field up over the low wall into the 1st floor's front
   // rows, round foul territory either side (the way the field's crowd comes

@@ -206,7 +206,7 @@ def sdf(mask, res):
     m = mask > 0
     return (np.where(m, distance_transform_edt(m) - 0.5, -(distance_transform_edt(~m) - 0.5)) * res).astype(np.float32)
 
-KINK = {}       # {n: degrees}: finger n's B block kinked: its half towards the pole has its rows turned that far towards home
+KINK = {}       # {n: degrees}: finger n's rows behind its walkway kinked: the half towards the pole (the wedge's: away from its neighbour) turned that far towards home
 ROT = {}        # {n: degrees}: finger n's rows turned towards home (the wedges at the poles face the infield more than the map's frame)
 
 def fingers_of(A, B, frames):
@@ -236,9 +236,16 @@ def fingers_of(A, B, frames):
             elif wk is not None: out[k].set_walkway(wk[0], wk[0])
     for n, deg in KINK.items():
         for k in (n, 50 - n):
-            fg = out.get(k); w1 = out.get(1 if k < 25 else 49)
-            if fg is None or fg.pb is None or w1 is None: continue
-            cb = np.array(fg.pb.centroid.coords[0]); sg = float(np.sign((np.array(w1.pa.centroid.coords[0]) - cb) @ fg.u))
+            fg = out.get(k)
+            if fg is None: continue
+            if fg.pb is not None:          # a B block: the half towards the pole's wedge
+                w1 = out.get(1 if k < 25 else 49)
+                if w1 is None: continue
+                cb = np.array(fg.pb.centroid.coords[0]); sg = float(np.sign((np.array(w1.pa.centroid.coords[0]) - cb) @ fg.u))
+            else:                          # the wedge itself (rows on past its walkway line): the half away from its neighbour
+                nb = out.get(2 if k < 25 else 48)
+                if nb is None: continue
+                cb = np.array(fg.pa.centroid.coords[0]); sg = float(np.sign((cb - np.array(nb.pa.centroid.coords[0])) @ fg.u))
             fg.kink = (float(cb @ fg.u), float(np.tan(np.radians(deg))), sg)
     return out
 

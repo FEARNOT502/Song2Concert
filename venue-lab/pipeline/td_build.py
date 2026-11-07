@@ -293,11 +293,10 @@ def _turn(f_,deg_,c_):
     return f_*np.cos(a_)+t_*np.sin(a_)
 _cA2=np.array(_A_ch[2].centroid.coords[0]); _fK=_turn(_frames[2][0],28.0,_cA2)        # (towards the field: the kinked rows' facing)
 _f1=np.asarray(_frames[1][0],float)
-T1.ROT[1]=float(np.degrees(np.arccos(np.clip(_f1@_fK,-1,1))))
-print('A01 turned %.1f degrees, to run with the kinked half of B02'%T1.ROT[1])
+T1.ROT[1]=8.0      # (as A02: its kinked half then runs as B02's and F20's turned rows)
 # and the B block behind A02 (A48) kinked: its half towards the pole has its rows turned 20 degrees towards
 # home, the line of the kink running back through the block's middle, as the real one
-T1.KINK.update({2:20.0})
+T1.KINK.update({1:20.0,2:20.0})      # (A01 kinked too: its rows past its walkway line, on its pole side)
 S1=T1.build(G,_A_ch,_B_ch,_F_ch,_frames,hull1>0,field|EX)
 # The fingers' heights (td_stand1.fit_rake): every block ONE straight slope (no landing, the rake
 # never easing off up the block), the rakes and front heights the ones that make the steps across the
@@ -762,7 +761,7 @@ for _k in (2,):
     _c=_P.mean(0); _tf=float((_P@_f).max()); _lat=(_P-_c)@_v
     # (the block's width at its front, from its outline, less its aisles)
     _PA=np.array(_fg.pa.exterior.coords); _fr_=_PA[(_PA@_f)>=(_PA@_f).max()-3.0]; _lp=(_fr_-_c)@_v
-    _w=float(np.clip(_lp.max()-_lp.min()-0.6,2.5,6.0)); _c=_c+_v*float((_lp.max()+_lp.min())/2)
+    _w=float(np.clip(_lp.max()-_lp.min()-0.3,3.8,6.0)); _c=_c+_v*float((_lp.max()+_lp.min())/2)
     _p=_c+_f*(_tf-float(_c@_f)+0.6); _u=-_f; _L=float(_tf-(_P@_f).min())+6.0
     # (its mouth in the padded wall round the field: where its axis crosses the fence's line)
     _end=_p+_u*_L; _fr=_LS(poly_out(fnw[0])[0]+[poly_out(fnw[0])[0][0]])
@@ -772,7 +771,7 @@ for _k in (2,):
         _q=min(_pts,key=lambda q_: np.hypot(*(q_-_p))); _p=_q+_u*0.1; _L=float((_end-_p)@_u)
     # an open cut through its front rows (to `deck`, 3.5 m in), then on under the rows, its roof just under
     # the row over the cut's end; the cut's sides walled a rail's height over the rows beside them
-    _dk=1.2
+    _dk=3.0      # (open through its front rows, as the real one; the rows behind on its roof)
     _hy=lambda a_: float(_fg.height(_fg.coord((_p+_u*a_)[None,:])[0]))
     _dY=_hy(_dk); _h=round(min(_dY,_hy(0.3))-0.6,2)      # (under the lowest row over it, with room for the roof)
     # (the cut's side walls level with the rows beside them, row by row)
