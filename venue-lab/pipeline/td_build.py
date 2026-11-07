@@ -139,6 +139,20 @@ for _o in _labc:
     _gx,_gz=G.g(_a[:,0],_a[:,1]); cv2.fillPoly(_pmA if _o['L']=='A' else _pmB,[np.c_[_gx,_gz].round().astype(np.int32)],1)
 EX&=~(dil(_pmA|_pmB,0.5))
 EX=cv2.morphologyEx(EX.astype(np.uint8),cv2.MORPH_OPEN,disk(0.3/G.res))>0
+# The strip only as deep as its rows: the map draws it on out to the field past its seats' front. Each
+# block is cut to its rows' depth from the stand behind it (a row 0.8 m, 0.45 m before the first), the
+# field running on up to it; the open floor at the pole's end (G03-G04) stays as drawn
+_dS=cv2.distanceTransform((~dil(_pmA|_pmB,0.5)).astype(np.uint8),cv2.DIST_L2,5)*G.res
+_pxb=((_Xg*_s+_Hm[0])*_K).astype(np.float32); _pyb=((_Zg*_s+_Hm[1])*_K).astype(np.float32)
+_inblk=np.zeros(EX.shape,bool); _keep=np.zeros(EX.shape,bool)
+for _nm,_bm,_nr in _gblocks:
+    _gmk=(cv2.remap(_bm.astype(np.uint8),_pxb,_pyb,cv2.INTER_NEAREST,borderValue=0)>0)&EX
+    _inblk|=_gmk; _keep|=_gmk&(_dS<=min(_nr,6)*0.8+0.85)
+del _pxb,_pyb
+_EX0=EX.copy()
+EX=_keep|(EX&EXopen)|(EX&~_inblk&(_dS<=1.0))
+EX=cv2.morphologyEx(EX.astype(np.uint8),cv2.MORPH_OPEN,disk(0.3/G.res))>0
+print('excite strip cut to its rows: %d m2 of %d'%(EX.sum()*G.res**2,_EX0.sum()*G.res**2))
 field&=~EX
 # The 1st floor's blocks as the map draws them (A, B and F boxes, each
 # flood-filled from its letter, named by the number beside it), for seating
@@ -268,6 +282,10 @@ from shapely.ops import unary_union
 import shapely
 _A_ch,_B_ch,_F_ch=T1.chart_blocks(_labc,BOXL,BOXN,G)
 _frames={b['blk']:(b['f'],b['sA']) for b in ra['blocks'] if b['poly'].mean(0)[0]>0 or b['blk']==25}
+# the wedge at each pole (A01, A49) and the block beside it (A02, A48) turned towards home, 15 and 8
+# degrees off the map's frame: their rows face the infield, as the real ones do, and meet the outfield
+# stand's and their neighbours' with less of a step
+T1.ROT.update({1:15.0,2:8.0})
 S1=T1.build(G,_A_ch,_B_ch,_F_ch,_frames,hull1>0,field|EX)
 # The fingers' heights (td_stand1.fit_rake): every block ONE straight slope (no landing, the rake
 # never easing off up the block), the rakes and front heights the ones that make the steps across the
@@ -701,12 +719,13 @@ from shapely.geometry import Polygon
 _tunnels=[]; _feet=[]
 for _k in (2,):
     _fg=S1['fingers'][_k]
-    _ids=[i_ for i_,m_ in enumerate(S1['meta']) if m_[0]==_k and m_[1]=='A' and m_[2]<14]
+    _r0=min(m_[2] for m_ in S1['meta'] if m_[0]==_k and m_[1]=='A')
+    _ids=[i_ for i_,m_ in enumerate(S1['meta']) if m_[0]==_k and m_[1]=='A' and m_[2]<_r0+2]      # (its two front rows)
     if not _ids: continue
     _ys,_xs=np.nonzero(np.isin(S1['band'],_ids)); _P=np.c_[G.m(_xs,_ys)]
     _f=np.asarray(_fg.f,float); _v=np.array([-_f[1],_f[0]])
     _c=_P.mean(0); _tf=float((_P@_f).max()); _lat=(_P-_c)@_v
-    _w=float(min(3.0,_lat.max()-_lat.min()-0.6))
+    _w=float(min(6.0,_lat.max()-_lat.min()-0.4))      # (the block's width, less its aisles)
     _p=_c+_f*(_tf-float(_c@_f)+0.6); _u=-_f; _L=float(_tf-(_P@_f).min())+6.0
     # (its mouth in the padded wall round the field: where its axis crosses the fence's line)
     _end=_p+_u*_L; _fr=_LS(poly_out(fnw[0])[0]+[poly_out(fnw[0])[0][0]])
@@ -719,7 +738,8 @@ for _k in (2,):
     _dk=3.5
     _hy=lambda a_: float(_fg.height(_fg.coord((_p+_u*a_)[None,:])[0]))
     _dY=_hy(_dk); _h=round(_dY-0.3,2)
-    _sd=[[-0.4,round(_hy(0.3)+1.0,2)],[_dk,round(_dY+1.0,2)]]
+    # (the cut's side walls level with the rows beside them, row by row)
+    _sd=[[round(float(a_),2),round(_hy(max(a_,0.05))+0.02,2)] for a_ in np.linspace(-0.4,_dk,8)]
     _tunnels.append({'p':[round(float(_p[0]),2),round(float(_p[1]),2)],'u':[round(float(_u[0]),4),round(float(_u[1]),4)],'w':round(_w,2),'h':_h,'L':round(_L,2),
                      'deck':_dk,'deckY':round(_dY,2),'sides':[_sd,_sd],'closed':True,'gate':True})
     _vv=np.array([-_u[1],_u[0]]); _hw=_w/2+0.15
@@ -750,6 +770,15 @@ for _lvd in levels:
                 _new.append({**_row,'y0':round(_top,3),'polys':T1._polys_of(_in)})
         _row['polys']=T1._polys_of(_g) if not _g.is_empty else []
     _lvd['rows']=[r_ for r_ in _lvd['rows'] if r_['polys']]+_new
+# (and no seat over the open cut: its rows are cut away)
+import base64 as _b64
+_cuts=unary_union([ft_.buffer(0.3) for ft_,top_ in _feet if top_ is None]) if _feet else None
+if _cuts is not None:
+    for _lvd in levels:
+        if _lvd['name'] not in ('A','B'): continue
+        _S=np.frombuffer(_b64.b64decode(_lvd['seats']),'<i2').reshape(-1,4); _sc=_lvd.get('seatScale',10)
+        _kc=~shapely.contains_xy(_cuts,_S[:,0]/_sc,_S[:,1]/_sc)
+        if (~_kc).any(): print('seats over the tunnel cut dropped',_lvd['name'],int((~_kc).sum())); _lvd['seats']=_b64.b64encode(_S[_kc].tobytes()).decode('ascii')
 data={'suites':{'line':suite_line,'y':H_C-0.4,'h':3.6,'depth':3.4},'levels':levels,'floors':floors,'flights':flights+aisle_flights,'outer':[poly_out(p) for p in ow],'field':[poly_out(p) for p in fw],'fence':[poly_out(p) for p in fnw],'rim':rim,'rimY':H_D,'rooms':encl,'signs':SIGNS,'pillars':PILLARS,'tunnels':_tunnels}
 json.dump(data,open('td_stands.json','w'),separators=(',',':'))
 import os; print('json KB',os.path.getsize('td_stands.json')//1024, round(time.time()-T0,1))

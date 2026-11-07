@@ -193,12 +193,18 @@ def sdf(mask, res):
     m = mask > 0
     return (np.where(m, distance_transform_edt(m) - 0.5, -(distance_transform_edt(~m) - 0.5)) * res).astype(np.float32)
 
+ROT = {}        # {n: degrees}: finger n's rows turned towards home (the wedges at the poles face the infield more than the map's frame)
+
 def fingers_of(A, B, frames):
     """Every finger of both sides: {key: Finger}, key = the A block's number
     (1-24 the 1B side, 25 the centre, 26-49 the 3B side, 50 - n mirrored)."""
     out = {}
     for n in sorted(A):
         f, sA = frames[n]
+        if n in ROT:
+            f0 = np.array(f, float); c0 = np.array(A[n].centroid.coords[0]); hd = -c0 / np.linalg.norm(c0)
+            t = hd - (hd @ f0) * f0; t = t / (np.linalg.norm(t) + 1e-9); a = np.radians(ROT[n])
+            f = tuple(f0 * np.cos(a) + t * np.sin(a))
         if n == 25: f = (0.0, -1.0)           # (the centre block's axis is the building's own, along the line from home to centre field: the map's rows there stand 1.7 degrees off it)
         for side in ((1,) if n == 25 else (1, -1)):
             k = n if side > 0 else 50 - n

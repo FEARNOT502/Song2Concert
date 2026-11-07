@@ -367,9 +367,12 @@ export function buildDome(ctx) {
   for (const t of tunnels) {
     if (!t.gate) continue;
     // two padded leaves hinged at the mouth's sides, standing a little open into the tunnel
-    const vx = -t.u[1], vz = t.u[0], lw = t.w / 2 - 0.03, gh = 2.4;
+    const vx = -t.u[1], vz = t.u[0], lw = t.w / 2 - 0.03;
     for (const sg of [-1, 1]) {
       const hx = t.p[0] + vx * sg * t.w / 2, hz = t.p[1] + ZH + vz * sg * t.w / 2;
+      // (as high as the padded wall beside it)
+      let gh = 2.4, bd = Infinity;
+      ringPts.forEach((q, i) => { if (inMouth[i]) return; const d = Math.hypot(q.x - hx, q.z - hz); if (d < bd) { bd = d; gh = ringH[i]; } });
       const ang = Math.atan2(vx, vz) + sg * 0.35;            // the leaf's run from its hinge, swung 20 degrees in
       const dx = -Math.sin(ang) * sg, dz = -Math.cos(ang) * sg;
       const leaf = new THREE.BoxGeometry(0.08, gh, lw);
