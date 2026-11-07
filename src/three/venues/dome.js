@@ -366,37 +366,23 @@ export function buildDome(ctx) {
   }
   for (const t of tunnels) {
     if (!t.gate) continue;
-    // two padded leaves hinged at the mouth's sides, standing a little open into the tunnel
+    // a concrete lintel slab flush behind the padded wall over the mouth, the cut behind it open to the roof
     const vx = -t.u[1], vz = t.u[0], lw = t.w / 2 - 0.03;
+    const fy = t.sides?.[0]?.[0]?.[1] ?? (t.h + 0.6);
+    const lTop = fy, lH = 0.32, lBot = lTop - lH, sd = 1.1;
+    const slab = new THREE.BoxGeometry(t.w + 0.04, lH, sd);
+    slab.rotateY(Math.atan2(t.u[0], t.u[1]));
+    slab.translate(t.p[0] + t.u[0] * (0.18 + sd / 2), lBot + lH / 2, t.p[1] + ZH + t.u[1] * (0.18 + sd / 2));
+    root.add(new THREE.Mesh(slab, std({ color: 0x8a857c, roughness: 0.9 })));
+    // two padded leaves hinged at the mouth's sides, fitting cleanly under the lintel slab
     for (const sg of [-1, 1]) {
       const hx = t.p[0] + vx * sg * t.w / 2, hz = t.p[1] + ZH + vz * sg * t.w / 2;
-      // (as high as the padded wall beside it)
-      let gh = 2.4, bd = Infinity;
-      ringPts.forEach((q, i) => { if (inMouth[i]) return; const d = Math.hypot(q.x - hx, q.z - hz); if (d < bd) { bd = d; gh = ringH[i]; } });
+      const gh = Math.max(1.8, lBot - 0.02);
       const ang = Math.atan2(vx, vz) + sg * 0.35;            // the leaf's run from its hinge, swung 20 degrees in
       const dx = -Math.sin(ang) * sg, dz = -Math.cos(ang) * sg;
       const leaf = new THREE.BoxGeometry(0.22, gh, lw);      // (padded, as thick as the wall's padding)
       leaf.rotateY(Math.atan2(dx, dz)); leaf.translate(hx + dx * lw / 2, gh / 2, hz + dz * lw / 2);
       root.add(new THREE.Mesh(leaf, std({ color: 0x0b2a1a, roughness: 0.8 })));
-      // the cut's side padded as the wall is, from the wall back to its end, stepping up with the rows
-      // beside it (no bare concrete of the stand's fronts showing either side of the mouth)
-      const prof = (t.sides?.[0] ?? []).length ? t.sides[0] : [[0, gh], [t.deck ?? 1, gh]];
-      const yaw = Math.atan2(t.u[0], t.u[1]), off = sg * (t.w / 2 + 0.18);
-      for (let i = 0; i < prof.length; i++) {
-        const a0 = i === 0 ? -0.2 : (prof[i - 1][0] + prof[i][0]) / 2, a1 = i === prof.length - 1 ? prof[i][0] + 0.15 : (prof[i][0] + prof[i + 1][0]) / 2;
-        const top = Math.max(i === 0 ? gh : 0, prof[i][1]), seg = new THREE.BoxGeometry(0.36, top, a1 - a0);
-        seg.rotateY(yaw); seg.translate(t.p[0] + vx * off + t.u[0] * (a0 + a1) / 2, top / 2, t.p[1] + ZH + vz * off + t.u[1] * (a0 + a1) / 2);
-        root.add(new THREE.Mesh(seg, std({ color: 0x0b2a1a, roughness: 0.8 })));
-      }
-    }
-    // a concrete slab over the mouth, level with the stand's front (the walk along the front rows carried
-    // across), the cut behind it open to the roof as the real one, the tunnel proper roofed under the rows
-    if (t.sides?.[0]?.length) {
-      const fy = t.sides[0][0][1], sd = 1.3;
-      const slab = new THREE.BoxGeometry(t.w + 0.72, 0.35, sd);
-      slab.rotateY(Math.atan2(t.u[0], t.u[1]));
-      slab.translate(t.p[0] + t.u[0] * (sd / 2 - 0.2), fy - 0.175, t.p[1] + ZH + t.u[1] * (sd / 2 - 0.2));
-      root.add(new THREE.Mesh(slab, std({ color: 0x8a857c, roughness: 0.9 })));
     }
   }
   // steps from the field up over the low wall into the 1st floor's front
@@ -415,18 +401,29 @@ export function buildDome(ctx) {
     root.add(stageSteps({ x: p.x - ux * (len + 0.2), z: p.z - uz * (len + 0.2), h, dir: [ux, uz], width: 1.6 }));
   }
   root.add(new THREE.Mesh(padGeo, std({ color: 0x0b2a1a, roughness: 0.8 })));
-  // the low padded fence (1.0 m) in front of the excite seats, where the
-  // field's edge runs out ahead of the fence behind them
+  // the low padded fence (1.0 m) in front of the excite seats, connected cleanly into the main infield fence at both ends
   {
     const src = fieldRing.concat([fieldRing[0]]), pts = [];
     for (let k = 0; k + 1 < src.length; k++) {
       const a = src[k], b = src[k + 1], len = Math.hypot(b.x - a.x, b.z - a.z);
       for (let t = 0; t < len; t += 0.5) pts.push({ x: a.x + (b.x - a.x) * t / len, z: a.z + (b.z - a.z) * t / len });
     }
-    const off = pts.map((p) => { let m = Infinity; for (const q of ringPts) m = Math.min(m, (q.x - p.x) ** 2 + (q.z - p.z) ** 2); return m > 1.2 * 1.2; });
+    const snapRing = (p) => {
+      let best = p, bd = Infinity;
+      for (const q of ringPts) { const d = (q.x - p.x) ** 2 + (q.z - p.z) ** 2; if (d < bd) { bd = d; best = { x: q.x, z: q.z }; } }
+      return best;
+    };
+    const off = pts.map((p) => { let m = Infinity; for (const q of ringPts) m = Math.min(m, (q.x - p.x) ** 2 + (q.z - p.z) ** 2); return m > 0.45 * 0.45; });
     const lowMat = std({ color: 0x0b2a1a, roughness: 0.8 });
     let run = [];
-    const flush = () => { if (run.length > 3) { const g = wallStrip(run, run.map(() => 1.0), { thick: 0.22, ease: 0 }); if (g) root.add(new THREE.Mesh(g, lowMat)); } run = []; };
+    const flush = () => {
+      if (run.length > 3) {
+        const ext = [snapRing(run[0]), ...run, snapRing(run[run.length - 1])];
+        const g = wallStrip(ext, ext.map(() => 1.0), { thick: 0.22, ease: 0 });
+        if (g) root.add(new THREE.Mesh(g, lowMat));
+      }
+      run = [];
+    };
     pts.forEach((p, i) => { if (off[i]) run.push(p); else flush(); });
     flush();
   }

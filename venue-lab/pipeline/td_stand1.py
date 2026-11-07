@@ -286,11 +286,17 @@ def fingers_of(A, B, frames):
             alpha = float((d @ fg2.f) / (d @ fr))
             fr_s = alpha * fr
             off = float(q0 @ fg2.f - q0 @ fr_s)
+            fg.kinkR = (q0, q1, sp, fr_s, off)
             if fg.n == 1:
                 fg.f = fg2.f.copy(); fg.u = fg2.u.copy()
-                fg.cfront = fg2.cfront; fg.cback = fg2.cback
-                fg.set_walkway(fg2.sA, fg2.sA)
-            fg.kinkR = (q0, q1, sp, fr_s, off)
+                PA1 = np.array(w1.pa.exterior.coords); PA2 = np.array(fg2.pa.exterior.coords)
+                PB2 = np.array(fg2.pb.exterior.coords) if fg2.pb is not None else PA2
+                cfr = max(float(fg.coord(PA1).max()), float(fg2.coord(PA2).max()))
+                cbk = min(float(fg.coord(PA1).min()), float(fg2.coord(PB2).min()))
+                fg.cfront = cfr; fg.cback = cbk
+                fg2.cfront = max(fg2.cfront, cfr); fg2.cback = min(fg2.cback, cbk); fg2._lines()
+                s_wk = fg2.sBf + round((fg2.sA - fg2.sBf) / DB) * DB
+                fg.set_walkway(s_wk, s_wk)
     return out
 
 def warp_rows(G, F, finger_of, zoneF, blocked, w_pos=4.0, w_dir=60.0, w_dirF=30.0, reg=(15.0, 1.0, 20.0)):
@@ -616,6 +622,10 @@ def lay_real(G, res, real, plim=(0.45, 0.55), pitch=0.5, inset=0.18):
             cv2.fillPoly(m, [np.c_[gx - sl[1].start, gz - sl[0].start].round().astype(np.int32)], 1)
             ok |= cv2.erode(m, disk(inset / G.res))
         ok = ok > 0
+        if fg.n == 1:
+            # extend A01/A49 seating mask forward to the fence between its lateral aisle edges
+            _fok = (res['finger_of'][sl] == k) & (band_c >= 0) & (cv2.dilate(ok.astype(np.uint8), disk(2.2 / G.res)) > 0)
+            ok = ok | cv2.erode(_fok.astype(np.uint8), disk(inset / G.res)) > 0
         u = np.array([-fg.f[1], fg.f[0]])
         # (the wedges at the poles number their rows their own way: the offset that matches most of them)
         off = 0
@@ -947,23 +957,27 @@ def _tbox(a, u, t0, t1, s0, s1):
     return Polygon([a * t0 + u * s0, a * t1 + u * s0, a * t1 + u * s1, a * t0 + u * s1])
 
 def _side_rails(poly, a, floor_at, top_at, drop=0.35, par=GATE_PAR):
-    """The partitions along the sides of a pit or cut (the edges running along `a`): 1 m
-    over the tread beside each, where that stands `drop` or more over the floor
-    (`floor_at(point)`) of the pit; [x0, z0, x1, z1, y0, y1] each, a piece per row, each
-    running so that the side away from the pit is on its right (the way the partition is thick)."""
+    """The partitions along the sides of a pit or cut (the edges running along `a`): a clean
+    single trapezoid [x0, z0, x1, z1, ya0, ya1, yb0, yb1] per side, from the floor up to `par`
+    over the tread at the back (and 0.35 m over the front tread at the mouth), running so that
+    the side away from the pit is on its right (the way the partition is thick)."""
     rails = []
     P = np.array(poly.exterior.coords); ccw = poly.exterior.is_ccw
     for p0, p1 in zip(P[:-1], P[1:]):
         e = p1 - p0; L = float(np.hypot(*e))
-        if L < 0.3 or abs(float(e @ a)) < 0.5 * L: continue            # across the pit, not along it
+        if L < 0.5 or abs(float(e @ a)) < 0.7 * L: continue            # across the pit, not along it
         nout = np.array([e[1], -e[0]]) / L if ccw else np.array([-e[1], e[0]]) / L
-        k = max(1, int(np.ceil(L / 0.75)))
-        for j in range(k):
-            q0 = p0 + e * j / k; q1 = p0 + e * (j + 1) / k; m = 0.5 * (q0 + q1)
-            ha = top_at(m + nout * 0.3)
-            if ha - floor_at(m) < drop: continue
-            if not ccw: q0, q1 = q1, q0
-            rails.append([round(float(q0[0]), 2), round(float(q0[1]), 2), round(float(q1[0]), 2), round(float(q1[1]), 2), round(float(ha), 2), round(float(ha + par), 2)])
+        q0, q1 = (p0, p1) if ccw else (p1, p0)
+        # orient heights at the two ends of the straight wall segment
+        h_a = float(top_at(q0 + nout * 0.35)); h_b = float(top_at(q1 + nout * 0.35))
+        fl_a = float(floor_at(q0)); fl_b = float(floor_at(q1))
+        if max(h_a - fl_a, h_b - fl_b) < drop: continue
+        ya0 = min(fl_a, h_a); yb0 = min(fl_b, h_b)
+        p_a = 0.35 if h_a < h_b - 0.2 else par
+        p_b = 0.35 if h_b < h_a - 0.2 else par
+        ya1 = max(h_a + p_a, ya0 + 0.4); yb1 = max(h_b + p_b, yb0 + 0.4)
+        rails.append([round(float(q0[0]), 2), round(float(q0[1]), 2), round(float(q1[0]), 2), round(float(q1[1]), 2),
+                      round(ya0, 2), round(ya1, 2), round(yb0, 2), round(yb1, 2)])
     return rails
 
 def gate_sites(B, F, inside, r_open=1.2, pitch=DB):
@@ -1012,14 +1026,8 @@ def gate_sites(B, F, inside, r_open=1.2, pitch=DB):
             for t in np.arange(t_end, t_end + 40, 0.05):
                 if not inside(a * t + u * s_c): break
                 t_wall = float(t) + 0.05
-            # the pit: the gap's cells in the first rows (slivers along the blocks' slanted fronts off)
-            pit = _tbox(a, u, t_front - 0.1, t_end, s_c - 3.6, s_c + 3.6).intersection(g.buffer(0.02)).buffer(0)
-            pit = pit.buffer(-0.45, join_style=2).buffer(0.45, join_style=2)
-            # (the gap narrows to the aisle's own width where the widening ends, short of the tunnel's start
-            # on the row's edge: the pit runs on as wide as the tunnel)
-            pit = unary_union([pit, _tbox(a, u, t_front - 0.1, t_end, s_c - GATE_W / 2, s_c + GATE_W / 2)]).buffer(0)
-            pit = max(_pieces(pit), key=lambda q: q.area) if _pieces(pit) else None
-            if pit is None: continue
+            # the pit: a single clean rectangular cut of width GATE_W aligned with the tunnel behind it
+            pit = _tbox(a, u, t_front - 0.08, t_end, s_c - GATE_W / 2, s_c + GATE_W / 2)
             rails = _side_rails(pit, a, lambda p: h0, top_at)
             sites.append(dict(pair=(n, n + 1), side=side, kA=kA, kB=kB, a=a, u=u, s_c=s_c, t_front=float(t_front), t_end=float(t_end),
                               t_wall=float(t_wall), h0=float(h0), h_back=float(top_at(a * (t_wall - 0.3) + u * s_c)), pit=pit, rec=rec, rails=rails, tunnel=None))
@@ -1375,6 +1383,10 @@ def lay_seats(G, res, pitch=0.5, inset=0.18):
             cv2.fillPoly(m, [np.c_[gx - sl[1].start, gz - sl[0].start].round().astype(np.int32)], 1)
             ok |= cv2.erode(m, disk(inset / G.res))
         ok = ok > 0
+        if fg.n == 1:
+            # extend A01/A49 seating mask forward to the fence between its lateral aisle edges
+            _fok = (res['finger_of'][sl] == k) & (band_c >= 0) & (cv2.dilate(ok.astype(np.uint8), disk(2.2 / G.res)) > 0)
+            ok = ok | cv2.erode(_fok.astype(np.uint8), disk(inset / G.res)) > 0
         u = np.array([-fg.f[1], fg.f[0]])
         for i in rows_of.get(k, []):
             _, kind, r, c0, c1, h = meta[i]

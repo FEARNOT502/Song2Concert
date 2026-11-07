@@ -38,7 +38,7 @@ import td_upper as U
 def _front(field,val,mask): return ((np.abs(field-val)<G.res*0.75)&mask).astype(np.uint8)
 LV['C']=Level(G,'C',st['SC'],0.9,H_C,R_C,0.5,1.2,centre=O,rmax=180,open_w=4.0,hull_close=4.0,max_rows=4,F=_front(dOut-U.tau_c(TH),C0W,(abs(TH)<=U.C_END)&(abs(TH)>=st['SUITE_TH'])))
 LV['D']=Level(G,'D',st['SD'],0.8,H_D,R_D,0.5,1.5,centre=O,rmax=180,open_w=3.0,hull_close=3.0,max_rows=10,F=_front(dOut-U.tau_d(TH),D0,abs(TH)<=U.D_END))
-LV['E']=Level(G,'E',st['SE'],0.8,H_E,R_E,0.5,0.6,centre=O,rmax=180,open_w=2.2,hull_close=3.0,F=_front(dOut,E0,abs(TH)<=84.2))
+LV['E']=Level(G,'E',st['SE'],0.8,H_E,R_E,0.5,0.6,centre=O,rmax=180,open_w=2.2,hull_close=3.0,F=_front(dOut-U.tau_d(TH),E0,abs(TH)<=84.2))
 # the outfield stand's rows from the fence, level along it (4.6 m over the
 # outfield's tall fence), each 0.333 m higher, up to the 1st-floor concourse
 # at its 19th (the doors at the backs of its aisles open onto it)
@@ -66,7 +66,8 @@ ENT1=np.array([q for _,q in _f1]); ENT1N=[n for n,_ in _f1]
 VOM2=[t for _,t in _f2]; VOM2N=[n for n,_ in _f2]
 print('entrances: 1st floor',len(ENT1),'2nd floor',len(VOM2))
 # the tunnels from the 2nd-floor concourse through E's first rows, made straight
-VOMS={'E':LV['E'].make_voms(C2F,detect=False,cands=[(np.abs(TH-tv)<np.degrees(1.1/RRO))&(dOut>=E0-0.3)&(dOut<E0+5*DP) for tv in VOM2])}
+_dOutD0=dOut-U.tau_d(TH)
+VOMS={'E':LV['E'].make_voms(C2F,detect=False,cands=[(np.abs(TH-tv)<np.degrees(1.1/RRO))&(_dOutD0>=E0-0.3)&(_dOutD0<E0+5*DP) for tv in VOM2])}
 # each named for the E block it runs under, as the signs over them are
 _lab=json.load(open('td/td_labeled.json')); _Hm=np.array([579.2,441.7]); _s=2.996
 _Esp=[]
@@ -117,16 +118,10 @@ for _w in _vec['words']:
 # A02 and A03 (map points; G03 and G04, drawn dotted, left unseated: the
 # floor behind the fence open)
 _open_ex=np.zeros_like(_gm)
-_Pq=[(756.8,277.4),(794.9,256.2),(798.0,257.0),(790.5,274.6),(783.2,288.8),(780.2,287.0)]
-for _sx in (1,-1):
-    _Q=np.array([(_Hm[0]+_sx*(x-_Hm[0]),y) for x,y in _Pq])
-    cv2.fillPoly(_open_ex,[(_Q*_K).round().astype(np.int32)],255)
-_open_ex&=~cv2.dilate(_gm,np.ones((3,3),np.uint8))
-_gm|=_open_ex
 _gm=cv2.dilate(_gm,np.ones((3,3),np.uint8))    # over the outlines' own ink
 _px=((_Xg*_s+_Hm[0])*_K).astype(np.float32); _py=((_Zg*_s+_Hm[1])*_K).astype(np.float32)
 EX=cv2.remap(_gm,_px,_py,cv2.INTER_NEAREST,borderValue=0)>0
-EXopen=cv2.remap(_open_ex,_px,_py,cv2.INTER_NEAREST,borderValue=0)>0
+EXopen=np.zeros_like(EX)
 del _px,_py
 # the blocks' seats stay theirs; the bare tread before them the excite seats'
 # the blocks' outlines stay theirs (a half metre of tread before them the
@@ -299,50 +294,29 @@ T1.ROT.update({1:8.0,2:8.0,3:4.0})
 # A01, A02 and B02 run parallel to the concourse wall and outfield rows behind them; on its other side each block's own
 _f2=np.asarray(_frames[2][0],float); _u2=np.array([-_f2[1],_f2[0]]); _P1=np.array(_A_ch[1].exterior.coords); _P2=np.array(_A_ch[2].exterior.coords); _PB2=np.array(_B_ch[2].exterior.coords)
 _sg2=np.sign((np.array(_A_ch[1].centroid.coords[0])-np.array(_A_ch[2].centroid.coords[0]))@_u2)      # (towards the pole)
-_Q0=np.array([73.2,-65.5])
+_Q0=np.array([75.5,-66.0])
 _Q1=_PB2[int(np.argmax(-(_PB2@_f2)-_sg2*(_PB2@_u2)))]                                               # (B02's back corner away from the pole)
 _p1b=_P1[int(np.argmax(-(_P1@_f2)+_sg2*(_P1@_u2)))]                                                 # (A01's pole-side back corner)
 _db=_Q1-_p1b; _frA=np.array([-_db[1],_db[0]],float); _frA=_frA/np.linalg.norm(_frA)
 T1.KINKR.update({1:(tuple(_frA),tuple(_Q0),tuple(_Q1)),2:(tuple(_frA),tuple(_Q0),tuple(_Q1))})
 print('the outfield\'s rows run on into A01, A02, B02 behind the line',np.round(_Q0,1),np.round(_Q1,1))
 S1=T1.build(G,_A_ch,_B_ch,_F_ch,_frames,hull1>0,field|EX)
-# The fingers' heights (td_stand1.fit_rake): every block ONE straight slope (no landing, the rake
-# never easing off up the block), the rakes and front heights the ones that make the steps across the
-# aisles between blocks, and into the outfield stand, least; from the 12th block (counted from each
-# pole) on, the front row at the building's section (A 1.0 m + 0.17 m a row), the back at the
-# concourse. Towards the poles the fronts stand higher (to about 5 m at A01-A03, over the excite seats
-# and the outfield's fence) and the rake eases to 0.2 m/m, A01 the steepest (0.31, beside the outfield
-# stand's 0.45); A02 stops 0.4 m under the concourse. The steps that remain are at the poles: the
-# outfield stand's rows climb faster than any infield block's and run another way, so the step
-# across A01's two aisles grows towards the back (to about 1.4 m).
 _FhF=np.where(S1['zoneF'],np.minimum(C1F,H_F+_riseF*np.floor(_dFence/0.74)),np.nan).astype(np.float32)
-# The outfield stand's four blocks nearest each pole (F20-F17, F01-F04) are fitted with them, each its
-# own rise a row (and a steeper one from its 10th row on), its front at most the fence's height and its
-# back at the concourse: at the pole the outfield's rows ease block by block into the infield's, the
-# steps shared out over the aisles either side of the pole. Every block's back meets the concourse;
-# the infield's blocks may also climb faster behind their walkway than in front (B over A), never slower.
 _Fcls=T1.outfield_classes(G,S1,_F_ch,k=4)
-# The outfield's two blocks at each pole (F20, F19; F01, F02) have their rows turned towards home behind
-# a diagonal across the block next to the pole's (its front rows along the fence, those behind the line
-# turned, as the real one; F20 turned almost all through): the rows are the level lines of the larger
-# of the distance from the fence and a straight row coordinate turned 25 degrees towards home, the two
-# meeting along the diagonal (the rows run on across it, kinked there)
 _dF2=_dFence.copy()
-_gzF,_gxF=np.gradient(cv2.GaussianBlur(_dFence,(0,0),8))
-for _sg in ():
+for _sg in (-1, 1):
     _m1=(_Fcls==1)&S1['zoneF']&(np.sign(_Xg)==_sg); _m2=(_Fcls==2)&S1['zoneF']&(np.sign(_Xg)==_sg)
     if not (_m1.any() and _m2.any()): continue
-    _n=np.array([_gxF[_m1].mean(),_gzF[_m1].mean()]); _n=_n/np.linalg.norm(_n)       # into the stand
-    _c1=np.array([_Xg[_m1].mean(),_Zg[_m1].mean()]); _hd=-_c1/np.linalg.norm(_c1)
-    _fa=-_n; _tp=_hd-(_hd@_fa)*_fa; _tp=_tp/np.linalg.norm(_tp); _a=np.radians(25.0)
-    _n1=-(_fK*np.array([_sg,1.0]))                                                    # the turned rows' way back: as B02's kinked half
-    # (anchored at the front of the boundary between the two blocks: the turned rows start level with the fence's there)
+    _n1=-(_frA*np.array([_sg,1.0]))                                                    # straight row direction matching A01 / A49
+    # anchor at the front of the F20|F19 (F01|F02) boundary so F19/F02 transitions across a diagonal
     _bd=_m1&(cv2.dilate(_m2.astype(np.uint8),np.ones((5,5),np.uint8))>0)
     _j=np.argmin(np.where(_bd,_dFence,1e9)); _p0=np.array([_Xg.flat[_j],_Zg.flat[_j]]); _d0=float(_dFence.flat[_j])
-    _mm=_m1|_m2
-    _dr=(_Xg[_mm]-_p0[0])*_n1[0]+(_Zg[_mm]-_p0[1])*_n1[1]+_d0
-    _dF2[_mm]=np.maximum(_dFence[_mm],_dr)
-print('outfield pole blocks: rows turned behind the diagonal, the depth raised by up to %.1f m'%float(np.nanmax(np.where(S1['zoneF'],_dF2-_dFence,0))))
+    _dr1=(_Xg[_m1]-_p0[0])*_n1[0]+(_Zg[_m1]-_p0[1])*_n1[1]+_d0
+    _dr1=_dr1-float(_dr1.min())+0.05
+    _dF2[_m1]=_dr1
+    _dr2=(_Xg[_m2]-_p0[0])*_n1[0]+(_Zg[_m2]-_p0[1])*_n1[1]+_d0
+    _dF2[_m2]=np.maximum(_dFence[_m2],_dr2)
+print('outfield pole blocks: F20/F01 straight rows matching A01/A49, F19/F02 diagonal transition, max diff %.1f m'%float(np.nanmax(np.where(S1['zoneF'],np.abs(_dF2-_dFence),0))))
 _FhF=np.where(S1['zoneF'],np.minimum(C1F,H_F+_riseF*np.floor(_dF2/0.74)),np.nan).astype(np.float32)
 _profs,_Fcl=T1.fit_rake(G,S1,_FhF,Fcls=_Fcls,dF=_dF2,nF=_nF,land=(4,3.5),wF=3.0)
 T1.apply_profiles(S1,_profs)
@@ -478,10 +452,12 @@ c1=(dOut1>0)&(dOut<=9.0)&~stand1&~field
 import td_upper as U
 dOutC=dOut-U.tau_c(TH); dOutD=dOut-U.tau_d(TH)
 cb=(dOutC>C0W+3.6)&(dOutC<=E0+6)&(np.abs(TH)<=U.C_END+2.0)&(Cl.R==0)
-# 2nd-floor concourse: the D/E walkway, the hall under E behind its first
-# rows (and the tunnel mouths through them), and 6 m behind it all
+# 2nd-floor concourse: the open D/E walkway in the bowl and the enclosed hall
+# under E's upper rows (restricted to |TH|<=72.5 so no concourse box sticks out at the 1B/3B ends)
 Eback=E0+23*DP
-c2=(dOutD>=D0+8*DP)&(dOutD<=Eback+6)&(np.abs(TH)<=U.D_END+4.0)&(D.R==0)&~((E.R>0)&(dOutD<E0+4.0))
+_walk2=(dOutD>=D0+8*DP)&(dOutD<=E0+0.8)&(np.abs(TH)<=84.2)&(D.R==0)&~((E.R>0)&(dOutD<E0+4.0))
+_hall2=(dOutD>=E0+3.2)&(dOutD<=Eback+5.0)&(np.abs(TH)<=72.5)&(D.R==0)&~((E.R>0)&(dOutD<E0+4.0))
+c2=_walk2|_hall2
 # the building's outer wall: the roof's plan, a superellipse set corner-on
 # to home plate (201 m corner to corner at its ring beam, the sides bulging
 # out to 180.6 m apart across the diagonals), centred 33 m out from home,
@@ -545,7 +521,7 @@ def ringpt(theta,d):
     if not len(xs): return None
     X,Z=G.m(xs.mean(),ys.mean()); return (float(X),float(Z))
 flights=[]
-for th in (-75,-20,20,75):
+for th in (-68,-20,20,68):
     for lo,up,y0,y1,dd in ((c1,cb,C1F,CBAL,3.0),(cb,c2,CBAL,C2F,E0+5.0)):
         p=ringpt(th,dd)
         f=find_flight(lo,up,y0,y1,p) if p else None
@@ -616,8 +592,8 @@ for n_,q,a_ in zip(ENT1N,ENT1,AX1):
 print('1st-floor doors placed',len(DOORS1),'of',len(ENT1),'; the furthest from its circle %.1f m'%max(np.hypot(*(d-ENT1[ENT1N.index(n)])) for n,d,_,_ in DOOR1))
 rooms=[{'name':'1F','mask':c1,'y':C1F,'cl':4.0,'own':[A,B,F],'doors':DOORS1,'door_w':2.0,'open_stand':True},
        {'name':'BAL','mask':cb,'y':CBAL,'cl':3.8,'own':[Cl],'doors':Cl.aisle_doors()},
-       {'name':'2F','mask':c2,'y':C2F,'cl':4.0,'own':[D,E],'doors':D.aisle_doors()+E.aisle_doors()}]
-rooms[2]['open']=E.pits
+       {'name':'2F','mask':c2,'y':C2F,'cl':4.0,'own':[D,E],'doors':[]}]
+rooms[2]['open']=E.pits|_walk2
 # the walkway along the back of the 1st floor, out from under the balcony:
 # open to the dome, the concourse's wall (with its doors) behind it
 overhead=(Cl.R>0)|(D.R>0)|(E.R>0)|cb|c2|suitem
@@ -638,10 +614,10 @@ skip=lambda ox,oy,h: roomtop[oy,ox]>=h+1.0 or (TOP1[oy,ox]>0 and abs(h-TOP1[oy,o
 fronts={'C':('tread',0.8),'D':('tread',0.8)}
 levels=[]
 spec={'K':((c1,C1F),(cross,H_A+R_A*25)),'G':(),'A':((cross,H_A+R_A*25),),'B':((c1,C1F),),'F':((c1,C1F),),'P':((c1,C1F),),'C':((cb,CBAL),),'D':((c2,C2F),),'E':((c2,C2F),)}
-flushmode={'K':'open','G':'open','A':'open','B':'doors','F':'doors','P':'doors','C':'doors','D':'open','E':'doors'}
+flushmode={'K':'open','G':'open','A':'open','B':'doors','F':'doors','P':'doors','C':'doors','D':'open','E':'closed'}
 voms={'E':C2F}
 for name,l in LV.items():
-    drs=DOORS1 if name in ('B','F','P') else l.aisle_doors()
+    drs=DOORS1 if name in ('B','F','P') else ([] if name in ('D','E') else l.aisle_doors())
     rails,walls=edge_walls(G,l,outside_fn(spec[name]),drs,flush=flushmode[name],skip=skip,front=fronts.get(name),**({'door_w':2.0,'open_stand':True} if drs is DOORS1 else {}))
     if fronts.get(name): rails+=front_parapet(G,l,fronts[name])
     levels.append({'name':name,'D':l.D,'h0':l.h0,'rise':l.rise,**({'hs':[round(float(v),3) for v in l.hs]} if l.hs is not None else {}),'rows':l.rows_out(),'steps':l.aisles_out(),'holes':[],'voms':VOMS.get(name,[]),
@@ -761,38 +737,51 @@ from shapely.geometry import Polygon
 _tunnels=[]; _feet=[]
 for _k in (2,):
     _fg=S1['fingers'][_k]
-    _r0=min(m_[2] for m_ in S1['meta'] if m_[0]==_k and m_[1]=='A')
-    _ids=[i_ for i_,m_ in enumerate(S1['meta']) if m_[0]==_k and m_[1]=='A' and m_[2]<_r0+2]      # (its two front rows)
-    if not _ids: continue
-    _ys,_xs=np.nonzero(np.isin(S1['band'],_ids)); _P=np.c_[G.m(_xs,_ys)]
-    _f=np.asarray(_fg.f,float); _v=np.array([-_f[1],_f[0]])
-    _c=_P.mean(0); _tf=float((_P@_f).max()); _lat=(_P-_c)@_v
-    # (the block's width at its front, from its outline, less its aisles)
-    _PA=np.array(_fg.pa.exterior.coords); _fr_=_PA[(_PA@_f)>=(_PA@_f).max()-3.0]; _lp=(_fr_-_c)@_v
-    _w=float(np.clip(_lp.max()-_lp.min()-0.3,3.8,6.0)); _c=_c+_v*float((_lp.max()+_lp.min())/2)
-    # (its axis square to the block's top row there: the rows bend, so the way they face where the tunnel runs)
-    _gF=_fg.facing(float((_c-_fg.ref)@_fg.u) if _fg.w is not None else 0.0)
-    _p=_c+_f*(_tf-float(_c@_f)+0.6); _u=-np.asarray(_gF,float); _L=float(_tf-(_P@_f).min())+6.0
+    _PA=np.array(_fg.pa.exterior.coords)
+    # align tunnel axis with the top (pole-side) edge of A02's chart polygon
+    _f0=np.asarray(_frames[_k][0],float); _u=-_f0/np.linalg.norm(_f0); _vv=np.array([-_u[1],_u[0]])
+    _fr_=_PA[(_PA@_u)<=(_PA@_u).min()+3.0]
+    _s_pole=float((_fr_@_vv).min()); _s_home=float((_fr_@_vv).max())
+    _w=float(np.clip(_s_home-_s_pole-0.1,3.5,4.2))
+    _s_cen=_s_pole+_w/2
+    _u_min=float((_PA@_u).min()); _u_max=float((_PA@_u).max())
+    _p=_u*(_u_min-0.4)+_vv*_s_cen; _L=(_u_max-_u_min)+3.5
     # (its mouth in the padded wall round the field: where its axis crosses the fence's line)
     _end=_p+_u*_L; _fr=_LS(poly_out(fnw[0])[0]+[poly_out(fnw[0])[0][0]])
     _xi=_fr.intersection(_LS([_p-_u*20,_p+_u*20]))
     _pts=[np.array(q_.coords[0]) for q_ in getattr(_xi,'geoms',[_xi]) if not q_.is_empty]
     if _pts:
-        _q=min(_pts,key=lambda q_: np.hypot(*(q_-_p))); _p=_q+_u*0.1; _L=float((_end-_p)@_u)
-    # an open cut through its front rows (to `deck`, 3.5 m in), then on under the rows, its roof just under
-    # the row over the cut's end; the cut's sides walled a rail's height over the rows beside them
-    _dk=3.0      # (open through its front rows, as the real one; the rows behind on its roof)
+        _q=min(_pts,key=lambda q_: np.hypot(*(q_-_p))); _p=_q+_u*0.08; _L=float((_end-_p)@_u)
+    # an open cut through its front rows (to `deck`, 2.8 m in), then on under the rows
+    _dk=2.8
     _hy=lambda a_: float(_fg.height(_fg.coord((_p+_u*a_)[None,:])[0]))
-    _dY=_hy(_dk); _h=round(min(_dY,_hy(0.3))-0.6,2)      # (under the lowest row over it, with room for the roof)
-    # (the cut's side walls level with the rows beside them, row by row)
-    _sd=[[round(float(a_),2),round(_hy(max(a_,0.05))+0.02,2)] for a_ in np.linspace(0.2,_dk,8)]      # (from behind the wall's padding)
+    _dY=_hy(_dk); _h=round(min(_dY,_hy(0.3))-0.55,2)
+    _sd=[[round(float(a_),2),round(_hy(max(a_,0.05))+0.02,2)] for a_ in np.linspace(0.2,_dk,8)]
     _tunnels.append({'p':[round(float(_p[0]),2),round(float(_p[1]),2)],'u':[round(float(_u[0]),4),round(float(_u[1]),4)],'w':round(_w,2),'h':_h,'L':round(_L,2),
                      'deck':_dk,'deckY':round(_dY,2),'sides':[_sd,_sd],'closed':True,'gate':True})
-    _vv=np.array([-_u[1],_u[0]]); _hw=_w/2+0.15
+    _hw=_w/2+0.12
     _rect=lambda a0_,a1_: Polygon([_p+_u*a0_-_vv*_hw,_p+_u*a1_-_vv*_hw,_p+_u*a1_+_vv*_hw,_p+_u*a0_+_vv*_hw])
     _feet.append((_rect(-0.4,_dk),None))          # the cut: no tread
     _feet.append((_rect(_dk,_L),_h+0.12))         # under the rows: the treads on its roof
 print('tunnel under A02 (width, length, roof, deck)',[(t_['w'],t_['L'],t_['h'],t_['deck']) for t_ in _tunnels])
+# clip 1st-floor concrete row polygons against the smoothed fence lines so zero concrete protrudes outside any fence
+_fnw_poly=Polygon(poly_out(fnw[0])[0]).buffer(-0.08)
+_fw_poly=Polygon(poly_out(fw[0])[0]).buffer(-0.05)
+_fnw_g=Polygon(poly_out(fnw[0])[0]).buffer(0.05)
+for _lvd in levels:
+    if _lvd['name'] in ('A','B','F'):
+        for _row in _lvd['rows']:
+            _g=T1._geom_of(_row['polys'])
+            if _g.intersects(_fnw_poly):
+                _g=_g.difference(_fnw_poly)
+                _row['polys']=T1._polys_of(_g) if not _g.is_empty else []
+        _lvd['rows']=[r_ for r_ in _lvd['rows'] if r_['polys']]
+    elif _lvd['name']=='G':
+        for _row in _lvd['rows']:
+            _g=T1._geom_of(_row['polys'])
+            _g=_g.difference(_fw_poly).intersection(_fnw_g)
+            _row['polys']=T1._polys_of(_g) if not _g.is_empty else []
+        _lvd['rows']=[r_ for r_ in _lvd['rows'] if r_['polys']]
 _open=unary_union([Polygon(q_[0],q_[1:]).buffer(0) for q_ in mask_polys(G,EXopen&~cv2.erode(EXopen.astype(np.uint8),np.ones((1,1),np.uint8)).astype(bool)|EXopen)])
 for _lvd in levels:
     if _lvd['name']!='G': continue

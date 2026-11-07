@@ -141,37 +141,26 @@ SUITE_TH=33.7
 # The balcony runs on past the foul poles (98.5 degrees from the dome's
 # centre) to the map's last blocks, C01 and C97, at 130.4 degrees, over the
 # outfield stand's rear (td_upper.py)
+_vec=json.load(open('td/td_vec.json')); _wds=_vec['words']
+_cth=[]
+for _i,_w in enumerate(_wds):
+    if _w[4]=='C' and _i+1<len(_wds) and _wds[_i+1][4].isdigit():
+        _n=int(_wds[_i+1][4])
+        if 1<=_n<=48:
+            _p=(np.array([(_w[0]+_wds[_i+1][2])/2,(_w[1]+_wds[_i+1][3])/2])-Hm)/s-np.array(O)
+            _cth.append((_n,float(np.degrees(np.arctan2(_p[0],_p[1])))))
+_cth.sort()
 Cmask=sector_mask(-U.C_END,U.C_END,C0,C0+CP*CR,dOutC)&(np.abs(TH)>=SUITE_TH)
-# aisles every 12 m round the ring
 cm=Cmask.copy()
-for t in np.linspace(-U.C_END,U.C_END,39): cm&=~((np.abs(TH-t)<np.degrees(0.6/75)))
+for _i in range(1,len(_cth)-1,2):
+    _ta=0.5*(_cth[_i][1]+_cth[_i+1][1])
+    for _sg in (1.0,-1.0):
+        cm&=~(np.abs(TH-_sg*_ta)<np.degrees(0.55/RRO))
 SC=ring_seats(cm,C0,CP,CR,fld=dOutC)
-# 2nd floor: D rows 1–10 from 12.3 m in over the 1st floor, a walkway, E
-# rows 11–33
 D0,DP=-12.3,0.8
 E0=D0+10*DP+1.2
-SDl=[]; SEl=[]
-for t0,t1,n in Dsp:
-    rows=max(v for v in n if v<=10) if any(v<=10 for v in n) else 10
-    a,b=shrink_sector(t0,t1,70)
-    SDl.append(ring_seats(sector_mask(a,b,D0,D0+rows*DP,dOutD),D0,DP,rows,fld=dOutD))
-# the 2nd floor's ring on past D04 and E09 to the map's last blocks: D03, D02,
-# D01 (D49, D50, D51) beside the rest of the ring, their front moving back over
-# the outfield stand's rear (td_upper.py); E08, E07, E06 (E44, E45, E46)
-for t0,t1,rows in U.both_sides(U.DX):
-    a,b=shrink_sector(t0,t1,70)
-    SDl.append(ring_seats(sector_mask(a,b,D0,D0+rows*DP,dOutD),D0,DP,rows,fld=dOutD))
-# tunnel mouths through the first rows of E, where the map puts the upper
-# deck's 14 entrances (td_entrances.py): the vomitories td_build.py digs there
 import td_entrances
 VOM=[th for _,th in td_entrances.load(O)[1]]
-Ex=[(t0,t1,max(n[1:])-10 if len(n)>1 else 17) for t0,t1,n in Esp]+U.both_sides(U.EX)
-# The aisles between E's blocks: the map's own gap between two blocks (0.4-0.9
-# degrees, 1-2 m out on the ring) where it is wide enough, else the blocks'
-# edges pulled in, so that every aisle is 1.3 m at least; and no wider than
-# the open_w below which td_build.py treats a gap as tread, not an opening
-# (a fixed 1.2 m pulled off each block at 85 m out, as before, made them 3-3.7 m
-# out on E's ring, bare gaps between the blocks all the way up)
 def aisle_sectors(blocks, r, amin=1.3):
     order=sorted(range(len(blocks)),key=lambda i: blocks[i][0]); dmin=np.degrees(amin/r)
     a=[blk[0] for blk in blocks]; b=[blk[1] for blk in blocks]
@@ -180,11 +169,49 @@ def aisle_sectors(blocks, r, amin=1.3):
         if gap<dmin: b[i]-=(dmin-gap)/2; a[j]+=(dmin-gap)/2
     a[order[0]]+=dmin/2; b[order[-1]]-=dmin/2
     return list(zip(a,b))
-for (t0,t1,rows),(a,b) in zip(Ex,aisle_sectors(Ex,122.0)):
-    m=sector_mask(a,b,E0,E0+rows*DP)
-    for tv in VOM:
-        m&=~((np.abs(TH-tv)<np.degrees(1.1/RRO))&(dOut<E0+5*DP))
-    SEl.append(ring_seats(m,E0,DP,rows))
-SD=np.vstack(SDl); SE=np.vstack(SEl)
+_real=json.load(open('td/td_rows_real.json'))
+_allD=sorted([(t0,t1) for t0,t1,_ in Dsp]+[(t0,t1) for t0,t1,_ in U.both_sides(U.DX)],reverse=True)
+_allE=sorted([(t0,t1) for t0,t1,_ in Esp]+[(t0,t1) for t0,t1,_ in U.both_sides(U.EX)],reverse=True)
+_secD=aisle_sectors(_allD,85.0,1.3)
+_secE=aisle_sectors(_allE,110.0,1.3)
+def _lay_real_tier(L, b_nums, secs, d0, dp, r_base, n_rows, min_cap):
+    curves={}
+    for r_idx in range(n_rows):
+        dc=d0+0.45+r_idx*dp
+        ys,xs=np.nonzero(np.abs(dOutD-dc)<0.055)
+        ths=TH[ys,xs]; oo=np.argsort(ths)
+        curves[r_idx]=(ths[oo],X[ys,xs][oo],Z[ys,xs][oo],RRO[ys,xs][oo])
+    pts=[]
+    for k,(a,b) in zip(b_nums,secs):
+        rows=dict(_real[f'{L}{k:02d}']['rows'])
+        if len(rows)==1:
+            only_r=next(iter(rows))
+            rows[str(int(only_r)+1)]=rows[only_r]
+        s_min=min(lo for ivs in rows.values() for lo,hi in ivs)
+        r_ints={int(rk):ivs for rk,ivs in rows.items()}
+        for r_num,ivs in sorted(r_ints.items()):
+            r_idx=r_num-r_base
+            if r_idx<0 or r_idx>=n_rows: continue
+            ths_c,xc,zc,rc=curves[r_idx]
+            ref_r=max(r_num,r_base+5) if L=='E' else r_num
+            cap=max(hi-s_min+1 for rk,ivs2 in r_ints.items() if rk<=ref_r for _,hi in ivs2)
+            cap=max(cap,max(hi-s_min+1 for _,hi in ivs),min_cap)
+            if len(ivs)==2:
+                s_ids=np.array([sn-s_min for sn in range(ivs[0][0],ivs[0][1]+1)]+[sn-s_min+1 for sn in range(ivs[1][0],ivs[1][1]+1)],float)
+                cap=max(ivs[1][1]-s_min+2,1)
+            else:
+                s_ids=np.array([sn-s_min for lo,hi in ivs for sn in range(lo,hi+1)],float)
+            u=(s_ids+0.5)/max(cap,1)
+            th_s=a+u*(b-a) if k<=26 else b-u*(b-a)
+            if L=='E' and r_idx<5:
+                rm=np.interp(th_s,ths_c,rc)
+                keep=np.ones(len(th_s),bool)
+                for tv in VOM: keep&=~(np.abs(th_s-tv)<np.degrees(1.1/rm))
+                th_s=th_s[keep]
+            if len(th_s):
+                pts.append(np.c_[np.interp(th_s,ths_c,xc),np.interp(th_s,ths_c,zc)])
+    return np.vstack(pts)
+SD=_lay_real_tier('D',range(1,52),_secD,D0,DP,1,10,12)
+SE=_lay_real_tier('E',range(6,47),_secE,E0,DP,11,23,14)
 print('seats C',len(SC),'D',len(SD),'E',len(SE),round(time.time()-T0,1))
 pickle.dump(dict(SA=SA,SB=SB,SF=SF,SC=SC,SD=SD,SE=SE,hull1=hull1,hullC=hullC,field=field,dOut=dOut,dOut1=dOut1,TH=TH,VOM=VOM,E0=E0,SUITE_TH=SUITE_TH),open('td_stage1.pkl','wb'))

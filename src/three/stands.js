@@ -1314,7 +1314,12 @@ export function buildStands(data, {
     // the partitions beside a gate's pit and its stairs' cuts: solid, `gateRailT` thick
     if (L.gateRails?.length) {
       const gp = [], gn = [];
-      for (const r of slopedRuns(L.gateRails.map(([x0, z0, x1, z1, y0, y1]) => [x0 + ox, z0 + oz, x1 + ox, z1 + oz, y0, y1]))) thickPanel(gp, gn, r, L.gateRailT ?? 0.25);
+      const r6 = [];
+      for (const r of L.gateRails) {
+        if (r.length === 8) thickPanel(gp, gn, [r[0] + ox, r[1] + oz, r[2] + ox, r[3] + oz, r[4], r[5], r[6], r[7]], L.gateRailT ?? 0.25);
+        else r6.push([r[0] + ox, r[1] + oz, r[2] + ox, r[3] + oz, r[4], r[5]]);
+      }
+      for (const r of slopedRuns(r6)) thickPanel(gp, gn, r, L.gateRailT ?? 0.25);
       if (gp.length) {
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.Float32BufferAttribute(gp, 3));
