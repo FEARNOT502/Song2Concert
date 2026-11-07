@@ -138,7 +138,7 @@ export function buildDome(ctx) {
   // at 45). (D's last rows run ragged: the two rows are the two highest that
   // run the whole way along it, on each side, and the odd seats that stand
   // up behind them there are left out, so the boxes run as two clean rows.)
-  const BOX = { level: 'D', phi: [85, 115], per: 4 };
+  const BOX = { level: 'D', phi: [92.2, 118.8], per: 4 };
   // the backscreen's sector of the outfield stand, either side of the
   // centre-field line (the official map's F09 and F12 begin at 8.4°)
   const BSC = 8.4;
@@ -159,7 +159,7 @@ export function buildDome(ctx) {
     const span = BOX.phi[1] - BOX.phi[0] + 1;
     for (const [key, fs] of seen) {
       const [side, row] = key.split(':').map(Number);
-      if (fs.size >= 0.8 * span) boxTop.set(side, Math.max(boxTop.get(side) ?? 0, row));
+      if (fs.size >= 0.65 * span) boxTop.set(side, Math.max(boxTop.get(side) ?? 0, row));
     }
   }
   const inRun = (name, x, z) => {
@@ -237,23 +237,38 @@ export function buildDome(ctx) {
     const piece = (out, w, h, d, x, y, z, rotY) => { const b = new THREE.BoxGeometry(w, h, d); b.rotateY(rotY); b.translate(x, y, z); out.push(b); };
     for (const seats of rows.values()) {
       seats.sort((p, q2) => p.a - q2.a);
-      seats.forEach((s, k) => {
-        const rot = Math.atan2(s.fx, s.fz);
-        // the counter and its front, the width of the seat (and a little over, so they run on unbroken)
-        piece(wood, 0.56, 0.035, 0.34, s.x + s.fx * 0.52, s.y + 0.72, s.z + s.fz * 0.52, rot);
-        piece(wood, 0.56, 0.72, 0.03, s.x + s.fx * 0.68, s.y + 0.36, s.z + s.fz * 0.68, rot);
-        piece(holes, 0.08, 0.004, 0.08, s.x + s.fx * 0.52, s.y + 0.74, s.z + s.fz * 0.52, rot);
-        // a partition between every fourth seat and the next, and at both ends
-        // of the run (half a seat out, away from its neighbour)
-        const wall = (x, z) => piece(wood, 0.04, 1.1, 0.95, x + s.fx * 0.22, s.y + 0.55, z + s.fz * 0.22, rot);
-        const o = seats[k + 1];
-        if (o && (k + 1) % BOX.per === 0) wall((s.x + o.x) / 2, (s.z + o.z) / 2);
-        for (const [e, n] of [[0, 1], [seats.length - 1, seats.length - 2]]) {
-          if (k !== e || !seats[n]) continue;
-          const dx = s.x - seats[n].x, dz = s.z - seats[n].z, l = Math.hypot(dx, dz) || 1;
-          wall(s.x + dx / l * 0.27, s.z + dz / l * 0.27);
+      const blocks = [];
+      for (const s of seats) {
+        const b = blocks[blocks.length - 1];
+        if (!b || Math.hypot(s.x - b[b.length - 1].x, s.z - b[b.length - 1].z) > 1.35) blocks.push([s]);
+        else b.push(s);
+      }
+      for (const blk of blocks) {
+        if (blk.length < 2) continue;
+        const n = blk.length;
+        const dx = blk[n - 1].x - blk[0].x, dz = blk[n - 1].z - blk[0].z, span = Math.hypot(dx, dz) || 1;
+        let fX = -dz / span, fZ = dx / span;
+        if (fX * blk[0].fx + fZ * blk[0].fz < 0) { fX = -fX; fZ = -fZ; }
+        const rot = Math.atan2(fX, fZ), tX = Math.cos(rot), tZ = -Math.sin(rot);
+        const cx = (blk[0].x + blk[n - 1].x) / 2, cz = (blk[0].z + blk[n - 1].z) / 2, y = blk[0].y;
+        const W = span + 0.56;
+        // continuous counter and front panel across the Sky Terrace block, with cup holes and flush partitions
+        piece(wood, W, 0.035, 0.34, cx + fX * 0.52, y + 0.72, cz + fZ * 0.52, rot);
+        piece(wood, W, 0.72, 0.03, cx + fX * 0.68, y + 0.36, cz + fZ * 0.68, rot);
+        for (let k = 0; k < n; k++) {
+          const u = (blk[k].x - cx) * tX + (blk[k].z - cz) * tZ;
+          piece(holes, 0.08, 0.004, 0.08, cx + tX * u + fX * 0.52, y + 0.74, cz + tZ * u + fZ * 0.52, rot);
         }
-      });
+        const parts = [-(W / 2 - 0.02), W / 2 - 0.02];
+        for (let k = BOX.per; k < n; k += BOX.per) {
+          const uA = (blk[k - 1].x - cx) * tX + (blk[k - 1].z - cz) * tZ;
+          const uB = (blk[k].x - cx) * tX + (blk[k].z - cz) * tZ;
+          parts.push((uA + uB) / 2);
+        }
+        for (const u of parts) {
+          piece(wood, 0.04, 1.1, 0.95, cx + tX * u + fX * 0.22, y + 0.55, cz + tZ * u + fZ * 0.22, rot);
+        }
+      }
     }
     const birch = std({ color: 0xc9a06a, roughness: 0.9, envMapIntensity: 0.3 });
     const wm = new THREE.Mesh(mergeGeometries(wood), birch); wm.receiveShadow = true; wm.castShadow = true;
@@ -413,18 +428,19 @@ export function buildDome(ctx) {
       for (const q of ringPts) { const d = (q.x - p.x) ** 2 + (q.z - p.z) ** 2; if (d < bd) { bd = d; best = { x: q.x, z: q.z }; } }
       return best;
     };
-    const off = pts.map((p) => { let m = Infinity; for (const q of ringPts) m = Math.min(m, (q.x - p.x) ** 2 + (q.z - p.z) ** 2); return m > 0.45 * 0.45; });
+    const off = pts.map((p) => { let m = Infinity; for (const q of ringPts) m = Math.min(m, (q.x - p.x) ** 2 + (q.z - p.z) ** 2); return m > 0.18 * 0.18; });
     const lowMat = std({ color: 0x0b2a1a, roughness: 0.8 });
     let run = [];
     const flush = () => {
       if (run.length > 3) {
-        const ext = [snapRing(run[0]), ...run, snapRing(run[run.length - 1])];
+        const i0 = (run[0] - 1 + pts.length) % pts.length, i1 = (run[run.length - 1] + 1) % pts.length;
+        const ext = [pts[i0], ...run.map((i) => pts[i]), pts[i1]];
         const g = wallStrip(ext, ext.map(() => 1.0), { thick: 0.22, ease: 0 });
         if (g) root.add(new THREE.Mesh(g, lowMat));
       }
       run = [];
     };
-    pts.forEach((p, i) => { if (off[i]) run.push(p); else flush(); });
+    pts.forEach((_, i) => { if (off[i]) run.push(i); else flush(); });
     flush();
   }
   // the yellow line along the top of the outfield fence, and its net

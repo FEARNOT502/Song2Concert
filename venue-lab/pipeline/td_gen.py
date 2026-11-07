@@ -196,7 +196,10 @@ def _lay_real_tier(L, b_nums, secs, d0, dp, r_base, n_rows, min_cap):
             ref_r=max(r_num,r_base+5) if L=='E' else r_num
             cap=max(hi-s_min+1 for rk,ivs2 in r_ints.items() if rk<=ref_r for _,hi in ivs2)
             cap=max(cap,max(hi-s_min+1 for _,hi in ivs),min_cap)
-            if len(ivs)==2:
+            if len(ivs)==2 and L=='D':
+                s_ids=np.array([0,1,2,3,4.15,5.15,6.15,7.15],float)
+                cap=8.15
+            elif len(ivs)==2:
                 s_ids=np.array([sn-s_min for sn in range(ivs[0][0],ivs[0][1]+1)]+[sn-s_min+1 for sn in range(ivs[1][0],ivs[1][1]+1)],float)
                 cap=max(ivs[1][1]-s_min+2,1)
             else:

@@ -673,7 +673,7 @@ for a_ in AISLES:
     floors.append({'y':round(float(a_['y0']),3),'y0':0.0,'polys':[[[[round(float(x),2),round(float(z),2)] for x,z in rect]]]})
     aisle_flights.append({'x':float(p0[0]),'z':float(p0[1]),'dx':float(u_[0]),'dz':float(u_[1]),'n':int(a_['n']),'L':float(a_['t1']-a_['t0']),
                           'y0':float(a_['y0']),'y1':float(a_['y1']),'w':AW,'open':True})
-ow=contours(G,outer.astype(np.uint8),eps=0.03,minarea=100)
+ow=contours(G,bldg.astype(np.uint8),eps=0.03,minarea=100)
 # the field's edge (the wall round it) eased along its length: straight
 # runs straight, the curves even, no steps
 from standlib import rings_px, _smooth_chain, _straighten
@@ -765,9 +765,23 @@ for _k in (2,):
     _feet.append((_rect(_dk,_L),_h+0.12))         # under the rows: the treads on its roof
 print('tunnel under A02 (width, length, roof, deck)',[(t_['w'],t_['L'],t_['h'],t_['deck']) for t_ in _tunnels])
 # clip 1st-floor concrete row polygons against the smoothed fence lines so zero concrete protrudes outside any fence
+_fw_arr=np.array(poly_out(fw[0])[0],float)
+_i1h=int(np.argmin(np.hypot(_fw_arr[:,0]-31.2,_fw_arr[:,1]+9.3)))
+_i1p=int(np.argmin(np.hypot(_fw_arr[:,0]-61.3,_fw_arr[:,1]+54.0)))
+_i1a=int(np.argmin(np.hypot(_fw_arr[:,0]-33.1,_fw_arr[:,1]+2.2)))
+_i1b=int(np.argmin(np.hypot(_fw_arr[:,0]-68.5,_fw_arr[:,1]+54.4)))
+_i3b=int(np.argmin(np.hypot(_fw_arr[:,0]+70.1,_fw_arr[:,1]+57.6)))
+_i3a=int(np.argmin(np.hypot(_fw_arr[:,0]+31.6,_fw_arr[:,1]+0.4)))
+if _i1a<_i1h<_i1p<_i1b and _i3b<_i3a:
+    _ex1=np.vstack([[[34.1,-3.7]],_fw_arr[_i1h:_i1p+1],[[68.5,-54.4]]])
+    _ex3=_ex1[::-1]*np.array([-1.0,1.0])
+    _fw_arr=np.vstack([_fw_arr[:_i3b+1],_ex3,_fw_arr[_i3a:_i1a+1],_ex1,_fw_arr[_i1b+1:]])
+    fw=[[[_fw_arr]]]
 _fnw_poly=Polygon(poly_out(fnw[0])[0]).buffer(-0.08)
 _fw_poly=Polygon(poly_out(fw[0])[0]).buffer(-0.05)
 _fnw_g=Polygon(poly_out(fnw[0])[0]).buffer(0.05)
+_diag_pads=unary_union([Polygon([[sx*34.1,-3.7],[sx*36.0,-6.2],[sx*31.2,-9.3]]).buffer(0.05) for sx in (-1,1)]+
+                       [Polygon([[sx*61.3,-54.0],[sx*67.0,-51.6],[sx*68.5,-54.4]]).buffer(0.05) for sx in (-1,1)]).difference(_fw_poly).intersection(_fnw_g)
 for _lvd in levels:
     if _lvd['name'] in ('A','B','F'):
         for _row in _lvd['rows']:
@@ -779,6 +793,7 @@ for _lvd in levels:
     elif _lvd['name']=='G':
         for _row in _lvd['rows']:
             _g=T1._geom_of(_row['polys'])
+            if _row['r']==0: _g=unary_union([_g,_diag_pads])
             _g=_g.difference(_fw_poly).intersection(_fnw_g)
             _row['polys']=T1._polys_of(_g) if not _g.is_empty else []
         _lvd['rows']=[r_ for r_ in _lvd['rows'] if r_['polys']]

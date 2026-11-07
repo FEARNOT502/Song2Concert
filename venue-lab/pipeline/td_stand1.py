@@ -582,9 +582,9 @@ def outfield_classes(G, res, Fpolys, k=3):
     for i, j in cls.items(): out[(lab == i + 1) & zf] = j
     return out
 
-# The 3B side's B31-B33: past their chart's last row (35) the rows behind are the table seats (blue,
-# the area the fan chart leaves out; the 1B side's B17-B19 have ordinary rows 36-47 there)
-TABLE = {31: 36, 32: 36, 33: 36}
+# The 3B side's B31-B33 (behind row 35) and B35-B39 (behind row 38/39): the press/table/box seats
+# in the upper rows that the fan chart leaves out (the 1B side's B11-B19 have ordinary rows 36-47 there)
+TABLE = {31: 36, 32: 36, 33: 36, 35: 40, 36: 39, 37: 39, 38: 40, 39: 40}
 # rows the official map gives a block past the fan chart's last one (seated as the outline lets)
 EXTRA = {'B22': 46, 'B28': 46}
 # rows a block's chart leaves out that its mirror block has (seated by the mirror's numbers): A02's
