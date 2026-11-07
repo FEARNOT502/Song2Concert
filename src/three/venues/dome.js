@@ -378,14 +378,16 @@ export function buildDome(ctx) {
       const leaf = new THREE.BoxGeometry(0.22, gh, lw);      // (padded, as thick as the wall's padding)
       leaf.rotateY(Math.atan2(dx, dz)); leaf.translate(hx + dx * lw / 2, gh / 2, hz + dz * lw / 2);
       root.add(new THREE.Mesh(leaf, std({ color: 0x0b2a1a, roughness: 0.8 })));
-      // the cut's side padded as the wall is, from the wall back to the roof, up to the rows beside it
-      // (no bare concrete of the stand's fronts showing either side of the mouth)
-      const top = Math.max(gh, ...(t.sides?.[0] ?? []).map(([, y]) => y)), len = (t.deck ?? 1) + 0.4;
-      const pad = new THREE.BoxGeometry(0.36, top, len);
-      pad.rotateY(Math.atan2(t.u[0], t.u[1]));
-      const cx = t.p[0] + vx * sg * (t.w / 2 + 0.18) + t.u[0] * (len / 2 - 0.2), cz = t.p[1] + ZH + vz * sg * (t.w / 2 + 0.18) + t.u[1] * (len / 2 - 0.2);
-      pad.translate(cx, top / 2, cz);
-      root.add(new THREE.Mesh(pad, std({ color: 0x0b2a1a, roughness: 0.8 })));
+      // the cut's side padded as the wall is, from the wall back to its end, stepping up with the rows
+      // beside it (no bare concrete of the stand's fronts showing either side of the mouth)
+      const prof = (t.sides?.[0] ?? []).length ? t.sides[0] : [[0, gh], [t.deck ?? 1, gh]];
+      const yaw = Math.atan2(t.u[0], t.u[1]), off = sg * (t.w / 2 + 0.18);
+      for (let i = 0; i < prof.length; i++) {
+        const a0 = i === 0 ? -0.2 : (prof[i - 1][0] + prof[i][0]) / 2, a1 = i === prof.length - 1 ? prof[i][0] + 0.15 : (prof[i][0] + prof[i + 1][0]) / 2;
+        const top = Math.max(i === 0 ? gh : 0, prof[i][1]), seg = new THREE.BoxGeometry(0.36, top, a1 - a0);
+        seg.rotateY(yaw); seg.translate(t.p[0] + vx * off + t.u[0] * (a0 + a1) / 2, top / 2, t.p[1] + ZH + vz * off + t.u[1] * (a0 + a1) / 2);
+        root.add(new THREE.Mesh(seg, std({ color: 0x0b2a1a, roughness: 0.8 })));
+      }
     }
     // a concrete slab over the mouth, level with the stand's front (the walk along the front rows carried
     // across), the cut behind it open to the roof as the real one, the tunnel proper roofed under the rows

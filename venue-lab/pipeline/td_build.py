@@ -296,7 +296,18 @@ _f1=np.asarray(_frames[1][0],float)
 T1.ROT[1]=8.0      # (as A02: its kinked half then runs as B02's and F20's turned rows)
 # and the B block behind A02 (A48) kinked: its half towards the pole has its rows turned 20 degrees towards
 # home, the line of the kink running back through the block's middle, as the real one
-T1.KINK.update({1:20.0,2:20.0})      # (A01 kinked too: its rows past its walkway line, on its pole side)
+# Round the pole the outfield's rows run on into the infield's first blocks: on the pole's side of one
+# diagonal, from A02's front (where its tunnel comes out) back to the far corner of B02, the rows of A01,
+# A02 and B02 are square to the outfield stand's beside A01; on its other side each block's own
+_mA1=(np.hypot(_Xg-_A_ch[1].centroid.x,_Zg-_A_ch[1].centroid.y)<14)&(field==0)
+_gzA,_gxA=np.gradient(cv2.GaussianBlur(_dFence,(0,0),8))
+_frA=-np.array([np.nanmean(np.where(_mA1&(_dFence<14),_gxA,np.nan)),np.nanmean(np.where(_mA1&(_dFence<14),_gzA,np.nan))]); _frA=_frA/np.linalg.norm(_frA)
+_f2=np.asarray(_frames[2][0],float); _u2=np.array([-_f2[1],_f2[0]]); _P2=np.array(_A_ch[2].exterior.coords); _PB2=np.array(_B_ch[2].exterior.coords)
+_sg2=np.sign((np.array(_A_ch[1].centroid.coords[0])-np.array(_A_ch[2].centroid.coords[0]))@_u2)      # (towards the pole)
+_Q0=float(_P2.mean(0)@_u2)*_u2+float((_P2@_f2).max())*_f2
+_Q1=_PB2[int(np.argmax(-(_PB2@_f2)-_sg2*(_PB2@_u2)))]                                               # (B02's back corner away from the pole)
+T1.KINKR.update({1:(tuple(_frA),tuple(_Q0),tuple(_Q1)),2:(tuple(_frA),tuple(_Q0),tuple(_Q1))})
+print('the outfield\'s rows run on into A01, A02, B02 behind the line',np.round(_Q0,1),np.round(_Q1,1))
 S1=T1.build(G,_A_ch,_B_ch,_F_ch,_frames,hull1>0,field|EX)
 # The fingers' heights (td_stand1.fit_rake): every block ONE straight slope (no landing, the rake
 # never easing off up the block), the rakes and front heights the ones that make the steps across the
@@ -321,7 +332,7 @@ _Fcls=T1.outfield_classes(G,S1,_F_ch,k=4)
 # meeting along the diagonal (the rows run on across it, kinked there)
 _dF2=_dFence.copy()
 _gzF,_gxF=np.gradient(cv2.GaussianBlur(_dFence,(0,0),8))
-for _sg in (1,-1):
+for _sg in ():
     _m1=(_Fcls==1)&S1['zoneF']&(np.sign(_Xg)==_sg); _m2=(_Fcls==2)&S1['zoneF']&(np.sign(_Xg)==_sg)
     if not (_m1.any() and _m2.any()): continue
     _n=np.array([_gxF[_m1].mean(),_gzF[_m1].mean()]); _n=_n/np.linalg.norm(_n)       # into the stand
@@ -762,7 +773,9 @@ for _k in (2,):
     # (the block's width at its front, from its outline, less its aisles)
     _PA=np.array(_fg.pa.exterior.coords); _fr_=_PA[(_PA@_f)>=(_PA@_f).max()-3.0]; _lp=(_fr_-_c)@_v
     _w=float(np.clip(_lp.max()-_lp.min()-0.3,3.8,6.0)); _c=_c+_v*float((_lp.max()+_lp.min())/2)
-    _p=_c+_f*(_tf-float(_c@_f)+0.6); _u=-_f; _L=float(_tf-(_P@_f).min())+6.0
+    # (its axis square to the block's top row there: the rows bend, so the way they face where the tunnel runs)
+    _gF=_fg.facing(float((_c-_fg.ref)@_fg.u) if _fg.w is not None else 0.0)
+    _p=_c+_f*(_tf-float(_c@_f)+0.6); _u=-np.asarray(_gF,float); _L=float(_tf-(_P@_f).min())+6.0
     # (its mouth in the padded wall round the field: where its axis crosses the fence's line)
     _end=_p+_u*_L; _fr=_LS(poly_out(fnw[0])[0]+[poly_out(fnw[0])[0][0]])
     _xi=_fr.intersection(_LS([_p-_u*20,_p+_u*20]))

@@ -99,6 +99,7 @@ class Finger:
         s.cback = float((allp @ s.f).min())
         s.u = np.array([-s.f[1], s.f[0]]); s.ref = None; s.w = None      # (the rows' bend: see warp_rows)
         s.kink = None   # (l0, k, sigma): behind the walkway, the rows on the sigma side of p.u = l0 turned (see KINK)
+        s.kinkR = None  # (lat0, c0, lat1, c1, fr, off): behind the line (lat0, c0)-(lat1, c1), rows square to fr (see KINKR)
         s._lines()
     def coord(s, p):
         """The row coordinate at the points p (an (n, 2) array or one point): p.f, less the bend of the rows
@@ -107,32 +108,55 @@ class Finger:
         if s.w is not None:
             lat = (p - s.ref) @ s.u
             c = c - (s.w[0] + s.w[1] * lat + s.w[2] * lat * lat)
-        return s._kinked(c, p @ s.u)
+        c = s._kinked(c, p @ s.u)
+        if s.kinkR is not None:
+            fr, off = s.kinkR[3], s.kinkR[4]
+            c = np.where(s._behind(p @ s.u, p @ s.f), p @ fr + off, c)
+        return c
     def coord_xz(s, X, Z):
         c = X * s.f[0] + Z * s.f[1]
         if s.w is not None:
             lat = (X - s.ref[0]) * s.u[0] + (Z - s.ref[1]) * s.u[1]
             c = c - (s.w[0] + s.w[1] * lat + s.w[2] * lat * lat)
-        return s._kinked(c, X * s.u[0] + Z * s.u[1])
+        c = s._kinked(c, X * s.u[0] + Z * s.u[1])
+        if s.kinkR is not None:
+            fr, off = s.kinkR[3], s.kinkR[4]
+            c = np.where(s._behind(X * s.u[0] + Z * s.u[1], X * s.f[0] + Z * s.f[1]), X * fr[0] + Z * fr[1] + off, c)
+        return c
     def _kink_d(s, t):
-        l0, k, sg = s.kink
+        l0, k, sg = s.kink[:3]
         return k * np.maximum(0.0, sg * (np.asarray(t, float) - l0))
+    def _behind(s, lat, cb):
+        """On the pole's side of KINKR's line (points given in the plain frame: lat = p.u, cb = p.f)."""
+        q0, q1, sp = s.kinkR[:3]
+        lat = np.asarray(lat, float); cb = np.asarray(cb, float)
+        X = s.u[0] * lat + s.f[0] * cb; Z = s.u[1] * lat + s.f[1] * cb
+        return np.sign((q1[0] - q0[0]) * (Z - q0[1]) - (q1[1] - q0[1]) * (X - q0[0])) == sp
     def _kinked(s, c, t):
         """Behind the walkway, past the line p.u = l0 on its sigma side, the rows turned: the coordinate
         less k times the distance past the line (the rows there run back at an angle, kinked at the line)."""
         if s.kink is None: return c
+        if s.kink[3]: return c - s._kink_d(t)          # (kinked from its front row on)
         return np.where(c < s.sBf, c - s._kink_d(t), c)
     def row_point(s, t, cc):
         """The point(s) of the row whose coordinate is `cc` at the lateral position `t` (p.u)."""
         t = np.asarray(t, float)
-        if s.kink is not None and cc < s.sBf: cc = cc + s._kink_d(t)
+        if s.kink is not None and (s.kink[3] or cc < s.sBf): cc = cc + s._kink_d(t)
         c = cc if s.w is None else cc + s.w[0] + s.w[1] * (t - float(s.ref @ s.u)) + s.w[2] * (t - float(s.ref @ s.u)) ** 2
-        return s.u[None, :] * np.atleast_1d(t)[:, None] + s.f[None, :] * np.atleast_1d(c)[:, None]
-    def facing(s, lat, t=None, back=False):
+        P = s.u[None, :] * np.atleast_1d(t)[:, None] + s.f[None, :] * np.atleast_1d(c)[:, None]
+        if s.kinkR is not None:
+            # (behind the line the row is the line p.fr + off = cc: at lateral t, c = (cc - off - t u.fr) / f.fr)
+            fr, off = s.kinkR[3], s.kinkR[4]; tt = np.atleast_1d(t)
+            cr = (cc - off - tt * float(s.u @ fr)) / float(s.f @ fr)
+            Pr = s.u[None, :] * tt[:, None] + s.f[None, :] * cr[:, None]
+            P = np.where(s._behind(Pr @ s.u, Pr @ s.f)[:, None], Pr, P)
+        return P
+    def facing(s, lat, t=None, back=False, pt=None):
         """The direction the rows face at lateral position `lat` (square to the row): the gradient of coord
         (`t` the absolute lateral position p.u and `back` behind the walkway: where the rows are kinked)."""
         g = s.f.copy() if s.w is None else s.f - (s.w[1] + 2 * s.w[2] * lat) * s.u
-        if back and s.kink is not None and t is not None and s.kink[2] * (t - s.kink[0]) > 0: g = g - s.kink[1] * s.kink[2] * s.u
+        if s.kink is not None and (back or s.kink[3]) and t is not None and s.kink[2] * (t - s.kink[0]) > 0: g = g - s.kink[1] * s.kink[2] * s.u
+        if s.kinkR is not None and pt is not None and bool(s._behind(pt @ s.u, pt @ s.f)): g = np.array(s.kinkR[3], float)
         return g / np.linalg.norm(g)
     def _lines(s):
         """What follows from the walkway's lines: its depth along the finger, the front row, the section."""
@@ -207,6 +231,8 @@ def sdf(mask, res):
     return (np.where(m, distance_transform_edt(m) - 0.5, -(distance_transform_edt(~m) - 0.5)) * res).astype(np.float32)
 
 KINK = {}       # {n: degrees}: finger n's rows behind its walkway kinked: the half towards the pole (the wedge's: away from its neighbour) turned that far towards home
+KINKR = {}      # {n: (fr, q0, q1)}: finger n's rows on the pole's side of the line q0-q1 square to fr (the outfield's
+                # rows run on across the pole into them); the 1B side's, mirrored for the 3B side
 ROT = {}        # {n: degrees}: finger n's rows turned towards home (the wedges at the poles face the infield more than the map's frame)
 
 def fingers_of(A, B, frames):
@@ -246,7 +272,19 @@ def fingers_of(A, B, frames):
                 nb = out.get(2 if k < 25 else 48)
                 if nb is None: continue
                 cb = np.array(fg.pa.centroid.coords[0]); sg = float(np.sign((cb - np.array(nb.pa.centroid.coords[0])) @ fg.u))
-            fg.kink = (float(cb @ fg.u), float(np.tan(np.radians(deg))), sg)
+            fg.kink = (float(cb @ fg.u), float(np.tan(np.radians(deg))), sg, fg.pb is None)
+    for n, (fr1, q01, q11) in KINKR.items():
+        for k in (n, 50 - n):
+            fg = out.get(k); w1 = out.get(1 if k < 25 else 49)
+            if fg is None or w1 is None: continue
+            mr = MIRROR if k > 25 else np.ones(2)
+            fr = np.array(fr1, float) * mr; fr = fr / np.linalg.norm(fr)
+            q0 = np.array(q01, float) * mr; q1 = np.array(q11, float) * mr
+            cw = np.array(w1.pa.centroid.coords[0])                    # (the pole's side: the wedge's)
+            sp = float(np.sign((q1[0] - q0[0]) * (cw[1] - q0[1]) - (q1[1] - q0[1]) * (cw[0] - q0[0])))
+            # (the turned rows' coordinate meets the finger's own where the line crosses the finger's middle)
+            cm = np.array(fg.pa.centroid.coords[0]); d = q1 - q0; tq = float(np.clip((cm - q0) @ d / (d @ d), 0, 1)); qm = q0 + d * tq
+            fg.kinkR = (q0, q1, sp, fr, float(qm @ fg.f - qm @ fr))
     return out
 
 def warp_rows(G, F, finger_of, zoneF, blocked, w_pos=4.0, w_dir=60.0, w_dirF=30.0, reg=(15.0, 1.0, 20.0)):
@@ -599,8 +637,9 @@ def lay_real(G, res, real, plim=(0.45, 0.55), pitch=0.5, inset=0.18):
                 if mb and str(rr) in mb['rows']: blk = {'rows': {**mb['rows'], **blk['rows']}}; runs = mb['rows'][str(rr)]
             table = k in TABLE and kind == 'B' and rr >= TABLE[k]
             def put(t, tab):
-                g = fg.facing(t - float(fg.ref @ u) if fg.w is not None else 0.0, t, kind == 'B')
-                S.append(fg.row_point(t, cc)[0]); R.append(i); Y.append(np.arctan2(g[0], g[1])); T.append(tab)
+                pt = fg.row_point(t, cc)[0]
+                g = fg.facing(t - float(fg.ref @ u) if fg.w is not None else 0.0, t, kind == 'B', pt)
+                S.append(pt); R.append(i); Y.append(np.arctan2(g[0], g[1])); T.append(tab)
             if nm in DENSE and not table:
                 kk = int((L + 0.05) // 0.45)
                 if kk >= 1:
