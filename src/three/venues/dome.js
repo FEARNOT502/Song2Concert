@@ -323,9 +323,7 @@ export function buildDome(ctx) {
     // past the poles), up to the outfield's height at the pole
     const outs = ringH.filter((_, i) => ringOut[i]).sort((a, b) => a - b);
     const outH = outs.length ? outs[outs.length >> 1] : 4.0;
-    // (towards the poles the outfield's blocks have their own fronts, a little lower: the fence follows
-    // them down, never over the outfield's own height)
-    for (let i = 0; i < n; i++) if (ringOut[i]) ringH[i] = Math.min(outH, ringH[i]);
+    for (let i = 0; i < n; i++) if (ringOut[i]) ringH[i] = outH;
     let home = -1, hp = -1;
     for (let i = 0; i < n; i++) if (!ringOut[i]) { const f = phi(ringPts[i].x, ringPts[i].z); if (f > hp) { hp = f; home = i; } }
     for (const step of [1, -1]) {
@@ -348,7 +346,15 @@ export function buildDome(ctx) {
     // never over the outfield's height (td_stand1.fit_rake keeps the fronts under it)
     for (let i = 0; i < n; i++) ringH[i] = Math.max(ringH[i], Math.min(outH, ringTop[i]));
   }
-  const padGeo = wallStrip(ringPts, ringH, { thick: 0.36, closed: true, ease: 6 });
+  // (open over the mouths of the tunnels under the poles' 2nd blocks: the wall a lintel there, over the tunnel's roof)
+  const ringY0 = ringPts.map((p) => {
+    for (const t of TD_STANDS.tunnels ?? []) {
+      const dx = p.x - t.p[0], dz = p.z - ZH - t.p[1], a = dx * t.u[0] + dz * t.u[1], b = -dx * t.u[1] + dz * t.u[0];
+      if (Math.abs(b) < t.w / 2 + 0.05 && a > -3 && a < 3) return t.h + 0.12;
+    }
+    return 0;
+  });
+  const padGeo = wallStrip(ringPts, ringH, { thick: 0.36, closed: true, ease: 6, y0: ringY0 });
   // steps from the field up over the low wall into the 1st floor's front
   // rows, round foul territory either side (the way the field's crowd comes
   // and goes from the stands at a concert)
@@ -398,7 +404,9 @@ export function buildDome(ctx) {
       const inward = (p) => { const dx = -p.x, dz = ZH - 60 - p.z, l = Math.hypot(dx, dz) || 1; return { x: p.x + dx / l * 0.22, z: p.z + dz / l * 0.22 }; };
       const L = Math.round(53.76 / 0.5);
       for (const part of [run.slice(0, L), run.slice(-L)]) {
-        const rp = part.map((i) => inward(ringPts[i])), rt = part.map((i) => eased[i]);
+        // (level, at the outfield fence's own height: the fence's eased top dips towards the pole, where it meets the infield's)
+        const lvl = top.slice().sort((a, b) => a - b)[top.length >> 1];
+        const rp = part.map((i) => inward(ringPts[i])), rt = part.map(() => lvl);
         const rg = wallStrip(rp, rt.map((h) => h - 0.15), { y0: rt.map((h) => h - 1.43), thick: 0.06, ease: 0 });
         // (matt, as a screen switched off: glossy it took the room's light and read as the stand's concrete)
         if (rg) root.add(new THREE.Mesh(rg, std({ color: 0x0a0b0c, roughness: 0.85, metalness: 0, envMapIntensity: 0.1 })));

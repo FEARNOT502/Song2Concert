@@ -214,14 +214,45 @@ print('excite seats',len(SG),'rows',Gx.nrows)
 # the excite seats' treads fill their strip to the stand behind them
 Gx.R[EX&(Gx.R==0)]=1
 Gx.d[EX&(Gx.d<0.01)]=0.01          # (the floor out past the seats' front line too)
+# (its treads the same rows as its seats: counted back from the fence in front, as the seats are)
+# The excite seats as they stand: each block (G05-G15, G35-G45) a little stand of its own, its rows
+# straight and parallel to its field-side edge (the map's stepped line: each block set back or forward
+# of its neighbour), a row every 0.8 m back from that edge and a seat every 0.5 m along it, facing the
+# field, as many rows as the map's label gives the block (1-6), a tread up a row. G03-G04 at the pole
+# (drawn dotted) are left open: the floor the tunnel under A02 comes out onto.
+_pxb=((_Xg*_s+_Hm[0])*_K).astype(np.float32); _pyb=((_Zg*_s+_Hm[1])*_K).astype(np.float32)
+_gs,_gy=[],[]
+_Gd=np.maximum(dX-0.05,0.01).astype(np.float32)
+for _nm,_bm,_nr in _gblocks:
+    _gmk=(cv2.remap(_bm.astype(np.uint8),_pxb,_pyb,cv2.INTER_NEAREST,borderValue=0)>0)&EX
+    _ys,_xs=np.nonzero(_gmk)
+    if len(_xs)<50: continue
+    _P=np.c_[G.m(_xs,_ys)]
+    (_cx,_cz),(_w1,_h1),_ang=cv2.minAreaRect(_P.astype(np.float32))
+    _t=np.radians(_ang); _e1=np.array([np.cos(_t),np.sin(_t)]); _e2=np.array([-np.sin(_t),np.cos(_t)])
+    _c=np.array([_cx,_cz]); _tf_=np.array([0.0,-60.0])-_c; _tf_=_tf_/np.linalg.norm(_tf_)
+    # (its field-side edge: of the box's two axes, the one square to the way to the field)
+    _al=_e1 if abs(_e1@_tf_)<abs(_e2@_tf_) else _e2       # along the block's front (the line)
+    _nf=np.array([-_al[1],_al[0]])
+    if _tf_@_nf<0: _nf=-_nf                                 # towards the field
+    _sv=(_P-_c)@_nf; _tb=_sv.max()-_sv                    # depth back from the field-side edge
+    _Gd[_ys,_xs]=np.maximum(_tb,0.01)
+    _la=(_P-_c)@_al; _er=EXe[_ys,_xs]
+    for _r in range(min(_nr,6)):
+        _dc=0.45+_r*0.8
+        for _q in np.arange(_la.min()+0.3,_la.max()-0.25+1e-6,0.5):
+            _pt=_c+_al*_q+_nf*(_sv.max()-_dc)
+            _gx0,_gz0=G.g(_pt[0],_pt[1]); _ii,_jj=int(round(float(_gx0))),int(round(float(_gz0)))
+            if 0<=_jj<G.H and 0<=_ii<G.W and _gmk[_jj,_ii] and EXe[_jj,_ii]:
+                _gs.append(_pt); _gy.append(np.arctan2(_nf[0],_nf[1]))
+del _pxb,_pyb
+_gs=np.array(_gs).reshape(-1,2); _gy=np.array(_gy)
+Gx.d=np.where(EX,_Gd,Gx.d).astype(Gx.d.dtype)
 Gx.band=np.where(Gx.R>0,np.clip(np.floor(np.maximum(Gx.d,0)/Gx.D).astype(int),0,Gx.nrows-1),-1)
-# (the seats' rows are the tread bands they stand on, so each stands on its own tread)
-_ok=sample(G,EX.astype(np.uint8),_gs)>0
-_gs,_gy=_gs[_ok],_gy[_ok]
 _gx_,_gz_=G.g(_gs[:,0],_gs[:,1]); _bd=Gx.band[np.clip(np.round(_gz_).astype(int),0,G.H-1),np.clip(np.round(_gx_).astype(int),0,G.W-1)]
 _ok=_bd>=0
 Gx.seats,Gx.row,Gx.yaw=_gs[_ok],_bd[_ok],_gy[_ok]; Gx.raw=Gx.seats.copy(); Gx.seatmask=seat_mask(G,Gx.seats)
-print('excite seats laid by block',len(Gx.seats))
+print('excite seats laid block by block in straight rows',len(Gx.seats))
 field_out=field&~(cv2.dilate(((Gx.R>0)|EX).astype(np.uint8),disk(0.2/G.res))>0)
 n_,lab_,st_,_=cv2.connectedComponentsWithStats(field_out.astype(np.uint8),connectivity=4)
 field_out=lab_==(1+int(np.argmax(st_[1:,4])))
@@ -249,12 +280,12 @@ S1=T1.build(G,_A_ch,_B_ch,_F_ch,_frames,hull1>0,field|EX)
 # across A01's two aisles grows towards the back (to about 1.4 m).
 _FhF=np.where(S1['zoneF'],np.minimum(C1F,H_F+_riseF*np.floor(_dFence/0.74)),np.nan).astype(np.float32)
 # The outfield stand's four blocks nearest each pole (F20-F17, F01-F04) are fitted with them, each its
-# own front and rise a row: at the pole the outfield's rows (0.33 m a row elsewhere) ease block by block
-# into the infield's, the steps shared out over the aisles either side of the pole rather than left to
-# the one between the outfield and A01 (1.5 m there before). Their backs stop up to 1.5 m under the
-# concourse (a step up at their doors).
+# own rise a row (and a steeper one from its 10th row on), its front at most the fence's height and its
+# back at the concourse: at the pole the outfield's rows ease block by block into the infield's, the
+# steps shared out over the aisles either side of the pole. Every block's back meets the concourse;
+# the infield's blocks may also climb faster behind their walkway than in front (B over A), never slower.
 _Fcls=T1.outfield_classes(G,S1,_F_ch,k=4)
-_profs,_Fcl=T1.fit_rake(G,S1,_FhF,Fcls=_Fcls,dF=_dFence,nF=_nF,Fpole=((2.2,4.6),(0.15,0.40),3.0))
+_profs,_Fcl=T1.fit_rake(G,S1,_FhF,Fcls=_Fcls,dF=_dFence,nF=_nF)
 T1.apply_profiles(S1,_profs)
 # no excite seat with its footprint on the stand's treads behind it (they stood in the A blocks'
 # front rows, up to 1 m under them, where the strip runs in under the stand)
@@ -656,7 +687,55 @@ for n_,d_,a_,w_ in DOOR1:
 print('pillars',len(PILLARS),'; the furthest one moved off its circle %.2f m'%max(np.hypot(*(np.array([p_['x'],p_['z']])-ENT1[ENT1N.index(n_)])) for p_,(n_,_,_,_) in zip(PILLARS,DOOR1)))
 # (the building's own outer wall stands behind the outfield, up to the
 # membrane's edge: no separate wall of the outfield's own)
-data={'suites':{'line':suite_line,'y':H_C-0.4,'h':3.6,'depth':3.4},'levels':levels,'floors':floors,'flights':flights+aisle_flights,'outer':[poly_out(p) for p in ow],'field':[poly_out(p) for p in fw],'fence':[poly_out(p) for p in fnw],'rim':rim,'rimY':H_D,'rooms':encl,'signs':SIGNS,'pillars':PILLARS}
+# The tunnel under A02 (the 1B side's 2nd block from the pole; A48 has none): its rows in front of the chart's
+# first (row 14) are the roof of a passage from the open floor at the end of the excite seats (G03-G04)
+# in under the stand, as at the real dome; its mouth just out from the block's front, its doors shut a
+# few metres under the rows. The treads over it stand on its roof, those lower than its roof are cut.
+from shapely.geometry import Polygon
+_tunnels=[]; _feet=[]
+for _k in (2,):
+    _fg=S1['fingers'][_k]
+    _ids=[i_ for i_,m_ in enumerate(S1['meta']) if m_[0]==_k and m_[1]=='A' and m_[2]<14]
+    if not _ids: continue
+    _ys,_xs=np.nonzero(np.isin(S1['band'],_ids)); _P=np.c_[G.m(_xs,_ys)]
+    _f=np.asarray(_fg.f,float); _v=np.array([-_f[1],_f[0]])
+    _c=_P.mean(0); _tf=float((_P@_f).max()); _lat=(_P-_c)@_v
+    _w=float(min(3.0,_lat.max()-_lat.min()-0.6)); _h=2.4
+    _p=_c+_f*(_tf-float(_c@_f)+0.6); _u=-_f; _L=float(_tf-(_P@_f).min())+6.0
+    # (its mouth in the padded wall round the field: where its axis crosses the fence's line)
+    _end=_p+_u*_L; _fr=_LS(poly_out(fnw[0])[0]+[poly_out(fnw[0])[0][0]])
+    _xi=_fr.intersection(_LS([_p-_u*20,_p+_u*20]))
+    _pts=[np.array(q_.coords[0]) for q_ in getattr(_xi,'geoms',[_xi]) if not q_.is_empty]
+    if _pts:
+        _q=min(_pts,key=lambda q_: np.hypot(*(q_-_p))); _p=_q+_u*0.1; _L=float((_end-_p)@_u)
+    _tunnels.append({'p':[round(float(_p[0]),2),round(float(_p[1]),2)],'u':[round(float(_u[0]),4),round(float(_u[1]),4)],'w':round(_w,2),'h':_h,'L':round(_L,2),'covered':True,'closed':True})
+    _vv=np.array([-_u[1],_u[0]]); _hw=_w/2+0.15
+    _feet.append((Polygon([_p+_u*a_+_vv*b_ for a_,b_ in ((-0.4,-_hw),(_L,-_hw),(_L,_hw),(-0.4,_hw))]),_h+0.12))
+print('tunnels under the poles\' 2nd blocks',[(t_['w'],t_['L']) for t_ in _tunnels])
+_open=unary_union([Polygon(q_[0],q_[1:]).buffer(0) for q_ in mask_polys(G,EXopen&~cv2.erode(EXopen.astype(np.uint8),np.ones((1,1),np.uint8)).astype(bool)|EXopen)])
+for _lvd in levels:
+    if _lvd['name']!='G': continue
+    _new=[]
+    for _row in _lvd['rows']:
+        _g=T1._geom_of(_row['polys'])
+        if _row['y']>0.31 and _g.intersects(_open):
+            _in=_g.intersection(_open); _g=_g.difference(_open)
+            if not _in.is_empty: _new.append({**_row,'y':0.3,'y0':0.0,'polys':T1._polys_of(_in)})
+            _row['polys']=T1._polys_of(_g) if not _g.is_empty else []
+    _lvd['rows']=[r_ for r_ in _lvd['rows'] if r_['polys']]+_new
+for _lvd in levels:
+    if _lvd['name'] not in ('A','B'): continue
+    _new=[]
+    for _row in _lvd['rows']:
+        _g=T1._geom_of(_row['polys'])
+        for _ft,_top in _feet:
+            if not _g.intersects(_ft): continue
+            _in=_g.intersection(_ft); _g=_g.difference(_ft)
+            if _row['y']>_top+0.05 and not _in.is_empty:
+                _new.append({**_row,'y0':round(_top,3),'polys':T1._polys_of(_in)})
+        _row['polys']=T1._polys_of(_g) if not _g.is_empty else []
+    _lvd['rows']=[r_ for r_ in _lvd['rows'] if r_['polys']]+_new
+data={'suites':{'line':suite_line,'y':H_C-0.4,'h':3.6,'depth':3.4},'levels':levels,'floors':floors,'flights':flights+aisle_flights,'outer':[poly_out(p) for p in ow],'field':[poly_out(p) for p in fw],'fence':[poly_out(p) for p in fnw],'rim':rim,'rimY':H_D,'rooms':encl,'signs':SIGNS,'pillars':PILLARS,'tunnels':_tunnels}
 json.dump(data,open('td_stands.json','w'),separators=(',',':'))
 import os; print('json KB',os.path.getsize('td_stands.json')//1024, round(time.time()-T0,1))
 

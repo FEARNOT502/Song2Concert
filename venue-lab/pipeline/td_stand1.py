@@ -367,8 +367,8 @@ def seam_steps(res, pairs):
         r[key] = (int(m.sum()), float(d[m].mean()), float(np.percentile(d[m], 90)), float(d[m].max()))
     return r
 
-def fit_rake(G, res, Fh, wF=1.5, rmin=0.15, rmax=0.6, sec=(3, 12, 10.0), drop=(3, 1.0, 0.3), fmin=2.2, fmax=4.5,
-             land=(0, 0.0), Fcls=None, dF=None, nF=19, Fpole=((2.2, 4.6), (0.15, 0.40), 1.0), step=2, verbose=True):
+def fit_rake(G, res, Fh, wF=1.5, rmin=0.15, rmax=0.6, sec=(3, 12, 10.0), drop=(0, 1.0, 0.3), fmin=2.2, fmax=4.5,
+             land=(0, 0.0), Fcls=None, dF=None, nF=19, Fpole=((2.2, 4.6), (0.10, 0.45), 0.3), step=2, verbose=True):
     """Every finger ONE straight slope (no landing, no change of rake along it), h = C1F - d - r (ub - u)
     (u from the front, ub the back): the rakes r and back drops d that make the steps across the aisles
     between fingers, and into the outfield stand (weight wF, its heights Fh), least. The rows run on
@@ -396,9 +396,14 @@ def fit_rake(G, res, Fh, wF=1.5, rmin=0.15, rmax=0.6, sec=(3, 12, 10.0), drop=(3
     NK = int(Fcls.max()) if Fcls is not None else 0
     for fg in F.values(): fg._lines()
     fold = lambda a: a if a <= NP else 50 - a
-    rc = lambda n: n - 1; dc = lambda n: NP + n - 1          # the unknowns: r_n, d_n
-    fc = lambda j: 2 * NP + j - 1; sc = lambda j: 2 * NP + NK + j - 1   # and per outfield class f_j, s_j
-    NC = 2 * NP + 2 * NK
+    # the unknowns: per finger the rake in front r_n, its increase behind the walkway e_n (the rows
+    # steeper behind it: B over A, never shallower), the back's drop d_n; per outfield class the rise a
+    # row a_j and its increase from row KF on, the class's back at the concourse
+    rc = lambda n: n - 1; dc = lambda n: NP + n - 1; ec = lambda n: 2 * NP + n - 1
+    fc = lambda j: 3 * NP + j - 1; sc = lambda j: 3 * NP + NK + j - 1
+    NC = 3 * NP + 2 * NK; KF = 9
+    ffront = lambda x, j: C1F - x[fc(j)] * (nF - 1) - x[sc(j)] * (nF - 1 - KF)
+    front = lambda x, n: C1F - x[dc(n)] - x[rc(n)] * F[n].ku[-1] - x[ec(n)] * (F[n].ku[-1] - F[n].uw)
     if NK:
         # the seams, the outfield's classes told apart: ids > 0 fingers, -1 the outfield's other blocks, -1-j class j
         fo = res['finger_of']; zf = res['zoneF']
@@ -419,46 +424,52 @@ def fit_rake(G, res, Fh, wF=1.5, rmin=0.15, rmax=0.6, sec=(3, 12, 10.0), drop=(3
         coef = np.zeros((len(kk), NC)); const = np.array(fh, float)
         for key in np.unique(kk):
             m = kk == key; idx = np.nonzero(m)[0]
-            if key <= -2:                     # an outfield class: f + s row
+            if key <= -2:                     # an outfield class: C1F - a (nF-1-row) - e (nF-1-max(row, KF))
                 j = -1 - int(key)
-                capped = (x[fc(j)] + x[sc(j)] * rw[m] > C1F) if x is not None else np.zeros(len(idx), bool)
-                coef[idx[~capped], fc(j)] = 1.0; coef[idx[~capped], sc(j)] = rw[m][~capped]
-                const[idx[~capped]] = 0.0; const[idx[capped]] = C1F
+                coef[idx, fc(j)] = -(nF - 1 - rw[m]); coef[idx, sc(j)] = -(nF - 1 - np.maximum(rw[m], KF)); const[idx] = C1F
                 continue
             if key < 0: continue
             fg = F[int(key)]; n = fold(int(key)); ub = fg.ku[-1]
             u = np.clip(fg.cfront - fg.coord(p[m]), 0, ub)
-            capped = (C1F - x[dc(n)] - x[rc(n)] * (ub - u) > C1F) if x is not None else np.zeros(len(u), bool)
-            coef[idx[~capped], rc(n)] = -(ub - u[~capped]); coef[idx[~capped], dc(n)] = -1.0; const[m] = C1F
+            capped = (C1F - x[dc(n)] - x[rc(n)] * (ub - u) - x[ec(n)] * (ub - np.maximum(u, fg.uw)) > C1F) if x is not None else np.zeros(len(u), bool)
+            coef[idx[~capped], rc(n)] = -(ub - u[~capped]); coef[idx[~capped], ec(n)] = -(ub - np.maximum(u[~capped], fg.uw))
+            coef[idx[~capped], dc(n)] = -1.0; const[m] = C1F
         return coef, const
     reg, rr = [], []
     for n in range(1, NP + 1):
         fg = F[n]; ws = float(np.interp(n, sec[:2], [0.0, sec[2]]))
         if ws > 0:                    # front: C1F - d - r ub = HIN_A(rf) - 0.085
-            e = np.zeros(NC); e[rc(n)] = -ws * fg.ku[-1]; e[dc(n)] = -ws; reg.append(e); rr.append(ws * (max(HIN_A(fg.rf) - 0.085, fmin) - C1F))
+            e = np.zeros(NC); e[rc(n)] = -ws * fg.ku[-1]; e[ec(n)] = -ws * (fg.ku[-1] - fg.uw); e[dc(n)] = -ws; reg.append(e); rr.append(ws * (max(HIN_A(fg.rf) - 0.085, fmin) - C1F))
+        e = np.zeros(NC); e[ec(n)] = 0.5 * fg.ku[-1]; reg.append(e); rr.append(0.0)      # (one rake unless the seams want two)
         if n <= drop[0]:
             e = np.zeros(NC); e[dc(n)] = drop[2]; reg.append(e); rr.append(0.0)
-    for j in range(1, NK + 1):        # the outfield class's back at the concourse: f + s (nF - 1) = C1F
-        e = np.zeros(NC); e[fc(j)] = Fpole[2]; e[sc(j)] = Fpole[2] * (nF - 1); reg.append(e); rr.append(Fpole[2] * C1F)
+    for j in range(1, NK + 1):        # (one rise a row unless the seams want two)
+        e = np.zeros(NC); e[sc(j)] = Fpole[2] * nF; reg.append(e); rr.append(0.0)
     w = np.where((ka == -1) | (kb == -1), wF, 1.0)
-    lo = np.r_[np.full(NP, rmin), [-land[1] * rmax if n <= land[0] else 0.0 for n in range(1, NP + 1)], np.full(NK, Fpole[0][0]), np.full(NK, Fpole[1][0])]
-    hi = np.r_[np.full(NP, rmax), [drop[1] if n <= drop[0] else 1e-9 for n in range(1, NP + 1)], np.full(NK, Fpole[0][1]), np.full(NK, Fpole[1][1])]
-    x = None; held = set()
+    lo = np.r_[np.full(NP, rmin), [-land[1] * rmax if n <= land[0] else 0.0 for n in range(1, NP + 1)], np.zeros(NP), np.full(NK, Fpole[1][0]), np.zeros(NK)]
+    hi = np.r_[np.full(NP, rmax), [drop[1] if n <= drop[0] else 1e-9 for n in range(1, NP + 1)], np.full(NP, 0.3), np.full(NK, Fpole[1][1]), np.full(NK, 0.3)]
+    x = None; held = set(); heldF = {}
     for it in range(6):
         ca, xa = side(ka, pa, fa, ra, x); cb, xb = side(kb, pb, fb, rb, x)
         rg, rh = list(reg), list(rr)
         for n in held:            # front = C1F - d - r ub held at fmax
-            e = np.zeros(NC); e[rc(n)] = -30.0 * F[n].ku[-1]; e[dc(n)] = -30.0; rg.append(e); rh.append(30.0 * (fmax - C1F))
+            e = np.zeros(NC); e[rc(n)] = -30.0 * F[n].ku[-1]; e[ec(n)] = -30.0 * (F[n].ku[-1] - F[n].uw); e[dc(n)] = -30.0; rg.append(e); rh.append(30.0 * (fmax - C1F))
+        for j, fv in heldF.items():  # an outfield class's front held within Fpole[0]
+            e = np.zeros(NC); e[fc(j)] = -30.0 * (nF - 1); e[sc(j)] = -30.0 * (nF - 1 - KF); rg.append(e); rh.append(30.0 * (fv - C1F))
         M = np.vstack([(ca - cb) * w[:, None]] + [np.array(rg)]); b = np.r_[(xb - xa) * w, rh]
         x = lsq_linear(M, b, bounds=(lo, hi)).x
-        held |= {n for n in range(1, NP + 1) if C1F - x[dc(n)] - x[rc(n)] * F[n].ku[-1] > fmax + 0.02}
-    profs = {n: np.minimum(C1F, C1F - x[dc(n)] - x[rc(n)] * (F[n].ku[-1] - F[n].ku)) for n in range(1, NP + 1)}
+        held |= {n for n in range(1, NP + 1) if front(x, n) > fmax + 0.02}
+        for j in range(1, NK + 1):
+            if ffront(x, j) > Fpole[0][1] + 0.02: heldF[j] = Fpole[0][1]
+            elif ffront(x, j) < Fpole[0][0] - 0.02: heldF[j] = Fpole[0][0]
+    profs = {n: np.minimum(C1F, C1F - x[dc(n)] - x[rc(n)] * (F[n].ku[-1] - F[n].ku) - x[ec(n)] * (F[n].ku[-1] - np.maximum(F[n].ku, F[n].uw))) for n in range(1, NP + 1)}
     if verbose:
-        print('rake fit (rake/front/back):', ' '.join('%d:%.2f/%.1f/%.1f' % (n, x[rc(n)], profs[n][0], profs[n][-1]) for n in range(1, 13)))
+        print('rake fit (rake in front/behind the walkway, front, back):', ' '.join('%d:%.2f/%.2f/%.1f/%.1f' % (n, x[rc(n)], x[rc(n)] + x[ec(n)], profs[n][0], profs[n][-1]) for n in range(1, 13)))
     if not NK: return profs
-    fcl = {j: np.minimum(C1F, x[fc(j)] + x[sc(j)] * np.arange(nF)) for j in range(1, NK + 1)}
+    rws = np.arange(nF)
+    fcl = {j: C1F - x[fc(j)] * (nF - 1 - rws) - x[sc(j)] * (nF - 1 - np.maximum(rws, KF)) for j in range(1, NK + 1)}
     if verbose:
-        print('  outfield blocks from the pole (front, rise a row, back):', ' '.join('%d:%.2f/%.3f/%.2f' % (j, x[fc(j)], x[sc(j)], fcl[j][-1]) for j in fcl))
+        print('  outfield blocks from the pole (front, rise a row in front/behind row %d, back):' % KF, ' '.join('%d:%.2f/%.3f/%.3f/%.2f' % (j, fcl[j][0], x[fc(j)], x[fc(j)] + x[sc(j)], fcl[j][-1]) for j in fcl))
     return profs, fcl
 
 
@@ -485,6 +496,9 @@ EXTRA = {'B22': 46, 'B28': 46}
 # rows a block's chart leaves out that its mirror block has (seated by the mirror's numbers): A02's
 # front rows 14-19, which the 3B side's A48 has
 MIRROR_FILL = {'A02': 'A48'}
+# the blocks at the poles, seated wall to wall as the real ones are (their rows' outfield ends, and the
+# rows the chart leaves out, seated a 0.45 m apart, not left bare)
+DENSE = {'A01', 'A02', 'A03', 'A47', 'A48', 'A49'}
 
 def real_block(fg, kind):
     """The chart's name of a finger's block: A01 / A49 (the wedges at the poles: their rows on past the walkway are A's too) or A/B + key."""
@@ -546,6 +560,14 @@ def lay_real(G, res, real, plim=(0.45, 0.55), pitch=0.5, inset=0.18):
             def put(t, tab):
                 g = fg.facing(t - float(fg.ref @ u) if fg.w is not None else 0.0)
                 S.append(fg.row_point(t, cc)[0]); R.append(i); Y.append(np.arctan2(g[0], g[1])); T.append(tab)
+            if nm in DENSE and not table:
+                kk = int((L + 0.05) // 0.45)
+                if kk >= 1:
+                    p = L / kk; e = rep.setdefault(nm, [0, 0])
+                    if runs: e[0] += sum(b - a + 1 for a, b in runs)
+                    for q in range(kk):
+                        d = (q + 0.5) * p; put(t_hi - d if home_hi else t_lo + d, 0); e[1] += 1
+                continue
             if runs and not table:
                 s0 = runs[0][0]
                 nums = [s for a, b in runs for s in range(a, b + 1)]
