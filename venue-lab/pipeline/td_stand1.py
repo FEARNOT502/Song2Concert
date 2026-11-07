@@ -275,16 +275,22 @@ def fingers_of(A, B, frames):
             fg.kink = (float(cb @ fg.u), float(np.tan(np.radians(deg))), sg, fg.pb is None)
     for n, (fr1, q01, q11) in KINKR.items():
         for k in (n, 50 - n):
-            fg = out.get(k); w1 = out.get(1 if k < 25 else 49)
-            if fg is None or w1 is None: continue
+            fg = out.get(k); w1 = out.get(1 if k < 25 else 49); fg2 = out.get(2 if k < 25 else 48)
+            if fg is None or w1 is None or fg2 is None: continue
             mr = MIRROR if k > 25 else np.ones(2)
             fr = np.array(fr1, float) * mr; fr = fr / np.linalg.norm(fr)
             q0 = np.array(q01, float) * mr; q1 = np.array(q11, float) * mr
             cw = np.array(w1.pa.centroid.coords[0])                    # (the pole's side: the wedge's)
             sp = float(np.sign((q1[0] - q0[0]) * (cw[1] - q0[1]) - (q1[1] - q0[1]) * (cw[0] - q0[0])))
-            # (the turned rows' coordinate meets the finger's own where the line crosses the finger's middle)
-            cm = np.array(fg.pa.centroid.coords[0]); d = q1 - q0; tq = float(np.clip((cm - q0) @ d / (d @ d), 0, 1)); qm = q0 + d * tq
-            fg.kinkR = (q0, q1, sp, fr, float(qm @ fg.f - qm @ fr))
+            d = q1 - q0
+            alpha = float((d @ fg2.f) / (d @ fr))
+            fr_s = alpha * fr
+            off = float(q0 @ fg2.f - q0 @ fr_s)
+            if fg.n == 1:
+                fg.f = fg2.f.copy(); fg.u = fg2.u.copy()
+                fg.cfront = fg2.cfront; fg.cback = fg2.cback
+                fg.set_walkway(fg2.sA, fg2.sA)
+            fg.kinkR = (q0, q1, sp, fr_s, off)
     return out
 
 def warp_rows(G, F, finger_of, zoneF, blocked, w_pos=4.0, w_dir=60.0, w_dirF=30.0, reg=(15.0, 1.0, 20.0)):
@@ -332,7 +338,7 @@ def warp_rows(G, F, finger_of, zoneF, blocked, w_pos=4.0, w_dir=60.0, w_dirF=30.
         for j in range(3): eq([(3 * idx[k] + j, 1.0)], 0.0, reg[j])
     M = coo_matrix((vals, (rows, cols)), shape=(nr[0], N)).tocsr()
     x = np.linalg.lstsq(M.toarray(), np.array(rhs), rcond=None)[0].reshape(-1, 3)
-    for k in keys: F[k].w = x[idx[k]]
+    for k in keys: F[k].w = None if F[k].kinkR is not None else x[idx[k]]
     return x
 
 def build(G, A, B, Fpolys, frames, hull, blocked, near_far=6.0, gap_near=1.6, close=1.0):
@@ -381,6 +387,7 @@ def build(G, A, B, Fpolys, frames, hull, blocked, near_far=6.0, gap_near=1.6, cl
     # move that line so that its rows run on across the seam between them, as the rows
     # of every other pair of blocks do
     for a_, b_ in ((1, 2), (49, 48)):
+        if F[a_].kinkR is not None: continue
         ma = (finger_of == a_) & (cv2.dilate((finger_of == b_).astype(np.uint8), np.ones((5, 5), np.uint8)) > 0)
         mb = (finger_of == b_) & (cv2.dilate((finger_of == a_).astype(np.uint8), np.ones((5, 5), np.uint8)) > 0)
         if not (ma.any() and mb.any()): continue
@@ -509,6 +516,7 @@ def fit_rake(G, res, Fh, wF=1.5, rmin=0.15, rmax=0.6, sec=(3, 12, 10.0), drop=(0
                 continue
             if key < 0: continue
             fg = F[int(key)]; n = fold(int(key)); ub = fg.ku[-1]
+            if n == 1 and 1 in KINKR and 2 in KINKR: n = 2
             u = np.clip(fg.cfront - fg.coord(p[m]), 0, ub)
             capped = (C1F - x[dc(n)] - x[rc(n)] * (ub - u) - x[ec(n)] * (ub - np.maximum(u, fg.uw)) > C1F) if x is not None else np.zeros(len(u), bool)
             coef[idx[~capped], rc(n)] = -(ub - u[~capped]); coef[idx[~capped], ec(n)] = -(ub - np.maximum(u[~capped], fg.uw))
@@ -542,6 +550,7 @@ def fit_rake(G, res, Fh, wF=1.5, rmin=0.15, rmax=0.6, sec=(3, 12, 10.0), drop=(0
             if ffront(x, j) > Fpole[0][1] + 0.02: heldF[j] = Fpole[0][1]
             elif ffront(x, j) < Fpole[0][0] - 0.02: heldF[j] = Fpole[0][0]
     profs = {n: np.minimum(C1F, C1F - x[dc(n)] - x[rc(n)] * (F[n].ku[-1] - F[n].ku) - x[ec(n)] * (F[n].ku[-1] - np.maximum(F[n].ku, F[n].uw))) for n in range(1, NP + 1)}
+    if 1 in KINKR and 2 in KINKR: profs[1] = profs[2].copy()
     if verbose:
         print('rake fit (rake in front/behind the walkway, front, back):', ' '.join('%d:%.2f/%.2f/%.1f/%.1f' % (n, x[rc(n)], x[rc(n)] + x[ec(n)], profs[n][0], profs[n][-1]) for n in range(1, 13)))
     if not NK: return profs
@@ -648,6 +657,7 @@ def lay_real(G, res, real, plim=(0.45, 0.55), pitch=0.5, inset=0.18):
                     for q in range(kk):
                         d = (q + 0.5) * p; put(t_hi - d if home_hi else t_lo + d, 0); e[1] += 1
                 continue
+            rs = [int(q) for q in blk['rows']] if blk else []
             if runs and not table:
                 s0 = runs[0][0]
                 nums = [s for a, b in runs for s in range(a, b + 1)]
@@ -657,9 +667,14 @@ def lay_real(G, res, real, plim=(0.45, 0.55), pitch=0.5, inset=0.18):
                     d = (s - s0 + 0.5) * p
                     if d + 0.5 * p > L + 0.05: continue
                     put(t_hi - d if home_hi else t_lo + d, 0); e[1] += 1
+                if kind == 'A' and rs and rr <= min(rs) + 2:
+                    s_next = runs[-1][1] + 1
+                    while (s_next - s0 + 0.5) * p + 0.5 * p <= L + 0.05:
+                        d = (s_next - s0 + 0.5) * p
+                        put(t_hi - d if home_hi else t_lo + d, 0); e[1] += 1
+                        s_next += 1
                 continue
-            rs = [int(q) for q in blk['rows']] if blk else []
-            gap = bool(rs) and min(rs) < rr < max(rs)
+            gap = bool(rs) and ((kind == 'A' and rr < max(rs)) or (min(rs) < rr < max(rs)))
             if not (table or gap or (nm in EXTRA and rr <= EXTRA[nm]) or blk is None): continue
             kk = int(L // pitch)
             if kk < 1: continue

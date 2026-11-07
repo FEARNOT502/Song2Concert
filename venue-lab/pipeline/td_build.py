@@ -293,19 +293,16 @@ def _turn(f_,deg_,c_):
     return f_*np.cos(a_)+t_*np.sin(a_)
 _cA2=np.array(_A_ch[2].centroid.coords[0]); _fK=_turn(_frames[2][0],28.0,_cA2)        # (towards the field: the kinked rows' facing)
 _f1=np.asarray(_frames[1][0],float)
-T1.ROT[1]=8.0      # (as A02: its kinked half then runs as B02's and F20's turned rows)
-# and the B block behind A02 (A48) kinked: its half towards the pole has its rows turned 20 degrees towards
-# home, the line of the kink running back through the block's middle, as the real one
+T1.ROT.update({1:8.0,2:8.0,3:4.0})
 # Round the pole the outfield's rows run on into the infield's first blocks: on the pole's side of one
-# diagonal, from A02's front (where its tunnel comes out) back to the far corner of B02, the rows of A01,
-# A02 and B02 are square to the outfield stand's beside A01; on its other side each block's own
-_mA1=(np.hypot(_Xg-_A_ch[1].centroid.x,_Zg-_A_ch[1].centroid.y)<14)&(field==0)
-_gzA,_gxA=np.gradient(cv2.GaussianBlur(_dFence,(0,0),8))
-_frA=-np.array([np.nanmean(np.where(_mA1&(_dFence<14),_gxA,np.nan)),np.nanmean(np.where(_mA1&(_dFence<14),_gzA,np.nan))]); _frA=_frA/np.linalg.norm(_frA)
-_f2=np.asarray(_frames[2][0],float); _u2=np.array([-_f2[1],_f2[0]]); _P2=np.array(_A_ch[2].exterior.coords); _PB2=np.array(_B_ch[2].exterior.coords)
+# diagonal, from the pole side of A02's front (beside its tunnel) back to the far corner of B02, the rows of
+# A01, A02 and B02 run parallel to the concourse wall and outfield rows behind them; on its other side each block's own
+_f2=np.asarray(_frames[2][0],float); _u2=np.array([-_f2[1],_f2[0]]); _P1=np.array(_A_ch[1].exterior.coords); _P2=np.array(_A_ch[2].exterior.coords); _PB2=np.array(_B_ch[2].exterior.coords)
 _sg2=np.sign((np.array(_A_ch[1].centroid.coords[0])-np.array(_A_ch[2].centroid.coords[0]))@_u2)      # (towards the pole)
-_Q0=float(_P2.mean(0)@_u2)*_u2+float((_P2@_f2).max())*_f2
+_Q0=np.array([73.2,-65.5])
 _Q1=_PB2[int(np.argmax(-(_PB2@_f2)-_sg2*(_PB2@_u2)))]                                               # (B02's back corner away from the pole)
+_p1b=_P1[int(np.argmax(-(_P1@_f2)+_sg2*(_P1@_u2)))]                                                 # (A01's pole-side back corner)
+_db=_Q1-_p1b; _frA=np.array([-_db[1],_db[0]],float); _frA=_frA/np.linalg.norm(_frA)
 T1.KINKR.update({1:(tuple(_frA),tuple(_Q0),tuple(_Q1)),2:(tuple(_frA),tuple(_Q0),tuple(_Q1))})
 print('the outfield\'s rows run on into A01, A02, B02 behind the line',np.round(_Q0,1),np.round(_Q1,1))
 S1=T1.build(G,_A_ch,_B_ch,_F_ch,_frames,hull1>0,field|EX)
@@ -347,31 +344,7 @@ for _sg in ():
     _dF2[_mm]=np.maximum(_dFence[_mm],_dr)
 print('outfield pole blocks: rows turned behind the diagonal, the depth raised by up to %.1f m'%float(np.nanmax(np.where(S1['zoneF'],_dF2-_dFence,0))))
 _FhF=np.where(S1['zoneF'],np.minimum(C1F,H_F+_riseF*np.floor(_dF2/0.74)),np.nan).astype(np.float32)
-_profs,_Fcl=T1.fit_rake(G,S1,_FhF,Fcls=_Fcls,dF=_dF2,nF=_nF,land=(1,5.0),wF=3.0)      # (A01 may reach the concourse before its back, level from there, as F20 beside it does)
-# A01 (and A49) as high as the outfield stand beside it, all along the aisle between them: F20's rows
-# climb faster and reach the concourse sooner, A01's straight slope left its back corner low beside them.
-# Its heights at each knot the outfield's across the aisle (its rows' heights there, rising only), its
-# own beyond what the aisle reaches, up to the concourse
-_rowF2=np.clip(np.floor(_dF2/0.74),0,_nF-1).astype(int); _HF=np.full(_dF2.shape,np.nan,np.float32)
-_HF[S1['zoneF']]=np.minimum(C1F,H_F+_riseF*_rowF2[S1['zoneF']])
-for _j,_h in _Fcl.items(): _HF[_Fcls==_j]=_h[_rowF2[_Fcls==_j]]
-_near=cv2.dilate(S1['zoneF'].astype(np.uint8),disk(1.0/G.res))>0
-for _k in (1,49):
-    _fg=S1['fingers'][_k]; _m=(S1['finger_of']==_k)&_near
-    if _m.sum()<50: continue
-    _ys,_xs=np.nonzero(_m); _P=np.c_[G.m(_xs,_ys)]; _uu=np.clip(_fg.cfront-_fg.coord(_P),0,_fg.ku[-1])
-    # (the outfield's height at the nearest outfield cell)
-    _dz=cv2.distanceTransformWithLabels((~S1['zoneF']).astype(np.uint8),cv2.DIST_L2,5,labelType=cv2.DIST_LABEL_PIXEL)
-    _zy,_zx=np.nonzero(S1['zoneF']); _lab2=np.zeros(_dz[1].max()+1,np.int64); _lab2[_dz[1][_zy,_zx]]=np.ravel_multi_index((_zy,_zx),S1['zoneF'].shape)
-    _hh=_HF.flat[_lab2[_dz[1][_ys,_xs]]]
-    _kh=np.array(_profs[1],float).copy(); _ku=_fg.ku
-    for _i,_u0 in enumerate(_ku):
-        _sel=np.abs(_uu-_u0)<0.75
-        if _sel.sum()>=5: _kh[_i]=float(np.nanmedian(_hh[_sel]))
-    _kh=np.minimum(C1F,np.maximum.accumulate(_kh))
-    _profs[1]=_kh
-    print('A01 laid to the outfield beside it: front %.2f, back %.2f, at the concourse from %.1f m'%(_kh[0],_kh[-1],float(_ku[np.argmax(_kh>=C1F-1e-6)]) if (_kh>=C1F-1e-6).any() else -1))
-    break
+_profs,_Fcl=T1.fit_rake(G,S1,_FhF,Fcls=_Fcls,dF=_dF2,nF=_nF,land=(4,3.5),wF=3.0)
 T1.apply_profiles(S1,_profs)
 # no excite seat with its footprint on the stand's treads behind it (they stood in the A blocks'
 # front rows, up to 1 m under them, where the strip runs in under the stand)

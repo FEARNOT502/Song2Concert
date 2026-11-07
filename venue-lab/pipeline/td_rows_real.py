@@ -34,7 +34,8 @@ FILES = [('1-01-05.pdf', 'below'), ('1-06-10.pdf', 'below'), ('1-11-17.pdf', 'be
 NAME = re.compile(r'^([A-G])\s?(\d{1,2})$')
 # A37 row 3 reads 221-250 on the chart, every other row of A37 starting at 241
 # (the official map's first seat for A37 too)
-FIXES = [('A37', 3, [[241, 250]])]
+FIXES = [('A37', 3, [[241, 250]]), ('A06', 4, [[381, 384]]),
+         ('A08', 7, [[341, 349]]), ('A08', 8, [[341, 349]]), ('A08', 9, [[341, 349]])]
 
 
 def fetch(name):
