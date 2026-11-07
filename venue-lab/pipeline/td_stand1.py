@@ -367,6 +367,135 @@ def seam_steps(res, pairs):
         r[key] = (int(m.sum()), float(d[m].mean()), float(np.percentile(d[m], 90)), float(d[m].max()))
     return r
 
+def fit_rake(G, res, Fh, NF=9, wF=1.0, rmin=0.25, rmax=0.6, step=2, verbose=True):
+    """Every finger ONE straight slope from its front row up to the concourse (C1F) at its back: no
+    landing, no change of rake along it. The fingers past NF keep the building's section at the front
+    (the row's height, HIN_A); the NF fingers nearest each pole (fewer rows, the shallow infield stand
+    meeting the steep outfield one) take the rakes that make the steps across the aisles between them,
+    and into the outfield stand (weight wF, its heights Fh), least, the rake never easing off towards
+    the pole (rake_n >= rake_n+1, at least rmin). A straight line through (ub, C1F) is linear in its
+    rake, so this is a bounded least squares: the unknowns are finger NF's rake and the increments
+    from each finger to the next towards the pole. Returns {n: heights at the finger's knots}."""
+    from scipy.optimize import lsq_linear
+    F = res['fingers']
+    for fg in F.values(): fg._lines()
+    ka, kb, pa, pb, fa, fb = seam_pairs(G, res, Fh, step=step)
+    fold = lambda a: a if a <= 25 else 50 - a
+    def section(fg, u):
+        hf = HIN_A(fg.rf) - 0.085
+        return hf + (C1F - hf) * u / fg.ku[-1]
+    def side(kk, p, fh):
+        coef = np.zeros((len(kk), NF)); const = np.array(fh, float)
+        for key in np.unique(kk):
+            if key < 0: continue
+            m = kk == key; fg = F[int(key)]; n = fold(int(key)); ub = fg.ku[-1]
+            u = np.clip(fg.cfront - fg.coord(p[m]), 0, ub)
+            if n <= NF:        # h = C1F - rake_n (ub - u), rake_n = x0 + x_n + .. + x_NF-1
+                idx = np.nonzero(m)[0]; c = -(ub - u)
+                for j in [0] + list(range(n, NF)): coef[idx, j] = c
+                const[m] = C1F
+            else:
+                const[m] = section(fg, u)
+        return coef, const
+    ca, xa = side(ka, pa, fa); cb, xb = side(kb, pb, fb)
+    w = np.where((ka < 0) | (kb < 0), wF, 1.0)
+    sol = lsq_linear((ca - cb) * w[:, None], (xb - xa) * w, bounds=(np.r_[rmin, np.zeros(NF - 1)], np.r_[rmax, np.full(NF - 1, rmax)]))
+    profs = {}
+    for n in range(1, 26):
+        fg = F[n]
+        if n <= NF:
+            rk = sol.x[0] + sol.x[n:NF].sum(); profs[n] = C1F - rk * (fg.ku[-1] - fg.ku)
+        else:
+            profs[n] = section(fg, fg.ku)
+    if verbose:
+        print('rake fit: the fingers nearest the poles', ' '.join('%d:%.3f' % (n, (C1F - profs[n][0]) / F[n].ku[-1]) for n in range(1, NF + 1)),
+              '| fronts', ' '.join('%.2f' % profs[n][0] for n in range(1, NF + 1)))
+    return profs
+
+# The 3B side's B31-B33: past their chart's last row (35) the rows behind are the table seats (blue,
+# the area the fan chart leaves out; the 1B side's B17-B19 have ordinary rows 36-47 there)
+TABLE = {31: 36, 32: 36, 33: 36}
+# rows the official map gives a block past the fan chart's last one (seated as the outline lets)
+EXTRA = {'B22': 46, 'B28': 46}
+
+def real_block(fg, kind):
+    """The chart's name of a finger's block: A01 / A49 (the wedges at the poles: their rows on past the walkway are A's too) or A/B + key."""
+    if fg.n == 1: return 'A01' if fg.key == 1 else 'A49'
+    return f'{kind}{fg.key:02d}'
+
+def lay_real(G, res, real, plim=(0.45, 0.55), pitch=0.5, inset=0.18):
+    """Seats along every row of every A and B block as the detailed chart numbers them (`real`:
+    td/td_rows_real.json): in each row, seat number s at (s - s0 + 0.5) seat widths from the row's
+    home-side end (s0 the row's first number: the smaller numbers are towards home), the width the
+    row's length over its span of numbers, kept within `plim` (what is left at the outfield end stays
+    bare; what does not fit is dropped and counted). A row the chart has no line for: seated as the
+    outline lets (a `pitch` apart) if the chart skips it inside the block's rows, if the official map
+    gives the block that row (EXTRA), or if it is one of the table rows (TABLE); otherwise bare.
+    Returns (positions, row id into meta, yaw, table flag, report {block: [chart seats, laid]})."""
+    meta = res['meta']; F = res['fingers']; band_g = res['band']
+    S, R, Y, T = [], [], [], []
+    rep = {}
+    rows_of = {}
+    for i, m in enumerate(meta):
+        if m[1] in 'AB': rows_of.setdefault(m[0], []).append(i)
+    for k, fg in F.items():
+        sl = fg.sl; band_c = band_g[sl]
+        ok = np.zeros(band_c.shape, np.uint8)
+        for P in [fg.pa] + ([fg.pb] if fg.pb is not None else []):
+            m = np.zeros(band_c.shape, np.uint8); gx, gz = G.g(*np.array(P.exterior.coords).T)
+            cv2.fillPoly(m, [np.c_[gx - sl[1].start, gz - sl[0].start].round().astype(np.int32)], 1)
+            ok |= cv2.erode(m, disk(inset / G.res))
+        ok = ok > 0
+        u = np.array([-fg.f[1], fg.f[0]])
+        # (the wedges at the poles number their rows their own way: the offset that matches most of them)
+        off = 0
+        if fg.n == 1:
+            have = set(int(r) for r in real[real_block(fg, 'A')]['rows'])
+            geo = [meta[i][2] for i in rows_of.get(k, [])]
+            off = max(range(-8, 9), key=lambda o: (sum((g + o) in have for g in geo), -abs(o)))
+        nb = k + 1 if k < 25 else (k - 1 if k > 25 else 24)
+        home_hi = float(F[nb].ref @ u) > float(fg.ref @ u)
+        for i in rows_of.get(k, []):
+            _, kind, r, c0, c1, h = meta[i]
+            m = ok & (band_c == i)
+            if not m.any(): continue
+            ys, xs = np.nonzero(m); X, Zz = G.m(xs + sl[1].start, ys + sl[0].start); P = np.c_[X, Zz]
+            us = np.arange((P @ u).min() - 0.1, (P @ u).max() + 0.1, 0.05)
+            cc = fg.row_centre(kind, r)
+            C = fg.row_point(us, cc)
+            gxx, gzz = G.g(C[:, 0], C[:, 1])
+            ii = np.clip(np.round(gxx).astype(int) - sl[1].start, 0, m.shape[1] - 1); jj = np.clip(np.round(gzz).astype(int) - sl[0].start, 0, m.shape[0] - 1)
+            idx = np.nonzero(m[jj, ii])[0]
+            if not len(idx): continue
+            run = max(np.split(idx, np.nonzero(np.diff(idx) > 1)[0] + 1), key=len)
+            t_lo, t_hi = us[run[0]] - 0.025, us[run[-1]] + 0.025; L = t_hi - t_lo
+            nm = real_block(fg, kind); rr = r + off; blk = real.get(nm)
+            runs = blk['rows'].get(str(rr)) if blk else None
+            table = k in TABLE and kind == 'B' and rr >= TABLE[k]
+            def put(t, tab):
+                g = fg.facing(t - float(fg.ref @ u) if fg.w is not None else 0.0)
+                S.append(fg.row_point(t, cc)[0]); R.append(i); Y.append(np.arctan2(g[0], g[1])); T.append(tab)
+            if runs and not table:
+                s0 = runs[0][0]
+                nums = [s for a, b in runs for s in range(a, b + 1)]
+                p = float(np.clip(L / (runs[-1][1] - s0 + 1), *plim))
+                e = rep.setdefault(nm, [0, 0]); e[0] += len(nums)
+                for s in nums:
+                    d = (s - s0 + 0.5) * p
+                    if d + 0.5 * p > L + 0.05: continue
+                    put(t_hi - d if home_hi else t_lo + d, 0); e[1] += 1
+                continue
+            rs = [int(q) for q in blk['rows']] if blk else []
+            gap = bool(rs) and min(rs) < rr < max(rs)
+            if not (table or gap or (nm in EXTRA and rr <= EXTRA[nm]) or blk is None): continue
+            kk = int(L // pitch)
+            if kk < 1: continue
+            t0 = t_lo + (L - kk * pitch) / 2 + pitch / 2
+            e = rep.setdefault(nm, [0, 0])
+            for q in range(kk):
+                put(t0 + q * pitch, 1 if table else 0); e[1] += 1
+    return np.array(S).reshape(-1, 2), np.array(R, int), np.array(Y), np.array(T, int), rep
+
 POLE_BACK = {1: 0.0, 2: 0.0, 3: 0.0, 4: 0.3, 5: 1.0, 6: 2.0}      # (the pull of a back to the concourse's height: a pole finger's back is set by its neighbours)
 
 def fit_profiles(G, res, Fh, nom_ramp=(4, 14, 0.1, 1.0), w_back=POLE_BACK, w_back_other=3.0, w_smooth=100.0, w_F=10.0,

@@ -238,25 +238,16 @@ import shapely
 _A_ch,_B_ch,_F_ch=T1.chart_blocks(_labc,BOXL,BOXN,G)
 _frames={b['blk']:(b['f'],b['sA']) for b in ra['blocks'] if b['poly'].mean(0)[0]>0 or b['blk']==25}
 S1=T1.build(G,_A_ch,_B_ch,_F_ch,_frames,hull1>0,field|EX)
-# The fingers' heights, fitted so that the stand is continuous across every aisle
-# between blocks and into the outfield stand (td_stand1.fit_profiles_balanced), with
-# every block from the 3rd (counted from each pole) on climbing at the one rake of the
-# real building's rows (0.27 m/m, A and B alike: `uniform`). The five blocks behind home
-# (21-25) are shallower than the rest: at the one rake their backs would end up to 1.3 m
-# under the concourse (a wall across every entrance there), so their backs are pulled up to
-# it (`w_back`) and their front rows stand higher instead, the aisles between them stepping
-# 0.5-0.65 m. The corner (blocks 1-8 either side of the poles) is then refitted
-# (td_stand1.fit_straight): each block ONE straight slope, A and B alike (the first fit gave
-# the two nearest the pole a steep A and a flat B: a change of slope across every block, and
-# 1.2 m walls at their two aisles), the walkway rising towards the pole by about 0.35 m a
-# block and the rake from 0.27 to 0.39 m/m, so that the steps across the aisles are 0.26-0.34 m
-# all the way (0.8 m at the most) and the outfield stand's rows meet the first block's within 0.7 m.
-# What that costs is at the stand's back: the blocks that stand higher reach the concourse's
-# height before their back and run level to it (a landing 1.4-7.8 m deep on blocks 2-8).
+# The fingers' heights (td_stand1.fit_rake): every block ONE straight slope from its front row up to
+# the concourse (C1F) at its back, A and B alike: no landing, the rake never easing off up the block.
+# From the 10th block (counted from each pole) on, the front row stands at the building's section
+# (A 1.0 m + 0.17 m a row); the nine nearest each pole, shallower and meeting the outfield stand's
+# steep rows, take the rakes (0.25 m/m rising to about 0.35 at the pole) that make the steps across
+# their aisles least. Where a block's depth changes sharply (the pole's wedge A01, A02, A03: 18, 23
+# and 30 m deep) the step across the aisle grows towards the back, to about 1.4 m beside the shorter
+# block's back: a wall there, as between the outfield stand and the infield's at the pole.
 _FhF=np.where(S1['zoneF'],np.minimum(C1F,H_F+_riseF*np.floor(_dFence/0.74)),np.nan).astype(np.float32)
-_profs=T1.fit_profiles_balanced(G,S1,_FhF,uniform=(0.27,3000.0,3),flat=(500.0,0.0),nom_ramp=(1,2,0.0,0.0),w_hold=3000.0,w_F=100.0,
-                                  w_back={**T1.POLE_BACK,**{n_:100.0 for n_ in range(21,26)}})
-_profs=T1.fit_straight(G,S1,_FhF,_profs,free=range(1,9),lam_F=1.0,over=(2.1,1.0))
+_profs=T1.fit_rake(G,S1,_FhF)
 T1.apply_profiles(S1,_profs)
 _st=T1.seam_steps(S1,T1.seam_pairs(G,S1,_FhF)); _cn=sum(v[0] for v in _st.values())
 print('steps across the aisles: mean %.3f m, the largest %.2f m (between fingers); into the outfield stand: mean %.2f, largest %.2f m'%(
@@ -278,12 +269,23 @@ for _s in _sites:
     _gate_of[ENT1N[_i]]=_s
 print('gates',len(_sites),{n_:'B%d|B%d%+d'%(s_['pair'][0],s_['pair'][1],s_['side']) for n_,s_ in sorted(_gate_of.items())})
 _lv=T1.split_levels(S1)
-_S1seats,_S1row,_S1yaw=T1.lay_seats(G,S1)
+# the seats as the detailed chart numbers them (td/td_rows_real.json, a fan's transcription of the
+# ticket seller's block charts): each row its own count, from its home-side end (td_stand1.lay_real)
+_S1seats,_S1row,_S1yaw,_S1tab,_rep=T1.lay_real(G,S1,json.load(open('td/td_rows_real.json')),plim=(0.40,0.55),inset=0.08)
+_rc=sum(v[0] for v in _rep.values()); _rl=sum(min(v[0],v[1]) for v in _rep.values() if v[0])
+print('1st floor seats by the chart: %d of the chart %d laid (%d more where it has no line: table seats, rows it skips)'%(_rl,_rc,len(_S1seats)-_rl))
+print('  blocks off by more than 3:',[(n_,v_[0],v_[1]) for n_,v_ in sorted(_rep.items()) if v_[0] and abs(v_[0]-v_[1])>3])
 # no seat over a pit (or, below, a stair's cut)
 _gz=unary_union([s_['pit'] for s_ in _sites]).buffer(0.25)
 _kg=~shapely.contains_xy(_gz,_S1seats[:,0],_S1seats[:,1])
 print('seats over the gates dropped',int((~_kg).sum()))
-_S1seats,_S1row,_S1yaw=_S1seats[_kg],_S1row[_kg],_S1yaw[_kg]
+_S1seats,_S1row,_S1yaw,_S1tab=_S1seats[_kg],_S1row[_kg],_S1yaw[_kg],_S1tab[_kg]
+# the table seats' areas (the 3B side's B31-B33 behind row 35: the renderer paints the seats in them blue)
+_tabs=[]
+for _k in sorted(T1.TABLE):
+    _m=_S1tab.astype(bool)&np.array([S1['meta'][i][0]==_k for i in _S1row])
+    if _m.sum()>=3: _tabs.append(T1._ring(np.array(shapely.MultiPoint(_S1seats[_m]).convex_hull.buffer(0.25,join_style=2).exterior.coords)))
+print('table seats',int(_S1tab.sum()),'in',len(_tabs),'areas')
 _S1kind=np.array([S1['meta'][i][1] for i in _S1row])
 _dFE=(cv2.distanceTransform((~(field|EX)).astype(np.uint8),cv2.DIST_L2,5)*G.res).astype(np.float32)
 def _shell(name,D,lv,kinds,rows_fn):
@@ -511,7 +513,7 @@ for name,l in LV.items():
     rails,walls=edge_walls(G,l,outside_fn(spec[name]),drs,flush=flushmode[name],skip=skip,front=fronts.get(name),**({'door_w':2.0,'open_stand':True} if drs is DOORS1 else {}))
     if fronts.get(name): rails+=front_parapet(G,l,fronts[name])
     levels.append({'name':name,'D':l.D,'h0':l.h0,'rise':l.rise,**({'hs':[round(float(v),3) for v in l.hs]} if l.hs is not None else {}),'rows':l.rows_out(),'steps':l.aisles_out(),'holes':[],'voms':VOMS.get(name,[]),
-                   'seats':l.seats_out(),'rails':rails,'walls':walls,
+                   'seats':l.seats_out(scale=50 if name in ('A','B') else 10),**({'seatScale':50} if name in ('A','B') else {}),**({'tables':_tabs} if name=='B' else {}),'rails':rails,'walls':walls,
                    **({'gateRails':[r_ for s_ in _sites for r_ in s_['rails']]+[r_ for c_ in _corrs for st_ in c_['stairs'] for r_ in st_['rails']],'gateRailT':T1.RAIL_T} if name=='B' else {})})
     print(name,'rows',len(levels[-1]['rows']),'steps',len(levels[-1]['steps']),'holes',len(levels[-1]['holes']),'rails',len(rails),'walls',len(walls))
 # Behind the outfield there is no upper tier: the wall behind its top rows

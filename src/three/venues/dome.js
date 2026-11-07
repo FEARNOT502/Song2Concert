@@ -168,6 +168,8 @@ export function buildDome(ctx) {
     return f >= BOX.phi[0] && f <= BOX.phi[1];
   };
   const inBox = (name, x, z, row) => inRun(name, x, z) && (row === boxTop.get(Math.sign(x)) || row === boxTop.get(Math.sign(x)) - 1);
+  // the table seats behind the 3B side's B31-B33 (the rows past their 35th): bright blue
+  const TABLES = (TD_STANDS.levels.find((l) => l.name === 'B')?.tables ?? []).map((r) => r.map(([x, z]) => ({ x, z })));
   // ── the main screen's line (built further on) ──
   // Along the curve of the outfield stand's back, over its back rows, where
   // the columns at the heads of its aisles stand: they carry it.
@@ -205,7 +207,7 @@ export function buildDome(ctx) {
     sectors: ['A', 'F'], round,
     offset: OFF, stage: STAGE, seed: 400, concreteTone: 0.28, roofY: (x, z) => ringY(z + ZH) + 0.3,
     seatColors: { A: 0x1d3c86, B: 0x1d3c86, F: 0x1d3c86, K: 0x1d3c86, G: 0x1d3c86, C: 0x5a5d63, D: 0x1d3c86, E: 0x1d3c86 },
-    seatColorAt: (name, x, z, row) => (inBox(name, x, z, row) ? 0x6a6b6e : null),
+    seatColorAt: (name, x, z, row) => (inBox(name, x, z, row) ? 0x6a6b6e : name === 'B' && TABLES.some((r) => inRing(r, x, z)) ? 0x2a4fd6 : null),
     // the backscreen: the outfield stand's middle, between F09 and F12, has
     // no seats (its steps are painted dark, below)
     seatKeep: (name, x, z, row) => !(name === 'F' && inBackscreen(x, z)) && !(inRun(name, x, z) && row > boxTop.get(Math.sign(x))),
