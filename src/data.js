@@ -79,7 +79,7 @@ export const VENUES = [
     id: 'club',
     name: 'Club',
     type: 'CLUB',
-    capacity: '300 seats',
+    capacity: '300 standing',
     descKo: '낮은 천장 · 우드 디퓨저 · 친밀한 거리',
     position: fmtPosition('club', 'Front table', 46),
     acoustics: fmtAcoustics('club', '90 dB SPL'),

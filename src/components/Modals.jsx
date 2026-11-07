@@ -1,7 +1,7 @@
 // Modals.jsx — modal shell + file / venue / seat pickers (ported from proto/ui.jsx)
 // FilePicker accepts a real uploaded FLAC/WAV via drag-drop or the native input.
 
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { VENUES } from '../data.js';
 import { ROUND_VENUES, VENUE_MODES, modeOf } from '../useVenueModes.js';
 
@@ -26,82 +26,209 @@ export function Modal({ open, onClose, title, subtitle, children }) {
 
 // ───────────────────────────────────────── Venue picker
 //
-// Each card shows the room's seating plan, drawn from the 3D room itself
-// (scripts/venue-maps.mjs → public/venue-maps): the stage at the top in the
-// accent, every seat in its own colour, a standing floor in a dim tint. Six
-// cards fit on one screen, three across and two down, with no scrolling.
-// The big rooms' cards have a GENERAL / 360 pair under the name: either goes
-// straight in, laid out that way; the card itself goes in as the room was
-// last laid out. Pointing at one shows that layout's plan.
-const mapSrc = (id, mode = 'general') => `${import.meta.env.BASE_URL}venue-maps/${id}${mode === '360' ? '-360' : ''}.webp`;
+// A list of the rooms, smallest to largest, beside a large plan of the one
+// chosen (scripts/venue-maps.mjs → public/venue-maps/*.svg): the stage at the
+// top in the accent, every seat in its own colour, a standing floor in a dim
+// tint; zoomable.
+// Choosing a room only shows it; Enter, a double click or the button goes in.
+// The big rooms have a GENERAL / 360 pair over the plan, which shows that
+// layout and goes in laid out that way. ↑↓ choose, ←→ switch the layout.
+// On a phone the list is a row of chips over the plan.
+const mapSrc = (id, mode = 'general') => `${import.meta.env.BASE_URL}venue-maps/${id}${mode === '360' ? '-360' : ''}.svg`;
 const MODE_LABEL = { general: 'GENERAL', 360: '360' };
+// how the floor is laid out, by room and layout
+const FLOOR = {
+  club: 'Standing', theater: 'Seated', concerthall: 'Seated',
+  arena: { general: 'Seated floor', 360: 'Standing floor' },
+  dome: { general: 'Seated floor', 360: 'Seated floor' },
+  stadium: { general: 'Standing pitch', 360: 'Seated floor' },
+};
+const floorOf = (id, mode) => (typeof FLOOR[id] === 'string' ? FLOOR[id] : FLOOR[id]?.[mode]);
+const headcount = (v) => Number(String(v.capacity).replace(/[^\d]/g, '').slice(0, 6)) || 0;
+const short = (n) => (n < 1000 ? String(n) : `${Math.round(n / 100) / 10}k`);
+// the size bar: logarithmic, so 300 shows beside 90,000
+const sizeOf = (n) => Math.max(0.06, Math.min(1, Math.log10(n / 100) / 3));
 
 export function VenuePicker({ open, onClose, current, currentMode = 'general', modes = {}, onPick }) {
-  const [hover, setHover] = useState(null);   // { id, mode }: the layout pointed at
+  const [sel, setSel] = useState(current);
+  const [selMode, setSelMode] = useState(currentMode);
+  // (opened on the room and layout in use)
+  useEffect(() => { if (open) { setSel(current); setSelMode(currentMode); } }, [open, current, currentMode]);
+  const v = VENUES.find((x) => x.id === sel) || VENUES[0];
+  const round = ROUND_VENUES.includes(v.id);
+  const mode = round ? selMode : 'general';
+  const choose = useCallback((id) => { setSel(id); setSelMode(id === current ? currentMode : modeOf(modes, id)); }, [current, currentMode, modes]);
+  const enter = useCallback((id = sel, m = mode) => { onPick(id, ROUND_VENUES.includes(id) ? m : undefined); onClose(); }, [sel, mode, onPick, onClose]);
+
+  // the keys, ahead of the app's own (whose arrows seek)
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => {
+      const i = VENUES.findIndex((x) => x.id === sel);
+      let hit = true;
+      if (e.key === 'ArrowDown') choose(VENUES[(i + 1) % VENUES.length].id);
+      else if (e.key === 'ArrowUp') choose(VENUES[(i - 1 + VENUES.length) % VENUES.length].id);
+      else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && round) setSelMode(e.key === 'ArrowLeft' ? 'general' : '360');
+      else if (e.key === 'Enter') enter();
+      else hit = e.key === 'ArrowLeft' || e.key === 'ArrowRight';
+      if (hit) { e.preventDefault(); e.stopPropagation(); }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [open, sel, round, choose, enter]);
+
+  const listRef = useRef(null);
+  useEffect(() => { listRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }, [sel, open]);
+
+  const isCurrent = v.id === current && (!round || mode === currentMode);
+  const facts = [
+    ['RT60', v.acoustics.rt60],
+    ['DISTANCE', v.position.distance],
+    ['FIRST REFL.', v.position.firstReflection],
+    ['FLOOR', floorOf(v.id, mode)],
+  ];
+
   return (
     <Modal open={open} onClose={onClose} title="Choose a venue">
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        {VENUES.map((v) => {
-          const round = ROUND_VENUES.includes(v.id);
-          const mode = modeOf(modes, v.id);
-          const shown = hover?.id === v.id ? hover.mode : mode;
-          const active = v.id === current;
-          const pick = (m) => { onPick(v.id, m); onClose(); };
-          return (
-            <div
-              key={v.id}
-              className={`relative flex flex-col border ${active ? 'border-[oklch(0.78_0.16_55)] bg-[oklch(0.78_0.16_55)]/5' : 'border-white/15 hover:border-white/40'} transition-colors font-mono`}
-            >
-              <button type="button" onClick={() => pick(round ? mode : undefined)} className="text-left p-3 pb-2 flex-1">
-                <div className="aspect-[16/9] bg-black border border-white/10 relative overflow-hidden">
-                  <img
-                    src={mapSrc(v.id, shown)}
-                    alt={`${v.name}${shown === '360' ? ' 360' : ''} 좌석배치도`}
-                    className="absolute inset-0 w-full h-full object-contain"
-                    draggable={false}
-                    // (a plan not drawn yet: the room's general one)
-                    onError={(e) => { if (shown === '360') e.currentTarget.src = mapSrc(v.id); }}
-                  />
-                  {active && <div className="absolute top-2 right-2 text-[oklch(0.78_0.16_55)] text-[9px] tracking-[0.3em]">● CURRENT</div>}
+      <div className="flex flex-col sm:grid sm:grid-cols-[minmax(210px,260px)_1fr] gap-4 sm:gap-7 font-mono">
+        {/* the rooms */}
+        <div
+          ref={listRef}
+          role="listbox"
+          aria-label="공연장"
+          className="flex sm:flex-col gap-1.5 overflow-x-auto sm:overflow-visible -mx-1 px-1 pb-1 sm:pb-0 snap-x"
+        >
+          {VENUES.map((x) => {
+            const on = x.id === sel;
+            const here = x.id === current;
+            const n = headcount(x);
+            return (
+              <button
+                key={x.id}
+                type="button"
+                role="option"
+                aria-selected={on}
+                onClick={() => choose(x.id)}
+                onDoubleClick={() => enter(x.id, x.id === sel ? mode : modeOf(modes, x.id))}
+                className={`snap-start shrink-0 sm:shrink text-left border px-3 py-2 sm:py-2.5 transition-colors ${
+                  on ? `border-[oklch(0.78_0.16_55)] bg-[oklch(0.78_0.16_55)]/10` : 'border-white/10 hover:border-white/35'
+                }`}
+              >
+                <div className="flex items-baseline gap-2 sm:gap-3">
+                  <span className={`w-2 text-[9px] ${here ? `text-[oklch(0.78_0.16_55)]` : 'text-transparent'}`} aria-label={here ? '지금 공연장' : undefined}>●</span>
+                  <span className={`normal-case tracking-tight font-tight text-[16px] sm:text-[17px] whitespace-nowrap ${on ? 'text-white' : 'text-neutral-300'}`}>{x.name}</span>
+                  <span className="ml-auto pl-2 text-[11px] text-neutral-500 tabular-nums">{short(n)}</span>
                 </div>
-                <div className="mt-3 flex items-baseline justify-between gap-2">
-                  <div className="text-white text-[18px] sm:text-[20px] font-light normal-case tracking-tight font-tight truncate">{v.name}</div>
-                  <div className="text-[11px] text-neutral-500 tabular-nums shrink-0">{v.capacity}</div>
+                <div className="hidden sm:block ml-4 mt-1.5 h-[3px] bg-white/[0.06]">
+                  <div className={`h-full ${on ? `bg-[oklch(0.78_0.16_55)]` : 'bg-white/25'}`} style={{ width: `${sizeOf(n) * 100}%` }} />
                 </div>
-                <div className="text-[9px] tracking-[0.3em] text-neutral-600 mt-1 truncate">{v.type}</div>
               </button>
-              {round && (
-                <div className="grid grid-cols-2 gap-1.5 px-3 pb-3">
-                  {VENUE_MODES.map((m) => {
-                    const on = active && currentMode === m;
-                    const last = !active && mode === m;
-                    return (
-                      <button
-                        key={m}
-                        type="button"
-                        onClick={() => pick(m)}
-                        onMouseEnter={() => setHover({ id: v.id, mode: m })}
-                        onMouseLeave={() => setHover(null)}
-                        aria-pressed={on}
-                        className={`py-1.5 text-[10px] tracking-[0.25em] border transition-colors ${
-                          on
-                            ? 'border-[oklch(0.78_0.16_55)] bg-[oklch(0.78_0.16_55)]/20 text-white'
-                            : last
-                              ? 'border-white/30 text-neutral-300 hover:border-white/60 hover:text-white'
-                              : 'border-white/10 text-neutral-500 hover:border-white/40 hover:text-neutral-200'
-                        }`}
-                      >
-                        {MODE_LABEL[m]}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+            );
+          })}
+        </div>
+
+        {/* the one chosen */}
+        <div className="min-w-0 flex flex-col">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-3">
+            <div className="min-w-0">
+              <div className="text-white text-[22px] sm:text-[26px] font-light normal-case tracking-tight font-tight leading-none">{v.name}</div>
+              <div className="text-[10px] tracking-[0.3em] text-neutral-500 mt-2 truncate">{v.type} · {v.capacity}</div>
             </div>
-          );
-        })}
+            {round && (
+              <div className="ml-auto flex border border-white/15" role="group" aria-label="배치">
+                {VENUE_MODES.map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setSelMode(m)}
+                    aria-pressed={mode === m}
+                    className={`px-3.5 py-1.5 text-[10px] tracking-[0.25em] transition-colors ${
+                      mode === m ? `bg-[oklch(0.78_0.16_55)]/20 text-white` : 'text-neutral-500 hover:text-neutral-200'
+                    }`}
+                  >
+                    {MODE_LABEL[m]}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <SeatMap key={`${v.id}-${mode}`} src={mapSrc(v.id, mode)} alt={`${v.name}${mode === '360' ? ' 360' : ''} 좌석배치도`} />
+
+          <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-px bg-white/10 border border-white/10">
+            {facts.map(([k, val]) => (
+              <div key={k} className="bg-[#0a0a0a] px-3 py-2.5">
+                <div className="text-[9px] tracking-[0.3em] text-neutral-600">{k}</div>
+                <div className="text-[13px] text-neutral-200 mt-1 normal-case tracking-normal tabular-nums">{val}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 flex items-center gap-4">
+            <div className="text-[12px] text-neutral-500 normal-case tracking-normal font-tight min-w-0 truncate">{v.descKo}</div>
+            <button
+              type="button"
+              onClick={() => enter()}
+              className={`ml-auto shrink-0 px-5 py-2.5 text-[11px] tracking-[0.25em] border transition-colors ${
+                isCurrent ? 'border-white/20 text-neutral-400 hover:text-white hover:border-white/50' : `border-[oklch(0.78_0.16_55)] bg-[oklch(0.78_0.16_55)] text-black hover:brightness-110`
+              }`}
+            >
+              {isCurrent ? 'STAY' : 'ENTER →'}
+            </button>
+          </div>
+        </div>
       </div>
     </Modal>
+  );
+}
+
+// The plan, zoomable: the wheel or the buttons zoom (about the pointer), a drag
+// pans when zoomed in, a double click zooms in and back out.
+function SeatMap({ src, alt }) {
+  const box = useRef(null);
+  const [t, setT] = useState({ k: 1, x: 0, y: 0 });
+  const drag = useRef(null);
+  const clamp = (n) => {
+    const el = box.current;
+    if (!el || n.k <= 1) return { k: 1, x: 0, y: 0 };
+    const w = el.clientWidth, h = el.clientHeight;
+    return { k: n.k, x: Math.min(0, Math.max(w - w * n.k, n.x)), y: Math.min(0, Math.max(h - h * n.k, n.y)) };
+  };
+  const zoomAt = (f, cx, cy) => setT((o) => {
+    const k = Math.min(6, Math.max(1, o.k * f));
+    return clamp({ k, x: cx - (cx - o.x) * (k / o.k), y: cy - (cy - o.y) * (k / o.k) });
+  });
+  const mid = () => [box.current.clientWidth / 2, box.current.clientHeight / 2];
+  // (the wheel is a native listener: React's is passive and cannot stop the page scrolling)
+  useEffect(() => {
+    const el = box.current;
+    const onWheel = (e) => { e.preventDefault(); const r = el.getBoundingClientRect(); zoomAt(Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top); };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+  return (
+    <div
+      ref={box}
+      className={`relative aspect-[16/10] sm:aspect-auto sm:h-[clamp(240px,calc(88vh-380px),620px)] bg-black border border-white/10 overflow-hidden select-none touch-none ${t.k > 1 ? 'cursor-grab active:cursor-grabbing' : 'cursor-zoom-in'}`}
+      onPointerDown={(e) => { if (t.k > 1) { drag.current = { x: e.clientX - t.x, y: e.clientY - t.y }; e.currentTarget.setPointerCapture(e.pointerId); } }}
+      onPointerMove={(e) => { if (drag.current) setT((o) => clamp({ k: o.k, x: e.clientX - drag.current.x, y: e.clientY - drag.current.y })); }}
+      onPointerUp={() => { drag.current = null; }}
+      onPointerCancel={() => { drag.current = null; }}
+      onDoubleClick={(e) => { const r = box.current.getBoundingClientRect(); if (t.k > 1) setT({ k: 1, x: 0, y: 0 }); else zoomAt(2.5, e.clientX - r.left, e.clientY - r.top); }}
+    >
+      <img
+        src={src}
+        alt={alt}
+        draggable={false}
+        className="absolute inset-0 w-full h-full object-contain p-3 origin-top-left"
+        style={{ transform: `translate(${t.x}px, ${t.y}px) scale(${t.k})` }}
+      />
+      <div className="absolute right-2 bottom-2 flex flex-col border border-white/15 bg-black/70 text-neutral-400 text-[13px] leading-none">
+        <button type="button" aria-label="확대" className="w-7 h-7 hover:text-white hover:bg-white/10" onClick={() => zoomAt(1.6, ...mid())}>+</button>
+        <button type="button" aria-label="축소" className="w-7 h-7 border-t border-white/15 hover:text-white hover:bg-white/10" onClick={() => zoomAt(1 / 1.6, ...mid())}>−</button>
+        {t.k > 1 && <button type="button" aria-label="원래 크기" className="w-7 h-7 border-t border-white/15 text-[10px] hover:text-white hover:bg-white/10" onClick={() => setT({ k: 1, x: 0, y: 0 })}>1:1</button>}
+      </div>
+    </div>
   );
 }
 
