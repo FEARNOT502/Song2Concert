@@ -138,19 +138,23 @@ export function buildClub(ctx) {
   bassRig.position.set(2.9, DECK, 1.0); bassRig.rotation.y = -0.12; root.add(bassRig);
   // keys on an X stand
   const keys = keyboardRig();
-  keys.position.set(3.35, DECK, 2.4); keys.rotation.y = -0.7; root.add(keys);
-  // microphones
+  keys.position.set(3.35, DECK, 2.4); keys.rotation.y = -0.7 + Math.PI; root.add(keys);
+  // microphones, the head upstage (to the singer, the screen behind)
   for (const [x, z, h] of [[0, 2.95, 1.55], [-2.0, 2.75, 1.5], [2.05, 2.75, 1.5], [3.0, 2.95, 1.4]]) {
-    const m = micStand({ height: h }); m.position.set(x, DECK, z); root.add(m);
+    const m = micStand({ height: h }); m.position.set(x, DECK, z); m.rotation.y = Math.PI; root.add(m);
   }
   // wedges and a set list taped to the floor
   for (const x of [-2.3, -1.0, 1.0, 2.3]) { const w = wedge({ w: 0.5 }); w.position.set(x, DECK, FRONT - 0.35); w.rotation.y = Math.PI; root.add(w); }
   const setlist = new THREE.Mesh(new THREE.PlaneGeometry(0.21, 0.3), std({ color: 0xf0ece0, roughness: 0.8 }));
   setlist.rotation.x = -Math.PI / 2; setlist.position.set(0.35, DECK + 0.003, FRONT - 0.7); root.add(setlist);
-  // PA: tops on subs at the stage corners
+  // PA: a top at each of the stage's corners, on a pole stand (no subs)
   for (const side of [-1, 1]) {
-    const sub = subStack({ w: 0.8, h: 0.62, d: 0.8, count: 1 }); sub.position.set(side * 5.15, 0, FRONT + 0.1); root.add(sub);
-    const top = subStack({ w: 0.5, h: 0.78, d: 0.45, count: 1 }); top.position.set(side * 5.15, 0.64, FRONT + 0.1); top.rotation.y = -side * 0.25; root.add(top);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.5, 8), mats().black); pole.position.set(side * 5.15, 0.75, FRONT + 0.1); root.add(pole);
+    for (let k = 0; k < 3; k++) {
+      const a = k * 2.094 + 0.5, leg = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.62, 6), mats().black);
+      leg.position.set(side * 5.15 + Math.sin(a) * 0.24, 0.26, FRONT + 0.1 + Math.cos(a) * 0.24); leg.rotation.set(Math.cos(a) * 0.85, 0, -Math.sin(a) * 0.85); root.add(leg);
+    }
+    const top = subStack({ w: 0.5, h: 0.78, d: 0.45, count: 1 }); top.position.set(side * 5.15, 1.5, FRONT + 0.1); top.rotation.y = -side * 0.25; root.add(top);
   }
 
   // ── lights ──

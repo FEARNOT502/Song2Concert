@@ -12,7 +12,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { APP, DEG, KELVIN, V3, std, concreteTex, ringTint, withRepeat } from '../core.js';
 import { lightPoints } from '../people.js';
 import { ampStack, chainInto, drumKit, guitar, hoists, keyboardRig, ledScreen, mats, micStand, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
-import { bigCrowd, bigScreens, crossThrust, fixtureRow, flashOnCrowd, flashUnits, floorBlocks, floorChairs, fohPosition, fromRow, maskingDrapes, packFloor, paCorner, paHang, paPair, subHang, runBlinders, runShow, runStrobes, screenHang, stageRing, stageSet, subLine, thinRow, wallStrip } from '../show.js';
+import { bigCrowd, bigScreens, crossThrust, fixtureRow, flashOnCrowd, flashUnits, floorBlocks, floorChairs, fohPosition, fromRow, maskingDrapes, packFloor, paCorner, paHang, paPair, runBlinders, runShow, runStrobes, screenHang, stageRing, stageSet, subLine, thinRow, wallStrip } from '../show.js';
 import { buildStands } from '../stands.js';
 import { SSA_STANDS } from './ssa-data.js';
 
@@ -259,14 +259,14 @@ function arenaEnd(ctx) {
   // the backline, set and waiting; no one on stage
   for (const [x, z, col] of [[-7, 9.0 + SZ, 0x5a1a0e], [7, 9.0 + SZ, 0x1a1a1c]]) {
     const gt = guitar({ color: col, bass: x > 0 }); gt.scale.setScalar(0.8); gt.position.set(x, DECK + 0.5, z); gt.rotation.x = -0.28; root.add(gt);
-    const m = micStand({ height: 1.5 }); m.position.set(x, DECK, z + 1.2); root.add(m);
+    const m = micStand({ height: 1.5 }); m.position.set(x, DECK, z + 1.2); m.rotation.y = Math.PI; root.add(m);
   }
-  const keysL = keyboardRig(); keysL.position.set(-4, DECK + 1, 4.6 + SZ); root.add(keysL);
+  const keysL = keyboardRig(); keysL.position.set(-4, DECK + 1, 4.6 + SZ); keysL.rotation.y = Math.PI; root.add(keysL);
   const kit = drumKit({ shell: 0x1a1a1e }); kit.position.set(0, DECK + 1, 3.6 + SZ); kit.scale.setScalar(1.1); root.add(kit);
   for (const x of [-12, 12]) { const a = ampStack({ count: 2 }); a.position.set(x, DECK, 4.5 + SZ); root.add(a); }
   for (let i = 0; i < 8; i++) { const w = wedge(); w.position.set(-10.5 + i * 3, DECK, 15.4 + SZ); w.rotation.y = Math.PI; root.add(w); }
   const mic = micStand({ height: 1.5 }); mic.position.set(0.05, DECK, 13.6 + SZ); mic.rotation.y = Math.PI; root.add(mic);
-  // the subs in a row on the floor under the barrier, the front fills on the lip
+  // the front fills on the lip
   subLine(root, { x0: -15.2, x1: 15.2, z: RW0 + 0.9, gap: 2.4, count: 2, fills: { xs: [-15, -10, -5, 5, 10, 15], y: DECK, z: RW0 - 0.35 } });
 
   // ── rig ──
@@ -276,14 +276,13 @@ function arenaEnd(ctx) {
   // the PA flown from the roof, all of it clear of the trusses (36 m wide):
   // at each of the stage's front corners, just past the trusses' ends, three
   // hangs, from the front round to the side, spaced out on arms from the
-  // front truss's end; the flown subs beside them, behind it; the side hangs turned out to the side
+  // front truss's end; the side hangs turned out to the side
   // stands; the 270 hangs further round, at the stands beside and behind the
   // stage's corners; and a pair of delay hangs over the middle of the floor
   // for the far end and the 400 level, as the big arena shows hang
   const pa = [];
   for (const side of [-1, 1]) {
     pa.push(...paCorner(root, { px: side * 18, pz: 15.2 + SZ, r: 3.4, yaws: [0, side * 0.6, side * 1.2], boxes: [16, 13, 11], y: RIG - 0.6, bar: RIG }));
-    subHang(root, { x: side * 19.6, y: RIG - 0.6, z: 11.8 + SZ, boxes: 8, roofY: H });
     paPair(root, { x: side * 29.5, y: RIG - 1.0, z: 12 + SZ, boxes: 14, width: 1.2, yaw: side * 0.5, roofY: H });
     paHang(root, { x: side * 33.5, y: RIG - 1.4, z: 15 + SZ, boxes: 10, width: 1.1, yaw: side * 1.2, roofY: H });
     paHang(root, { x: side * 13, y: RIG - 3, z: 56, boxes: 8, width: 1.1, yaw: side * 0.06, roofY: H, splay: 0.03 });
@@ -439,7 +438,7 @@ function arenaRound(ctx) {
   {
     const riser = stageDeck({ w: 4, d: 3, h: 0.6, z: OZ, lip: false }); riser.position.y = DECK; root.add(riser);
     const kit = drumKit({ shell: 0x1a1a1e }); kit.position.set(0, DECK + 0.6, OZ); kit.scale.setScalar(1.05); root.add(kit);
-    for (const [z, rot] of [[OZ - 6, 0], [OZ + 6, Math.PI]]) { const k = keyboardRig(); k.position.set(-1.5, DECK, z); k.rotation.y = rot; root.add(k); }
+    for (const [z, rot] of [[OZ - 6, Math.PI], [OZ + 6, 0]]) { const k = keyboardRig(); k.position.set(-1.5, DECK, z); k.rotation.y = rot; root.add(k); }
     for (const [x, z, col, bass] of [[2.5, OZ - 12, 0x5a1a0e, false], [-2.5, OZ + 12, 0x1a1a1c, true]]) {
       const gt = guitar({ color: col, bass }); gt.scale.setScalar(0.8); gt.position.set(x, DECK + 0.5, z); gt.rotation.x = -0.28; root.add(gt);
     }

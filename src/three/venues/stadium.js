@@ -615,14 +615,14 @@ export function buildStadium(ctx) {
   // no one on stage: the backline set (nothing out on the runway)
   for (const [x, z, col] of [[-10, 18, 0x5a1a0e], [10, 18, 0x1a1a1c]]) {
     const gt = guitar({ color: col, bass: x > 0 }); gt.scale.setScalar(0.8); gt.position.set(x, DECK + 0.5, z); gt.rotation.x = -0.28; root.add(gt);
-    const m = micStand({ height: 1.5 }); m.position.set(x, DECK, z + 1.4); root.add(m);
+    const m = micStand({ height: 1.5 }); m.position.set(x, DECK, z + 1.4); m.rotation.y = Math.PI; root.add(m);
     const a = ampStack({ count: 2 }); a.position.set(x * 1.2, DECK, z - 6); root.add(a);
   }
-  const keysS = keyboardRig(); keysS.position.set(-5, DECK + 1, 13); root.add(keysS);
+  const keysS = keyboardRig(); keysS.position.set(-5, DECK + 1, 13); keysS.rotation.y = Math.PI; root.add(keysS);
   const drumRiser = stageDeck({ w: 7, d: 4, h: 1.0, z: 11.5, lip: false }); drumRiser.position.y = DECK; root.add(drumRiser);
   const kit = drumKit({ shell: 0x0c0c10 }); kit.position.set(0, DECK + 1, 11.5); kit.scale.setScalar(1.2); root.add(kit);
   for (let i = 0; i < 12; i++) { const w = wedge({ w: 0.9 }); w.position.set(-22 + i * 4, DECK, 32.4); w.rotation.y = Math.PI; root.add(w); }
-  // the subs in a row on the pitch under the barrier, the front fills on the lip
+  // the front fills on the lip
   subLine(root, { x0: -32, x1: 32, z: 34.3, gap: 3.4, count: 2, fills: { xs: [-36, -29, -22, -15, -8, 8, 15, 22, 29, 36], y: DECK, z: 32.6 } });
 
   // ── rig ──
@@ -630,13 +630,11 @@ export function buildStadium(ctx) {
   const DT = [[-22, 105], [22, 105]];           // the delay towers, well back on the pitch, short of FOH
   const towerLights = [];
   for (const side of [-1, 1]) {
-    // the mains from the roof's front corners, the flown subs behind them on
-    // the side beam; on the wing towers the side hangs turned out to the side
+    // the mains from the roof's front corners; on the wing towers the side hangs turned out to the side
     // stands and the 270s further round
     // the stage's front corner: the main to the front, two more round to
     // the side, spaced out on arms from the roof's corner tower
     paCorner(root, { px: side * TX, pz: BZ[3], r: 3.6, yaws: [0, side * 0.6, side * 1.2], boxes: [20, 16, 14], y: SR - 2.4, bar: SR - 1.2, width: 1.5 });
-    paHang(root, { x: side * TX, y: SR - 2.4, z: 24.5, boxes: 10, width: 1.4, depth: 1.0, splay: 0.008, roofY: SR - 0.8 });
     paPair(root, { x: side * (PX - 1.2), y: PH - 1.6, z: PZ + 1.0, boxes: 18, width: 1.4, yaw: side * 0.45, roofY: PH - 0.5 });
     paHang(root, { x: side * (PX + 2.5), y: PH - 1.6, z: PZ + 0.4, boxes: 14, width: 1.3, yaw: side * 1.15, roofY: PH - 0.4 });
     for (const dx of [-1.6, 0, 1.6]) towerLights.push(V3(side * PX + dx, PH + 1.2, PZ));

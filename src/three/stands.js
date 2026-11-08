@@ -1171,7 +1171,7 @@ export function seatFinder(spots, { below = 0.05 } = {}) {
 
 export function buildStands(data, {
   offset = V3(0, 0, 0), stage = V3(0, 2, 0), seatColors = {}, seatColor = 0x22262e,
-  concreteTone = 0.22, sold = () => true, occupancy = 0.97, seed = 5, roofY = 36, crowd = true,
+  concreteTone = 0.22, concreteWarm = 0, sold = () => true, occupancy = 0.97, seed = 5, roofY = 36, crowd = true,
   materials = {}, seatMesh = null, seatColorAt = null, tiers = null, wedges = null,
   seatKeep = null, byAisle = false, sectors = null, sectorEven = 0, sectorFacing = 0, sectorJoin = null, sectorMin = 0.5, sectorWhole = 0.35, sectorBlocks = false, sectorPair = null, sectorOver = null, round = false,
 }) {
@@ -1179,7 +1179,7 @@ export function buildStands(data, {
   const ox = offset.x, oz = offset.z;
   const edgeSeats = [];
   const rnd = prng(seed);
-  const conc = withRepeat(concreteTex({ key: `standconc${concreteTone}`, tone: concreteTone }), 1 / 3, 1 / 3);
+  const conc = withRepeat(concreteTex({ key: `standconc${concreteTone}:${concreteWarm}`, tone: concreteTone, warm: concreteWarm }), 1 / 3, 1 / 3);
   // a venue can dress it in its own materials (a hall's carpet and timber)
   const structMat = materials.struct ?? std({ ...conc, color: 0xffffff, roughness: 0.95 });
   const floorMat = materials.floor ?? std({ color: 0x3a3b3e, roughness: 0.9 });

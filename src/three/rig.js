@@ -51,10 +51,13 @@ export function mats() {
   MATS.cab.envMapIntensity = 0.4;
   MATS.rubber = std({ color: 0x050505, roughness: 0.9 });
   MATS.chrome = std({ color: 0xd8d8dc, metalness: 1, roughness: 0.18 });
+  // a mic's grille: wire mesh, a dull satin grey (polished chrome flared under the rig)
+  MATS.micHead = std({ color: 0x5c5c60, metalness: 0.4, roughness: 0.75, envMapIntensity: 0.4 });
   MATS.brass = std({ color: 0xc9a050, metalness: 1, roughness: 0.3 });
   MATS.drumhead = std({ color: 0xcfc8ba, roughness: 0.7 });
   MATS.pianoBlack = phys({ color: 0x050506, roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.06 });
-  MATS.keysWhite = std({ color: 0xf2efe6, roughness: 0.3 });
+  // (matte: glossy keys flared white under the rig)
+  MATS.keysWhite = std({ color: 0xbab5aa, roughness: 0.85, envMapIntensity: 0.25 });
   MATS.fabric = std({ color: 0x0a0a0a, roughness: 0.95 });
   // chain and motors: dark steel that still catches the light, so a hang
   // reads as hung from the house
@@ -609,7 +612,7 @@ export function micStand({ height = 1.5, boom = 0.3 } = {}) {
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, height, 6), M.black); pole.position.y = height / 2; g.add(pole);
   const base = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.15, 0.02, 16), M.black); base.position.y = 0.01; g.add(base);
   const mic = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.016, 0.17, 10), M.black); mic.rotation.x = 1.3; mic.position.set(0, height + 0.02, 0.08); g.add(mic);
-  const grill = new THREE.Mesh(new THREE.SphereGeometry(0.026, 10, 8), M.chrome); grill.position.set(0, height + 0.04, 0.17); g.add(grill);
+  const grill = new THREE.Mesh(new THREE.SphereGeometry(0.026, 10, 8), M.micHead); grill.position.set(0, height + 0.04, 0.17); g.add(grill);
   return g;
 }
 

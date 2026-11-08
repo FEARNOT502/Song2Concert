@@ -725,13 +725,10 @@ export function paCorner(root, { px, pz, r = 2.5, yaws, boxes, bar, ...o }) {
   root.add(new THREE.Mesh(mergeGeometries(steel), mats().trussBlack));
   return out;
 }
-// flown subs: a straight column of sub cabinets on its own fly bar
-export function subHang(root, o) { return paHang(root, { width: 1.3, ...o, depth: 1.0, height: 0.55, splay: 0 }); }
-// A pair of hangs with the flown subs between them: a speaker hang, a
-// column of subs, a speaker hang, side by side along the bar at (x, z)
+// A pair of speaker hangs side by side along the bar at (x, z) (no flown
+// subs: the rooms show the speaker arrays only)
 export function paPair(root, o) {
-  const w = o.width ?? 1.3, yaw = o.yaw ?? 0, g = (w + 1.3) / 2 + 0.3;
-  subHang(root, { ...o, boxes: Math.round(o.boxes * 0.6) });
+  const w = o.width ?? 1.3, yaw = o.yaw ?? 0, g = w / 2 + 0.25;
   const out = [-1, 1].map((s) => paHang(root, { ...o, x: o.x + s * Math.cos(yaw) * g, z: o.z - s * Math.sin(yaw) * g }));
   return out[0];
 }
@@ -788,26 +785,19 @@ export function paWing(root, { x, z, h, bridge = null }) {
   base.position.set(x, 0.15, z); root.add(base);
 }
 
-// The floor's subwoofers: a row of cabinets along the front of the stage,
-// under the barrier line, broken where the runway leaves the stage; and the
-// front fills on the deck's lip, small boxes every few metres.
-export function subLine(root, { x0, x1, z, gap = 0, pitch = 1.6, count = 2, fills = null }) {
+// The front fills on the deck's lip, small boxes every few metres (the row
+// of subwoofers that ran under the barrier is gone: the rooms show the
+// speaker arrays only; its other arguments are kept, unused)
+export function subLine(root, { fills = null }) {
   const M = mats();
   const cab = [], front = [];
-  const w = 1.3, hh = 0.55, d = 1.0;
-  for (let x = x0; x <= x1 + 1e-6; x += pitch) {
-    if (Math.abs(x) < gap) continue;
-    for (let i = 0; i < count; i++) {
-      const b = new THREE.BoxGeometry(w * 0.98, hh * 0.98, d); b.translate(x, hh / 2 + i * hh, z); cab.push(b);
-      const f = new THREE.PlaneGeometry(w * 0.9, hh * 0.82); f.translate(x, hh / 2 + i * hh, z + d / 2 + 0.003); front.push(f);
-    }
-  }
   if (fills) {
     for (const x of fills.xs) {
       const b = new THREE.BoxGeometry(0.55, 0.32, 0.4); b.rotateX(-0.25); b.translate(x, fills.y + 0.17, fills.z); cab.push(b);
       const f = new THREE.PlaneGeometry(0.5, 0.26); f.rotateX(-0.25); f.translate(x, fills.y + 0.17 + 0.05, fills.z + 0.21); front.push(f);
     }
   }
+  if (!cab.length) return;
   root.add(new THREE.Mesh(mergeGeometries(cab), M.cab));
   root.add(new THREE.Mesh(mergeGeometries(front), M.grille));
 }
@@ -1110,7 +1100,7 @@ export function roundStage(ctx, root, { c, w = 16, d = 40, deck = 2.2, top = 26,
   }
   // the mics out at the four edges, each turned to the singer (the head away from the house)
   for (const [x, z, rot] of [[0, d / 2 - 1.5, 0], [0, -d / 2 + 1.5, Math.PI], [-w / 2 + 1.2, 0, -Math.PI / 2], [w / 2 - 1.2, 0, Math.PI / 2]]) {
-    const m = micStand({ height: 1.5 }); m.position.set(c.x + x, deck, c.z + z); m.rotation.y = rot; root.add(m);
+    const m = micStand({ height: 1.5 }); m.position.set(c.x + x, deck, c.z + z); m.rotation.y = rot + Math.PI; root.add(m);
   }
   // the roof over it on four towers, a beam across every 10 m
   const TX = w / 2 + 6, TZ = d / 2 + 4;

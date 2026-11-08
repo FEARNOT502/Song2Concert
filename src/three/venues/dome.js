@@ -281,7 +281,9 @@ export function buildDome(ctx) {
     // their rows where the aisles under them run, each part the colour of the
     // block under it; E's as D's in front of it)
     sectorOver: { E: 'D' },
-    offset: OFF, stage: STAGE, seed: 400, concreteTone: 0.28, roofY: (x, z) => ringY(z + ZH) + 0.3,
+    // (the concrete a light warm grey, as the photographs show it: about
+    // rgb 140-160 in the light there, a touch warm; it was a dark grey)
+    offset: OFF, stage: STAGE, seed: 400, concreteTone: 0.62, concreteWarm: 0.05, roofY: (x, z) => ringY(z + ZH) + 0.3,
     seatColors: { A: 0x1d3c86, B: 0x1d3c86, F: 0x1d3c86, K: 0x1d3c86, G: 0x1d3c86, C: 0x5a5d63, D: 0x1d3c86, E: 0x1d3c86 },
     seatColorAt: (name, x, z, row) => (inBox(name, x, z, row) ? 0x6a6b6e : name === 'B' && TABLES.some((r) => inRing(r, x, z)) ? 0x2a4fd6 : null),
     // the backscreen: the outfield stand's middle, between F09 and F12, has
@@ -296,7 +298,7 @@ export function buildDome(ctx) {
     sold: round ? () => true : (x, z) => z - 19.6 > Math.max(4, 0.12 * (Math.abs(x) - 33)),
     // the side walls where a stand drops away: the stands' own concrete,
     // not dark steel
-    materials: { rail: std({ color: 0x77736c, roughness: 0.92, side: THREE.DoubleSide }) },
+    materials: { rail: std({ color: 0xaaa499, roughness: 0.92, side: THREE.DoubleSide }), wall: std({ color: 0xb4aea3, roughness: 0.88, side: THREE.DoubleSide }) },
   });
   root.add(stands.group);
   {
@@ -746,7 +748,7 @@ export function buildDome(ctx) {
     root.add(new THREE.Mesh(mergeGeometries(cases), std({ color: 0x141416, roughness: 0.5, metalness: 0.3 })));
   }
   for (let i = 0; i < 12; i++) { const w = wedge({ w: 0.8 }); w.position.set(-22 + i * 4, DECK, RW0 - 0.4); w.rotation.y = Math.PI; root.add(w); }
-  // the subs in a row on the field under the barrier, the front fills on the lip
+  // the front fills on the lip
   subLine(root, { x0: -30, x1: 30, z: RW0 + 1.0, gap: 3.4, count: 2, fills: { xs: [-33, -26, -19, -12, -6, 6, 12, 19, 26, 33], y: DECK, z: RW0 - 0.35 } });
 
   // ── rig ──
@@ -755,8 +757,7 @@ export function buildDome(ctx) {
     const t = truss(2 * TX - 4, { size: 1.0, finish: 'black' }); t.position.set(0, LT, z); root.add(t);
     root.add(hoists([-30, -15, 0, 15, 30], LT, z, SR - 0.8));
   }
-  // the PA: the mains from the stage roof's front corners, the flown subs
-  // behind them on its side beams; the side hangs turned out to the infield
+  // the PA: the mains from the stage roof's front corners; the side hangs turned out to the infield
   // stands and the 270s further round, on wing towers bridged to the roof
   const PX = 47, PZ = 32, PH = 24;
   const DT = [[-24, 100], [24, 100]];           // the delay towers, two-thirds of the way back to FOH
@@ -766,7 +767,6 @@ export function buildDome(ctx) {
     // the stage's front corner: the main to the front, two more round to
     // the side, spaced out on arms from the roof's corner tower
     paCorner(root, { px: side * TX, pz: BZ[3], r: 3.6, yaws: [0, side * 0.6, side * 1.2], boxes: [20, 16, 14], y: SR - 2.4, bar: SR - 1.2, width: 1.4 });
-    paHang(root, { x: side * TX, y: SR - 2.4, z: BZ[2] + 1.5, boxes: 10, width: 1.4, depth: 1.0, splay: 0.008, roofY: SR - 0.8 });
     paPair(root, { x: side * (PX - 1.2), y: PH - 1.6, z: PZ + 1.0, boxes: 16, width: 1.3, yaw: side * 0.5, roofY: PH - 0.5 });
     paHang(root, { x: side * (PX + 2.5), y: PH - 1.6, z: PZ + 0.4, boxes: 12, width: 1.2, yaw: side * 1.15, roofY: PH - 0.4 });
     for (const dx of [-1.6, 0, 1.6]) towerLights.push(V3(side * PX + dx, PH + 1.2, PZ));
