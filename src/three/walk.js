@@ -75,6 +75,9 @@ export class Walker {
     this.seatNear = null;       // the venue's stand seats, if it has any
     this.stillSince = 0;        // when the last step was taken (ms, wall clock: a slow frame rate must not stretch the wait)
     this.sitting = false;
+    this.defaultHome = null;
+    this.currentSeat = null;
+    this.onSeatChange = null;
     const down = (e) => {
       if (e.target.closest?.('input, textarea, select, [contenteditable]') || e.ctrlKey || e.metaKey || e.altKey) return;
       const k = e.key.toLowerCase();
@@ -117,8 +120,31 @@ export class Walker {
     this.root = root;
     this.seatNear = seatNear;
     this.geo?.dispose(); this.geo = null; this.bvh = null;
+    this.defaultHome = { eye: eye.clone(), target: target.clone() };
     this.home = { eye: eye.clone(), target: target.clone() };
+    this.currentSeat = null;
     this.reset();
+    this.onSeatChange?.(null);
+  }
+
+  sitAt(seat, stageTarget = null) {
+    if (!seat) {
+      if (this.defaultHome) this.home = { eye: this.defaultHome.eye.clone(), target: this.defaultHome.target.clone() };
+      this.currentSeat = null;
+      this.reset();
+      this.onSeatChange?.(null);
+      return;
+    }
+    const sx = seat.x - Math.sin(seat.yaw ?? 0) * 0.12;
+    const sz = seat.z - Math.cos(seat.yaw ?? 0) * 0.12;
+    const eye = V3(sx, seat.y + WALK.sit, sz);
+    const target = stageTarget ? stageTarget.clone() : V3(sx + Math.sin(seat.yaw ?? 0) * 30, seat.y + WALK.sit - 3, sz + Math.cos(seat.yaw ?? 0) * 30);
+    this.home = { eye, target };
+    this.currentSeat = seat;
+    this.reset();
+    this.sitting = true;
+    this.eyeH = WALK.sit;
+    this.onSeatChange?.(seat);
   }
 
   reset() {
@@ -259,9 +285,14 @@ export class Walker {
       // Stood still among the seats of a stand for a few seconds, sit down;
       // on the next step stand up again (out of the venue's own seat too).
       // The pitch, the floor and the concourses are stood on whatever the wait.
+      const nearSeat = this.seatNear?.(this.feet.x, this.feet.z, this.gy) || null;
       if (this.vy !== 0) this.stillSince = performance.now();
       else if (!this.sitting && !this.moving && performance.now() - this.stillSince >= WALK.sitAfter * 1000
-        && this.seatNear?.(this.feet.x, this.feet.z, this.gy)) this.sitting = true;
+        && nearSeat) this.sitting = true;
+      if (nearSeat !== this.currentSeat && (this.sitting || this.moving)) {
+        this.currentSeat = nearSeat;
+        this.onSeatChange?.(nearSeat);
+      }
       if (this.seated === null) {
         const to = this.sitting ? WALK.sit : WALK.eye;
         this.eyeH += (to - this.eyeH) * Math.min(1, dt * (this.sitting ? 2 : 3));

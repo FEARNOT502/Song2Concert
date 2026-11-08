@@ -1343,6 +1343,8 @@ export function buildStands(data, {
     const col = seatColors[L.name] ?? seatColor;
     const spots = [], odd = new Map();
     const S = decodeSeats(L.seats), sk = L.seatScale ?? 10;      // (x, z in dm, or 1/seatScale m)
+    const LB = L.labels ? decodeSeats(L.labels) : null;
+    const bNames = data.blockNames || null;
     // the level's blocks, for the lightsticks' control
     const anchors = (L.voms || []).filter((v) => v.label).map((v) => ({ x: v.p[0] + ox, z: v.p[1] + oz, label: v.label }));
     const blocks = !crowd ? null : byAisle ? aisleBlocks(S, sk, ox, oz, L.steps.map((st) => st.polys)) : seatBlocks(S, sk, ox, oz, stage, { anchors, tidy: !!tiers, wedges: wedges && { x: wedges.x + ox, z: wedges.z + oz } });
@@ -1355,10 +1357,14 @@ export function buildStands(data, {
       const y = L.hs ? L.hs[Math.min(S[i + 2], L.hs.length - 1)] : L.h0 + L.rise * S[i + 2];
       // a venue can leave seats out (their treads stay)
       if (seatKeep && !seatKeep(L.name, x - ox, z - oz, S[i + 2])) continue;
+      const lk = (i >> 2) * 3;
+      const block = LB && bNames ? (bNames[LB[lk]] ?? L.name) : L.name;
+      const row = LB ? LB[lk + 1] : S[i + 2] + 1;
+      const num = LB ? LB[lk + 2] : (i >> 2) + 1;
       // a venue can pick out a row in another colour
       const c = seatColorAt ? seatColorAt(L.name, x - ox, z - oz, S[i + 2]) : null;
-      if (c != null && c !== col) { if (!odd.has(c)) odd.set(c, []); odd.get(c).push({ x, y, z, yaw }); }
-      else spots.push({ x, y, z, yaw });
+      if (c != null && c !== col) { if (!odd.has(c)) odd.set(c, []); odd.get(c).push({ x, y, z, yaw, block, row, num, level: L.name }); }
+      else spots.push({ x, y, z, yaw, block, row, num, level: L.name });
       if (crowd && sold(x, z, L.name) && rnd() < occupancy) {
         const lb = levelBlocks[lvRaw]; lb.ySum += y; lb.n++;
         // (each block's middle, for its place round a floor made of several levels)
@@ -1705,10 +1711,11 @@ export function buildStands(data, {
     if (n) g.userData.sectorLines = lines.map((L2) => [L2.cx, L2.cz, L2.ux, L2.uz]);
   }
   // what the walker sits down in
-  const seatNear = seatFinder(seatSpots.flatMap(({ spots }) => spots));
+  const allSpots = seatSpots.flatMap(({ spots }) => spots);
+  const seatNear = seatFinder(allSpots);
   if (seatMesh) {
-    g.add(seatMesh(seatSpots.flatMap(({ spots }) => spots.map((sp) => ({ x: sp.x, y: sp.y, z: sp.z, turn: sp.yaw })))));
-    return { group: g, people, aisleLights, update, topAt, seatNear };
+    g.add(seatMesh(allSpots.map((sp) => ({ x: sp.x, y: sp.y, z: sp.z, turn: sp.yaw }))));
+    return { group: g, people, aisleLights, update, topAt, seatNear, seats: allSpots };
   }
   const seatGeo = stadiumSeatGeometry();
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion();
@@ -1718,5 +1725,5 @@ export function buildStands(data, {
     inst.receiveShadow = true;
     g.add(inst);
   }
-  return { group: g, people, aisleLights, update, topAt, seatNear };
+  return { group: g, people, aisleLights, update, topAt, seatNear, seats: allSpots };
 }

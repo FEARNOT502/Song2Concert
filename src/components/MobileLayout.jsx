@@ -81,7 +81,7 @@ export default function MobileLayout({
   onFileClick, onVenueClick,
   strain = 0,
   effects = true, onEffectsChange,
-  crowdLight = 'stick', onCrowdLightChange, analyser = null, songMap = null, clock = null,
+  crowdLight = 'stick', onCrowdLightChange, analyser = null, songMap = null, clock = null, seat = null, onSeatChange = null, apiRef = null,
 }) {
   const [showMixer, setShowMixer] = useState(false);
   const exportPct = Math.round(exportProgress * 100);
@@ -121,6 +121,9 @@ export default function MobileLayout({
             analyser={analyser}
             songMap={songMap}
             clock={clock}
+            seat={seat}
+            onSeatChange={onSeatChange}
+            apiRef={apiRef}
           />
           {/* the crowd-light switch sits on the scene it changes; the header has no room */}
           {onCrowdLightChange && CROWD_LIGHT_VENUES.includes(venue.id) && (
@@ -155,6 +158,11 @@ export default function MobileLayout({
                 <div>
                   <div className="text-white text-[22px] font-light leading-tight font-tight">{venue.name}{venueMode === '360' && <span className="ml-1.5 text-[0.62em] tracking-[0.2em] text-[oklch(0.78_0.16_55)] align-middle">360</span>}</div>
                   <div className="text-[12px] text-neutral-500 mt-0.5">{venue.type}</div>
+                  {venue.id === 'dome' && (
+                    <div className="text-[11px] text-[oklch(0.78_0.16_55)] mt-1 tabular-nums">
+                      SEAT · {seat ? `${seat.block}블록 ${seat.row}열 ${seat.num}번` : 'FOH (ARENA)'}
+                    </div>
+                  )}
                 </div>
                 <span className="text-neutral-600 text-lg">▾</span>
               </div>

@@ -4,11 +4,21 @@
 import { memo } from 'react';
 
 // Left rail — the venue
-function LeftDataPanel({ venue, venueMode = 'general' }) {
+function LeftDataPanel({ venue, venueMode = 'general', seat = null, onSeatClick = null }) {
   return (
-    <div className="absolute top-[100px] left-10 z-20 text-[12px] tracking-[0.2em] uppercase text-neutral-500 max-w-[260px] font-mono">
+    <div className="absolute top-[100px] left-10 z-20 text-[12px] tracking-[0.2em] uppercase text-neutral-500 max-w-[280px] font-mono">
       <div className="text-neutral-300">VENUE</div>
       <div className="text-white text-[34px] font-light tracking-tight normal-case mt-1 leading-tight font-tight">{venue.name}{venueMode === '360' && <span className="ml-1.5 text-[0.62em] tracking-[0.2em] text-[oklch(0.78_0.16_55)] align-middle">360</span>}</div>
+      {venue.id === 'dome' && (
+        <button
+          type="button"
+          onClick={onSeatClick}
+          className="mt-2 inline-flex items-center gap-2 border border-white/15 bg-black/50 hover:border-[oklch(0.78_0.16_55)]/70 px-2.5 py-1 text-[11px] tracking-[0.15em] text-neutral-300 hover:text-white transition-colors tabular-nums"
+        >
+          <span className="text-[oklch(0.78_0.16_55)]">SEAT</span>
+          <span>{seat ? `${seat.block}블록 · ${seat.row}열 · ${seat.num}번` : 'FOH · ARENA'}</span>
+        </button>
+      )}
     </div>
   );
 }

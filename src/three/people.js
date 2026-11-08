@@ -392,6 +392,8 @@ export function lightPoints(points, cu, { size = 0.06, maxPx = 18, palette = nul
       uniform vec3 uPal[4];
       varying vec3 vC;
       void main() {
+        vec3 toCam = cameraPosition - position;
+        if (dot(toCam.xz, toCam.xz) < 0.36 && abs(toCam.y) < 1.6) { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); return; }
         vec4 mv = modelViewMatrix * vec4(position, 1.0);
         float d = -mv.z;
         float tw = 0.65 + 0.35 * sin(uTime * 3.0 + aLook.x);

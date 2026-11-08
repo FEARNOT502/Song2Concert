@@ -68,6 +68,8 @@ export default function App() {
   const [venueId, setVenueId] = useState('stadium');
   // the big rooms' layout, each remembered: an end stage or a centre stage
   const [venueModes, setVenueMode] = useVenueModes();
+  const [domeSeat, setDomeSeat] = useState(null);
+  const [activeSeat, setActiveSeat] = useState(null);
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
   const [wetDry, setWetDry] = useState(findVenue('stadium').position.wet);
@@ -238,10 +240,18 @@ export default function App() {
 
   // ── pickers / state transitions ─────────────────────────────────────────
   // (`mode`: the layout picked with it; none keeps the one the room had)
-  const handlePickVenue = useCallback((id, mode) => {
+  const handlePickVenue = useCallback((id, mode, seat = null) => {
     setVenueId(id);
     if (mode) setVenueMode(id, mode);
     setWetDry(findVenue(id).position.wet); // reset wet/dry to the venue default
+    if (id === 'dome') {
+      setDomeSeat(seat || null);
+      setActiveSeat(seat || null);
+      stageRef.current?.setSeat(seat || null);
+    } else {
+      setDomeSeat(null);
+      setActiveSeat(null);
+    }
   }, [setVenueMode]);
   // Stable, so the memoised chrome that takes them is not re-rendered by the
   // playback clock.
@@ -538,7 +548,7 @@ export default function App() {
         onClose={closeFilePicker}
         onUpload={handleUpload}
       />
-      <VenuePicker open={venuePickerOpen} onClose={closeVenuePicker} current={venueId} currentMode={venueMode} modes={venueModes} onPick={handlePickVenue} />
+      <VenuePicker open={venuePickerOpen} onClose={closeVenuePicker} current={venueId} currentMode={venueMode} modes={venueModes} currentSeat={activeSeat || domeSeat} onPick={handlePickVenue} />
     </>
   );
 
@@ -583,6 +593,9 @@ export default function App() {
           analyser={getAnalyser}
           songMap={songMap}
           clock={getClock}
+          seat={activeSeat || domeSeat}
+          onSeatChange={setActiveSeat}
+          apiRef={stageRef}
         />
         {pickers}
       </>
@@ -607,6 +620,8 @@ export default function App() {
         songMap={songMap}
         clock={getClock}
         part={desk ? lightPart : null}
+        seat={domeSeat}
+        onSeatChange={setActiveSeat}
         apiRef={stageRef}
       />
 
@@ -620,7 +635,7 @@ export default function App() {
         onEffectsChange={setEffects}
         desk={desk}
       />
-      <LeftDataPanel venue={venue} venueMode={venueMode} />
+      <LeftDataPanel venue={venue} venueMode={venueMode} seat={activeSeat || domeSeat} onSeatClick={openVenuePicker} />
       {desk && (
         <LightPanel
           part={lightPart}

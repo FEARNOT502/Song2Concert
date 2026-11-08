@@ -18,6 +18,72 @@ import { bigCrowd, bigScreens, crossThrust, diagonalTowers, roundBlocks, roundSt
 import { buildStands, decodeSeats } from '../stands.js';
 import { TD_STANDS } from './td-data.js';
 
+let _domeCatalog = null;
+export function getDomeSeatCatalog() {
+  if (_domeCatalog) return _domeCatalog;
+  const ZH = 114;
+  const BOX = { level: 'D', phi: [92.2, 118.8], per: 4 };
+  const BSC = 8.4;
+  const inBackscreen = (x, z) => Math.abs(Math.atan2(x, -z)) / DEG < BSC;
+  const boxTop = new Map();
+  {
+    const L = TD_STANDS.levels.find((l) => l.name === BOX.level), S = decodeSeats(L.seats), sk = L.seatScale ?? 10;
+    const seen = new Map();
+    for (let i = 0; i < S.length; i += 4) {
+      const x = S[i] / sk, z = S[i + 1] / sk, f = Math.floor(Math.abs(Math.atan2(x, -z)) / DEG);
+      if (f < BOX.phi[0] || f > BOX.phi[1]) continue;
+      const key = `${Math.sign(x)}:${S[i + 2]}`;
+      if (!seen.has(key)) seen.set(key, new Set());
+      seen.get(key).add(f);
+    }
+    const span = BOX.phi[1] - BOX.phi[0] + 1;
+    for (const [key, fs] of seen) {
+      const [side, row] = key.split(':').map(Number);
+      if (fs.size >= 0.65 * span) boxTop.set(side, Math.max(boxTop.get(side) ?? 0, row));
+    }
+  }
+  const inRun = (name, x, z) => {
+    if (name !== BOX.level) return false;
+    const f = Math.abs(Math.atan2(x, -z)) / DEG;
+    return f >= BOX.phi[0] && f <= BOX.phi[1];
+  };
+  const seatKeep = (name, x, z, row) => !(name === 'F' && inBackscreen(x, z)) && !(inRun(name, x, z) && row > boxTop.get(Math.sign(x)));
+  const bNames = TD_STANDS.blockNames || [];
+  const byBlock = new Map();
+  for (const L of TD_STANDS.levels) {
+    const S = decodeSeats(L.seats), sk = L.seatScale ?? 10;
+    const LB = L.labels ? decodeSeats(L.labels) : null;
+    if (!LB) continue;
+    for (let i = 0; i < S.length; i += 4) {
+      const rx = S[i] / sk, rz = S[i + 1] / sk, rIdx = S[i + 2], yaw = S[i + 3] * DEG;
+      if (!seatKeep(L.name, rx, rz, rIdx)) continue;
+      const x = rx, z = rz + ZH;
+      const y = L.hs ? L.hs[Math.min(rIdx, L.hs.length - 1)] : L.h0 + L.rise * rIdx;
+      const lk = (i >> 2) * 3;
+      const block = bNames[LB[lk]] ?? L.name;
+      const row = LB[lk + 1];
+      const num = LB[lk + 2];
+      let rm = byBlock.get(block);
+      if (!rm) { rm = new Map(); byBlock.set(block, rm); }
+      let nm = rm.get(row);
+      if (!nm) { nm = new Map(); rm.set(row, nm); }
+      nm.set(num, { x, y, z, yaw, block, row, num, level: L.name });
+    }
+  }
+  const blocks = [...byBlock.keys()].sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
+  const getRows = (block) => {
+    const rm = byBlock.get(block);
+    return rm ? [...rm.keys()].sort((a, b) => a - b) : [];
+  };
+  const getNums = (block, row) => {
+    const nm = byBlock.get(block)?.get(Number(row));
+    return nm ? [...nm.keys()].sort((a, b) => a - b) : [];
+  };
+  const getSeat = (block, row, num) => byBlock.get(block)?.get(Number(row))?.get(Number(num)) || null;
+  _domeCatalog = { blocks, byBlock, getRows, getNums, getSeat };
+  return _domeCatalog;
+}
+
 export function membraneMaterial() {
   // The roof from inside, as it looks: a cable net in two families, one
   // along the home–centre axis and one across it, 8.5 m apart (the plan is a
@@ -894,7 +960,7 @@ export function buildDome(ctx) {
   // lights the haze there is the rig's beams)
 
   return {
-    root, eye, seatNear: stands.seatNear,
+    root, eye, seatNear: stands.seatNear, seats: stands.seats, stageTarget: V3(0, DECK + 8, 6 + SZ),
     camera: { pos: eye, target: V3(0, DECK + 10, 6 + SZ), fov: 60, near: 0.2, far: 800 },
     background: new THREE.Color(0),
     fog: new THREE.FogExp2(0x07070b, 0.002),
@@ -996,7 +1062,7 @@ export function buildDome(ctx) {
     }
     root.add(new THREE.HemisphereLight(0x181a24, 0x050508, 0.35));
     return {
-      root, eye: feye, seatNear: stands.seatNear, round: true,
+      root, eye: feye, seatNear: stands.seatNear, seats: stands.seats, stageTarget: V3(0, RC.BY * 0.65, STAGE.z), round: true,
       camera: { pos: feye, target: V3(0, RC.BY, STAGE.z), fov: 60, near: 0.2, far: 800 },
       background: new THREE.Color(0),
       fog: new THREE.FogExp2(0x07070b, 0.002),

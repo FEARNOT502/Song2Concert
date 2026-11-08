@@ -24,13 +24,14 @@ import { Walker } from './walk.js';
 import { createArt } from './art.js';
 import { BeatFollower } from './beat.js';
 import { buildVenue } from './venues/index.js';
+import { getDomeSeatCatalog } from './venues/dome.js';
 import { BASE, PARTS, rollOf, section } from './show.js';
 
 // How far a new venue's camera may widen on a portrait screen: at least ~56°
 // across, so the stage is still in the room rather than a keyhole on it.
 const MIN_HFOV = 56 * DEG;
 
-export function createStage(canvas, { quality = 'high', effects = true, onLoading = null } = {}) {
+export function createStage(canvas, { quality = 'high', effects = true, onLoading = null, onSeatChange = null } = {}) {
   let pipe;
   try {
     pipe = new Pipeline(canvas);
@@ -49,12 +50,14 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
   let strain = 0;
 
   const walker = new Walker(canvas);
+  walker.onSeatChange = onSeatChange;
   const beat = new BeatFollower();
   // the screens' content at 4096 px across on a computer (the type and the
   // sleeve stay sharp on a wall tens of metres wide), 2048 on a phone
   const art = createArt(() => { if (venue) applyArt(); }, { W: qName === 'low' ? 2048 : 4096 });
 
   let venue = null, ctx = null, venueId = null, venueMode = 'general', envRT = null;
+  let pendingSeat = null;
   let buildGen = 0;
   let pulse = 0, pulseRef = null, analyser = null;
   let songMap = null, songClock = null;
@@ -184,6 +187,10 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     cam.updateProjectionMatrix();
     venue = v; ctx = c;
     walker.setVenue(v.root, v.camera.pos, v.camera.target, v.seatNear);
+    if (pendingSeat && id === 'dome') {
+      const s = getDomeSeatCatalog().getSeat(pendingSeat.block, pendingSeat.row, pendingSeat.num) || pendingSeat;
+      walker.sitAt(s, v.stageTarget);
+    }
     const b = v.bloom || {};
     pipe.bloom.strength = b.strength ?? 0.6; pipe.bloom.radius = b.radius ?? 0.6; pipe.bloom.threshold = b.threshold ?? 0.9;
     const G = pipe.final.material.uniforms, g = v.grade || {};
@@ -455,6 +462,16 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     setArt: (want) => { art.set(want); },
     setPlaying: (on) => { playing = !!on; houseTarget = playing ? 0 : 1; },
     setCrowdLight: (mode) => { crowdLight = mode === 'flash' ? 'flash' : 'stick'; },
+    setSeat(seat) {
+      pendingSeat = seat || null;
+      if (venue && venueId === 'dome') {
+        if (!seat) walker.sitAt(null);
+        else {
+          const s = getDomeSeatCatalog().getSeat(seat.block, seat.row, seat.num) || seat;
+          walker.sitAt(s, venue.stageTarget);
+        }
+      }
+    },
     // the lighting desk: call a part of the song (a name from PARTS), or hand
     // it back to the song (null)
     setPart(name) {

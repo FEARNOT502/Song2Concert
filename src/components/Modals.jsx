@@ -1,9 +1,20 @@
 // Modals.jsx — modal shell + file / venue / seat pickers (ported from proto/ui.jsx)
 // FilePicker accepts a real uploaded FLAC/WAV via drag-drop or the native input.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { VENUES } from '../data.js';
 import { ROUND_VENUES, VENUE_MODES, modeOf } from '../useVenueModes.js';
+import { getDomeSeatCatalog } from '../three/venues/dome.js';
+
+const DOME_TIERS = [
+  ['A', '1F 1층 내야 하단 (A블록)'],
+  ['B', '1F 1층 내야 상단 (B블록)'],
+  ['F', '1F 외야석 (F블록)'],
+  ['G', '1F 익사이트석 (G블록)'],
+  ['C', '2F 발코니석 (C블록)'],
+  ['D', '4F 2층 하단 (D블록)'],
+  ['E', '4F 2층 상단 (E블록)'],
+];
 
 // ───────────────────────────────────────── Modal shell
 export function Modal({ open, onClose, title, subtitle, children }) {
@@ -49,21 +60,70 @@ const short = (n) => (n < 1000 ? String(n) : `${Math.round(n / 100) / 10}k`);
 // the size bar: logarithmic, so 300 shows beside 90,000
 const sizeOf = (n) => Math.max(0.06, Math.min(1, Math.log10(n / 100) / 3));
 
-export function VenuePicker({ open, onClose, current, currentMode = 'general', modes = {}, onPick }) {
+export function VenuePicker({ open, onClose, current, currentMode = 'general', modes = {}, currentSeat = null, onPick }) {
   const [sel, setSel] = useState(current);
   const [selMode, setSelMode] = useState(currentMode);
+  const [selBlock, setSelBlock] = useState('FOH');
+  const [selRow, setSelRow] = useState(1);
+  const [selNum, setSelNum] = useState(1);
+
+  const domeCat = useMemo(() => (sel === 'dome' ? getDomeSeatCatalog() : null), [sel]);
+  const domeRows = useMemo(() => (domeCat && selBlock !== 'FOH' ? domeCat.getRows(selBlock) : []), [domeCat, selBlock]);
+  const domeNums = useMemo(() => (domeCat && selBlock !== 'FOH' ? domeCat.getNums(selBlock, selRow) : []), [domeCat, selBlock, selRow]);
+
   // (opened on the room and layout in use)
-  useEffect(() => { if (open) { setSel(current); setSelMode(currentMode); } }, [open, current, currentMode]);
+  useEffect(() => {
+    if (open) {
+      setSel(current);
+      setSelMode(currentMode);
+      if (currentSeat?.block) {
+        setSelBlock(currentSeat.block);
+        setSelRow(currentSeat.row);
+        setSelNum(currentSeat.num);
+      } else {
+        setSelBlock('FOH');
+      }
+    }
+  }, [open, current, currentMode, currentSeat]);
+
+  const handleBlockChange = useCallback((nextBlock) => {
+    setSelBlock(nextBlock);
+    if (nextBlock === 'FOH' || !domeCat) return;
+    const rows = domeCat.getRows(nextBlock);
+    const r0 = rows.includes(selRow) ? selRow : (rows[0] ?? 1);
+    const nums = domeCat.getNums(nextBlock, r0);
+    const n0 = nums.includes(selNum) ? selNum : (nums[0] ?? 1);
+    setSelRow(r0);
+    setSelNum(n0);
+  }, [domeCat, selRow, selNum]);
+
+  const handleRowChange = useCallback((nextRow) => {
+    setSelRow(nextRow);
+    if (!domeCat || selBlock === 'FOH') return;
+    const nums = domeCat.getNums(selBlock, nextRow);
+    const n0 = nums.includes(selNum) ? selNum : (nums[0] ?? 1);
+    setSelNum(n0);
+  }, [domeCat, selBlock, selNum]);
+
   const v = VENUES.find((x) => x.id === sel) || VENUES[0];
   const round = ROUND_VENUES.includes(v.id);
   const mode = round ? selMode : 'general';
   const choose = useCallback((id) => { setSel(id); setSelMode(id === current ? currentMode : modeOf(modes, id)); }, [current, currentMode, modes]);
-  const enter = useCallback((id = sel, m = mode) => { onPick(id, ROUND_VENUES.includes(id) ? m : undefined); onClose(); }, [sel, mode, onPick, onClose]);
+  const enter = useCallback((id = sel, m = mode) => {
+    const seatObj = id === 'dome' && selBlock !== 'FOH' ? (domeCat?.getSeat(selBlock, selRow, selNum) || null) : null;
+    onPick(id, ROUND_VENUES.includes(id) ? m : undefined, seatObj);
+    onClose();
+  }, [sel, mode, selBlock, selRow, selNum, domeCat, onPick, onClose]);
 
   // the keys, ahead of the app's own (whose arrows seek)
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (e) => {
+      const tag = e.target?.tagName;
+      if (tag === 'SELECT' || tag === 'INPUT') {
+        if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); enter(); }
+        return;
+      }
       const i = VENUES.findIndex((x) => x.id === sel);
       let hit = true;
       if (e.key === 'ArrowDown') choose(VENUES[(i + 1) % VENUES.length].id);
@@ -80,7 +140,12 @@ export function VenuePicker({ open, onClose, current, currentMode = 'general', m
   const listRef = useRef(null);
   useEffect(() => { listRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }, [sel, open]);
 
-  const isCurrent = v.id === current && (!round || mode === currentMode);
+  const sameSeat = v.id !== 'dome' || (
+    selBlock === 'FOH'
+      ? !currentSeat
+      : (currentSeat?.block === selBlock && Number(currentSeat?.row) === Number(selRow) && Number(currentSeat?.num) === Number(selNum))
+  );
+  const isCurrent = v.id === current && (!round || mode === currentMode) && sameSeat;
   const facts = [
     ['RT60', v.acoustics.rt60],
     ['DISTANCE', v.position.distance],
@@ -154,6 +219,67 @@ export function VenuePicker({ open, onClose, current, currentMode = 'general', m
                     {MODE_LABEL[m]}
                   </button>
                 ))}
+              </div>
+            )}
+
+            {sel === 'dome' && domeCat && (
+              <div className="mt-4 border border-white/15 bg-white/[0.02] p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[9px] tracking-[0.28em] text-neutral-400 uppercase">SEAT · 블록 / 열 / 좌석번호</span>
+                  <span className="text-[11px] text-[oklch(0.78_0.16_55)] tabular-nums">
+                    {selBlock === 'FOH' ? 'FOH (아레나 기본)' : `${selBlock}블록 ${selRow}열 ${selNum}번`}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[9px] tracking-[0.2em] text-neutral-500">BLOCK</span>
+                    <select
+                      aria-label="블록"
+                      value={selBlock}
+                      onChange={(e) => handleBlockChange(e.target.value)}
+                      className="bg-[#0a0a0a] border border-white/20 focus:border-[oklch(0.78_0.16_55)] text-white text-[12px] px-2 py-1.5 outline-none tabular-nums"
+                    >
+                      <option value="FOH">FOH (기본)</option>
+                      {DOME_TIERS.map(([prefix, label]) => {
+                        const list = domeCat.blocks.filter((b) => b.startsWith(prefix));
+                        if (!list.length) return null;
+                        return (
+                          <optgroup key={prefix} label={label}>
+                            {list.map((b) => <option key={b} value={b}>{b}블록</option>)}
+                          </optgroup>
+                        );
+                      })}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[9px] tracking-[0.2em] text-neutral-500">ROW (열)</span>
+                    <select
+                      aria-label="열"
+                      value={selBlock === 'FOH' ? '' : selRow}
+                      disabled={selBlock === 'FOH'}
+                      onChange={(e) => handleRowChange(Number(e.target.value))}
+                      className="bg-[#0a0a0a] border border-white/20 focus:border-[oklch(0.78_0.16_55)] disabled:opacity-40 text-white text-[12px] px-2 py-1.5 outline-none tabular-nums"
+                    >
+                      {selBlock === 'FOH' ? <option value="">—</option> : domeRows.map((r) => (
+                        <option key={r} value={r}>{r}열</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[9px] tracking-[0.2em] text-neutral-500">SEAT (번)</span>
+                    <select
+                      aria-label="좌석번호"
+                      value={selBlock === 'FOH' ? '' : selNum}
+                      disabled={selBlock === 'FOH'}
+                      onChange={(e) => setSelNum(Number(e.target.value))}
+                      className="bg-[#0a0a0a] border border-white/20 focus:border-[oklch(0.78_0.16_55)] disabled:opacity-40 text-white text-[12px] px-2 py-1.5 outline-none tabular-nums"
+                    >
+                      {selBlock === 'FOH' ? <option value="">—</option> : domeNums.map((n) => (
+                        <option key={n} value={n}>{n}번</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
               </div>
             )}
 

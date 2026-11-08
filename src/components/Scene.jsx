@@ -36,7 +36,7 @@ function LoadingCover({ venueId, mode, done }) {
 function Scene({
   venueId, venueMode = 'general', coverId, coverSrc, pulse = 0, pulseRef = null, title, artist,
   strain = 0, effects = true, playing = false, crowdLight = 'stick', analyser = null,
-  songMap = null, clock = null, part = null, apiRef = null,
+  songMap = null, clock = null, part = null, seat = null, onSeatChange = null, apiRef = null,
 }) {
   const hostRef = useRef(null);
   const canvasRef = useRef(null);
@@ -58,6 +58,7 @@ function Scene({
     const stage = createStage(canvasRef.current, {
       quality, effects: effectsAtMount.current,
       onLoading: (on, id, mode) => setLoading(on ? { id, mode } : null),
+      onSeatChange: (s) => onSeatChange?.(s),
     });
     const el = hostRef.current;
     if (stage) stageRef.current = stage;
@@ -84,6 +85,7 @@ function Scene({
   }, []);
 
   useEffect(() => { stageRef.current?.setVenue(venueId, venueMode); }, [venueId, venueMode]);
+  useEffect(() => { if (venueId === 'dome') stageRef.current?.setSeat(seat); }, [venueId, seat]);
   useEffect(() => { stageRef.current?.setArt({ coverId, coverSrc, title, artist }); }, [coverId, coverSrc, title, artist]);
   // Stopped, the house lights are up; playing, they go down for the show.
   useEffect(() => { stageRef.current?.setPlaying(playing); }, [playing]);

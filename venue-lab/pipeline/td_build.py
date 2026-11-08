@@ -834,3 +834,5 @@ json.dump(data,open('td_stands.json','w'),separators=(',',':'))
 import os; print('json KB',os.path.getsize('td_stands.json')//1024, round(time.time()-T0,1))
 
 import standgen; pickle.dump({'doors':standgen.DOORLOG,'F':F.aisle_doors(),'B':B.aisle_doors(),'dbg':{k:tuple(np.packbits(a) for a in v) for k,v in standgen.DEBUG.items()},'FR':np.packbits(F.R>0)},open('td_dbg.pkl','wb'))
+
+import td_labels
