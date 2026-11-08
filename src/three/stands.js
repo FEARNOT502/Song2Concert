@@ -1764,18 +1764,52 @@ export function buildStands(data, {
     }
     // (a block paired with one of another level, not those levels': that
     // one's wedge, once it has one, after the rest)
-    const later = [];
+    const later = [], upper = [];
+    const flOf = (p) => tierOf(levelBlocks[p.lvRaw].name)?.[0];
+    const baseFl = new Set(seated.filter((p) => sectors.includes(levelBlocks[p.lvRaw].name)).map(flOf));
     for (const ps of groups.values()) {
       const c = new Map();
       const lb = levelBlocks[ps[0].lvRaw], pr = sectorPair && lb.names ? sectorPair(lb.names[ps[0].block]) : null;
       if (pr != null && pairOf.has(pr)) { for (const p of ps) wk.set(p, pairOf.get(pr)); continue; }
-      if (pr != null) later.push([ps, pr]);
+      if (pr != null) { later.push([ps, pr]); continue; }
+      // (`sectorBlocks`: a block of a floor over theirs, once theirs are all placed)
+      if (byBear && !baseFl.has(flOf(ps[0]))) { upper.push(ps); continue; }
       if (near && !sectors.includes(lb.name)) {
         for (const p of ps) { const w = near(p) ?? byBear?.(p); if (w != null) wk.set(p, w); }
       }
       for (const p of ps) c.set(wk.get(p), (c.get(wk.get(p)) || 0) + 1);
       const [top] = [...c].sort((x, y) => y[1] - x[1])[0];
       for (const p of ps) if (sectorBlocks || c.get(wk.get(p)) < sectorWhole * ps.length) wk.set(p, top);
+    }
+    // (a block of a floor over those levels' takes the wedge of the seats of
+    // their floor straight under it in plan, the floor over overhanging the
+    // back of theirs: not its bearing round the bowl, which drifts a block off
+    // where the floors' blocks are not as wide)
+    if (upper.length) {
+      const cell = new Map(), key = (x, z) => `${Math.floor(x / 4)},${Math.floor(z / 4)}`;
+      for (const p of seated) { if (!baseFl.has(flOf(p))) continue; const k = key(p.x, p.z); if (!cell.has(k)) cell.set(k, []); cell.get(k).push(p); }
+      const under = (p) => {
+        const cx = Math.floor(p.x / 4), cz = Math.floor(p.z / 4);
+        let best = null, bd = Infinity;
+        for (let r = 0; r <= 8 && !best; r++) {
+          for (let i = -r; i <= r; i++) for (let j = -r; j <= r; j++) {
+            if (Math.max(Math.abs(i), Math.abs(j)) !== r) continue;
+            for (const q of cell.get(`${cx + i},${cz + j}`) ?? []) { const d = (q.x - p.x) ** 2 + (q.z - p.z) ** 2; if (d < bd) { bd = d; best = q; } }
+          }
+          // (one ring further, in case a nearer seat lies just over the cell's edge)
+          if (best && r < 8) for (let i = -r - 1; i <= r + 1; i++) for (let j = -r - 1; j <= r + 1; j++) {
+            if (Math.max(Math.abs(i), Math.abs(j)) !== r + 1) continue;
+            for (const q of cell.get(`${cx + i},${cz + j}`) ?? []) { const d = (q.x - p.x) ** 2 + (q.z - p.z) ** 2; if (d < bd) { bd = d; best = q; } }
+          }
+        }
+        return best ? wk.get(best) : null;
+      };
+      for (const ps of upper) {
+        const c = new Map();
+        for (const p of ps) { const w = under(p) ?? byBear(p); wk.set(p, w); c.set(w, (c.get(w) || 0) + 1); }
+        const [top] = [...c].sort((x, y) => y[1] - x[1])[0];
+        for (const p of ps) wk.set(p, top);
+      }
     }
     if (later.length) {
       const of = new Map();
