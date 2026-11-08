@@ -1173,7 +1173,7 @@ export function buildStands(data, {
   offset = V3(0, 0, 0), stage = V3(0, 2, 0), seatColors = {}, seatColor = 0x22262e,
   concreteTone = 0.22, sold = () => true, occupancy = 0.97, seed = 5, roofY = 36, crowd = true,
   materials = {}, seatMesh = null, seatColorAt = null, tiers = null, wedges = null,
-  seatKeep = null, byAisle = false, sectors = null, sectorEven = 0, sectorFacing = 0, sectorJoin = null, sectorMin = 0.5, sectorWhole = 0.35, sectorBlocks = false, sectorPair = null, round = false,
+  seatKeep = null, byAisle = false, sectors = null, sectorEven = 0, sectorFacing = 0, sectorJoin = null, sectorMin = 0.5, sectorWhole = 0.35, sectorBlocks = false, sectorPair = null, sectorOver = null, round = false,
 }) {
   const g = new THREE.Group();
   const ox = offset.x, oz = offset.z;
@@ -1804,11 +1804,58 @@ export function buildStands(data, {
         }
         return best ? wk.get(best) : null;
       };
-      for (const ps of upper) {
-        const c = new Map();
-        for (const p of ps) { const w = under(p) ?? byBear(p); wk.set(p, w); c.set(w, (c.get(w) || 0) + 1); }
-        const [top] = [...c].sort((x, y) => y[1] - x[1])[0];
-        for (const p of ps) wk.set(p, top);
+      // A block over two of theirs is cut between them by one straight line
+      // up its rows (a run of bearings round the bowl each side), so it takes
+      // both their colours, its edge run on from the aisle under it, never a
+      // ragged one seat by seat; a scrap of under a twelfth stays with the rest.
+      // (`sectorOver` {level: level}: a level whose blocks follow those of the
+      // level in front of it on its floor, not the floor under: E behind D)
+      const cutUp = (ps, lab) => {
+        const ts = ps.map((p) => bear(p.x, p.z));
+        const m0 = Math.atan2(ts.reduce((q, t) => q + Math.sin(t), 0), ts.reduce((q, t) => q + Math.cos(t), 0));
+        const tt = ts.map((t) => dA(t, m0));
+        const cnt = new Map();
+        lab.forEach((w) => cnt.set(w, (cnt.get(w) || 0) + 1));
+        const keep = [...cnt].filter(([, n]) => n >= Math.max(6, ps.length / 12)).map(([w]) => w);
+        if (!keep.length) keep.push([...cnt].sort((x, y) => y[1] - x[1])[0][0]);
+        const med = (w) => { const v = tt.filter((_, i) => lab[i] === w).sort((x, y) => x - y); return v[v.length >> 1]; };
+        keep.sort((a, b) => med(a) - med(b));
+        const cuts = [];
+        for (let j = 0; j + 1 < keep.length; j++) {
+          const a = keep[j], b = keep[j + 1];
+          const cand = tt.filter((_, i) => lab[i] === a || lab[i] === b).sort((x, y) => x - y);
+          let best = cand[0], be = Infinity;
+          for (const th of cand) {
+            let e = 0;
+            tt.forEach((t, i) => { if ((lab[i] === a && t > th) || (lab[i] === b && t <= th)) e++; });
+            if (e < be) { be = e; best = th; }
+          }
+          cuts.push(Math.max(best, cuts[cuts.length - 1] ?? -Infinity));
+        }
+        ps.forEach((p, i) => { let j = 0; while (j < cuts.length && tt[i] > cuts[j]) j++; wk.set(p, keep[j]); });
+      };
+      const overOf = (ps) => sectorOver?.[levelBlocks[ps[0].lvRaw].name];
+      const first = upper.filter((ps) => !overOf(ps)), next = upper.filter((ps) => overOf(ps));
+      for (const ps of first) cutUp(ps, ps.map((p) => under(p) ?? byBear(p)));
+      if (next.length) {
+        const front = new Map();
+        for (const ps of next) {
+          const src = overOf(ps);
+          if (!front.has(src)) {
+            const c2 = new Map(), k2 = (x, z) => `${Math.floor(x / 4)},${Math.floor(z / 4)}`;
+            for (const q of seated) { if (levelBlocks[q.lvRaw].name !== src) continue; const k = k2(q.x, q.z); if (!c2.has(k)) c2.set(k, []); c2.get(k).push(q); }
+            front.set(src, (p) => {
+              const cx = Math.floor(p.x / 4), cz = Math.floor(p.z / 4);
+              let best = null, bd = Infinity;
+              for (let r = 0; r <= 6 && !best; r++) for (let i = -r - 1; i <= r + 1; i++) for (let j = -r - 1; j <= r + 1; j++) {
+                for (const q of c2.get(`${cx + i},${cz + j}`) ?? []) { const d = (q.x - p.x) ** 2 + (q.z - p.z) ** 2; if (d < bd) { bd = d; best = q; } }
+              }
+              return best ? wk.get(best) : null;
+            });
+          }
+          const f = front.get(src);
+          cutUp(ps, ps.map((p) => f(p) ?? under(p) ?? byBear(p)));
+        }
       }
     }
     if (later.length) {
