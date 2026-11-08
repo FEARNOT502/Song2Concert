@@ -266,7 +266,7 @@ function arenaEnd(ctx) {
   for (const x of [-12, 12]) { const a = ampStack({ count: 2 }); a.position.set(x, DECK, 4.5 + SZ); root.add(a); }
   for (let i = 0; i < 8; i++) { const w = wedge(); w.position.set(-10.5 + i * 3, DECK, 15.4 + SZ); w.rotation.y = Math.PI; root.add(w); }
   const mic = micStand({ height: 1.5 }); mic.position.set(0.05, DECK, 13.6 + SZ); mic.rotation.y = Math.PI; root.add(mic);
-  // the front fills on the lip
+  // the subs in a row on the floor under the barrier, the front fills on the lip
   subLine(root, { x0: -15.2, x1: 15.2, z: RW0 + 0.9, gap: 2.4, count: 2, fills: { xs: [-15, -10, -5, 5, 10, 15], y: DECK, z: RW0 - 0.35 } });
 
   // ── rig ──

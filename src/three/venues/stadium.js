@@ -622,7 +622,7 @@ export function buildStadium(ctx) {
   const drumRiser = stageDeck({ w: 7, d: 4, h: 1.0, z: 11.5, lip: false }); drumRiser.position.y = DECK; root.add(drumRiser);
   const kit = drumKit({ shell: 0x0c0c10 }); kit.position.set(0, DECK + 1, 11.5); kit.scale.setScalar(1.2); root.add(kit);
   for (let i = 0; i < 12; i++) { const w = wedge({ w: 0.9 }); w.position.set(-22 + i * 4, DECK, 32.4); w.rotation.y = Math.PI; root.add(w); }
-  // the front fills on the lip
+  // the subs in a row on the pitch under the barrier, the front fills on the lip
   subLine(root, { x0: -32, x1: 32, z: 34.3, gap: 3.4, count: 2, fills: { xs: [-36, -29, -22, -15, -8, 8, 15, 22, 29, 36], y: DECK, z: 32.6 } });
 
   // ── rig ──

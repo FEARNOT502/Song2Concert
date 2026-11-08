@@ -726,7 +726,7 @@ export function paCorner(root, { px, pz, r = 2.5, yaws, boxes, bar, ...o }) {
   return out;
 }
 // A pair of speaker hangs side by side along the bar at (x, z) (no flown
-// subs: the rooms show the speaker arrays only)
+// subs: the flown arrays are speakers only; the subs stand on the floor)
 export function paPair(root, o) {
   const w = o.width ?? 1.3, yaw = o.yaw ?? 0, g = w / 2 + 0.25;
   const out = [-1, 1].map((s) => paHang(root, { ...o, x: o.x + s * Math.cos(yaw) * g, z: o.z - s * Math.sin(yaw) * g }));
@@ -785,12 +785,20 @@ export function paWing(root, { x, z, h, bridge = null }) {
   base.position.set(x, 0.15, z); root.add(base);
 }
 
-// The front fills on the deck's lip, small boxes every few metres (the row
-// of subwoofers that ran under the barrier is gone: the rooms show the
-// speaker arrays only; its other arguments are kept, unused)
-export function subLine(root, { fills = null }) {
+// The floor's subwoofers: a row of cabinets along the front of the stage,
+// under the barrier line, broken where the runway leaves the stage; and the
+// front fills on the deck's lip, small boxes every few metres.
+export function subLine(root, { x0, x1, z, gap = 0, pitch = 1.6, count = 2, fills = null }) {
   const M = mats();
   const cab = [], front = [];
+  const w = 1.3, hh = 0.55, d = 1.0;
+  for (let x = x0; x <= x1 + 1e-6; x += pitch) {
+    if (Math.abs(x) < gap) continue;
+    for (let i = 0; i < count; i++) {
+      const b = new THREE.BoxGeometry(w * 0.98, hh * 0.98, d); b.translate(x, hh / 2 + i * hh, z); cab.push(b);
+      const f = new THREE.PlaneGeometry(w * 0.9, hh * 0.82); f.translate(x, hh / 2 + i * hh, z + d / 2 + 0.003); front.push(f);
+    }
+  }
   if (fills) {
     for (const x of fills.xs) {
       const b = new THREE.BoxGeometry(0.55, 0.32, 0.4); b.rotateX(-0.25); b.translate(x, fills.y + 0.17, fills.z); cab.push(b);
