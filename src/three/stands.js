@@ -283,6 +283,28 @@ export function roomMaterials(materials) {
   };
 }
 
+// A level's blocks as its seats are labelled (`LB`: block, row, number a seat,
+// the block an index into the data's `blockNames`): the real ones, numbered in
+// order round the level's middle, so neighbours alternate.
+export function labelBlocks(S, sk, ox, oz, LB) {
+  const n = S.length / 4, block = new Int32Array(n);
+  const mid = new Map();
+  let cx = 0, cz = 0;
+  for (let k = 0; k < n; k++) {
+    const x = S[k * 4] / sk + ox, z = S[k * 4 + 1] / sk + oz, b = LB[k * 3];
+    cx += x; cz += z;
+    const m = mid.get(b) || [0, 0, 0]; m[0] += x; m[1] += z; m[2]++; mid.set(b, m);
+  }
+  cx /= n || 1; cz /= n || 1;
+  const ids = [...mid.keys()].sort((a, b) => {
+    const ma = mid.get(a), mb = mid.get(b);
+    return Math.atan2(ma[0] / ma[2] - cx, ma[1] / ma[2] - cz) - Math.atan2(mb[0] / mb[2] - cx, mb[1] / mb[2] - cz);
+  });
+  const num = new Map(ids.map((b, i) => [b, i]));
+  for (let k = 0; k < n; k++) block[k] = num.get(LB[k * 3]);
+  return { block, count: ids.length, ids };
+}
+
 // A level's blocks by its aisles: the seats that hang together. A seat holds
 // to the one beside it in its row (within `gap` along the row: across an
 // aisle is further) and to the one straight in front or behind in the next
@@ -1151,7 +1173,7 @@ export function buildStands(data, {
   offset = V3(0, 0, 0), stage = V3(0, 2, 0), seatColors = {}, seatColor = 0x22262e,
   concreteTone = 0.22, sold = () => true, occupancy = 0.97, seed = 5, roofY = 36, crowd = true,
   materials = {}, seatMesh = null, seatColorAt = null, tiers = null, wedges = null,
-  seatKeep = null, byAisle = false, sectors = null, sectorEven = 0, sectorFacing = 0, sectorJoin = null, sectorMin = 0.5, sectorWhole = 0.35, round = false,
+  seatKeep = null, byAisle = false, sectors = null, sectorEven = 0, sectorFacing = 0, sectorJoin = null, sectorMin = 0.5, sectorWhole = 0.35, sectorBlocks = false, sectorPair = null, round = false,
 }) {
   const g = new THREE.Group();
   const ox = offset.x, oz = offset.z;
@@ -1347,8 +1369,9 @@ export function buildStands(data, {
     const bNames = data.blockNames || null;
     // the level's blocks, for the lightsticks' control
     const anchors = (L.voms || []).filter((v) => v.label).map((v) => ({ x: v.p[0] + ox, z: v.p[1] + oz, label: v.label }));
-    const blocks = !crowd ? null : byAisle ? aisleBlocks(S, sk, ox, oz, L.steps.map((st) => st.polys)) : seatBlocks(S, sk, ox, oz, stage, { anchors, tidy: !!tiers, wedges: wedges && { x: wedges.x + ox, z: wedges.z + oz } });
-    if (blocks) levelBlocks.push({ count: blocks.count, ySum: 0, n: 0, name: L.name, at: new Map() });
+    // (the real blocks, where the seats are labelled with them)
+    const blocks = !crowd ? null : LB && bNames ? labelBlocks(S, sk, ox, oz, LB) : byAisle ? aisleBlocks(S, sk, ox, oz, L.steps.map((st) => st.polys)) : seatBlocks(S, sk, ox, oz, stage, { anchors, tidy: !!tiers, wedges: wedges && { x: wedges.x + ox, z: wedges.z + oz } });
+    if (blocks) levelBlocks.push({ count: blocks.count, ySum: 0, n: 0, name: L.name, at: new Map(), names: blocks.ids && bNames ? blocks.ids.map((b) => bNames[b]) : null });
     // (the seats of the levels that set the wedges: where each block's rows end)
     if (blocks && sectors?.includes(L.name)) for (let i = 0; i < S.length; i += 4) edgeSeats.push({ x: S[i] / sk + ox, z: S[i + 1] / sk + oz, row: S[i + 2], yaw: S[i + 3] * DEG, k: levelBlocks.length * 4096 + blocks.block[i / 4] });
     const lvRaw = levelBlocks.length - 1;
@@ -1667,14 +1690,88 @@ export function buildStands(data, {
     };
     const wk = new Map();
     for (const p of seated) wk.set(p, cut(p));
+    // (`sectorBlocks`, the seats labelled with their real blocks: no lines.
+    // Each block of those levels its own wedge, by its name; a block of
+    // another floor to the one whose run of bearings round the bowl it lies
+    // in, or lies nearest)
+    let byBear = null;
+    if (sectorBlocks && levelBlocks.some((l) => l.names)) {
+      const run = new Map();
+      for (const p of seated) {
+        const lb = levelBlocks[p.lvRaw];
+        if (!sectors.includes(lb.name) || !lb.names) continue;
+        const k = `#${lb.names[p.block]}`;
+        wk.set(p, k);
+        if (!run.has(k)) run.set(k, []);
+        run.get(k).push(bear(p.x, p.z));
+      }
+      const runs = [...run].map(([k, ts]) => {
+        const m = Math.atan2(ts.reduce((q, t) => q + Math.sin(t), 0), ts.reduce((q, t) => q + Math.cos(t), 0));
+        const d = ts.map((t) => dA(t, m)).sort((x, y) => x - y);
+        return { k, m, lo: d[Math.floor(d.length * 0.03)], hi: d[Math.ceil(d.length * 0.97) - 1] };
+      });
+      byBear = (p) => {
+        const t = bear(p.x, p.z);
+        let best = null, bd = Infinity;
+        for (const r of runs) {
+          const d = dA(t, r.m), off = d < r.lo ? r.lo - d : d > r.hi ? d - r.hi : 0;
+          const score = off * 100 + Math.abs(d);       // (inside a run first, then the nearest middle)
+          if (score < bd) { bd = score; best = r.k; }
+        }
+        return best;
+      };
+    }
     // a block of another level almost all in one wedge goes whole to it
+    // (`sectorBlocks`: every block, of every level, whole to the wedge most of
+    // it lies in: the stands' real blocks, never cut, so the wedges' edges run
+    // up the house along the blocks' own aisles, from one tier to the next)
     const groups = new Map();
-    for (const p of seated) { if (sectors.includes(levelBlocks[p.lvRaw].name)) continue; const g = p.lvRaw * 4096 + p.block; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(p); }
+    for (const p of seated) { if (!sectorBlocks && sectors.includes(levelBlocks[p.lvRaw].name)) continue; const g = p.lvRaw * 4096 + p.block; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(p); }
+    // (`sectorBlocks`: a block on the same floor as those levels, the excite
+    // seats in front of them or the blocks behind their walkway, goes by the
+    // seats of theirs nearest it, the block straight behind or in front, not
+    // by where the lines run across it at a slant)
+    const near = (() => {
+      if (!sectorBlocks) return null;
+      const fl = (p) => tierOf(levelBlocks[p.lvRaw].name)?.[0];
+      const own = seated.filter((p) => sectors.includes(levelBlocks[p.lvRaw].name));
+      const floors = new Set(own.map(fl));
+      const cell = new Map(), key = (x, z) => `${Math.floor(x / 4)},${Math.floor(z / 4)}`;
+      for (const p of own) { const k = key(p.x, p.z); if (!cell.has(k)) cell.set(k, []); cell.get(k).push(p); }
+      return (p) => {
+        if (!floors.has(fl(p))) return null;
+        const cx = Math.floor(p.x / 4), cz = Math.floor(p.z / 4);
+        let best = null, bd = Infinity;
+        for (let r = 1; r <= 4 && !best; r++) {
+          for (let i = -r; i <= r; i++) for (let j = -r; j <= r; j++) {
+            for (const q of cell.get(`${cx + i},${cz + j}`) ?? []) { const d = (q.x - p.x) ** 2 + (q.z - p.z) ** 2; if (d < bd) { bd = d; best = q; } }
+          }
+        }
+        return best ? wk.get(best) : null;
+      };
+    })();
+    // (`sectorPair(name)`: the block of those levels a named block shares its
+    // aisles with, one in front across a walkway: the wedge it is the most of)
+    const pairOf = new Map();
+    if (sectorPair) {
+      for (const p of seated) {
+        const lb = levelBlocks[p.lvRaw];
+        if (!sectors.includes(lb.name) || !lb.names) continue;
+        const nm = lb.names[p.block], c = pairOf.get(nm) || new Map();
+        c.set(wk.get(p), (c.get(wk.get(p)) || 0) + 1); pairOf.set(nm, c);
+      }
+      for (const [nm, c] of pairOf) pairOf.set(nm, [...c].sort((x, y) => y[1] - x[1])[0][0]);
+    }
     for (const ps of groups.values()) {
       const c = new Map();
+      const lb = levelBlocks[ps[0].lvRaw], pr = sectorPair && lb.names ? sectorPair(lb.names[ps[0].block]) : null;
+      if (pr != null && pairOf.has(pr)) { for (const p of ps) wk.set(p, pairOf.get(pr)); continue; }
+      if (near && !sectors.includes(lb.name)) {
+        for (const p of ps) { const w = near(p) ?? byBear?.(p); if (w != null) wk.set(p, w); }
+      }
       for (const p of ps) c.set(wk.get(p), (c.get(wk.get(p)) || 0) + 1);
       const [top] = [...c].sort((x, y) => y[1] - x[1])[0];
-      for (const p of ps) if (c.get(wk.get(p)) < sectorWhole * ps.length) wk.set(p, top);
+      for (const p of ps) if (sectorBlocks || c.get(wk.get(p)) < sectorWhole * ps.length) wk.set(p, top);
     }
     // the wedges round in order; a scrap goes in with the smaller beside it
     const ms = new Map();
@@ -1683,7 +1780,8 @@ export function buildStands(data, {
     const med = order.map((o) => o.m.n).sort((x, y) => x - y)[order.length >> 1] || 1;
     const into = new Map();
     for (let i = 0; i < order.length && order.length > 1;) {
-      if (order[i].m.n >= med * sectorMin) { i++; continue; }
+      // (none with the real blocks: each of them a wedge however small)
+      if (byBear || order[i].m.n >= med * sectorMin) { i++; continue; }
       const L2 = order[(i - 1 + order.length) % order.length], R2 = order[(i + 1) % order.length], to = L2.m.n < R2.m.n ? L2 : R2;
       into.set(order[i].k, to.k);
       for (const f of ['x', 'z', 'n', 's', 'c']) to.m[f] += order[i].m[f];

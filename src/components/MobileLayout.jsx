@@ -160,13 +160,12 @@ export default function MobileLayout({
                   <div className="text-[12px] text-neutral-500 mt-0.5">{venue.type}</div>
                   {venue.id === 'dome' && (
                     <div className="text-[11px] text-[oklch(0.78_0.16_55)] mt-1 tabular-nums">
-                      SEAT · {seat ? `${seat.block}블록 ${seat.row}열 ${seat.num}번` : 'FOH (ARENA)'}
+                      {seat ? `${seat.block} · ROW ${seat.row} · SEAT ${seat.num}` : 'FOH · ARENA'}
                     </div>
                   )}
                 </div>
                 <span className="text-neutral-600 text-lg">▾</span>
               </div>
-              <div className="text-[12px] text-neutral-400 mt-2 leading-relaxed font-tight">{venue.descKo}</div>
             </Card>
           </button>
 

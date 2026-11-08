@@ -5,16 +5,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { VENUES } from '../data.js';
 import { ROUND_VENUES, VENUE_MODES, modeOf } from '../useVenueModes.js';
 import { getDomeSeatCatalog } from '../three/venues/dome.js';
+import DomeBlockMap from './DomeBlockMap.jsx';
 
 const DOME_TIERS = [
-  ['A', '1F 1층 내야 하단 (A블록)'],
-  ['B', '1F 1층 내야 상단 (B블록)'],
-  ['F', '1F 외야석 (F블록)'],
-  ['G', '1F 익사이트석 (G블록)'],
-  ['C', '2F 발코니석 (C블록)'],
-  ['D', '4F 2층 하단 (D블록)'],
-  ['E', '4F 2층 상단 (E블록)'],
+  ['A', '1F INFIELD LOWER (A)'],
+  ['B', '1F INFIELD UPPER (B)'],
+  ['F', '1F OUTFIELD (F)'],
+  ['G', '1F EXCITE SEATS (G)'],
+  ['C', 'BALCONY (C)'],
+  ['D', '2F LOWER (D)'],
+  ['E', '2F UPPER (E)'],
 ];
+// a seat as the picker and the badges write it
+export const seatText = (s) => (s ? `${s.block} · ROW ${s.row} · SEAT ${s.num}` : 'FOH · ARENA');
 
 // ───────────────────────────────────────── Modal shell
 export function Modal({ open, onClose, title, subtitle, children }) {
@@ -197,7 +200,18 @@ export function VenuePicker({ open, onClose, current, currentMode = 'general', m
         <div className="min-w-0 flex flex-col sm:grid sm:grid-cols-[auto_minmax(240px,1fr)] sm:grid-rows-[auto_1fr] gap-x-7 gap-y-3">
           <div className="text-white text-[22px] sm:text-[28px] font-light normal-case tracking-tight font-tight leading-none sm:col-start-1 sm:row-start-1">{v.name}</div>
           <div className="sm:col-start-1 sm:row-start-2">
-            <SeatMap key={`${v.id}-${mode}`} src={mapSrc(v.id, mode)} alt={`${v.name}${mode === '360' ? ' 360' : ''} 좌석배치도`} />
+            {v.id === 'dome' && domeCat ? (
+              <SeatMap key={`${v.id}-${mode}`} alt={`${v.name}${mode === '360' ? ' 360' : ''} block map`}>
+                <DomeBlockMap
+                  mode={mode}
+                  selected={selBlock === 'FOH' ? null : selBlock}
+                  seat={selBlock === 'FOH' ? null : domeCat.getSeat(selBlock, selRow, selNum)}
+                  onPick={handleBlockChange}
+                />
+              </SeatMap>
+            ) : (
+              <SeatMap key={`${v.id}-${mode}`} src={mapSrc(v.id, mode)} alt={`${v.name}${mode === '360' ? ' 360' : ''} 좌석배치도`} />
+            )}
           </div>
 
           <div className="min-w-0 flex flex-col sm:col-start-2 sm:row-start-1 sm:row-span-2">
@@ -225,57 +239,57 @@ export function VenuePicker({ open, onClose, current, currentMode = 'general', m
             {sel === 'dome' && domeCat && (
               <div className="mt-4 border border-white/15 bg-white/[0.02] p-3">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-[9px] tracking-[0.28em] text-neutral-400 uppercase">SEAT · 블록 / 열 / 좌석번호</span>
+                  <span className="text-[9px] tracking-[0.28em] text-neutral-400 uppercase">SEAT · BLOCK / ROW / NO.</span>
                   <span className="text-[11px] text-[oklch(0.78_0.16_55)] tabular-nums">
-                    {selBlock === 'FOH' ? 'FOH (아레나 기본)' : `${selBlock}블록 ${selRow}열 ${selNum}번`}
+                    {seatText(selBlock === 'FOH' ? null : { block: selBlock, row: selRow, num: selNum })}
                   </span>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
                   <label className="flex flex-col gap-1">
                     <span className="text-[9px] tracking-[0.2em] text-neutral-500">BLOCK</span>
                     <select
-                      aria-label="블록"
+                      aria-label="Block"
                       value={selBlock}
                       onChange={(e) => handleBlockChange(e.target.value)}
                       className="bg-[#0a0a0a] border border-white/20 focus:border-[oklch(0.78_0.16_55)] text-white text-[12px] px-2 py-1.5 outline-none tabular-nums"
                     >
-                      <option value="FOH">FOH (기본)</option>
+                      <option value="FOH">FOH (ARENA)</option>
                       {DOME_TIERS.map(([prefix, label]) => {
                         const list = domeCat.blocks.filter((b) => b.startsWith(prefix));
                         if (!list.length) return null;
                         return (
                           <optgroup key={prefix} label={label}>
-                            {list.map((b) => <option key={b} value={b}>{b}블록</option>)}
+                            {list.map((b) => <option key={b} value={b}>{b}</option>)}
                           </optgroup>
                         );
                       })}
                     </select>
                   </label>
                   <label className="flex flex-col gap-1">
-                    <span className="text-[9px] tracking-[0.2em] text-neutral-500">ROW (열)</span>
+                    <span className="text-[9px] tracking-[0.2em] text-neutral-500">ROW</span>
                     <select
-                      aria-label="열"
+                      aria-label="Row"
                       value={selBlock === 'FOH' ? '' : selRow}
                       disabled={selBlock === 'FOH'}
                       onChange={(e) => handleRowChange(Number(e.target.value))}
                       className="bg-[#0a0a0a] border border-white/20 focus:border-[oklch(0.78_0.16_55)] disabled:opacity-40 text-white text-[12px] px-2 py-1.5 outline-none tabular-nums"
                     >
                       {selBlock === 'FOH' ? <option value="">—</option> : domeRows.map((r) => (
-                        <option key={r} value={r}>{r}열</option>
+                        <option key={r} value={r}>{r}</option>
                       ))}
                     </select>
                   </label>
                   <label className="flex flex-col gap-1">
-                    <span className="text-[9px] tracking-[0.2em] text-neutral-500">SEAT (번)</span>
+                    <span className="text-[9px] tracking-[0.2em] text-neutral-500">SEAT</span>
                     <select
-                      aria-label="좌석번호"
+                      aria-label="Seat"
                       value={selBlock === 'FOH' ? '' : selNum}
                       disabled={selBlock === 'FOH'}
                       onChange={(e) => setSelNum(Number(e.target.value))}
                       className="bg-[#0a0a0a] border border-white/20 focus:border-[oklch(0.78_0.16_55)] disabled:opacity-40 text-white text-[12px] px-2 py-1.5 outline-none tabular-nums"
                     >
                       {selBlock === 'FOH' ? <option value="">—</option> : domeNums.map((n) => (
-                        <option key={n} value={n}>{n}번</option>
+                        <option key={n} value={n}>{n}</option>
                       ))}
                     </select>
                   </label>
@@ -292,7 +306,6 @@ export function VenuePicker({ open, onClose, current, currentMode = 'general', m
               ))}
             </div>
 
-            <div className="mt-4 text-[12.5px] leading-relaxed text-neutral-400 normal-case tracking-normal font-tight">{v.descKo}</div>
 
             <button
               type="button"
@@ -313,10 +326,11 @@ export function VenuePicker({ open, onClose, current, currentMode = 'general', m
 
 // The plan, zoomable: the wheel or the buttons zoom (about the pointer), a drag
 // pans when zoomed in, a double click zooms in and back out.
-function SeatMap({ src, alt }) {
+function SeatMap({ src, alt, children = null }) {
   const box = useRef(null);
   const [t, setT] = useState({ k: 1, x: 0, y: 0 });
   const drag = useRef(null);
+  const moved = useRef(false);
   const clamp = (n) => {
     const el = box.current;
     if (!el || n.k <= 1) return { k: 1, x: 0, y: 0 };
@@ -344,19 +358,35 @@ function SeatMap({ src, alt }) {
       // and no more than 460 px)
       style={{ '--map-h': 'min(calc(88vh - 260px), calc((min(1136px, 100vw - 144px) - 560px) * 4 / 3), 460px)' }}
       className={`relative h-[34vh] sm:h-[var(--map-h)] aspect-[3/4] max-w-full mx-auto sm:mx-0 bg-black border border-white/10 overflow-hidden select-none touch-none ${t.k > 1 ? 'cursor-grab active:cursor-grabbing' : 'cursor-zoom-in'}`}
-      onPointerDown={(e) => { if (t.k > 1) { drag.current = { x: e.clientX - t.x, y: e.clientY - t.y }; e.currentTarget.setPointerCapture(e.pointerId); } }}
-      onPointerMove={(e) => { if (drag.current) setT((o) => clamp({ k: o.k, x: e.clientX - drag.current.x, y: e.clientY - drag.current.y })); }}
+      // (a drag once the pointer has gone 4 px: short of that it is a click, on a block of a plan that takes them)
+      onPointerDown={(e) => { moved.current = false; if (t.k > 1) drag.current = { x: e.clientX - t.x, y: e.clientY - t.y, x0: e.clientX, y0: e.clientY, id: e.pointerId }; }}
+      onPointerMove={(e) => {
+        const d = drag.current;
+        if (!d) return;
+        if (!moved.current) {
+          if (Math.hypot(e.clientX - d.x0, e.clientY - d.y0) < 4) return;
+          moved.current = true; e.currentTarget.setPointerCapture(d.id);
+        }
+        setT((o) => clamp({ k: o.k, x: e.clientX - d.x, y: e.clientY - d.y }));
+      }}
       onPointerUp={() => { drag.current = null; }}
       onPointerCancel={() => { drag.current = null; }}
+      onClickCapture={(e) => { if (moved.current) { e.stopPropagation(); moved.current = false; } }}
       onDoubleClick={(e) => { const r = box.current.getBoundingClientRect(); if (t.k > 1) setT({ k: 1, x: 0, y: 0 }); else zoomAt(2.5, e.clientX - r.left, e.clientY - r.top); }}
     >
-      <img
-        src={src}
-        alt={alt}
-        draggable={false}
-        className="absolute inset-0 w-full h-full object-contain p-2 origin-top-left"
-        style={{ transform: `translate(${t.x}px, ${t.y}px) scale(${t.k})` }}
-      />
+      {children ? (
+        <div role="img" aria-label={alt} className="absolute inset-0 origin-top-left" style={{ transform: `translate(${t.x}px, ${t.y}px) scale(${t.k})` }}>
+          {children}
+        </div>
+      ) : (
+        <img
+          src={src}
+          alt={alt}
+          draggable={false}
+          className="absolute inset-0 w-full h-full object-contain p-2 origin-top-left"
+          style={{ transform: `translate(${t.x}px, ${t.y}px) scale(${t.k})` }}
+        />
+      )}
       <div className="absolute right-2 bottom-2 flex flex-col border border-white/15 bg-black/70 text-neutral-400 text-[13px] leading-none">
         <button type="button" aria-label="확대" className="w-7 h-7 hover:text-white hover:bg-white/10" onClick={() => zoomAt(1.6, ...mid())}>+</button>
         <button type="button" aria-label="축소" className="w-7 h-7 border-t border-white/15 hover:text-white hover:bg-white/10" onClick={() => zoomAt(1 / 1.6, ...mid())}>−</button>
