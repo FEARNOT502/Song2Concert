@@ -275,8 +275,9 @@ export function buildDome(ctx) {
     // mostly lies in, so a wedge runs up the house block over block)
     sectors: ['A', 'F'], sectorBlocks: true, round,
     // (a B block shares its aisles with the A block of its number in front of
-    // it, across the walkway: the same wedge)
-    sectorPair: (name) => (/^B\d\d$/.test(name) ? `A${name.slice(1)}` : name === 'A01' || name === 'A49' ? name : null),
+    // it, across the walkway, and an E block with the D block of its number:
+    // the same wedge)
+    sectorPair: (name) => (/^B\d\d$/.test(name) ? `A${name.slice(1)}` : /^E\d\d$/.test(name) ? `D${name.slice(1)}` : name === 'A01' || name === 'A49' ? name : null),
     offset: OFF, stage: STAGE, seed: 400, concreteTone: 0.28, roofY: (x, z) => ringY(z + ZH) + 0.3,
     seatColors: { A: 0x1d3c86, B: 0x1d3c86, F: 0x1d3c86, K: 0x1d3c86, G: 0x1d3c86, C: 0x5a5d63, D: 0x1d3c86, E: 0x1d3c86 },
     seatColorAt: (name, x, z, row) => (inBox(name, x, z, row) ? 0x6a6b6e : name === 'B' && TABLES.some((r) => inRing(r, x, z)) ? 0x2a4fd6 : null),

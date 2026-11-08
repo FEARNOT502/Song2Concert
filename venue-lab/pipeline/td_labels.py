@@ -1,11 +1,14 @@
-import sys, re, json, base64, numpy as np, cv2
-sys.path.insert(0, 'Song2Concert/venue-lab/pipeline')
+import sys, os, re, json, base64, numpy as np, cv2
+# (the paths from this file's folder: it runs at the end of td_build.py, or on its own)
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+PJ = lambda *a: os.path.join(HERE, *a)
 import td_upper as U
 
-d = json.load(open('Song2Concert/venue-lab/pipeline/td_stands.json'))
-real = json.load(open('Song2Concert/venue-lab/pipeline/td/td_rows_real.json'))
-lab = json.load(open('Song2Concert/venue-lab/pipeline/td/td_labeled.json'))
-vec = json.load(open('Song2Concert/venue-lab/pipeline/td/td_vec.json'))
+d = json.load(open(PJ('td_stands.json')))
+real = json.load(open(PJ('td', 'td_rows_real.json')))
+lab = json.load(open(PJ('td', 'td_labeled.json')))
+vec = json.load(open(PJ('td', 'td_vec.json')))
 Hm = np.array([579.2, 441.7]); s_map = 2.996; O = np.array([0.0, -60.0])
 
 block_names = []
@@ -108,16 +111,23 @@ F_sorted = sorted(F_ch, key=lambda p: np.arctan2(p.centroid.x, -p.centroid.y))
 # Filter out backscreen polygons (|angle| < 8.4 deg) so the 9 LF polygons are F01..F09 and 9 RF polygons are F12..F20
 F_Left = [p for p in F_sorted if np.degrees(np.arctan2(p.centroid.x, -p.centroid.y)) < -8.0][:9]
 F_Right = [p for p in F_sorted if np.degrees(np.arctan2(p.centroid.x, -p.centroid.y)) > 8.0][-9:]
-F_named = []
-for idx_l, p in enumerate(F_Left): F_named.append((f'F{idx_l + 1:02d}', p))
-for idx_r, p in enumerate(F_Right): F_named.append((f'F{12 + idx_r:02d}', p))
-
+# (named by the block number the chart prints in each: the chart has F06's outline twice, so
+# naming them in order round the field put every name past it one block out)
+F_named = {}
+for o in lab:
+    if o['L'] != 'F' or len(o['nums']) > 6: continue
+    k = next((v for v in o['nums'][:2] if 1 <= v <= 20), None)
+    if k is None: continue
+    F_named.setdefault(f'F{k:02d}', T1._outline([T1._toR(o['poly'])]))
+F_named = sorted(F_named.items())
 labels_F = np.zeros((len(S_F), 3), dtype=np.int16)
 from shapely.geometry import Point as _Pt
 f_owner = []
 for pt in pts_F:
     p_geom = _Pt(pt[0], pt[1])
     best_nm = min(F_named, key=lambda item: item[1].distance(p_geom))[0]
+    # (the chart draws F10 and F11 as one box at centre field: F11 its 1B side)
+    if best_nm == 'F10' and pt[0] > 0: best_nm = 'F11'
     f_owner.append(best_nm)
 f_owner = np.array(f_owner)
 r_F = (S_F[:, 2] % 19) + 1
@@ -260,10 +270,10 @@ for nm, secs, r_base in (('D', secD, 1), ('E', secE, 11)):
 
 d['blockNames'] = block_names
 s_json = json.dumps(d, separators=(',', ':'))
-open('Song2Concert/venue-lab/pipeline/td_stands.json', 'w').write(s_json)
+open(PJ('td_stands.json'), 'w').write(s_json)
 chunks = [repr(s_json[i:i+4000]) for i in range(0, len(s_json), 4000)]
 out = 'export const TD_STANDS = JSON.parse([\n  ' + ',\n  '.join(chunks) + '\n].join(\'\'));\n'
-for js in ('Song2Concert/venue-lab/src/j0-td-data.js', 'Song2Concert/src/three/venues/td-data.js'):
+for js in (PJ('..', 'src', 'j0-td-data.js'), PJ('..', '..', 'src', 'three', 'venues', 'td-data.js')):
     open(js, 'w').write(out)
 
 print('Total blockNames:', len(block_names))

@@ -1762,16 +1762,33 @@ export function buildStands(data, {
       }
       for (const [nm, c] of pairOf) pairOf.set(nm, [...c].sort((x, y) => y[1] - x[1])[0][0]);
     }
+    // (a block paired with one of another level, not those levels': that
+    // one's wedge, once it has one, after the rest)
+    const later = [];
     for (const ps of groups.values()) {
       const c = new Map();
       const lb = levelBlocks[ps[0].lvRaw], pr = sectorPair && lb.names ? sectorPair(lb.names[ps[0].block]) : null;
       if (pr != null && pairOf.has(pr)) { for (const p of ps) wk.set(p, pairOf.get(pr)); continue; }
+      if (pr != null) later.push([ps, pr]);
       if (near && !sectors.includes(lb.name)) {
         for (const p of ps) { const w = near(p) ?? byBear?.(p); if (w != null) wk.set(p, w); }
       }
       for (const p of ps) c.set(wk.get(p), (c.get(wk.get(p)) || 0) + 1);
       const [top] = [...c].sort((x, y) => y[1] - x[1])[0];
       for (const p of ps) if (sectorBlocks || c.get(wk.get(p)) < sectorWhole * ps.length) wk.set(p, top);
+    }
+    if (later.length) {
+      const of = new Map();
+      for (const p of seated) {
+        const lb = levelBlocks[p.lvRaw];
+        if (!lb.names) continue;
+        const nm = lb.names[p.block], c = of.get(nm) || new Map();
+        c.set(wk.get(p), (c.get(wk.get(p)) || 0) + 1); of.set(nm, c);
+      }
+      for (const [ps, pr] of later) {
+        const c = of.get(pr);
+        if (c) { const [top] = [...c].sort((x, y) => y[1] - x[1])[0]; for (const p of ps) wk.set(p, top); }
+      }
     }
     // the wedges round in order; a scrap goes in with the smaller beside it
     const ms = new Map();
