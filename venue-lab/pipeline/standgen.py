@@ -557,7 +557,7 @@ def enclose(G, rooms, levels, slabs, flights, lamp_step=6.0, door_w=1.8, door_h=
     (data for the renderer, per-cell enclosed-ceiling map for edge_walls)."""
     solids=[level_solid(l) for l in levels]+[(np.where(m,y0,np.nan).astype(np.float32),np.where(m,y1,np.nan).astype(np.float32)) for m,y0,y1 in slabs]
     gy,gx=np.mgrid[0:G.H,0:G.W]
-    res={'walls':[],'ceils':[],'lit':[],'lamps':[],'soffits':[]}
+    res={'walls':[],'thinWalls':[],'ceils':[],'lit':[],'lamps':[],'soffits':[]}
     roomtop_all=np.full((G.H,G.W),-np.inf,np.float32)
     for R_ in rooms:
         y=R_['y']; cl=R_.get('cl',3.8); Hk=y+cl; A=R_['mask'].copy()
@@ -678,9 +678,11 @@ def enclose(G, rooms, levels, slabs, flights, lamp_step=6.0, door_w=1.8, door_h=
                 nin=nrm*s_
                 XY=np.c_[G.m(P[:,0],P[:,1])]
                 isdoor=np.zeros(n,bool)
-                for dxz in doors:
+                # (`door_ws`, beside `doors`: one door's own width, where they differ)
+                _dws=R_.get('door_ws')
+                for k_,dxz in enumerate(doors):
                     dd=np.hypot(XY[:,0]-dxz[0],XY[:,1]-dxz[1]); j=int(np.argmin(dd))
-                    if dd[j]<3.0: isdoor|=np.hypot(XY[:,0]-XY[j,0],XY[:,1]-XY[j,1])<R_.get('door_w',door_w)/2
+                    if dd[j]<3.0: isdoor|=np.hypot(XY[:,0]-XY[j,0],XY[:,1]-XY[j,1])<(_dws[k_] if _dws is not None else R_.get('door_w',door_w))/2
                     DOORLOG.append((R_.get('name'),float(dxz[0]),float(dxz[1]),float(dd[j])))
                 land=np.zeros(n,bool)
                 for f in landings:
@@ -703,7 +705,7 @@ def enclose(G, rooms, levels, slabs, flights, lamp_step=6.0, door_w=1.8, door_h=
                         ob=float(over[bo])
                         if lo<ob<hi: hi=ob
                         if isdoor[i] and abs(lo-y)<0.45: lo=max(lo,y+door_h)
-                        if R_.get('open_stand') and ownrows[bo]: hi=lo      # no wall between the room and its own stands' rows
+                        if R_.get('open_stand') and ownrows[bo] and not (R_.get('wall_on') is not None and R_['wall_on'][bo]): hi=lo      # no wall between the room and its own stands' rows (`wall_on`: but there, a wall)
                         if hi-lo>0.05: seg=(lo,hi)
                     vals.append(None if seg is None else (P[i],seg[0],seg[1],nin[i]))
                 chains_wall+=_chains(vals)
@@ -741,7 +743,7 @@ def enclose(G, rooms, levels, slabs, flights, lamp_step=6.0, door_w=1.8, door_h=
                         # face in, to the stair
                         mx,mz=(x0+x1)/2,(z0+z1)/2; cx_,cz_=f['x']+ux*L/2,f['z']+uz*L/2
                         if -(z1-z0)*(cx_-mx)+(x1-x0)*(cz_-mz)<0: x0,z0,x1,z1=x1,z1,x0,z0
-                        res['walls'].append([round(x0,2),round(z0,2),round(x1,2),round(z1,2),round(Hk-0.02,2),round(top,2)])
+                        res['thinWalls'].append([round(x0,2),round(z0,2),round(x1,2),round(z1,2),round(Hk-0.02,2),round(top,2)])
         _emit(G,chains_wall,res['walls'])
         _emit(G,chains_step,res['walls'],inset=0.0)
         # lights: a lattice over the enclosed floor, kept off the walls

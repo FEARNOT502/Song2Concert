@@ -3,9 +3,11 @@
 // title to jump to it (tracks before it are dropped); click ✕ to remove one.
 // Finished tracks are removed automatically by App, so this only ever lists the
 // current track + what's still to come. It folds away to its title and count,
-// like the lighting desk, and remembers which it was.
+// like the lighting desk, and remembers which it was. A waiting row drags by
+// its handle into a new place; the track playing stays where it is.
 
 import { memo, useEffect, useState } from 'react';
+import { useReorder, moved } from './useReorder.js';
 
 const ACCENT = 'oklch(0.78 0.16 55)';
 const KEY = 's2c.queuePanel';
@@ -14,8 +16,12 @@ function loadOpen() {
   try { return window.localStorage.getItem(KEY) !== 'closed'; } catch { return true; }
 }
 
-function QueuePanel({ queue, onJump, onRemove, playing }) {
+function QueuePanel({ queue, onJump, onRemove, onReorder, playing }) {
   const [open, setOpen] = useState(loadOpen);
+  const { listRef, handle, dragging } = useReorder({
+    count: queue?.length ?? 0, first: 1,
+    onMove: (from, to) => onReorder(moved(queue, from, to).map((r) => r.id)),
+  });
   useEffect(() => {
     try { window.localStorage.setItem(KEY, open ? 'open' : 'closed'); } catch { /* not fatal */ }
   }, [open]);
@@ -38,13 +44,13 @@ function QueuePanel({ queue, onJump, onRemove, playing }) {
       </button>
 
       {open && (
-        <div className="max-h-[34vh] overflow-y-auto pr-1 space-y-px">
+        <div ref={listRef} className="max-h-[34vh] overflow-y-auto pr-1 space-y-px">
           {queue.map((row, i) => {
             const current = i === 0;
             return (
               <div
                 key={row.id}
-                className={`group flex items-center gap-2 px-2.5 py-2 border-l-2 transition-colors ${
+                className={`group flex items-center gap-2 px-2.5 py-2 border-l-2 transition-colors ${dragging === i ? 'bg-white/10' : ''} ${
                   current
                     ? 'border-l-[oklch(0.78_0.16_55)] bg-[oklch(0.78_0.16_55)]/10'
                     : 'border-l-transparent hover:border-l-white/30 hover:bg-white/5 cursor-pointer'
@@ -57,6 +63,7 @@ function QueuePanel({ queue, onJump, onRemove, playing }) {
                 >
                   {current ? (playing ? '▶' : '⏸') : i}
                 </span>
+                {!current && <span {...handle(i)} aria-label="순서 바꾸기" className="shrink-0 text-neutral-700 group-hover:text-neutral-400 cursor-grab active:cursor-grabbing select-none text-[11px]">⋮⋮</span>}
                 <span
                   className={`flex-1 truncate text-[12px] tracking-normal normal-case font-tight ${
                     current ? 'text-white' : 'text-neutral-300'

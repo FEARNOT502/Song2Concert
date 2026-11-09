@@ -6,6 +6,7 @@ import { VENUES } from '../data.js';
 import { ROUND_VENUES, VENUE_MODES, modeOf } from '../useVenueModes.js';
 import { getDomeSeatCatalog } from '../three/venues/dome.js';
 import DomeBlockMap from './DomeBlockMap.jsx';
+import { useReorder, moved } from './useReorder.js';
 
 const DOME_TIERS = [
   ['A', '1F INFIELD LOWER (A)'],
@@ -397,36 +398,142 @@ function SeatMap({ src, alt, children = null }) {
 }
 
 // ───────────────────────────────────────── File picker (upload, multi-file)
-export function FilePicker({ open, onClose, onUpload }) {
+//
+// Two panes: files go in on the left, as many times as wanted, and on the right
+// the whole running order: what is playing now, pinned at the top, then what is
+// already waiting and what has just been added, in one list to drag into order.
+// Nothing changes until a button at the bottom is pressed; closing throws away
+// what was added. The list scrolls, the window stays the size it is.
+const ACCENT_TXT = 'text-[oklch(0.78_0.16_55)]';
+const stripName = (n) => n.replace(/\.[^.]+$/, '');
+
+function PickerArt({ src }) {
+  return src
+    ? <img src={src} alt="" draggable={false} className="w-9 h-9 object-cover shrink-0" />
+    : <div className="w-9 h-9 shrink-0 bg-white/10" />;
+}
+
+let pickerSeq = 0;
+
+export function FilePicker({ open, onClose, getQueue, readMeta, onApply, onDiscard }) {
   const inputRef = useRef(null);
   const [dragOver, setDragOver] = useState(false);
+  const [now, setNow] = useState(null);       // the playing row, or null
+  const [rows, setRows] = useState([]);       // the waiting rows: { key, id?, file, title, sub, art, isNew }
+  const reading = useRef(0);
 
-  const accept = (fileList) => {
+  // tags and covers, one file at a time so a big drop does not read them all at once
+  const fill = useCallback(async (list) => {
+    const run = reading.current;
+    for (const r of list) {
+      let m;
+      try { m = await readMeta(r.file); } catch { continue; }
+      if (run !== reading.current) return;
+      const patch = { art: m?.coverSrc ?? null };
+      if (m?.title) { patch.title = m.title; patch.sub = m.artist ?? ''; }
+      setRows((q) => q.map((x) => (x.key === r.key ? { ...x, ...patch } : x)));
+      setNow((x) => (x && x.key === r.key ? { ...x, ...patch } : x));
+    }
+  }, [readMeta]);
+
+  // (read once as it opens: the queue moving on underneath does not disturb the list being arranged)
+  const queueAtOpen = useRef(getQueue);
+  queueAtOpen.current = getQueue;
+  useEffect(() => {
+    if (!open) return;
+    reading.current++;
+    const toRow = (r) => ({ key: `q${r.id}`, id: r.id, file: r.file, title: r.name, sub: '', art: null, isNew: false });
+    const all = queueAtOpen.current().map(toRow);
+    setNow(all[0] ?? null);
+    setRows(all.slice(1));
+    fill(all);
+  }, [open, fill]);
+
+  const addFiles = (fileList) => {
     const files = Array.from(fileList || []).filter(Boolean);
-    if (files.length) { onUpload(files); onClose(); }
+    if (!files.length) return;
+    const added = files.map((file) => ({ key: `n${++pickerSeq}`, file, title: stripName(file.name), sub: '', art: null, isNew: true }));
+    setRows((q) => q.concat(added));
+    fill(added);
   };
 
-  return (
-    <Modal open={open} onClose={onClose} title="Open audio files">
-      {/* drop zone */}
-      <div
-        onClick={() => inputRef.current?.click()}
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => { e.preventDefault(); setDragOver(false); accept(e.dataTransfer.files); }}
-        className={`border-2 border-dashed transition-colors p-8 sm:p-16 text-center cursor-pointer ${dragOver ? 'border-[oklch(0.78_0.16_55)] bg-[oklch(0.78_0.16_55)]/5' : 'border-white/20 hover:border-[oklch(0.78_0.16_55)]'}`}
-      >
-        <div className="text-[oklch(0.78_0.16_55)] text-[10px] tracking-[0.3em] uppercase font-mono">↓ DROP HERE</div>
-        <div className="text-white text-[20px] sm:text-[28px] font-light mt-3 font-tight">Tap to add · FLAC / WAV / AIFF</div>
-        <input
-          ref={inputRef}
-          type="file"
-          accept=".flac,.wav,.aiff,.aif,audio/*"
-          multiple
-          className="hidden"
-          onChange={(e) => accept(e.target.files)}
-        />
+  const pin = now ? 1 : 0;
+  const { listRef, handle, dragging } = useReorder({ count: rows.length + pin, first: pin, onMove: (a, b) => setRows((q) => moved(q, a - pin, b - pin)) });
+
+  const remove = (key) => setRows((q) => q.filter((r) => r.key !== key));
+  const newCount = rows.filter((r) => r.isNew).length;
+  const close = () => { reading.current++; onDiscard(rows.filter((r) => r.isNew).map((r) => r.file)); onClose(); };
+  const apply = (mode) => {
+    reading.current++;
+    onApply({ items: rows.map((r) => (r.isNew ? { file: r.file } : { id: r.id })), mode });
+    onClose();
+  };
+
+  if (!open) return null;
+  const btn = 'px-5 py-2.5 text-[13px] border transition-colors font-mono tracking-[0.08em]';
+  const primary = `${btn} bg-[oklch(0.78_0.16_55)] border-[oklch(0.78_0.16_55)] text-black font-semibold hover:brightness-110 disabled:opacity-40`;
+  const quiet = `${btn} border-white/20 text-neutral-200 hover:border-white/50`;
+  const row = (r, i, pinned) => (
+    <div key={r.key} className={`group flex items-center gap-3 px-3 py-2 border-b border-white/[0.06] ${pinned ? 'bg-[oklch(0.78_0.16_55)]/10' : ''} ${dragging === i ? 'bg-white/10' : ''}`}>
+      {pinned
+        ? <span className="w-4 shrink-0" />
+        : <span {...handle(i)} aria-label="Drag to reorder" className="w-4 shrink-0 text-center text-neutral-600 hover:text-white cursor-grab active:cursor-grabbing select-none">⋮⋮</span>}
+      <PickerArt src={r.art} />
+      <div className="flex-1 min-w-0">
+        <div className="text-[14px] text-white truncate font-tight">{r.title}</div>
+        {r.sub && <div className="text-[12px] text-neutral-500 truncate font-tight">{r.sub}</div>}
       </div>
-    </Modal>
+      {pinned && <span className="shrink-0 bg-[oklch(0.78_0.16_55)] text-black text-[9px] tracking-[0.18em] px-1.5 py-0.5 font-mono">NOW</span>}
+      {r.isNew && <span className={`shrink-0 border border-[oklch(0.78_0.16_55)] ${ACCENT_TXT} text-[9px] tracking-[0.18em] px-1.5 py-px font-mono`}>NEW</span>}
+      {!pinned && <button type="button" aria-label="Remove" onClick={() => remove(r.key)} className="shrink-0 w-5 h-5 text-neutral-600 hover:text-white text-[11px]">✕</button>}
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-10" onClick={close}>
+      <div className="bg-[#0a0a0a] border border-white/15 w-full max-w-[880px] h-[min(620px,88vh)] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/10 shrink-0">
+          <div className="text-white text-[20px] font-light font-tight">Add music</div>
+          <button type="button" aria-label="Close" onClick={close} className="w-9 h-9 border border-white/20 hover:border-white/50 text-neutral-400 hover:text-white flex items-center justify-center transition-colors">✕</button>
+        </div>
+        <div className="flex-1 min-h-0 flex flex-col md:flex-row">
+          <div className="md:w-[300px] shrink-0 p-4 md:border-r border-b md:border-b-0 border-white/10 flex">
+            <div
+              onClick={() => inputRef.current?.click()}
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files); }}
+              className={`flex-1 border-2 border-dashed transition-colors p-6 flex flex-col items-center justify-center text-center cursor-pointer ${dragOver ? 'border-[oklch(0.78_0.16_55)] bg-[oklch(0.78_0.16_55)]/5' : 'border-white/20 hover:border-[oklch(0.78_0.16_55)]'}`}
+            >
+              <div className={`${ACCENT_TXT} text-[10px] tracking-[0.3em] uppercase font-mono`}>↓ Drop here</div>
+              <div className="text-white text-[17px] font-light mt-2 font-tight">or click to add files</div>
+              <input
+                ref={inputRef}
+                type="file"
+                accept=".flac,.wav,.aiff,.aif,audio/*"
+                multiple
+                className="hidden"
+                onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }}
+              />
+            </div>
+          </div>
+          <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+            <div className="px-4 py-2.5 text-[10px] tracking-[0.3em] uppercase text-neutral-500 font-mono shrink-0">Running order</div>
+            <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto">
+              {now && row(now, 0, true)}
+              {rows.map((r, i) => row(r, i + pin, false))}
+              {!now && !rows.length && <div className="px-4 py-10 text-center text-[14px] text-neutral-600 font-tight">No tracks yet</div>}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-2.5 px-4 py-3 border-t border-white/10 shrink-0">
+          {newCount > 0 && <span className="mr-auto text-[13px] text-neutral-500 font-tight">{newCount} new</span>}
+          {now && newCount > 0 && <button type="button" className={quiet} onClick={() => apply('queue')}>Add to queue</button>}
+          {newCount > 0
+            ? <button type="button" className={primary} onClick={() => apply('now')}>{now ? 'Play now' : 'Play'}</button>
+            : <button type="button" className={primary} disabled={!now && !rows.length} onClick={() => apply('queue')}>Done</button>}
+        </div>
+      </div>
+    </div>
   );
 }

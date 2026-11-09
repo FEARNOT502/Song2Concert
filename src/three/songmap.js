@@ -547,7 +547,54 @@ function cluster(M, nb, segs, th) {
 }
 
 // the functions, the way a pop song is built
-function name(segs, label, E, nb, F = null, M = null, th = 0.5) {
+const CHORUS_MAX = 0.42;
+const REP_T = 0.45, REP_MAX = 0.62, REP_LOUD = 0.6, REP_W = 1.2;
+
+// The chorus is above all what the song repeats at length. The longest stretches
+// of harmony that come round again, read off the diagonals of the bars' likeness,
+// gathered into the family that covers most of the song (the louder the better):
+// a mask over the bars (1 in those stretches).
+function repeatedBars(H, E, nb, T = REP_T, minLen = 8) {
+  const mask = new Uint8Array(nb);
+  if (nb < 24) return mask;
+  const runs = [];
+  for (let lag = 8; lag < nb - 8; lag++) {
+    let a = -1;
+    for (let i = 0; i + lag <= nb; i++) {
+      let s = 0, n = 0;
+      if (i + lag < nb) for (let k = -1; k <= 1; k++) if (i + k >= 0 && i + k + lag < nb) { s += H[(i + k) * nb + i + k + lag]; n++; }
+      const on = i + lag < nb && n && s / n >= T;
+      if (on && a < 0) a = i;
+      else if (!on && a >= 0) { if (i - a >= minLen) runs.push({ a, b: i, lag }); a = -1; }
+    }
+  }
+  if (!runs.length) return mask;
+  runs.sort((u, v) => (v.b - v.a) - (u.b - u.a));
+  const over = (x0, x1, y0, y1) => Math.max(0, Math.min(x1, y1) - Math.max(x0, y0));
+  let best = null, bs = -Infinity;
+  for (const seed of runs.slice(0, 16)) {
+    let occ = [[seed.a, seed.b], [seed.a + seed.lag, seed.b + seed.lag]];
+    for (let pass = 0; pass < 2; pass++) {
+      const add = [];
+      for (const r of runs) for (const [c, d] of occ) {
+        const len = d - c;
+        if (over(r.a, r.b, c, d) >= 0.6 * Math.min(len, r.b - r.a)) add.push([r.a + r.lag, r.b + r.lag]);
+        if (over(r.a + r.lag, r.b + r.lag, c, d) >= 0.6 * Math.min(len, r.b - r.a)) add.push([r.a, r.b]);
+      }
+      occ = occ.concat(add);
+    }
+    const m = new Uint8Array(nb);
+    for (const [c, d] of occ) for (let j = Math.max(0, c); j < Math.min(nb, d); j++) m[j] = 1;
+    let bars = 0, e = 0;
+    for (let j = 0; j < nb; j++) if (m[j]) { bars++; e += E[j]; }
+    if (bars > REP_MAX * nb || bars < 12) continue;
+    const v = bars * (1 + REP_LOUD * e / bars);
+    if (v > bs) { bs = v; best = m; }
+  }
+  return best || mask;
+}
+
+function name(segs, label, E, nb, F = null, M = null, th = 0.5, rep = null) {
   const n = segs.length;
   const segE = segs.map(([a, b]) => { let s = 0; for (let j = a; j < b; j++) s += E[j]; return s / (b - a); });
   // how much of the sound is the low end (kick and bass), against the whole,
@@ -558,6 +605,7 @@ function name(segs, label, E, nb, F = null, M = null, th = 0.5) {
   label.forEach((l, i) => groups[l].push(i));
   const role = new Array(n).fill(null);
   const mid = (i) => (segs[i][0] + segs[i][1]) / 2 / nb;
+  const repFrac = (i) => { if (!rep) return 0; let s = 0; for (let j = segs[i][0]; j < segs[i][1]; j++) s += rep[j]; return s / (segs[i][1] - segs[i][0]); };
   const sorted = [...segE].sort((a, b) => a - b);
   const eMed = sorted[n >> 1];
 
@@ -576,7 +624,8 @@ function name(segs, label, E, nb, F = null, M = null, th = 0.5) {
     const late = m.filter((i) => mid(i) > 0.3).length / m.length;
     const after = m.filter((i) => i > 0 && label[i - 1] !== g && repeats(label[i - 1])).length / m.length;
     const end = m.some((i) => mid(i) > 0.65) ? 1 : 0;
-    const v = 1.3 * e + 0.35 * Math.log2(m.length) + 0.1 * Math.log2(bars / 8 + 1) + 0.3 * late + 0.35 * after + 0.2 * end - (g === opener ? 0.45 : 0);
+    const inRep = m.reduce((s, i) => s + repFrac(i) * (segs[i][1] - segs[i][0]), 0) / bars;
+    const v = 1.3 * e + 0.35 * Math.log2(m.length) + 0.1 * Math.log2(bars / 8 + 1) + 0.3 * late + 0.35 * after + 0.2 * end - (g === opener ? 0.45 : 0) + REP_W * inRep;
     if (v > cv) { cv = v; chorus = g; }
   }
   if (chorus >= 0) {
@@ -597,7 +646,19 @@ function name(segs, label, E, nb, F = null, M = null, th = 0.5) {
     const m = role.map((x, j) => (x === r && j !== i ? j : -1)).filter((j) => j >= 0);
     return m.length ? Math.max(...m.map((j) => segSim(M, nb, segs[i], segs[j]))) : -1;
   };
-  if (M) for (let i = 0; i < n; i++) if (!role[i] && mid(i) > 0.25 && segE[i] > eMed - 0.2 && like(i, 'chorus') > th - 0.15) role[i] = 'chorus';
+  if (M) for (let i = 0; i < n; i++) if (!role[i] && mid(i) > 0.25 && segE[i] > eMed - 0.2 && like(i, 'chorus') > th - 0.15 && (!rep || repFrac(i) > 0.4)) role[i] = 'chorus';
+  // what repeats at length and is not quiet, wherever it is
+  if (rep) for (let i = 0; i < n; i++) if (!role[i] && repFrac(i) >= 0.7 && segE[i] >= eMed - 0.35 && mid(i) > 0.12) role[i] = 'chorus';
+  // A song's choruses are rarely much over two fifths of it. Where the sound is
+  // much the same all through, too much gets called one: the sections most
+  // like the chorus proper keep the name, the rest go on to be named otherwise.
+  if (chorus >= 0 && M) {
+    const bars = (i) => segs[i][1] - segs[i][0];
+    let held = role.reduce((t, r, i) => t + (r === 'chorus' ? bars(i) : 0), 0);
+    const extra = role.map((r, i) => (r === 'chorus' && label[i] !== chorus ? i : -1)).filter((i) => i >= 0)
+      .map((i) => [i, repFrac(i) + Math.max(...groups[chorus].map((j) => segSim(M, nb, segs[i], segs[j]))) * 0.5]).sort((a, b) => a[1] - b[1]);
+    for (const [i] of extra) { if (held <= CHORUS_MAX * nb) break; role[i] = null; held -= bars(i); }
+  }
   const chE = (() => { const c = segE.filter((_, i) => role[i] === 'chorus'); return c.length ? c.reduce((s, v) => s + v, 0) / c.length : 1; })();
 
   // a loud stretch straight after a chorus and as loud as it: the chorus's
@@ -698,7 +759,7 @@ export const LIGHT = { intro: 'break', verse: 'verse', pre: 'pre', chorus: 'chor
 
 // ── all of it ────────────────────────────────────────────────────────────────
 
-export const DEFAULTS = { cost: 0.7, len: 1, th: 0.5 };
+export const DEFAULTS = { cost: 0.5, len: 1, th: 0.6 };
 
 export function analyzeSong(x, sr, opts = {}) {
   const P = { ...DEFAULTS, ...opts };
@@ -727,7 +788,8 @@ export function analyzeSong(x, sr, opts = {}) {
     else { segs.push(s); lab.push(label[i]); }
   });
   label = lab;
-  const { role, segE } = name(segs, label, energy, F.nb, F, M, P.th);
+  const rep = repeatedBars(M.H, energy, F.nb);
+  const { role, segE } = name(segs, label, energy, F.nb, F, M, P.th, rep);
 
   // neighbours with the same name are one section (two intro groups, a verse
   // in two halves), while that keeps it to a phrase of 32 bars; a chorus

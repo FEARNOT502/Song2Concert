@@ -525,11 +525,21 @@ export function silhouettes(people, cu, { seed = 5 } = {}) {
 // way to go (a gradient, stripes, a fill block by block), and each
 // scene picks one (see cue). `uLook` (fixed per song) seeds which scenes it plays. With the house lights up the
 // sticks are off control: each glows on its own, softly, as before a show.
+// (Gradients are laid seat by seat on `aPlace`: see crowdLights.)
 // `p.zone` is { lv (0 the floor, 1 up the levels), u (the block's place
 // across its level, 0..1), block (its number), row (a floor block's row) }.
-export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
+export function crowdLights(people, cu, { size = 0.07, maxPx = 7, centre = null, wrap = false } = {}) {
   const n = people.length;
-  const pos = new Float32Array(n * 3), look = new Float32Array(n * 4), zone = new Float32Array(n * 4);
+  const pos = new Float32Array(n * 3), look = new Float32Array(n * 4), zone = new Float32Array(n * 4), place = new Float32Array(n * 2);
+  // Each seat's own place in the house for the gradients: `az` round the stage,
+  // the one measure every floor and the field share (the same wedge of the
+  // house, floor by floor, is the same colour), 0..1 across all of it; `up` how
+  // far back and up it is, row by row (a metre up counts as two back).
+  const C = centre || { x: 0, z: 0 };
+  const azOf = (p) => Math.atan2(p.x - C.x, p.z - C.z), upOf = (p) => Math.hypot(p.x - C.x, p.z - C.z) + 2 * (p.y ?? 0);
+  let a0 = Infinity, a1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+  for (const p of people) { const a = azOf(p), v = upOf(p); if (a < a0) a0 = a; if (a > a1) a1 = a; if (v < v0) v0 = v; if (v > v1) v1 = v; }
+  if (wrap) { a0 = -Math.PI; a1 = Math.PI; }
   const rnd = prng(911);
   people.forEach((p, i) => {
     const up = (p.cell ?? 0) > 0;
@@ -547,11 +557,13 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
     look[i * 4] = rnd() * 6.283; look[i * 4 + 1] = Math.floor(rnd() * 4); look[i * 4 + 2] = size * (0.8 + rnd() * 0.4); look[i * 4 + 3] = rnd();
     const z = p.zone || { lv: 0, u: 0.5, block: 0, row: 0 };
     zone.set([z.lv, z.u, z.block, z.row ?? 0], i * 4);
+    place[i * 2] = a1 > a0 ? (azOf(p) - a0) / (a1 - a0) : 0.5; place[i * 2 + 1] = v1 > v0 ? (upOf(p) - v0) / (v1 - v0) : 0.5;
   });
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('aLook', new THREE.BufferAttribute(look, 4));
   geo.setAttribute('aZone', new THREE.BufferAttribute(zone, 4));
+  geo.setAttribute('aPlace', new THREE.BufferAttribute(place, 2));
   const mat = new THREE.ShaderMaterial({
     uniforms: {
       uTime: cu.uTime, uKick: cu.uKick, uEnergy: cu.uEnergy, uStage: cu.uStage,
@@ -574,6 +586,7 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
     },
     vertexShader: /* glsl */`
       attribute vec4 aLook, aZone;
+      attribute vec2 aPlace;
       uniform float uRound;
       uniform float uTime, uScale, uMax, uMode, uHouse, uKick, uEnergy, uScene, uSec, uSecPrev, uSecMix, uSecT, uBeat, uLook, uPhase, uProg, uProgPrev, uRoll, uStep, uStepT;
       uniform vec3 uPal[4], uStage;
@@ -593,17 +606,16 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
       // floor its own, as a house is run from the desk block by block.
       vec3 sceneCol(float s, float k) {
         float sd = s * 1.37 + uLook * 7.1;
-        float lay = floor(h1(sd) * 5.0);
+        float lay = floor(h1(sd) * 4.0);
         float c0 = floor(h1(sd + 3.3) * 4.0), st = 1.0 + floor(h1(sd + 5.9) * 3.0);
         // most scenes keep to the sleeve's colours; some light a set of blocks white
         float wht = step(h1(sd + 8.1), 0.25);
-        float lv = aZone.x, bk = sb(), u = aZone.y;
+        float lv = aZone.x, u = aZone.y;
         // (mostly big areas of one colour, as a desk plays a house: stripes
         // are one look among several, not the rule)
         float idx = lay < 0.5 ? 0.0                                   // the whole house one colour
                   : lay < 1.5 ? (lv < 0.5 ? 0.0 : 1.0)                // the floor against the stands
-                  : lay < 2.5 ? mod(bk, 2.0)                         // stripes alternating
-                  : lay < 3.5 ? floor(u * 4.0)                       // four great arcs round the house
+                  : lay < 2.5 ? floor(u * 4.0)                       // four great arcs round the house
                   : floor(u * 2.0);                                  // the two halves
         float ci = c0 + (idx + k) * st;
         if (wht > 0.5 && mod(idx + k, 3.0) == 2.0) return col(4.0);
@@ -614,8 +626,8 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
       // 10 interlude.
       // Everything that moves runs on the beat (uPhase), not the clock. Each
       // part has a few of the desk's stock effects (a scene of block colours,
-      // a gradient across or up the house, a wave, stripes, the house filling
-      // block by block, a ripple out from the stage), and a scene (s) picks
+      // a gradient across or up the house, a wave, stripes, a tide climbing
+      // the rows, a ripple out from the stage), and a scene (s) picks
       // which one it plays, so a part reads differently each time it comes
       // round. The calm parts (intro, verse, interlude, outro) hold their
       // colours; every other keeps them moving all the while. Nothing flashes
@@ -630,8 +642,19 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
       }
       // two colours swept into each other and back as x runs 0..1
       vec3 duo(float x, float a, float b) { return mix(col(a), col(b), 0.5 - 0.5 * cos(x * 6.283)); }
+      // The gradients, seat by seat: az the seat's place round the stage (the
+      // same on every floor), up its place back and up the house, row by row.
+      // across: round the house; mirror: out from the middle both ways; rows:
+      // up the house, the colour changing row on row; slant: both at once.
+      float az() { return aPlace.x; }
+      float mir() { return abs(aPlace.x - 0.5) * 2.0; }
+      float rows(float n) { return floor(aPlace.y * n) / n; }
+      float slant(float k) { return aPlace.x + k * aPlace.y; }
+      // n cycles across the house; round a centre stage a whole number of per, so it closes on itself
+      float span(float n, float per) { return uRound > 0.5 ? aPlace.x * per * max(1.0, floor(n / per + 0.5)) : aPlace.x * n; }
       // stripes: alternate blocks, k turning them over
-      float stp(float k) { return mod(sb() + k, 2.0); }
+      // (the floor one colour across every block, whatever the stands' stripes are doing)
+      float stp(float k) { return aZone.x < 0.5 ? 0.0 : mod(sb() + k, 2.0); }
       vec3 cue(float sec, float s, float prog) {
         float ph = uPhase, lv = aZone.x, u = aZone.y, dp = dep();
         float bar = floor(ph / 4.0), bt = floor(ph);
@@ -642,23 +665,25 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
           // intro: the house dark, then a ripple out from the stage, back
           // across the floor and up the levels, lighting each block as it passes
           float w = clamp((prog * 4.4 - dp) / 0.8, 0.0, 1.0);
-          vec3 lit = (v < 0.5 ? sc : grad(c0 + dp * 0.5)) * (0.5 + 0.1 * sin(ph * 0.785 + lv));
+          vec3 lit = (v < 0.5 ? sc : grad(c0 + slant(0.5) * 2.0)) * (0.5 + 0.1 * sin(ph * 0.785 + lv));
           return lit * w;
         }
         if (sec < 1.5) {
           // verse: calm. The scene's block colours, each block breathing out
-          // of step; or two colours as a gradient up the house, or across it,
-          // drifting a bar at a time
+          // of step; or two colours as a gradient up the house row by row,
+          // across it, or out from its middle, drifting a bar at a time
           if (v < 0.4) return sc * (0.5 + 0.2 * sin(ph * 0.785 + lv * 1.6 + sb() * 0.9));
-          if (v < 0.7) return duo(dp * 0.3 - ph / 32.0, c0, c0 + 1.0) * (0.45 + 0.15 * sin(ph * 0.785 - dp));
-          return duo(u - ph / 32.0, c0, c0 + 2.0) * (0.45 + 0.15 * sin(ph * 0.785 + u * 6.283));
+          if (v < 0.6) return duo(rows(16.0) - ph / 32.0, c0, c0 + 1.0) * (0.45 + 0.15 * sin(ph * 0.785 - dp));
+          if (v < 0.8) return duo(mir() * 0.5 - ph / 32.0, c0, c0 + 1.0) * (0.45 + 0.15 * sin(ph * 0.785 - dp));
+          return duo(span(1.0, 1.0) - ph / 32.0, c0, c0 + 2.0) * (0.45 + 0.15 * sin(ph * 0.785 + az() * 6.283));
         }
         if (sec < 2.5) {
           // pre-chorus: building, brighter all the while. A chase up the
           // levels, floor to the top and round again, stepping on the beat
-          // (every other beat as it starts, every beat as it builds); or the
-          // house filling block by block as the build runs, the filled blocks
-          // turning over a colour every beat
+          // (every other beat as it starts, every beat as it builds); or a
+          // tide of light climbing the house row by row, twice as fast for the
+          // second half; or two fronts running in along the house to its middle
+          // and meeting there, a bar at a time, then every two beats
           float lift = 0.7 + 0.5 * prog;
           if (v < 0.5) {
             float lit = mod(uStep, 4.0);
@@ -667,24 +692,27 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
             float glow = on * (0.4 + 0.6 * exp(-uStepT * 2.5));
             return mix(sceneCol(s, bar) * 0.3, sceneCol(s, 1.0 + uStep) * 1.15, glow) * lift;
           }
-          // (the blocks taken in turn from the middle out, or round the house
-          // once round a centre stage, a little out of order)
-          float at = (h1(sb() * 3.7 + lv) * 0.15 + (uRound > 0.5 ? u : abs(u - 0.5) * 2.0)) / 1.15;
-          float on = step(at, prog * 1.05);
-          return mix(sc * 0.25, sceneCol(s, 1.0 + bt) * (1.0 + 0.4 * exp(-uStepT * 2.5)), on) * lift;
+          float per = prog < 0.5 ? 8.0 : 4.0, tp = mod(ph, per) / per;
+          if (v < 0.75) {
+            float c1 = tp * 1.5 - 0.25, dy = (aPlace.y - c1) / 0.14;
+            return mix(duo(az() * 0.5 - bar / 8.0, c0, c0 + 1.0) * 0.32, col(c0 + 2.0) * 1.25, exp(-dy * dy)) * lift;
+          }
+          float c2 = 1.15 - tp * 1.3, dm = (mir() - c2) / 0.12;
+          return mix(duo(rows(16.0) + bar / 8.0, c0, c0 + 1.0) * 0.32, col(c0 + 3.0) * 1.25, exp(-dm * dm)) * lift;
         }
         if (sec < 3.5) {
-          // chorus: the whole house on the kick, its colours never still. Two
-          // colours as stripes, trading on every beat; or the scene's block
-          // colours turning over a step a beat (round: the four faces of the
-          // house each a step on); or the sleeve's colours as one gradient
-          // round the house, or up it from the stage, turning all the while
+          // chorus: the whole house on the kick, its colours never still. The
+          // sleeve's colours as one gradient round the house, out from its
+          // middle or slanting across and up it, turning all the while; or the
+          // scene's block colours turning over a step a beat (round: the four
+          // faces of the house each a step on); in a few songs, two colours as
+          // stripes trading on every beat
           vec3 c;
           float m = mod(floor(v * 4.0) + uLook, 4.0);
-          if (m > 2.5) c = grad(c0 + dp * 0.6 - ph * 0.5);
-          else if (m < 0.5) c = stp(bt) < 0.5 ? col(c0 + bar) : col(c0 + 1.0 + bar) * 0.8;
+          if (m > 2.5) c = grad(c0 + slant(0.8) * 3.0 - ph * 0.5);
+          else if (m < 0.5) c = h1(uLook * 3.3 + 0.7) < 0.25 ? (stp(bt) < 0.5 ? col(c0 + bar) : col(c0 + 1.0 + bar) * 0.8) : grad(c0 + mir() * 2.0 - ph * 0.5);
           else if (m < 1.5) c = sceneCol(s, bt + uRound * floor(u * 4.0));
-          else c = grad(u * 4.0 - ph * 0.5 + lv * 0.5);
+          else c = grad(span(4.0, 4.0) - ph * 0.5);
           float turn = mod(uLook, 2.0) < 0.5 ? 1.0 : 0.6 + 0.4 * step(mod(uBeat - lv, 4.0), 0.5);
           return c * (0.55 + 0.75 * uKick) * turn;
         }
@@ -692,15 +720,15 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
           // post-chorus: a gradient drifting through the house, a wave running
           // through every two beats in place of the kick: across the house,
           // or out from the stage and up the levels
-          vec3 c = v < 0.5 ? grad(c0 + u * 2.0 - ph / 4.0) : duo(u * 0.5 + dp * 0.15 - ph / 16.0, c0, c0 + 1.0);
-          float x = mod(floor(v * 4.0), 2.0) < 0.5 ? u * 6.283 : dp * 2.4;
+          vec3 c = v < 0.4 ? grad(c0 + span(2.0, 4.0) - ph / 4.0) : v < 0.7 ? duo(slant(0.6) - ph / 16.0, c0, c0 + 1.0) : grad(c0 + mir() * 1.5 - ph / 4.0);
+          float x = mod(floor(v * 4.0), 2.0) < 0.5 ? az() * 6.283 : dp * 2.4;
           float w = 0.5 + 0.5 * sin(x - ph * 3.1416);
           return c * (0.35 + 0.65 * w * w);
         }
         if (sec < 5.5) {
           // break: dim, the levels swelling one after another, the colours
           // drifting slowly round the house
-          return grad(c0 + u * 1.5 - ph / 16.0) * (0.22 + 0.16 * sin(lv * 1.3 + sb() * 0.7 - ph * 0.393));
+          return grad(c0 + span(1.5, 4.0) - ph / 16.0) * (0.22 + 0.16 * sin(lv * 1.3 + sb() * 0.7 - ph * 0.393));
         }
         if (sec < 6.5) {
           // bridge: two colours of its own as a gradient up the house, flipped
@@ -709,8 +737,8 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
           // comes next
           bool flip = mod(bar, 2.0) > 0.5;
           float a = flip ? 3.0 : 2.0, b = flip ? 2.0 : 3.0;
-          vec3 base = mix(col(a), col(b), clamp(dp * 0.22, 0.0, 1.0)), hit = col(b);
-          float x = fract(ph) * 1.4 - 0.2 - u;
+          vec3 base = mix(col(a), col(b), clamp(aPlace.y, 0.0, 1.0)), hit = col(b);
+          float x = fract(ph) * 1.4 - 0.2 - az();
           float w = exp(-x * x * 40.0);
           vec3 c = base * 0.35 + hit * 1.1 * w;
           if (uRoll >= 0.0) {
@@ -727,13 +755,12 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
           return c * (0.8 + 0.4 * uKick);
         }
         if (sec < 8.5) {
-          // solo: the house is the show. The sleeve's colours in stripes round
-          // each level, turning a stripe a beat, the levels turning against
-          // each other; a comet of the first colour running round every bar
+          // solo: the house is the show. The sleeve's colours as one gradient
+          // round the house, turning all the while, every floor together; a
+          // comet of the first colour running round every bar
           // with its tail; a sweep up the levels on the beat
-          float dir = mod(lv, 2.0) < 0.5 ? 1.0 : -1.0;
-          float uu = dir > 0.0 ? u : 1.0 - u;
-          vec3 c = col(mod(floor(uu * 8.0 - ph), 4.0)) * 0.6;
+          float uu = az();
+          vec3 c = grad(uu * 4.0 - ph) * 0.6;
           float x = fract(uu - ph / 4.0);
           c += uPal[0] * 1.3 * exp(-x * 12.0);
           float dl = (fract(ph) * 4.0 - lv) * 1.6;
@@ -743,14 +770,14 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7 } = {}) {
           // interlude: the sleeve's colours as one blend across the house,
           // drifting along it a bar at a time, a lift on the kick and the
           // levels breathing gently out of step
-          vec3 c = grad(u * 3.0 - ph / 4.0);
+          vec3 c = grad(span(3.0, 4.0) - ph / 4.0);
           return c * (0.5 + 0.12 * sin(ph * 0.785 + lv * 1.3) + 0.3 * uKick);
         }
         // outro: the scene, or a gradient up the house, breathing together
         // once in eight beats, going out from the top of the house down to
         // the stage as the song ends
         float fade = clamp((4.6 - prog * 5.0 - dp) / 0.8 + 1.0, 0.0, 1.0);
-        vec3 c = v < 0.5 ? sc : duo(dp * 0.25, c0, c0 + 1.0);
+        vec3 c = v < 0.5 ? sc : duo(rows(14.0) * 0.5, c0, c0 + 1.0);
         return c * (0.5 + 0.3 * sin(ph * 0.785)) * max(0.04, fade * pow(1.0 - prog, 0.6));
       }
       void main() {

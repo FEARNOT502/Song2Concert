@@ -30,7 +30,9 @@
 import numpy as np
 from scipy.interpolate import PchipInterpolator
 
-C_END = 130.4        # the balcony's last block, C01 / C97
+C_MAP_END = 130.4    # where the map's balcony ends (C01 / C97)
+C_END = 119.4        # where it ends as built here: just past the aisle column between 49 and 50 (the photographs); every block kept, closed up to fit
+def c_squeeze(t): return 33.7 + (t - 33.7) * (C_END - 33.7) / (C_MAP_END - 33.7)
 D_END = 112.0        # the 2nd floor's last block, D01 / D51
 
 # degrees from the dome's centre (either side) -> metres the front has moved back

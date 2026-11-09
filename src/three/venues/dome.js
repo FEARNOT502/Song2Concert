@@ -23,7 +23,7 @@ export function getDomeSeatCatalog() {
   if (_domeCatalog) return _domeCatalog;
   const ZH = 114;
   const BOX = { level: 'D', phi: [92.2, 118.8], per: 4 };
-  const BSC = 8.4;
+  const BSC = 9.7;
   const inBackscreen = (x, z) => Math.abs(Math.atan2(x, -z)) / DEG < BSC;
   const boxTop = new Map();
   {
@@ -85,43 +85,69 @@ export function getDomeSeatCatalog() {
 }
 
 export function membraneMaterial() {
-  // The roof from inside, as it looks: a cable net in two families, one
-  // along the home–centre axis and one across it, 8.5 m apart (the plan is a
-  // square set corner-on to home plate, the cables parallel to its
-  // diagonals), the membrane between them held up by the air in
-  // shallow pillows — each a soft bulge, lighter in its middle, a darker
-  // crease along the cables — the whole a warm off-white, lit through by the
-  // daylight outside (it lets about a twentieth of it through).
+  // The roof from inside, as the photographs show it: cables each way, 14 from one big triangle's side to the next, the
+  // same weight and the same distance apart, none on either centre line, with a
+  // clamp at each crossing; the fabric between them bellies out, sewn in widths.
+  // On each of the four diagonals the net stops at one crossing: past it, out to
+  // the ring, one big plain triangle, its point at that crossing, its two short
+  // sides the last two cables, its long side (about 36 m) the ring. A warm
+  // off-white, lit through by the daylight outside.
+  const ZC = 81, TRI_X = 50.4, TRI_Z = 50.4, GRID = 2 * TRI_X / 13;
+  const GL = GRID.toFixed(4), HG = (GRID / 2).toFixed(4);
   const m = std({ color: 0xe9dcc4, roughness: 0.92, side: THREE.BackSide });
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uBounce = { value: new THREE.Color(0) };
     m.userData.shader = sh;
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWP;')
+    const triGL = `float bigTri(vec2 c, float zs, float e) { return smoothstep(${TRI_X.toFixed(1)} + e, ${TRI_X.toFixed(1)} + e + 0.2, abs(c.x)) * smoothstep(${TRI_Z.toFixed(1)} + e, ${TRI_Z.toFixed(1)} + e + 0.2, abs(zs)); }`;
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
+        varying vec3 vWP; varying float vRho; attribute float aRho; ${triGL}`)
+      // the fabric really bellies out between the cables, less and less out to the ring; the triangles lie flat
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        {
+          vec2 c = position.xz - vec2(0.0, ${ZC.toFixed(1)});
+          float dx = fract((c.x + ${HG}) / ${GL}) - 0.5, dz = fract((c.y + ${HG}) / ${GL}) - 0.5;
+          transformed.y += (0.32 * (1.0 - 4.0 * dx * dx) + 0.32 * (1.0 - 4.0 * dz * dz)) * (1.0 - smoothstep(0.84, 0.98, aRho)) * (1.0 - bigTri(c, c.y, 0.0));
+          vRho = aRho;
+        }`)
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vWP; uniform vec3 uBounce;')
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+        varying vec3 vWP; varying float vRho; uniform vec3 uBounce; ${triGL}`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         {
-          // the pillow's bulge tilts the normal away from its middle
-          vec2 p = vec2(vWP.x, vWP.z) / 8.5 + 0.5;
-          vec2 d = fract(p) - 0.5;
-          vec3 tx = vec3(1.0, 0.0, 0.0), tz = vec3(0.0, 0.0, 1.0);
-          normal = normalize(normal + (tx * d.x + tz * d.y) * 0.9);
+          vec2 c = vWP.xz - vec2(0.0, ${ZC.toFixed(1)});
+          float dx = fract((c.x + ${HG}) / ${GL}) - 0.5, dz = fract((c.y + ${HG}) / ${GL}) - 0.5;
+          normal = normalize(normal + (vec3(1.0, 0.0, 0.0) * dx + vec3(0.0, 0.0, 1.0) * dz) * 0.16 * (1.0 - bigTri(c, c.y, 0.0)));
         }`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         {
-          vec2 p = vec2(vWP.x, vWP.z) / 8.5 + 0.5;
-          vec2 d = abs(fract(p) - 0.5);
-          vec2 w = fwidth(p);
-          // the crease along each cable, soft either side
-          float crease = 1.0 - min(smoothstep(0.0, 0.07 + w.x, 0.5 - d.x), smoothstep(0.0, 0.07 + w.y, 0.5 - d.y));
-          float cable = 1.0 - min(smoothstep(0.0, w.x * 1.2 + 0.004, 0.5 - d.x), smoothstep(0.0, w.y * 1.2 + 0.004, 0.5 - d.y));
-          // the bulge: lighter in the middle of each pillow
-          float bulge = 1.0 - 0.9 * dot(d, d);
-          diffuseColor.rgb *= bulge * (1.0 - 0.35 * crease) * (1.0 - 0.5 * cable);
-          totalEmissiveRadiance += uBounce * bulge * (1.0 - 0.4 * crease);
+          vec2 c = vWP.xz - vec2(0.0, ${ZC.toFixed(1)});
+          vec2 fw = fwidth(c) + 1e-4;
+          float fx = fract((c.x + ${HG}) / ${GL}), dx = fx - 0.5;
+          // the cables, each way
+          float along = abs(fract((c.x + ${HG}) / ${GL} + 0.5) - 0.5) * ${GL};
+          float zs = c.y;
+          float across = abs(fract((zs + ${HG}) / ${GL} + 0.5) - 0.5) * ${GL};
+          float inTri = bigTri(c, zs, 0.3);
+          // (never under a pixel or so across: from the far side of the house they still read as the photographs show them)
+          float hw = max(0.16, fw.x * 1.1), xw = max(0.16, fw.y * 1.1);
+          float hLine = (1.0 - smoothstep(hw, hw + fw.x, along)) * (1.0 - inTri);
+          float xLine = (1.0 - smoothstep(xw, xw + fw.y, across)) * (1.0 - inTri);
+          float clamp1 = (1.0 - smoothstep(0.32, 0.32 + fw.x * 1.5, along)) * (1.0 - smoothstep(0.32, 0.32 + fw.y * 1.5, across)) * (1.0 - inTri);
+          // the fabric's widths, side by side between the heavy cables
+          float seam = (1.0 - smoothstep(0.0, fwidth(fx * 3.0) * 1.5 + 0.02, abs(fract(fx * 3.0 + 0.5) - 0.5) * 2.0)) * (1.0 - inTri);
+          // the big triangles' own widths: faint, along the ring
+          float tv = (abs(c.x) + abs(zs)) / 1.41421 / 6.0;
+          float tseam = (1.0 - smoothstep(0.0, fwidth(tv) * 1.5 + 0.01, abs(fract(tv + 0.5) - 0.5) * 2.0)) * inTri;
+          // the barrels: palest along their middles, darkest down the heavy cables; the triangles plain and a touch paler
+          float dz = fract((c.y + ${HG}) / ${GL}) - 0.5;
+          float barrel = mix((1.0 - 0.1 * 4.0 * dx * dx) * (1.0 - 0.1 * 4.0 * dz * dz), 1.08, inTri);
+          // (every line the same in the fabric's own colour and in what the show throws on it: dark or lit, they stay sharp)
+          float lines = (1.0 - 0.9 * hLine) * (1.0 - 0.9 * xLine) * (1.0 - 0.8 * clamp1) * (1.0 - 0.1 * seam) * (1.0 - 0.08 * tseam);
+          diffuseColor.rgb *= barrel * lines;
+          totalEmissiveRadiance += uBounce * barrel * lines;
         }`);
   };
-  m.customProgramCacheKey = () => 'membrane3';
+  m.customProgramCacheKey = () => 'membrane11';
   return m;
 }
 
@@ -206,8 +232,8 @@ export function buildDome(ctx) {
   // up behind them there are left out, so the boxes run as two clean rows.)
   const BOX = { level: 'D', phi: [92.2, 118.8], per: 4 };
   // the backscreen's sector of the outfield stand, either side of the
-  // centre-field line (the official map's F09 and F12 begin at 8.4°)
-  const BSC = 8.4;
+  // centre-field line (the official map's F09 and F12 begin at 8.4°; the screens' boxes run to 9.7°)
+  const BSC = 9.7;
   const inBackscreen = (x, z) => Math.abs(Math.atan2(x, -z)) / DEG < BSC;
   // (each side's top box row: the highest with a seat in at least four
   // degrees of every five along the run)
@@ -239,11 +265,15 @@ export function buildDome(ctx) {
   // ── the main screen's line (built further on) ──
   // Along the curve of the outfield stand's back, over its back rows, where
   // the columns at the heads of its aisles stand: they carry it.
+  // (the columns that carry it: out to the third vomitory either side of the middle, 50 and 57, and the aisle columns between)
+  const scrEnd = Math.max(...[49, 56].map((i) => Math.abs(Math.atan2(TD_STANDS.pillars[i].x, -TD_STANDS.pillars[i].z) / DEG))) + 0.2;
+  const isScr = (c) => Math.hypot(c.x, c.z) > 110 && Math.abs(Math.atan2(c.x, -c.z) / DEG) <= scrEnd;
   const MV = (() => {
     const F = TD_STANDS.levels.find((l) => l.name === 'F');
     let ftop = 0;
     const far = new Map();                 // the stand's back, by the angle from home (0 at centre field)
-    for (const r of F.rows) {
+    // (with the backscreen's rows, set apart from the stand's: the line has to run on across the middle)
+    for (const r of [...F.rows, ...(TD_STANDS.backscreen ?? [])]) {
       ftop = Math.max(ftop, r.y);
       for (const p of r.polys) for (const ring of p) for (const [x, z] of ring) {
         const a = Math.round(Math.atan2(x, -z) / DEG * 2) / 2, d = Math.hypot(x, z);
@@ -251,21 +281,41 @@ export function buildDome(ctx) {
       }
     }
     const angs = [...far.keys()].filter((a) => Math.abs(a) <= 44).sort((u, v) => u - v);
-    const back = angs.map((a) => { let sm = 0, w = 0; for (const b of angs) if (Math.abs(b - a) <= 3) { sm += far.get(b); w++; } return { a, d: sm / w - 3.0 }; });
+    const back = angs.map((a) => { let sm = 0, w = 0; for (const b of angs) if (Math.abs(b - a) <= 3) { sm += far.get(b); w++; } return { a, d: sm / w - 5.9 }; });
+    // one gentle curve, the same both sides; any column it would come through is set back until it stands 1.7 m behind the face
+    const D0 = Math.min(125, back.reduce((m, b) => (Math.abs(b.a) < Math.abs(m.a) ? b : m)).d), KC = 0.012;
+    back.forEach((b) => { b.d = D0 - KC * b.a * b.a; });
+    const colMoved = new Map();
+    for (const c of TD_STANDS.pillars) {
+      if (!isScr(c)) continue;
+      const r = Math.hypot(c.x, c.z), a = Math.atan2(c.x, -c.z) / DEG, need = D0 - KC * a * a + 1.7 - r;
+      if (need > 0) colMoved.set(c, { x: c.x * (r + need) / r, z: c.z * (r + need) / r });
+    }
     const pts = back.map(({ a, d }) => ({ x: Math.sin(a * DEG) * d, z: ZH - Math.cos(a * DEG) * d, a }));
     const len = [0];
     for (let i = 1; i < pts.length; i++) len.push(len[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z));
     const mid = len[back.findIndex((b) => b.a >= 0)];
     const along = (w) => pts.filter((_, i) => Math.abs(len[i] - mid) <= w / 2);
-    const band = along(125.6), lower = along(20);
+    // the band runs from column 50 to column 57, the third vomitory either side of the middle, a little past each
+    const sup = TD_STANDS.pillars.filter((c) => isScr(c) && !c.aisle);
+    const armLen = sup.length ? Math.max(...sup.map((c) => { let bi = 0, bd = Infinity; pts.forEach((q, i) => { const d = Math.hypot(q.x - c.x, q.z - (c.z + ZH)); if (d < bd) { bd = d; bi = i; } }); return Math.abs(len[bi] - mid); })) : 46;
+    const band = along(2 * (armLen + 1.5)), lower = along(20);
     // level, its top 2 m under the floods where the ring is lowest over it
     // (room for the sign over its middle)
-    const y1 = Math.min(...band.map((p) => ringY(p.z))) - 1.6 - 2.0, y0 = y1 - 7.5, yl = y0 - 5.4;
-    return { F, ftop, pts, len, mid, band, lower, y0, y1, yl, a0: band[0].a, a1: band[band.length - 1].a };
+    const y1 = Math.min(...band.map((p) => ringY(p.z))) - 1.6 - 3.0, y0 = y1 - 7.5, yl = y0 - 5.4;
+    return { F, ftop, pts, len, mid, band, lower, y0, y1, yl, a0: band[0].a, a1: band[band.length - 1].a, colMoved };
   })();
   // (the columns under it end at its frame)
   const underMV = (p) => Math.hypot(p.x, p.z) > 110 && (() => { const a = Math.atan2(p.x, -p.z) / DEG; return a >= MV.a0 && a <= MV.a1; })();
-  const TD = { ...TD_STANDS, pillars: TD_STANDS.pillars.map((p) => (underMV(p) ? { ...p, y1: MV.y0 - 0.4 } : p)) };
+  // (a column with nothing over it from the data, y1 99, goes on up to the ring)
+  // (the columns that carry the screen stop behind its frame: nothing shows over it)
+  // (and those set back take their number plates with them)
+  const movedFrom = [...MV.colMoved].map(([c, q]) => ({ c, q }));
+  const TD = {
+    ...TD_STANDS,
+    pillars: TD_STANDS.pillars.map((p) => (isScr(p) || p.y1 >= 99 ? { ...p, ...(MV.colMoved.get(p) ?? {}), y1: underMV(p) ? MV.y1 + 0.3 : ringY(p.z + ZH) - 1.2 } : p)),
+    signs: TD_STANDS.signs.map((s) => { const m = movedFrom.find(({ c }) => Math.hypot(c.x - s.x, c.z - s.z) < 0.2); return m ? { ...s, x: m.q.x, z: m.q.z } : s; }),
+  };
   const stands = buildStands(TD, {
     // (the lightsticks' blocks: the real ones, as each seat is labelled; where
     // a level has no labels, by the stands' own aisles)
@@ -301,6 +351,66 @@ export function buildDome(ctx) {
     materials: { rail: std({ color: 0xaaa499, roughness: 0.92, side: THREE.DoubleSide }), wall: std({ color: 0xb4aea3, roughness: 0.88, side: THREE.DoubleSide }) },
   });
   root.add(stands.group);
+  // the fronts of the balcony and the 2nd floor, faced in matt metal, from under each to its rail: one smooth line each, stood a little proud of the concrete
+  {
+    const metal = std({ color: 0x9a9da2, roughness: 0.62, metalness: 0.35, envMapIntensity: 0.5 });
+    // (the 2nd floor's front runs on unbroken behind home; the balcony's stops either side of the wall between S101 and S301)
+    for (const [lines, y, low] of [[[TD_STANDS.rimS.flat()], TD_STANDS.rimY, 1.5], [TD_STANDS.rimCS, TD_STANDS.rimCY, 1.2]]) {
+      for (const rim of lines ?? []) {
+        const pts2 = rim.map(([x, z]) => { const dx = -x, dz = -60 - z, l = Math.hypot(dx, dz) || 1; return { x: x + dx / l * 0.28, z: z + dz / l * 0.28 + ZH }; });
+        const g = wallStrip(pts2, pts2.map(() => y + 0.85), { y0: y - low, thick: 0.06, ease: 0 });
+        if (g) { const m3 = new THREE.Mesh(g, metal); m3.userData.noCollide = true; root.add(m3); }
+      }
+    }
+  }
+  // the back of the upper tier round the infield: a wall straight up from its top row to the ring
+  {
+    const E = TD_STANDS.levels.find((l) => l.name === 'E'), OZ = -60, BW = 0.5, far = new Map(), near = new Map();
+    const tops = new Map();                 // (each angle's own top row: E has fewer rows towards its ends)
+    for (const r of E.rows) {
+      for (const p of r.polys) for (const ring of p) for (let i = 0; i < ring.length; i++) {
+        // (along every edge, not only at its corners: a long straight row has few)
+        const [x0, z0] = ring[i], [x1, z1] = ring[(i + 1) % ring.length], n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 0.3));
+        for (let k = 0; k < n; k++) {
+          const x = x0 + (x1 - x0) * k / n, z = z0 + (z1 - z0) * k / n;
+          const a = Math.round(Math.atan2(x, z - OZ) / DEG / BW), d = Math.hypot(x, z - OZ);
+          if (!(far.get(a) >= d)) far.set(a, d);
+          if (!(near.get(a) <= d)) near.set(a, d);
+          if (!(tops.get(a) >= r.y)) tops.set(a, r.y);
+        }
+      }
+    }
+    const keys = [...far.keys()].sort((u, v) => u - v);
+    // (right on the top row's back edge, however few rows the block has there: eased only a little, and never in front of it)
+    const raw = keys.map((k) => far.get(k));
+    const rs = raw.map((v0, i) => { let s = 0, w = 0; for (let j = -2; j <= 2; j++) { const wk = 3 - Math.abs(j); s += raw[Math.max(0, Math.min(raw.length - 1, i + j))] * wk; w += wk; } return Math.max(s / w, v0) + 0.1; });
+    const at = (k, r) => { const a = k * BW * DEG; return { x: Math.sin(a) * r, z: OZ + Math.cos(a) * r + ZH }; };
+    const P = keys.map((k, i) => at(k, rs[i]));
+    const wall = std({ color: 0xcfc6b6, roughness: 0.9 });
+    const g = wallStrip(P, P.map((p) => ringY(p.z) + 0.5), { y0: keys.map((k) => tops.get(k) - 1.2), thick: 0.3, ease: 0 });
+    if (g) root.add(new THREE.Mesh(g, wall));
+    // and down each end of the tier, along the side of its last block to its front row
+    for (const [k, r] of [[keys[0], rs[0]], [keys[keys.length - 1], rs[rs.length - 1]]]) {
+      const side = [at(k, r), at(k, near.get(k))];
+      const s2 = wallStrip(side, side.map((p) => ringY(p.z) + 0.5), { y0: 24.0, thick: 0.3, ease: 0 });
+      if (s2) root.add(new THREE.Mesh(s2, wall));
+    }
+  }
+  // the upper deck's ends: the wall right behind its back row, up to the ring, on to the building
+  for (const w of TD_STANDS.upperWalls ?? []) {
+    const P = w.pts.map(([x, z]) => ({ x, z: z + ZH }));
+    const g = wallStrip(P, P.map((p) => ringY(p.z) + 0.5), { y0: w.y0, thick: 0.4, ease: 0 });
+    if (g) root.add(new THREE.Mesh(g, std({ color: 0xcfc6b6, roughness: 0.9 })));
+  }
+  // the balcony's blocks divided by concrete walls, on the lines of the columns under it
+  if (TD_STANDS.cWalls?.length) {
+    const parts = TD_STANDS.cWalls.map((w) => {
+      const g = new THREE.BoxGeometry(0.2, w.y1 - w.y0, w.len);
+      g.rotateY(Math.atan2(w.ax, w.az)); g.translate(w.x, (w.y0 + w.y1) / 2, w.z + ZH);
+      return g.toNonIndexed();
+    });
+    root.add(new THREE.Mesh(mergeGeometries(parts), std({ color: 0xb4aea3, roughness: 0.88 })));
+  }
   {
     const L = TD_STANDS.levels.find((l) => l.name === BOX.level), S = decodeSeats(L.seats), sk = L.seatScale ?? 10;
     const rows = new Map();
@@ -352,36 +462,6 @@ export function buildDome(ctx) {
     const wm = new THREE.Mesh(mergeGeometries(wood), birch); wm.receiveShadow = true; wm.castShadow = true;
     root.add(wm, new THREE.Mesh(mergeGeometries(holes), std({ color: 0x141414, roughness: 0.9 })));
   }
-  // the boxes behind home at the balcony's level (S101–110 and S301–310
-  // either side of the VIP box): glass fronts between mullions, lit within,
-  // under the 2nd floor's front
-  if (TD_STANDS.suites) {
-    const { line, y, h, depth } = TD_STANDS.suites;
-    const P = line.map(([x, z]) => ({ x, z: z + ZH }));
-    const out = (p) => { const dx = p.x, dz = p.z - (ZH - 60), l = Math.hypot(dx, dz) || 1; return [dx / l, dz / l]; };
-    const glass = [], frame = [], lit = [];
-    let run = 0;
-    for (let i = 0; i + 1 < P.length; i++) {
-      const a = P[i], b = P[i + 1], len = Math.hypot(b.x - a.x, b.z - a.z);
-      if (len < 0.05) continue;
-      const mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2, ang = -Math.atan2(b.z - a.z, b.x - a.x), [ux, uz] = out({ x: mx, z: mz });
-      const g = new THREE.PlaneGeometry(len + 0.02, h - 0.9); g.rotateY(ang); g.translate(mx, y + 0.1 + (h - 0.9) / 2, mz); glass.push(g);
-      const sill = new THREE.BoxGeometry(len + 0.04, 1.0, 0.25); sill.rotateY(ang); sill.translate(mx, y + 0.1 + h - 0.9 + 0.4, mz); frame.push(sill);
-      const top = new THREE.BoxGeometry(len + 0.04, 0.4, depth); top.rotateY(ang); top.translate(mx + ux * depth / 2, y + h + 0.2, mz + uz * depth / 2); frame.push(top);
-      const back = new THREE.PlaneGeometry(len + 0.02, h - 0.4); back.rotateY(ang); back.translate(mx + ux * (depth - 0.2), y + 0.1 + (h - 0.4) / 2, mz + uz * (depth - 0.2)); lit.push(back);
-      run += len;
-      if (run > 3.8) {
-        run = 0;
-        const m = new THREE.BoxGeometry(0.18, h, 0.2); m.translate(b.x, y + h / 2, b.z); frame.push(m);
-        const wall = new THREE.BoxGeometry(0.12, h, depth); wall.rotateY(ang + Math.PI / 2); wall.translate(b.x + ux * depth / 2, y + h / 2, b.z + uz * depth / 2); frame.push(wall);
-      }
-    }
-    if (frame.length) {
-      root.add(new THREE.Mesh(mergeGeometries(frame.map((g) => (g.index ? g.toNonIndexed() : g))), std({ color: 0x2c2d31, roughness: 0.6 })));
-      root.add(new THREE.Mesh(mergeGeometries(glass), std({ color: 0x0c0e12, roughness: 0.08, metalness: 0.6, transparent: true, opacity: 0.5, side: THREE.DoubleSide })));
-      root.add(new THREE.Mesh(mergeGeometries(lit), std({ color: 0x1a1612, roughness: 0.8, emissive: 0x6a4a2a, emissiveIntensity: 0.3, side: THREE.DoubleSide })));
-    }
-  }
   // the wall in front of the 1st floor (behind the excite seats along the
   // lines): padded 4.0 m with 0.24 m of net and the
   // yellow line in the outfield, a low padded wall along the lines (for a
@@ -398,6 +478,17 @@ export function buildDome(ctx) {
       acc = Math.max(0, (Math.ceil((len - acc) / 0.5) * 0.5 + acc) - len);
     }
     const n = ringPts.length;
+    // (behind home one clean curve: the traced line eased over a few metres)
+    {
+      const P0 = ringPts.map((p) => ({ x: p.x, z: p.z }));
+      for (let i = 0; i < n; i++) {
+        const w0 = Math.min(1, Math.max(0, (55 - (180 - phi(P0[i].x, P0[i].z))) / 10));
+        if (w0 <= 0) continue;
+        let sx = 0, sz = 0, sw = 0;
+        for (let k = -12; k <= 12; k++) { const q2 = P0[(i + k + n) % n], wk = 13 - Math.abs(k); sx += q2.x * wk; sz += q2.z * wk; sw += wk; }
+        ringPts[i].x = P0[i].x + (sx / sw - P0[i].x) * w0; ringPts[i].z = P0[i].z + (sz / sw - P0[i].z) * w0;
+      }
+    }
     for (let i = 0; i < n; i++) {
       const a = ringPts[(i - 1 + n) % n], b = ringPts[(i + 1) % n], p = ringPts[i];
       const len = Math.hypot(b.x - a.x, b.z - a.z) || 1;
@@ -440,8 +531,12 @@ export function buildDome(ctx) {
     for (let i = 0; i < n; i++) ringH[i] = Math.max(ringH[i], Math.min(outH, ringTop[i]));
   }
   // (open at the mouth of the tunnel under A02: the wall stops either side of it, a swing gate between)
-  const tunnels = TD_STANDS.tunnels ?? [];
-  const inMouth = ringPts.map((p) => tunnels.some((t) => {
+  const tunnels = [...(TD_STANDS.tunnels ?? []), ...(TD_STANDS.exciteGates ?? [])];
+  const inOpen = (p) => (TD_STANDS.exciteOpen ?? []).some(({ p0, p1 }) => {
+    const ex = p1[0] - p0[0], ez = p1[1] - p0[1], L = Math.hypot(ex, ez), dx = p.x - p0[0], dz = p.z - ZH - p0[1], al = (dx * ex + dz * ez) / L, ac = (-dx * ez + dz * ex) / L;
+    return al >= 0 && al <= L && Math.abs(ac) < 4;
+  });
+  const inMouth = ringPts.map((p) => inOpen(p) || tunnels.some((t) => {
     const dx = p.x - t.p[0], dz = p.z - ZH - t.p[1], a = dx * t.u[0] + dz * t.u[1], b = -dx * t.u[1] + dz * t.u[0];
     return Math.abs(b) < t.w / 2 + 0.05 && a > -3 && a < 3;
   }));
@@ -494,32 +589,55 @@ export function buildDome(ctx) {
     root.add(stageSteps({ x: p.x - ux * (len + 0.2), z: p.z - uz * (len + 0.2), h, dir: [ux, uz], width: 1.6 }));
   }
   root.add(new THREE.Mesh(padGeo, std({ color: 0x0b2a1a, roughness: 0.8 })));
-  // the low padded fence (1.0 m) in front of the excite seats, connected cleanly into the main infield fence at both ends
+  // (behind home, between the back of the wall and the stand's first treads: closed in concrete at the wall's height)
   {
-    const src = fieldRing.concat([fieldRing[0]]), pts = [];
-    for (let k = 0; k + 1 < src.length; k++) {
-      const a = src[k], b = src[k + 1], len = Math.hypot(b.x - a.x, b.z - a.z);
-      for (let t = 0; t < len; t += 0.5) pts.push({ x: a.x + (b.x - a.x) * t / len, z: a.z + (b.z - a.z) * t / len });
-    }
-    const snapRing = (p) => {
-      let best = p, bd = Infinity;
-      for (const q of ringPts) { const d = (q.x - p.x) ** 2 + (q.z - p.z) ** 2; if (d < bd) { bd = d; best = { x: q.x, z: q.z }; } }
-      return best;
-    };
-    const off = pts.map((p) => { let m = Infinity; for (const q of ringPts) m = Math.min(m, (q.x - p.x) ** 2 + (q.z - p.z) ** 2); return m > 0.18 * 0.18; });
-    const lowMat = std({ color: 0x0b2a1a, roughness: 0.8 });
+    const n = ringPts.length, parts = [];
     let run = [];
-    const flush = () => {
+    const flushR = () => {
       if (run.length > 3) {
-        const i0 = (run[0] - 1 + pts.length) % pts.length, i1 = (run[run.length - 1] + 1) % pts.length;
-        const ext = [pts[i0], ...run.map((i) => pts[i]), pts[i1]];
-        const g = wallStrip(ext, ext.map(() => 1.0), { thick: 0.22, ease: 0 });
-        if (g) root.add(new THREE.Mesh(g, lowMat));
+        const P = run.map((i) => { const p = ringPts[i], dx = p.x, dz = p.z - (ZH - 60), l = Math.hypot(dx, dz) || 1; return { x: p.x + dx / l * 0.5, z: p.z + dz / l * 0.5 }; });
+        const g = wallStrip(P, run.map((i) => ringH[i] - 0.01), { thick: 0.75, ease: 6 });
+        if (g) parts.push(g);
       }
       run = [];
     };
-    pts.forEach((_, i) => { if (off[i]) run.push(i); else flush(); });
-    flush();
+    let s0 = inMouth.findIndex((m, i) => m || ringOut[i]); if (s0 < 0) s0 = 0;
+    for (let k = 0; k < n; k++) { const i = (s0 + k) % n; if (!inMouth[i] && !ringOut[i] && 180 - phi(ringPts[i].x, ringPts[i].z) < 58) run.push(i); else flushR(); }
+    flushR();
+    if (parts.length) root.add(new THREE.Mesh(mergeGeometries(parts), std({ color: 0xa8a297, roughness: 0.9 })));
+  }
+  // the aisles of the excite seats: between every two blocks a flight from the floor in front of the seats up to the stand's aisle
+  {
+    const treads = [], RISE = 0.19;
+    for (const t of TD_STANDS.exciteAisles ?? []) {
+      const ax = t.a[0], az = t.a[1] + ZH, bx = t.b[0], bz = t.b[1] + ZH, L = Math.hypot(bx - ax, bz - az), ux = (bx - ax) / L, uz = (bz - az) / L;
+      const n = Math.max(2, Math.ceil((t.y1 - t.y0) / RISE)), run = L / n;
+      for (let k = 0; k < n; k++) {
+        const top = t.y0 + (t.y1 - t.y0) * (k + 1) / n, c = (k + 0.5) * run;
+        const b = new THREE.BoxGeometry(t.w, top, run + 0.02);
+        b.rotateY(Math.atan2(ux, uz)); b.translate(ax + ux * c, top / 2, az + uz * c);
+        treads.push(b.toNonIndexed());
+      }
+    }
+    if (treads.length) root.add(new THREE.Mesh(mergeGeometries(treads), std({ color: 0xa8a297, roughness: 0.9 })));
+  }
+  // the low padded fence in front of the excite seats, one line each side, as the photographs show it: about 0.95 m along the blocks
+  // nearest home, then climbing in a straight slant from the middle of G05 (G45) up to the 1st floor's fence at the pole
+  {
+    const lowMat = std({ color: 0x0b2a1a, roughness: 0.8 });
+    for (const f of TD_STANDS.exciteFront ?? []) {
+      const src = f.pts.map(([x, z]) => ({ x, z: z + ZH })), pts = [], S = [];
+      let acc = 0;
+      for (let k = 0; k + 1 < src.length; k++) {
+        const p = src[k], q2 = src[k + 1], len = Math.hypot(q2.x - p.x, q2.z - p.z), n = Math.max(1, Math.ceil(len / 0.5));
+        for (let i = 0; i < n; i++) { pts.push({ x: p.x + (q2.x - p.x) * i / n, z: p.z + (q2.z - p.z) * i / n }); S.push(acc + len * i / n); }
+        acc += len;
+      }
+      pts.push(src[src.length - 1]); S.push(acc);
+      const hs = S.map((s) => 0.95 + (1.85 - 0.95) * Math.max(0, (s - f.s0) / (acc - f.s0 || 1)));
+      const g = wallStrip(pts, hs, { thick: 0.22, ease: 0 });
+      if (g) root.add(new THREE.Mesh(g, lowMat));
+    }
   }
   // the yellow line along the top of the outfield fence, and its net
   {
@@ -570,11 +688,13 @@ export function buildDome(ctx) {
   const membrane = membraneMaterial();
   membrane.side = THREE.DoubleSide;
   {
-    const I = 160, J = 28;
-    const pos = [], idx = [];
+    // (fine enough that each 8.5 m panel's bulge is really in the mesh)
+    const I = 480, J = 90;
+    const pos = [], idx = [], rho = [];
     for (let j = 0; j <= J; j++) for (let i = 0; i <= I; i++) {
       const e = edge(i / I * Math.PI * 2, j / J);
       pos.push(e.x, roofAt(e.x, e.z), e.z);
+      rho.push(j / J);
     }
     for (let j = 0; j < J; j++) for (let i = 0; i < I; i++) {
       const a = j * (I + 1) + i, b = a + 1, c = a + I + 1, d = c + 1;
@@ -582,6 +702,7 @@ export function buildDome(ctx) {
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('aRho', new THREE.Float32BufferAttribute(rho, 1));
     g.setIndex(idx);
     g.computeVertexNormals();
     root.add(new THREE.Mesh(g, membrane));
@@ -647,8 +768,8 @@ export function buildDome(ctx) {
   // the heads of its aisles (the crowd sits under it), a dark frame behind it;
   // and in its middle a lower part, 20 × 5.4 m, hung under the band over the
   // backscreen (about 1,050 m² in all). Over the band's middle the TOKYO DOME sign in green;
-  // over all of it, the floods on the ring. Either side of the lower part a
-  // dark box stands on the backscreen's steps. Off for a concert: the set
+  // over all of it, the floods on the ring.
+  // Off for a concert: the set
   // stands in front of its middle.
   {
     const { F, ftop, pts, len, mid, band, lower, y0, y1, yl } = MV;
@@ -659,14 +780,25 @@ export function buildDome(ctx) {
     root.add(new THREE.Mesh(wallStrip(lower, lower.map(() => y0), { y0: yl, thick: 0.25, ease: 0 }), face));
     root.add(new THREE.Mesh(wallStrip(band.map((p) => out(p, 0.7)), band.map(() => y1 + 0.4), { y0: y0 - 0.4, thick: 1.0, ease: 0 }), frame));
     root.add(new THREE.Mesh(wallStrip(lower.map((p) => out(p, 0.7)), lower.map(() => y0), { y0: yl - 0.3, thick: 1.0, ease: 0 }), frame));
-    // the dark boxes either side of the lower part, on the backscreen's steps
-    for (const sd of [-1, 1]) {
-      const i = len.findIndex((v) => v >= mid + sd * 14), p = pts[i], q = pts[Math.min(pts.length - 1, i + 1)];
-      const yb = stands.topAt(...Object.values(out(p, -3))) || ftop;
-      const bx = new THREE.Mesh(new THREE.BoxGeometry(6, y0 - 0.6 - yb, 3.4), std({ color: 0x16171a, roughness: 0.6 }));
-      const o = out(p, -1.2);
-      bx.position.set(o.x, (yb + y0 - 0.6) / 2, o.z); bx.rotation.y = Math.atan2(q.z - p.z, -(q.x - p.x)) + Math.PI;
-      root.add(bx);
+    // The band hangs off the columns behind it: from each, two steel arms forward to its frame
+    {
+      const steel = [], armM = std({ color: 0x1c1d21, roughness: 0.7 });
+      for (const c of TD_STANDS.pillars) {
+        if (!underMV(c)) continue;
+        const cq = MV.colMoved.get(c) ?? c, cx = cq.x, cz = cq.z + ZH;
+        let best = null, bd = Infinity;
+        for (const p of band) { const d = Math.hypot(p.x - cx, p.z - cz); if (d < bd) { bd = d; best = p; } }
+        if (!best || bd > 12) continue;
+        const f = out(best, 0.7);
+        const dx = f.x - cx, dz = f.z - cz, L = Math.hypot(dx, dz);
+        if (L < 0.2) continue;
+        for (const y of [y0 + 0.5, y1 - 0.5]) {
+          const b = new THREE.BoxGeometry(0.35, 0.5, L);
+          b.rotateY(Math.atan2(dx, dz)); b.translate(cx + dx / 2, y, cz + dz / 2);
+          steel.push(b.toNonIndexed());
+        }
+      }
+      if (steel.length) root.add(new THREE.Mesh(mergeGeometries(steel), armM));
     }
     // the sign over the middle: TOKYO DOME in green on black
     {
@@ -676,30 +808,22 @@ export function buildDome(ctx) {
       g.fillStyle = '#3ddc84'; g.font = 'bold 112px Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
       g.fillText('TOKYO DOME', 512, 84);
       const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
-      const sign = new THREE.Mesh(new THREE.PlaneGeometry(10, 1.56), new THREE.MeshBasicMaterial({ map: tex, toneMapped: true }));
+      const sign = new THREE.Mesh(new THREE.PlaneGeometry(16, 2.5), new THREE.MeshBasicMaterial({ map: tex, toneMapped: true }));
       const i = len.findIndex((v) => v >= mid), p = pts[i], q = pts[i + 1], o = out(p, -0.2);
-      sign.position.set(o.x, y1 + 1.1, o.z); sign.rotation.y = Math.atan2(-(q.z - p.z), q.x - p.x);
+      sign.position.set(o.x, y1 + 1.75, o.z); sign.rotation.y = Math.atan2(-(q.z - p.z), q.x - p.x);
       root.add(sign);
     }
-    // the backscreen's steps, painted dark: a strip along each of the
-    // outfield stand's rows across its middle
+    // the backscreen: the outfield stand's rows between F09 and F12, the data's own outlines, in dark green
     {
-      const S = decodeSeats(F.seats), sk = F.seatScale ?? 10, rows = new Map();
-      for (let i = 0; i < S.length; i += 4) {
-        const x = S[i] / sk, z = S[i + 1] / sk;
-        if (!inBackscreen(x, z)) continue;
-        const r = S[i + 2];
-        if (!rows.has(r)) rows.set(r, []);
-        rows.get(r).push({ x, z: z + ZH, a: Math.atan2(x, -z) });
+      const parts = [];
+      for (const r of TD_STANDS.backscreen ?? []) for (const poly of r.polys) {
+        const shape = new THREE.Shape(poly[0].map(([x, z]) => new THREE.Vector2(x, -z)));
+        for (const h of poly.slice(1)) shape.holes.push(new THREE.Path(h.map(([x, z]) => new THREE.Vector2(x, -z))));
+        const g = new THREE.ExtrudeGeometry(shape, { depth: Math.max(0.05, r.y), bevelEnabled: false });
+        g.rotateX(-Math.PI / 2); g.translate(0, 0, ZH);
+        parts.push(g.index ? g.toNonIndexed() : g);
       }
-      const strips = [];
-      for (const [r, ps] of rows) {
-        ps.sort((u, v) => u.a - v.a);
-        const y = F.hs[Math.min(r, F.hs.length - 1)];
-        const g = ps.length > 1 && wallStrip(ps, ps.map(() => y + 0.02), { y0: y + 0.002, thick: 0.72, ease: 0 });
-        if (g) strips.push(g);
-      }
-      if (strips.length) root.add(new THREE.Mesh(mergeGeometries(strips), std({ color: 0x0e1a14, roughness: 0.95 })));
+      if (parts.length) root.add(new THREE.Mesh(mergeGeometries(parts), std({ color: 0x18382a, roughness: 0.95 })));
     }
   }
 
@@ -1043,7 +1167,9 @@ export function buildDome(ctx) {
     };
     // the delay towers on the diagonals, each aimed out, an aisle of its own
     // (on the field, 12 m clear of its edge: never into the stands)
-    const DTR = diagonalTowers(STAGE, { r: 52, ax: 0.62, az: 0.78, cell: 10, ok: (x, z) => inF(x, z) && Math.min(edgeD(x, z), edgeD(-x, z)) > 12 });
+    // (the pair towards home on a wider line and allowed nearer the field's edge: the field narrows that way and brought them in against the stage)
+    const fieldOK = (cl) => (x, z) => inF(x, z) && Math.min(edgeD(x, z), edgeD(-x, z)) > cl;
+    const DTR = [...diagonalTowers(STAGE, { r: 52, ax: 0.62, az: 0.78, cell: 10, ok: fieldOK(12) }).filter(([, z]) => z < STAGE.z), ...diagonalTowers(STAGE, { r: 60, ax: 0.82, az: 0.57, cell: 10, ok: fieldOK(7) }).filter(([, z]) => z > STAGE.z)];
     const towerLights = [];
     // (the outfield's pair as high as the outfield stand they play to; home's to the 2nd floor)
     for (const [x, z] of DTR) towerLights.push(...delayTower(root, { x, z, h: z < STAGE.z ? 20 : 30, boxes: z < STAGE.z ? 14 : 18, width: 1.3, from: STAGE }));

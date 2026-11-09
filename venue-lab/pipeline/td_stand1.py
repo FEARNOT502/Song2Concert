@@ -1033,7 +1033,7 @@ def gate_sites(B, F, inside, r_open=1.2, pitch=DB):
                               t_wall=float(t_wall), h0=float(h0), h_back=float(top_at(a * (t_wall - 0.3) + u * s_c)), pit=pit, rec=rec, rails=rails, tunnel=None))
     return sites
 
-def gate_corridors(G, sites, stand, c1, O, avoid=(), blocked=None):
+def gate_corridors(G, sites, stand, c1, O, avoid=(), blocked=None, ring=None):
     """The lower concourses the gates lead into: per side of the field (1B, 3B) and behind
     home one corridor `CORR_W` m wide under the back of the stand and the concourse's edge, its front
     wall as far in under the stand as the rows' slab leaves the head room (`CORR_FRONT` at most; a stand that ends
@@ -1051,15 +1051,17 @@ def gate_corridors(G, sites, stand, c1, O, avoid=(), blocked=None):
     d_out = cv2.distanceTransform((~stand).astype(np.uint8), cv2.DIST_L2, 5) * G.res
     sd = cv2.GaussianBlur(np.where(stand, d_in, -d_out).astype(np.float32), (0, 0), 1.5 / G.res)       # (eased: the stand's edge wobbles by a decimetre)
     pits = unary_union([s['pit'] for s in sites])
-    groups = {'1B': [], '3B': [], 'H': []}
+    groups = {'1B': [], '3B': [], 'H': [], 'O1': [], 'O3': []}
     for i, s in enumerate(sites):
-        groups['H' if s['pair'][0] == GATE_PAIRS[-1] else ('1B' if s['side'] > 0 else '3B')].append(i)
+        if s.get('out'): groups['O1' if s['side'] > 0 else 'O3'].append(i)
+        else: groups['H' if s['pair'][0] == GATE_PAIRS[-1] else ('1B' if s['side'] > 0 else '3B')].append(i)
     corrs = []
     for name, idx in groups.items():
         if not idx: continue
         floor = min(sites[i]['h0'] for i in idx)
         # the front wall as far in as the rows' slab over it leaves CORR_HEAD (the rows climb ~0.27 m a metre)
-        front = float(np.clip((min(sites[i]['h_back'] for i in idx) - GATE_SLAB - 0.1 - (floor + CORR_HEAD)) / 0.30, -0.6, CORR_FRONT))
+        # (the outfield's rows climb faster: 0.45 m a metre)
+        front = float(np.clip((min(sites[i]['h_back'] for i in idx) - GATE_SLAB - 0.1 - (floor + CORR_HEAD)) / (0.45 if any(sites[i].get('out') for i in idx) else 0.30), -0.6, CORR_FRONT))
         band = (sd >= front - CORR_W) & (sd <= front) & (stand | c1)
         pts = {i: sites[i]['a'] * (sites[i]['t_wall'] - 1.5) + sites[i]['u'] * sites[i]['s_c'] for i in idx}
         idx = sorted(idx, key=lambda i: np.arctan2(pts[i][0] - O[0], pts[i][1] - O[1]))
@@ -1092,7 +1094,8 @@ def gate_corridors(G, sites, stand, c1, O, avoid=(), blocked=None):
             cc = np.array([q for g_ in (inter.geoms if hasattr(inter, 'geoms') else [inter]) for q in g_.coords])
             t_in = float((cc @ s['a']).min())
             if t_in - s['t_end'] > 0.3:
-                s['tunnel'] = _tbox(s['a'], s['u'], s['t_end'], t_in + 0.4, s['s_c'] - GATE_W / 2, s['s_c'] + GATE_W / 2)
+                _gw = s.get('w', GATE_W)
+                s['tunnel'] = _tbox(s['a'], s['u'], s['t_end'], t_in + 0.4, s['s_c'] - _gw / 2, s['s_c'] + _gw / 2)
                 s['t_in'] = t_in
         # the corridor's own centre line: the gates' line moved to the middle of the band (the distance field's level)
         q = np.array([np.array(line.interpolate(d).coords[0]) for d in np.arange(0.0, line.length, 1.0)] + [np.array(line.coords[-1])])
@@ -1104,6 +1107,35 @@ def gate_corridors(G, sites, stand, c1, O, avoid=(), blocked=None):
         k = 3
         qs = np.array([q[max(0, i - k):i + k + 1].mean(0) for i in range(len(q))]); qs[0], qs[-1] = q[0], q[-1]
         corrs.append(dict(name=name, gates=idx, poly=poly, floor=float(floor), line=LineString(qs), stairs=[]))
+    # the outfield's corridors joined on to the infield's: a passage 5 m wide round the pole between the two ends nearest each other
+    from shapely.ops import nearest_points
+    for main, ext in (('1B', 'O1'), ('3B', 'O3')):
+        A = next((c for c in corrs if c['name'] == main), None); B = next((c for c in corrs if c['name'] == ext), None)
+        if A is None or B is None: continue
+        pa, pb = nearest_points(A['poly'], B['poly'])
+        # (round the pole under the 1st floor's concourse, following it, so it never comes up through a stand)
+        path = [(pa.x, pa.y), (pb.x, pb.y)]
+        if ring is not None:
+            dO, TH_ = ring
+            at = lambda q_: tuple(int(round(float(v_))) for v_ in G.g(q_.x, q_.y))
+            ia, ja = at(pa); ib, jb = at(pb)
+            ta, tb = float(TH_[ja, ia]), float(TH_[jb, ib])
+            mid = []
+            for th in np.linspace(ta, tb, max(4, int(abs(tb - ta) * 2)))[1:-1]:
+                ys, xs = np.nonzero((np.abs(TH_ - th) < 0.25) & (np.abs(dO - 4.5) < 0.2))
+                if len(xs): mid.append(tuple(float(v_) for v_ in (G.m(xs.mean(), ys.mean()))))
+            path = [path[0]] + mid + [path[1]]
+        link = LineString(path).buffer(CORR_W / 2, cap_style=1, join_style=1)
+        A['poly'] = orient(max(_pieces(unary_union([A['poly'], link, B['poly']]).buffer(0.05).buffer(-0.05)), key=lambda q: q.area), 1.0)
+        A['gates'] = A['gates'] + B['gates']
+        # (its centre line runs on through the passage, the lights along it)
+        la, lb = list(A['line'].coords), list(B['line'].coords)
+        # (the passage's own line between them)
+        if np.hypot(la[0][0] - pa.x, la[0][1] - pa.y) < np.hypot(la[-1][0] - pa.x, la[-1][1] - pa.y): la = la[::-1]
+        if np.hypot(lb[-1][0] - pb.x, lb[-1][1] - pb.y) < np.hypot(lb[0][0] - pb.x, lb[0][1] - pb.y): lb = lb[::-1]
+        A['line'] = LineString(la + lb)
+        print('lower concourse', main, 'joined to the outfield, passage %.1f m' % float(np.hypot(pa.x - pb.x, pa.y - pb.y)))
+    corrs = [c for c in corrs if c['name'] not in ('O1', 'O3') or not any(k['name'] == {'O1': '1B', 'O3': '3B'}[c['name']] for k in corrs)]
     # the stairs: the first place from each end of the corridor where the cut and its stair's run
     # out through the concourse clear every column and the balcony's stairs
     for cr in corrs:
@@ -1148,6 +1180,8 @@ def gate_corridors(G, sites, stand, c1, O, avoid=(), blocked=None):
                     if any(trench.distance(o['trench']) < 2.0 for o in cr['stairs']): why.append('other stair'); continue
                     found = (trench, ra, ua, S0, rise, run, n_st); break
                 if found: break
+            # (a corridor run on round to the outfield may end at the outfield with no room for a stair: it is reached from its other end)
+            if found is None and any(sites[i].get('out') for i in cr['gates']): print('no stair at this end of', cr['name']); continue
             assert found is not None, ('no room for a stair', cr['name'], end, __import__('collections').Counter(why))
             trench, ra, ua, S0, rise, run, n_st = found
             t0 = float(S0 @ ra)
@@ -1234,20 +1268,21 @@ def corridor_rooms(corrs, sites):
         # the long walls, but where a tunnel, a pit or a stair opens into it; over a tunnel's mouth a lintel
         opening = unary_union([t.buffer(0.1) for t in tun] + [pit.buffer(0.2)] + [t.buffer(0.1) for t in trn])
         run(ring.difference(opening), fl, hc)
-        for t in tun:
-            run(ring.intersection(t.buffer(0.1)), fl + GATE_HEAD, hc)
+        for i in c['gates']:
+            t = sites[i]['tunnel']
+            if t is not None: run(ring.intersection(t.buffer(0.1)), fl + sites[i].get('head', GATE_HEAD), hc)
         ceils.append({'y': round(hc, 3), 'polys': _polys_of(c['poly'])})
         for i in c['gates']:
             s = sites[i]
             if s['tunnel'] is None: continue
             a, u, s_c, t_end, t_in = s['a'], s['u'], s['s_c'], s['t_end'], s['t_in']
             # the tunnel's sides (the left of each faces in) and its ceiling
-            wl = GATE_W / 2 - WALL_IN
-            walls.append([round(float(v), 2) for v in np.r_[a * t_end + u * (s_c - wl), a * t_in + u * (s_c - wl)]] + [round(fl, 3), round(fl + GATE_HEAD, 3)])
-            walls.append([round(float(v), 2) for v in np.r_[a * t_in + u * (s_c + wl), a * t_end + u * (s_c + wl)]] + [round(fl, 3), round(fl + GATE_HEAD, 3)])
-            ceils.append({'y': round(fl + GATE_HEAD, 3), 'polys': _polys_of(_tbox(a, u, t_end, t_in, s_c - GATE_W / 2, s_c + GATE_W / 2))})
+            _gw = s.get('w', GATE_W); wl = _gw / 2 - WALL_IN; _gh = s.get('head', GATE_HEAD)
+            walls.append([round(float(v), 2) for v in np.r_[a * t_end + u * (s_c - wl), a * t_in + u * (s_c - wl)]] + [round(fl, 3), round(fl + _gh, 3)])
+            walls.append([round(float(v), 2) for v in np.r_[a * t_in + u * (s_c + wl), a * t_end + u * (s_c + wl)]] + [round(fl, 3), round(fl + _gh, 3)])
+            ceils.append({'y': round(fl + _gh, 3), 'polys': _polys_of(_tbox(a, u, t_end, t_in, s_c - _gw / 2, s_c + _gw / 2))})
             p = a * (0.5 * (t_end + t_in)) + u * s_c
-            lamps.append([round(float(p[0]), 2), round(fl + GATE_HEAD - 0.04, 3), round(float(p[1]), 2), round(float(np.arctan2(u[0], u[1])), 3)])
+            lamps.append([round(float(p[0]), 2), round(fl + _gh - 0.04, 3), round(float(p[1]), 2), round(float(np.arctan2(u[0], u[1])), 3)])
         fu = unary_union([c['poly']] + tun)
         lit.append({'y': round(fl, 3), 'polys': _polys_of(fu)})
         # the lamps along the corridor

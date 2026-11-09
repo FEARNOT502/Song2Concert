@@ -420,21 +420,44 @@ export default function App() {
     if (idx === 1) readAheadRef.current(0);
   }, [queue, dropMetadata]);
 
-  // append dropped/selected files to the queue; start playing if idle
-  const handleUpload = async (files) => {
-    const list = Array.from(files || []).filter(Boolean);
-    if (!list.length) return;
-    const wasEmpty = queueRef.current.length === 0;
-    queueRef.current = queueRef.current.concat(list);
-    const added = list.map((f) => ({ id: ++idRef.current, file: f }));
-    setQueue((rows) => rows.concat(added.map(({ id, file }) => ({ id, name: stripExt(file.name) }))));
-    if (wasEmpty) { await loadFront(true); labelRows(added); return; }
-    // Something is already playing and these went behind it. If one of them is
-    // now the next track, start decoding it — the point of the read-ahead is
-    // that it is done long before it is needed.
-    readAhead(1500);
+  // The waiting rows put in a new order (the one playing stays in front).
+  const reorderQueue = useCallback((ids) => {
+    const fileOf = new Map(queue.map((r, i) => [r.id, queueRef.current[i]]));
+    const rowOf = new Map(queue.map((r) => [r.id, r]));
+    if (!ids.every((id) => fileOf.has(id))) return;
+    const nextBefore = queueRef.current[1];
+    queueRef.current = ids.map((id) => fileOf.get(id));
+    setQueue(ids.map((id) => rowOf.get(id)));
+    if (queueRef.current[1] !== nextBefore) readAheadRef.current(0);
+  }, [queue]);
+
+  // What the file picker reads and hands back: the queue as it stands, and the
+  // waiting list in its new order (rows that were there by id, new ones by
+  // file). 'now' plays the first new track at once, the new ones ahead of what
+  // was waiting; 'queue' leaves the track playing alone.
+  const pickerQueue = useCallback(() => queue.map((r, i) => ({ ...r, file: queueRef.current[i] })), [queue]);
+  const applyPicker = useCallback(async ({ items, mode }) => {
+    const rows = queue, files = queueRef.current;
+    const fileOf = new Map(rows.map((r, i) => [r.id, files[i]]));
+    const rowOf = new Map(rows.map((r) => [r.id, r]));
+    const kept = new Set(items.filter((it) => it.id != null).map((it) => it.id));
+    dropMetadata(rows.slice(1).filter((r) => !kept.has(r.id)).map((r) => fileOf.get(r.id)));
+    const entries = items.filter((it) => it.id == null || fileOf.has(it.id)).map((it) => (it.id != null
+      ? { id: it.id, file: fileOf.get(it.id), name: rowOf.get(it.id).name, isNew: false }
+      : { id: ++idRef.current, file: it.file, name: stripExt(it.file.name), isNew: true }));
+    const added = entries.filter((e) => e.isNew);
+    const wasEmpty = files.length === 0;
+    const playNow = wasEmpty || (mode === 'now' && added.length > 0);
+    const order = playNow ? added.concat(entries.filter((e) => !e.isNew)) : entries;
+    const head = playNow ? [] : rows.slice(0, 1).map((r, i) => ({ ...r, file: files[i] }));
+    const all = head.concat(order);
+    const nextBefore = files[1];
+    queueRef.current = all.map((e) => e.file);
+    setQueue(all.map(({ id, name }) => ({ id, name })));
+    if (playNow) { if (all.length) await loadFront(true); }
+    else if (queueRef.current[1] !== nextBefore) readAheadRef.current(800);
     labelRows(added);
-  };
+  }, [queue, loadFront, dropMetadata, labelRows]);
 
   // next = drop the front and play the next queued track
   const nextTrack = useCallback(() => {
@@ -546,7 +569,10 @@ export default function App() {
       <FilePicker
         open={filePickerOpen}
         onClose={closeFilePicker}
-        onUpload={handleUpload}
+        getQueue={pickerQueue}
+        readMeta={metadataFor}
+        onApply={applyPicker}
+        onDiscard={dropMetadata}
       />
       <VenuePicker open={venuePickerOpen} onClose={closeVenuePicker} current={venueId} currentMode={venueMode} modes={venueModes} currentSeat={activeSeat || domeSeat} onPick={handlePickVenue} />
     </>
@@ -647,7 +673,7 @@ export default function App() {
         />
       )}
       <RightDataPanel file={displayFile} />
-      <QueuePanel queue={queue} onJump={jumpTo} onRemove={removeFromQueue} playing={playing} />
+      <QueuePanel queue={queue} onJump={jumpTo} onRemove={removeFromQueue} onReorder={reorderQueue} playing={playing} />
 
       {/* call-to-action before any file is loaded — sits BELOW the album art so
           it doesn't cover the cover/caption on the stage */}

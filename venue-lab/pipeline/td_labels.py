@@ -158,7 +158,8 @@ for _w in vec['words']:
         pt_m = (np.array([cx_, cy_]) - Hm) / s_map
         g_centers.append((_w[4], pt_m))
 labels_G = np.zeros((len(S_G), 3), dtype=np.int16)
-g_owner = np.array([min(g_centers, key=lambda item: np.hypot(pt[0] - item[1][0], pt[1] - item[1][1]))[0] for pt in pts_G])
+# (td_build.py names each seat's block as it lays them from the chart)
+g_owner = np.array(L_G.pop('gblocks')) if 'gblocks' in L_G else np.array([min(g_centers, key=lambda item: np.hypot(pt[0] - item[1][0], pt[1] - item[1][1]))[0] for pt in pts_G])
 for bnm in sorted(set(g_owner)):
     bid = get_bid(bnm)
     for r0 in range(6):
@@ -173,6 +174,12 @@ for bnm in sorted(set(g_owner)):
         for pos, sn in zip(idx_ord, nums):
             labels_G[pos] = (bid, rr, sn)
 L_G['labels'] = base64.b64encode(labels_G.tobytes()).decode('ascii')
+# (each block its own heights: the seat's third field becomes an index into a fine table of them)
+if 'seatY' in L_G:
+    _sy = np.array(L_G.pop('seatY')); S_G = S_G.copy()
+    S_G[:, 2] = np.round(_sy / 0.02).astype(np.int16)
+    L_G['hs'] = [round(k * 0.02, 3) for k in range(300)]
+    L_G['seats'] = base64.b64encode(S_G.astype('<i2').tobytes()).decode('ascii')
 
 # 4. Level C (2F Balcony C01..C48 on 1B, C51..C97 on 3B)
 L_C = next(l for l in d['levels'] if l['name'] == 'C')
@@ -184,28 +191,35 @@ _cth = []
 for _i, _w in enumerate(_wds):
     if _w[4] == 'C' and _i + 1 < len(_wds) and _wds[_i + 1][4].isdigit():
         _n = int(_wds[_i + 1][4])
-        if 1 <= _n <= 48:
+        if 1 <= _n <= 48 or 51 <= _n <= 97:
             _p = (np.array([(_w[0] + _wds[_i + 1][2]) / 2, (_w[1] + _wds[_i + 1][3]) / 2]) - Hm) / s_map - O
-            _cth.append((_n, float(np.degrees(np.arctan2(_p[0], _p[1])))))
+            import td_upper as _U; _cth.append((_n, float(_U.c_squeeze(abs(np.degrees(np.arctan2(_p[0], _p[1])))))))
 _cth.sort()
 # Pair boundaries for C blocks (24 sectors per side -> C02..C48 even/odd pairs)
-c_angles = sorted([t for _, t in _cth])
+c_angles = sorted([abs(t) for n, t in _cth if n <= 48])
 c_bounds = [0.5 * (c_angles[i] + c_angles[i + 1]) for i in range(len(c_angles) - 1)]
+c_angles3 = sorted([abs(t) for n, t in _cth if n >= 51])
+c_bounds3 = [0.5 * (c_angles3[i] + c_angles3[i + 1]) for i in range(len(c_angles3) - 1)]
 labels_C = np.zeros((len(S_C), 3), dtype=np.int16)
 c_owner = []
 for th in th_C:
     ath = abs(th)
-    sec_i = int(np.searchsorted(c_bounds, ath)) # 0 (near home) .. 47 (near pole)
+    sec_i = int(np.searchsorted(c_bounds if th > 0 else c_bounds3, ath)) # 0 (near home) .. near the pole
     if th > 0:
         blk_n = max(1, min(48, 48 - sec_i))
     else:
         blk_n = max(51, min(97, 51 + sec_i))
+    # (behind home, the S blocks, 14 a side, out from the VIP box)
+    if ath < 33.7:
+        k_s = max(0, min(13, int((ath - 2.6) / ((33.7 - 2.6) / 14))))
+        c_owner.append(f'S{(101 if th > 0 else 301) + k_s}')
+        continue
     c_owner.append(f'C{blk_n:02d}')
 c_owner = np.array(c_owner)
 for bnm in sorted(set(c_owner)):
     bid = get_bid(bnm)
     k_num = int(bnm[1:])
-    s0 = ((48 - k_num) if k_num <= 48 else (k_num - 51)) * 6 + 1
+    s0 = 1 if bnm[0] == 'S' else ((48 - k_num) if k_num <= 48 else (k_num - 51)) * 6 + 1
     for r0 in range(4):
         rr = r0 + 1
         idx = np.where((c_owner == bnm) & (S_C[:, 2] == r0))[0]

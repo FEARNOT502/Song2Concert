@@ -203,11 +203,11 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
   // the phrase's effect and how it is spread, the position this couple of bars
   // the chorus keeps to the big ones: circles and figures of eight, traded
   // by the phrase (the floor's rows on the other)
-  const big = ['circle', 'eight'][wrap(phrase + L.move + (it0(list) ? 1 : 0), 2)];
+  const big = ['circle', 'eight', 'panWave', 'circle', 'tiltWave', 'eight'][wrap(phrase + L.move + (it0(list) ? 1 : 0), 6)];
   // (never all together: chasing along the row, mirrored from the middle,
   // or odd against even)
   const spread = 1 + wrap(phrase + L.move, 3);
-  const pos = wrap(Math.floor(bar / 2) + L.move, 4);
+  const pos = wrap(Math.floor(bar / 2) + L.move, 6);
   const tmp = V3();
   // the palette as one blend round its four colours (x 0..4, and on round)
   const grad = (x) => { const k = wrap(x, 4), k0 = Math.floor(k); return _g.copy(cols[k0]).lerp(cols[(k0 + 1) % 4], k - k0); };
@@ -220,9 +220,10 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
     // the base position, in pan and tilt
     const aim = (x, y, z) => panTilt(tmp.set(x, y, z).sub(fx.pos).normalize(), up);
     // the chorus's positions: fanned out over the house, crossed, all to one
-    // point in the air, lifted out to the far end
+    // point in the air, lifted out to the far end, split in two to either side,
+    // laid out flat and low across it
     const chorusPos = (k) => {
-      if (up) return [[side * Math.PI / 2, 0.55], [-side * Math.PI / 2, 0.4], [0, 0.05], [Math.PI / 2 + u * 4, 0.45]][k];
+      if (up) return [[side * Math.PI / 2, 0.55], [-side * Math.PI / 2, 0.4], [0, 0.05], [Math.PI / 2 + u * 4, 0.45], [u * 2.4, 0.3], [side * Math.PI / 2, 0.78]][k];
       // (each row about the point it throws to: the spots low over the
       // floor, the beams high over the far stands)
       const [hp, ht] = aim(house.x, house.y, house.z);
@@ -231,6 +232,8 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
         [hp - side * 0.5 + u * 0.4, ht - 0.2],
         ((a) => [a[0] + u * 0.7, a[1]])(aim(house.x, house.y + 14, house.z - span * 0.3)),
         [hp + u * 0.5, ht + 0.25],
+        [hp + side * 0.85 + u * 0.3, ht + 0.1],
+        [hp + u * 1.9, ht + 0.32],
       ][k];
     };
     // each head its own: where it sits off the row's aim, how wide it swings,
@@ -261,12 +264,12 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
       // held back, so the chorus has somewhere to go: the spots keying the
       // stage in a pale tint, every other one; the beams a still fan low over
       // the house, the palette laid across them as a gradient that drifts a
-      // step every bar, breathing in tilt once in four bars; the floor's
-      // heads low, every other one
-      if (up) [p0, t0] = [u * 0.8, 0.25];
+      // step every bar, breathing in tilt once in four bars (or a slow wave
+      // in pan along the row); the floor's heads low, every other one
+      if (up) [p0, t0] = L.move % 2 ? [side * 0.55, 0.42] : [u * 0.8, 0.25];
       else if (isBeam) { const [hp, ht] = aim(house.x, house.y + 6, house.z); [p0, t0] = [hp + u * 1.3, ht]; }
       else [p0, t0] = aim(stage.x + u * span * 0.35, stage.y, stage.z + 6);
-      amp = isBeam ? 0.08 : 0.05; beats = 16; s = isBeam ? 'tiltWave' : 'circle';
+      amp = isBeam ? 0.08 : 0.05; beats = 16; s = isBeam ? (L.move % 2 ? 'panWave' : 'tiltWave') : 'circle';
       lvl = (isSpot ? (i % 2 ? 0 : 0.45 + 0.3 * E) : isBeam ? 0.32 + 0.15 * E : (i % 2 ? 0 : 0.22)) * eS;
       col = isSpot ? _g.copy(cols[3]).lerp(WHITE, 0.5) : isBeam ? grad((u + 0.5) * 1.5 + bar / 4) : cols[0];
     } else if (part === 'pre') {
@@ -296,7 +299,9 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
       // (every third head draws the other figure)
       s = i % 3 === 2 ? (big === 'circle' ? 'eight' : 'circle') : big;
       lvl = ((f.final ? 0.85 : 0.75) + 0.35 * f.kick) * eS;
-      col = cols[wrap(i + bar, 2) + (up ? 2 : 0)];
+      // (the song's way of colouring the rig: odd against even, one gradient across
+      // it turning, a gradient mirrored from the middle, or the two halves)
+      col = L.move === 1 ? grad((u + 0.5) * 2 + bar / 2 + (up ? 2 : 0)) : L.move === 2 ? grad(Math.abs(u) * 4 + bar / 2 + (up ? 2 : 0)) : L.move === 3 ? cols[wrap((side < 0 ? 0 : 1) + bar, 2) + (up ? 2 : 0)] : cols[wrap(i + bar, 2) + (up ? 2 : 0)];
       const first = secT < 0.35;
       if (L.hit === 0 && strobe && (first || (f.kick > 0.85 && wrap(i + f.beat, 3) === 0))) lvl = 1.6;
       if (L.hit === 1 && (first || f.kick > 0.85)) lvl = 1.15 + 0.2 * f.kick;
@@ -304,9 +309,9 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
       // the chorus ringing on: lifted high over the house, a wide slow
       // circle, the palette laid across the rig as a gradient that turns
       // round it a step every two bars; no hits
-      if (up) [p0, t0] = [u * 1.4, 0.5];
+      if (up) [p0, t0] = L.move % 2 ? [side * 1.2 - u, 0.62] : [u * 1.4, 0.5];
       else { const [hp, ht] = aim(house.x, house.y + 18, house.z); [p0, t0] = [hp + u * 1.2, ht]; }
-      amp = 0.36; beats = 8;
+      amp = 0.36; beats = 8; if (L.move === 2) s = 'eight';
       lvl = (0.75 + 0.12 * f.kick) * eS;
       col = grad((u + 0.5) * 2 + bar / 2);
     } else if (part === 'dance') {
@@ -1037,14 +1042,39 @@ export function floorZones(people, round = null) {
   const key = (p) => (p.fblock ? [(p.fblock.x0 + p.fblock.x1) / 2, p.fblock.z0] : [Math.round(p.x / 10) * 10, Math.floor(p.z / 15) * 15]);
   const xs = [...new Set(floor.map((p) => Math.round(key(p)[0] * 2) / 2))].sort((a, b) => a - b);
   const zs = [...new Set(floor.map((p) => Math.round(key(p)[1] * 2) / 2))].sort((a, b) => a - b);
+  // A floor block takes the stripe of the stand's wedge at its own angle, so a
+  // stripe runs on from the stands across the floor. (Numbering blocks by their
+  // place in the list of all the blocks' x's broke stripes up: bands laid out
+  // differently left gaps in the count, so neighbours skipped numbers.) Where
+  // the room has no stands, the blocks are counted across.
+  const C = crowdCentre(people, round);
+  const ang = (x, z) => Math.atan2(x - C.x, z - C.z);
+  const BINS = 720, wedge = new Int32Array(BINS).fill(-1);
+  const bin = (t) => Math.min(BINS - 1, Math.floor((t + Math.PI) / (2 * Math.PI) * BINS));
+  for (const p of people) if (p.zone) wedge[bin(ang(p.x, p.z))] = p.zone.block;
+  if (wedge.some((v) => v >= 0)) {
+    for (let pass = 0; pass < 2; pass++) for (let i = 1; i < 2 * BINS; i++) {
+      const k = i % BINS, was = (i - 1) % BINS;
+      if (wedge[k] < 0) wedge[k] = wedge[was];
+    }
+  }
   for (const p of floor) {
     const [kx, kz] = key(p);
     const c = xs.indexOf(Math.round(kx * 2) / 2), r = zs.indexOf(Math.round(kz * 2) / 2);
-    // (row times an odd number, so the blocks' numbers alternate down a
-    // column as well as along a row: a chequerboard, not stripes)
+    const w = wedge[bin(ang(kx, kz))];
     const u = round ? (Math.atan2(kx - round.x, kz - round.z) + Math.PI) / (2 * Math.PI) : xs.length > 1 ? c / (xs.length - 1) : 0.5;
-    p.zone = { lv: 0, u, block: r * 65 + c, row: r };
+    p.zone = { lv: 0, u, block: r * 65 + (w >= 0 ? w : c), row: r };
   }
+}
+
+// The point the house's horizontal place is measured round: a centre stage's
+// middle, or the front of the floor (an end stage stands just before it).
+export function crowdCentre(people, round = null) {
+  if (round) return { x: round.x, z: round.z };
+  let z = Infinity;
+  for (const p of people) if (!p.seat && !p.zone && p.z < z) z = p.z;
+  if (!Number.isFinite(z)) for (const p of people) if (p.z < z) z = p.z;
+  return { x: 0, z };
 }
 
 export function bigCrowd(root, cu, q, people, { seed = 21, round = null } = {}) {
@@ -1053,7 +1083,7 @@ export function bigCrowd(root, cu, q, people, { seed = 21, round = null } = {}) 
   const all = withCells(people, seed);
   const shown = q.crowd < 1 ? thin(all, Math.round(all.length * 0.7)) : all;
   root.add(silhouettes(shown, cu, { seed }));
-  root.add(crowdLights(shown, cu));
+  root.add(crowdLights(shown, cu, { centre: crowdCentre(all, round), wrap: !!round }));
   return shown.length;
 }
 

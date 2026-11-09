@@ -537,11 +537,11 @@ export function signSheet(list, ox, oz, bg = '#15181f', fg = '#f2f2ee') {
 }
 
 // The columns at the heads of the 1st floor's aisles (data.pillars: {x, z, r,
-// y0, y1, and the aisle's direction ax, az}): square, as the building's are,
-// 2r across, square to their aisle; in one mesh.
+// y0, y1, and the aisle's direction ax, az}): square-cornered, as the building's
+// are, 2rx across their aisle and 2rz along it (or 2r each way); in one mesh.
 export function pillars(list, ox, oz, mat) {
   const parts = list.map((p) => {
-    const g = new THREE.BoxGeometry(2 * p.r, p.y1 - p.y0, 2 * p.r);
+    const g = new THREE.BoxGeometry(2 * (p.rx ?? p.r), p.y1 - p.y0, 2 * (p.rz ?? p.r));
     g.rotateY(Math.atan2(p.ax ?? 0, p.az ?? 1));
     g.translate(p.x + ox, (p.y0 + p.y1) / 2, p.z + oz);
     return g.toNonIndexed();
@@ -1038,7 +1038,51 @@ export function buildRooms(R, { ox, oz, shapeOf, structMat, wallMat, lit: M }) {
     const nx = -dz / l, nz = dx / l;
     for (const [x, y, z] of [[x0, y0, z0], [x1, y0, z1], [x1, y1, z1], [x0, y0, z0], [x1, y1, z1], [x0, y1, z0]]) { P.push(x + ox, y, z + oz); N.push(nx, 0, nz); }
   };
-  for (const [x0, z0, x1, z1, y0, y1] of smoothRuns(R.walls, 0.1)) {
+  // A flat cap across a wall's thickness, at height y, facing up or down.
+  const cap = (P, N, a, b, c, d, y, ny) => {
+    for (const [x, z] of ny > 0 ? [a, c, b, a, d, c] : [a, b, c, a, c, d]) { P.push(x + ox, y, z + oz); N.push(0, ny, 0); }
+  };
+  // `R.thick` (m): the concourse walls stand this thick, into the room, their
+  // outer faces where they were. Each run's inner face is mitred where it meets
+  // the next, and a run's free ends (the jambs of the openings), its top and its
+  // underside (a lintel's) are closed. Too short a panel (the risers lining the
+  // stands over the room) stays a sheet, as does `R.thinWalls`, the walls of
+  // the narrow tunnels and the stairs' shafts.
+  const T = R.thick ?? 0, MIN_THICK = 1.2;
+  const runs = smoothRuns(R.walls, 0.1);
+  const hk = (s) => `${Math.round(s[4] * 50)},${Math.round(s[5] * 50)}`;
+  const pk = (x, z) => `${Math.round(x * 50)},${Math.round(z * 50)}`;
+  const nOf = (s) => { const dx = s[2] - s[0], dz = s[3] - s[1], l = Math.hypot(dx, dz) || 1; return [-dz / l, dx / l]; };
+  const starts = new Map(), ends = new Map();
+  runs.forEach((s) => { starts.set(`${hk(s)}|${pk(s[0], s[1])}`, s); ends.set(`${hk(s)}|${pk(s[2], s[3])}`, s); });
+  // the offset at a join: along the bisector, or null where there is no join to mitre (a free end, or a corner too sharp)
+  const mitre = (n, o) => {
+    if (!o) return null;
+    const m = nOf(o), dot = n[0] * m[0] + n[1] * m[1];
+    if (dot < 0.2) return null;
+    const bx = n[0] + m[0], bz = n[1] + m[1], bl = Math.hypot(bx, bz) || 1, k = 1 / Math.max(0.5, (bx / bl) * n[0] + (bz / bl) * n[1]);
+    return [(bx / bl) * k, (bz / bl) * k];
+  };
+  for (const s of runs) {
+    const [x0, z0, x1, z1, y0, y1] = s;
+    if (!(T > 0) || y1 - y0 < MIN_THICK) {
+      quad(inP, inN, x0, z0, x1, z1, y0, y1);
+      quad(outP, outN, x1, z1, x0, z0, y0, y1);
+      continue;
+    }
+    const n = nOf(s), h = hk(s);
+    const m0 = mitre(n, ends.get(`${h}|${pk(x0, z0)}`)), m1 = mitre(n, starts.get(`${h}|${pk(x1, z1)}`));
+    const [ax, az] = m0 ?? n, [bx, bz] = m1 ?? n;
+    const ix0 = x0 + ax * T, iz0 = z0 + az * T, ix1 = x1 + bx * T, iz1 = z1 + bz * T;
+    quad(inP, inN, ix0, iz0, ix1, iz1, y0, y1);
+    quad(outP, outN, x1, z1, x0, z0, y0, y1);
+    if (!m0) quad(inP, inN, x0, z0, ix0, iz0, y0, y1);
+    if (!m1) quad(inP, inN, ix1, iz1, x1, z1, y0, y1);
+    const A = [x0, z0], B = [x1, z1], C = [ix1, iz1], D = [ix0, iz0];
+    cap(outP, outN, A, B, C, D, y1, 1);
+    cap(inP, inN, A, B, C, D, y0, -1);
+  }
+  for (const [x0, z0, x1, z1, y0, y1] of smoothRuns(R.thinWalls ?? [], 0.1)) {
     quad(inP, inN, x0, z0, x1, z1, y0, y1);
     quad(outP, outN, x1, z1, x0, z0, y0, y1);
   }
