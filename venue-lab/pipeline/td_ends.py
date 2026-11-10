@@ -59,7 +59,7 @@ def _poly_out(P): return [[[round(float(x), 2), round(float(z), 2)] for x, z in 
 def apply(data):
     L = {l['name']: l for l in data['levels']}
     nb = int(round(360 / BIN)); TH = np.arange(nb) * BIN - 180.0
-    rE, yE = _profile(L['E']['rows'], nb); rD, yD = _profile(L['D']['rows'], nb)
+    rE, yE = _profile(L['E']['rows'], nb); rD, yD = _profile(L['D']['rows'], nb); rDn, _ = _profile(L['D']['rows'], nb, far=False)
     rCb, _ = _profile(L['C']['rows'], nb); rCf, _ = _profile(L['C']['rows'], nb, far=False)
     yD0 = min(r['y'] for r in L['D']['rows'])
     aD = float(np.nanmax(np.abs(TH[~np.isnan(rD)]))); aC = float(np.nanmax(np.abs(TH[~np.isnan(rCb)])))
@@ -80,7 +80,7 @@ def apply(data):
     for sg in (-1, 1):
         m = (TH * sg >= 0.0) & (TH * sg <= a_end)
         th = np.abs(TH[m]); o = np.argsort(th); th = th[o]
-        e, ye, dd, yd, cb, cf, bx = (v[m][o] for v in (rE, yE, rD, yD, rCb, rCf, rBox))
+        e, ye, dd, yd, cb, cf, bx, dn = (v[m][o] for v in (rE, yE, rD, yD, rCb, rCf, rBox, rDn))
         # (the box's front as one eased line)
         # (at a door the front wall has no full-height piece and the nearest is the box's back wall: those bins opened away)
         okb = ~np.isnan(bx); bxs = np.interp(th, th[okb], bx[okb]); kb = int(2.5 / BIN) | 1
@@ -124,30 +124,21 @@ def apply(data):
                 g = Polygon(np.vstack([a, b[::-1]])).buffer(0)
                 if g.area > 0.3: new_rows.append({'r': 0, 'y': round(float(top[i]), 3), 'y0': round(float(top[i]) - 0.6, 3), 'polys': [_poly_out(np.array(q.exterior.coords)[:-1])[0:1] for q in getattr(g, 'geoms', [g]) if q.area > 0.05]})
             i = j + 1
-        # the deck on from D's last seats to the balcony's end, from the balcony's front line to the wall
         # (the balcony's front as a line: its last bins hold only the corner of its end, so the line is carried on from just short of it)
         okf = ~np.isnan(cf) & (th < aC - 0.6); cl = np.polyfit(th[okf & (th > aC - 4.0)], cf[okf & (th > aC - 4.0)], 1)
         cfl = np.where(th < aC - 0.6, np.interp(th, th[okf], cf[okf]), np.polyval(cl, th))
-        k = th >= aD - 0.4
-        fr = cfl[k]
-        a = _xy(th[k] * sg, fr - 0.05); b = _xy(th[k] * sg, w[k] + 0.05)
-        g = Polygon(np.vstack([a, b[::-1]])).buffer(0)
-        # (a slab of its own, not one of D's treads: plain concrete as the wall over it, where a tread's would be the
-        # stands' weathered one across a floor four metres deep)
-        decks += [{'y': round(yD0, 3), 'y0': round(yD0 - 0.5, 3), 'pts': _poly_out(np.array(q.simplify(0.02).exterior.coords)[:-1])[0]} for q in getattr(g, 'geoms', [g]) if q.area > 0.05]
-        # the 2nd floor's front band with it: on along the balcony's front, to the same end
-        rim = rimS[0 if sg < 0 else 1]; ends_ = (rim[0], rim[-1]); at_end = 0 if np.hypot(*(np.array(rim[0]) - O)) > 0 and abs(np.degrees(np.arctan2(rim[0][0] - O[0], rim[0][1] - O[1]))) > 60 else -1
-        a_rim = abs(np.degrees(np.arctan2(rim[at_end][0] - O[0], rim[at_end][1] - O[1])))
-        kk = th > a_rim + 0.3
-        ext = _xy(th[kk] * sg, cfl[kk])
-        ext = [[round(float(x), 2), round(float(z), 2)] for x, z in ext[::8].tolist() + [ext[-1].tolist()]]
-        rimS[0 if sg < 0 else 1] = (ext[::-1] + rim) if at_end == 0 else (rim + ext)
+        fr = cfl[th >= aD - 0.4]
         rc = data['rimCS'][0 if sg < 0 else 1]; ac0, ac1 = (abs(np.degrees(np.arctan2(q[0] - O[0], q[1] - O[1]))) for q in (rc[0], rc[-1]))
         pc = [round(float(v), 2) for v in _xy(np.array([a_end * sg]), np.array([fr[-1]]))[0]]
         rimCS[0 if sg < 0 else 1] = ([pc] + rc) if ac0 > ac1 else (rc + [pc])
-        # the end wall across the two decks
+        # the end walls: the balcony's at its concourse's end; the 2nd floor's where its seats stop (its deck and front
+        # band stop there too: the balcony runs on alone under the wall)
         p0 = _xy(np.array([a_end * sg]), np.array([fr[-1] - 0.45]))[0]
-        ends.append({'a': [round(float(v), 2) for v in p0], 'b': [round(float(v), 2) for v in pe], 'y0': END_Y0, 'y1': round(yD0 + PARAPET, 2)})
+        ends.append({'a': [round(float(v), 2) for v in p0], 'b': [round(float(v), 2) for v in pe], 'y0': END_Y0, 'y1': 16.2 + PARAPET})
+        aE = aD + 0.12; okn = ~np.isnan(dn)
+        rim = data['rimS'][0 if sg < 0 else 1]; re = max((rim[0], rim[-1]), key=lambda q: abs(np.degrees(np.arctan2(q[0] - O[0], q[1] - O[1]))))
+        q0 = _xy(np.array([aE * sg]), np.array([np.hypot(re[0] - O[0], re[1] - O[1]) - 0.3]))[0]; q1 = _xy(np.array([aE * sg]), np.array([np.interp(aE, th, w) + 0.1]))[0]
+        ends.append({'a': [round(float(v), 2) for v in q0], 'b': [round(float(v), 2) for v in q1], 'y0': round(yD0 - 1.5, 2), 'y1': round(yD0 + PARAPET, 2)})
     data = dict(data)
     D = dict(L['D']); D['rows'] = list(D['rows']) + [r for r in new_rows if r['polys']]
     # (the low walls td_build.py stood behind the top rows: the wall stands there now)
