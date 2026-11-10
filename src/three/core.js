@@ -225,13 +225,15 @@ export function stageTex({ S = 1024, seed = 21 } = {}) {
 }
 
 // ── concrete ──
-export function concreteTex({ key = 'concrete', S = 512, tone = 0.32, seed = 31, warm = 0 } = {}) {
+export function concreteTex({ key = 'concrete', S = 512, tone = 0.32, seed = 31, warm = 0, even = 0 } = {}) {
+  // (`even` 0..1: how far the mottling and the stains are taken out — clean, new-looking concrete)
+  const ka = 0.35 * (1 - 0.7 * even), ks = 0.25 * (1 - 0.85 * even);
   const n = valueNoise(seed), n2 = valueNoise(seed + 5);
   return pbrSet(key, S, (u, v) => {
     const a = fbm(n, u * 8, v * 8, 8, 8, 5);
     const b = fbm(n2, u * 40, v * 40, 40, 40, 2);
     const stain = smooth(0.55, 0.75, fbm(n2, u * 3, v * 5, 3, 5, 4));
-    const c = tone * (0.8 + 0.35 * a + 0.1 * b) * (1 - 0.25 * stain);
+    const c = tone * (0.8 + (0.35 - ka) * 0.5 + ka * a + 0.1 * b) * (1 - ks * stain);
     return [c * (1 + warm), c, c * (1 - warm), 0.5 + 0.2 * a + 0.1 * b, 0.86 + 0.1 * b];
   }, { normal: 1.5 });
 }

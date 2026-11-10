@@ -331,11 +331,10 @@ export function buildDome(ctx) {
     // their rows where the aisles under them run, each part the colour of the
     // block under it; E's as D's in front of it)
     sectorOver: { E: 'D' },
-    // (the concrete a light warm grey, as the photographs show it: about
-    // rgb 140-160 in the light there, a touch warm; it was a dark grey)
-    offset: OFF, stage: STAGE, seed: 400, concreteTone: 0.62, concreteWarm: 0.05, roofY: (x, z) => ringY(z + ZH) + 0.3,
-    seatColors: { A: 0x1d3c86, B: 0x1d3c86, F: 0x1d3c86, K: 0x1d3c86, G: 0x1d3c86, C: 0x5a5d63, D: 0x1d3c86, E: 0x1d3c86 },
-    seatColorAt: (name, x, z, row) => (inBox(name, x, z, row) ? 0x6a6b6e : name === 'B' && TABLES.some((r) => inRing(r, x, z)) ? 0x2a4fd6 : null),
+    // (the concrete a clean, neutral light grey, as the photographs show it: no warm cast of its own, little mottling)
+    offset: OFF, stage: STAGE, seed: 400, concreteTone: 0.64, concreteWarm: 0.0, concreteEven: 0.8, roofY: (x, z) => ringY(z + ZH) + 0.3,
+    seatColors: { A: 0x1a2f6a, B: 0x1a2f6a, F: 0x1a2f6a, K: 0x1a2f6a, G: 0x1a2f6a, C: 0x5a5d63, D: 0x1a2f6a, E: 0x1a2f6a },
+    seatColorAt: (name, x, z, row) => (inBox(name, x, z, row) ? 0x6a6b6e : name === 'B' && TABLES.some((r) => inRing(r, x, z)) ? 0x2646b8 : null),
     // the backscreen: the outfield stand's middle, between F09 and F12, has
     // no seats (its steps are painted dark, below)
     seatKeep: (name, x, z, row) => !(name === 'F' && inBackscreen(x, z)) && !(inRun(name, x, z) && row > boxTop.get(Math.sign(x))),
