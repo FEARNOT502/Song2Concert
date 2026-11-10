@@ -363,44 +363,23 @@ export function buildDome(ctx) {
       }
     }
   }
-  // the back of the upper tier round the infield: a wall straight up from its top row to the ring
+  // The wall behind the upper tier (td_ends.py): straight up to the ring from behind the 2nd floor's top rows, one
+  // smooth line in plan from behind home out past each pole to where the balcony and the deck over it end, then square
+  // out to the building's own wall; and the end wall across those two decks. Plain concrete, as the stands'.
   {
-    const E = TD_STANDS.levels.find((l) => l.name === 'E'), OZ = -60, BW = 0.5, far = new Map(), near = new Map();
-    const tops = new Map();                 // (each angle's own top row: E has fewer rows towards its ends)
-    for (const r of E.rows) {
-      for (const p of r.polys) for (const ring of p) for (let i = 0; i < ring.length; i++) {
-        // (along every edge, not only at its corners: a long straight row has few)
-        const [x0, z0] = ring[i], [x1, z1] = ring[(i + 1) % ring.length], n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 0.3));
-        for (let k = 0; k < n; k++) {
-          const x = x0 + (x1 - x0) * k / n, z = z0 + (z1 - z0) * k / n;
-          const a = Math.round(Math.atan2(x, z - OZ) / DEG / BW), d = Math.hypot(x, z - OZ);
-          if (!(far.get(a) >= d)) far.set(a, d);
-          if (!(near.get(a) <= d)) near.set(a, d);
-          if (!(tops.get(a) >= r.y)) tops.set(a, r.y);
-        }
-      }
+    const parts = [];
+    for (const w of TD_STANDS.upperWall ?? []) {
+      const P = w.pts.map(([x, z]) => ({ x, z: z + ZH }));
+      parts.push(wallStrip(P, P.map((p) => ringY(p.z) + 0.5), { y0: w.y0, thick: 0.4, ease: 0 }));
+      const R = w.ret.map(([x, z]) => ({ x, z: z + ZH }));
+      parts.push(wallStrip(R, R.map((p) => ringY(p.z) + 0.5), { y0: w.retY0 ?? 13.6, thick: 0.4, ease: 0 }));
     }
-    const keys = [...far.keys()].sort((u, v) => u - v);
-    // (right on the top row's back edge, however few rows the block has there: eased only a little, and never in front of it)
-    const raw = keys.map((k) => far.get(k));
-    const rs = raw.map((v0, i) => { let s = 0, w = 0; for (let j = -2; j <= 2; j++) { const wk = 3 - Math.abs(j); s += raw[Math.max(0, Math.min(raw.length - 1, i + j))] * wk; w += wk; } return Math.max(s / w, v0) + 0.1; });
-    const at = (k, r) => { const a = k * BW * DEG; return { x: Math.sin(a) * r, z: OZ + Math.cos(a) * r + ZH }; };
-    const P = keys.map((k, i) => at(k, rs[i]));
-    const wall = std({ color: 0xcfc6b6, roughness: 0.9 });
-    const g = wallStrip(P, P.map((p) => ringY(p.z) + 0.5), { y0: keys.map((k) => tops.get(k) - 1.2), thick: 0.3, ease: 0 });
-    if (g) root.add(new THREE.Mesh(g, wall));
-    // and down each end of the tier, along the side of its last block to its front row
-    for (const [k, r] of [[keys[0], rs[0]], [keys[keys.length - 1], rs[rs.length - 1]]]) {
-      const side = [at(k, r), at(k, near.get(k))];
-      const s2 = wallStrip(side, side.map((p) => ringY(p.z) + 0.5), { y0: 24.0, thick: 0.3, ease: 0 });
-      if (s2) root.add(new THREE.Mesh(s2, wall));
+    for (const e of TD_STANDS.upperEnds ?? []) {
+      const P = [e.a, e.b].map(([x, z]) => ({ x, z: z + ZH }));
+      parts.push(wallStrip(P, [e.y1, e.y1], { y0: e.y0, thick: 0.4, ease: 0 }));
     }
-  }
-  // the upper deck's ends: the wall right behind its back row, up to the ring, on to the building
-  for (const w of TD_STANDS.upperWalls ?? []) {
-    const P = w.pts.map(([x, z]) => ({ x, z: z + ZH }));
-    const g = wallStrip(P, P.map((p) => ringY(p.z) + 0.5), { y0: w.y0, thick: 0.4, ease: 0 });
-    if (g) root.add(new THREE.Mesh(g, std({ color: 0xcfc6b6, roughness: 0.9 })));
+    const g = parts.filter(Boolean);
+    if (g.length) { const m3 = new THREE.Mesh(mergeGeometries(g), std({ color: 0xcfc6b6, roughness: 0.9 })); m3.receiveShadow = true; root.add(m3); }
   }
   // the balcony's blocks divided by concrete walls, on the lines of the columns under it
   if (TD_STANDS.cWalls?.length) {
@@ -530,13 +509,10 @@ export function buildDome(ctx) {
     // never over the outfield's height (td_stand1.fit_rake keeps the fronts under it)
     for (let i = 0; i < n; i++) ringH[i] = Math.max(ringH[i], Math.min(outH, ringTop[i]));
   }
-  // (open at the mouth of the tunnel under A02: the wall stops either side of it, a swing gate between)
+  // (open at the mouth of the tunnel under A02: the wall stops either side of it, a swing gate between; and at each of
+  // the excite seats' steps up to the stand)
   const tunnels = [...(TD_STANDS.tunnels ?? []), ...(TD_STANDS.exciteGates ?? [])];
-  const inOpen = (p) => (TD_STANDS.exciteOpen ?? []).some(({ p0, p1 }) => {
-    const ex = p1[0] - p0[0], ez = p1[1] - p0[1], L = Math.hypot(ex, ez), dx = p.x - p0[0], dz = p.z - ZH - p0[1], al = (dx * ex + dz * ez) / L, ac = (-dx * ez + dz * ex) / L;
-    return al >= 0 && al <= L && Math.abs(ac) < 4;
-  });
-  const inMouth = ringPts.map((p) => inOpen(p) || tunnels.some((t) => {
+  const inMouth = ringPts.map((p) => tunnels.some((t) => {
     const dx = p.x - t.p[0], dz = p.z - ZH - t.p[1], a = dx * t.u[0] + dz * t.u[1], b = -dx * t.u[1] + dz * t.u[0];
     return Math.abs(b) < t.w / 2 + 0.05 && a > -3 && a < 3;
   }));
@@ -606,7 +582,7 @@ export function buildDome(ctx) {
     flushR();
     if (parts.length) root.add(new THREE.Mesh(mergeGeometries(parts), std({ color: 0xa8a297, roughness: 0.9 })));
   }
-  // the aisles of the excite seats: between every two blocks a flight from the floor in front of the seats up to the stand's aisle
+  // the steps of the excite seats: from the walkway behind their back rows up through a gap in the 1st floor's wall to the stand's aisle
   {
     const treads = [], RISE = 0.19;
     for (const t of TD_STANDS.exciteAisles ?? []) {
@@ -621,22 +597,25 @@ export function buildDome(ctx) {
     }
     if (treads.length) root.add(new THREE.Mesh(mergeGeometries(treads), std({ color: 0xa8a297, roughness: 0.9 })));
   }
-  // the low padded fence in front of the excite seats, one line each side, as the photographs show it: about 0.95 m along the blocks
-  // nearest home, then climbing in a straight slant from the middle of G05 (G45) up to the 1st floor's fence at the pole
+  // the padded fence round each excite stand, as the photographs show it: along its front (out by one diagonal to the
+  // deepest blocks, back in by another to the 1st floor's wall short of the pole) and square back to that wall at the
+  // home end; one height, about chest high to the front row, a pale cap along its top. Straight runs, each its own
+  // slab, so the corners stay sharp. (No net over it: for a concert it is taken down.)
   {
-    const lowMat = std({ color: 0x0b2a1a, roughness: 0.8 });
-    for (const f of TD_STANDS.exciteFront ?? []) {
-      const src = f.pts.map(([x, z]) => ({ x, z: z + ZH })), pts = [], S = [];
-      let acc = 0;
-      for (let k = 0; k + 1 < src.length; k++) {
-        const p = src[k], q2 = src[k + 1], len = Math.hypot(q2.x - p.x, q2.z - p.z), n = Math.max(1, Math.ceil(len / 0.5));
-        for (let i = 0; i < n; i++) { pts.push({ x: p.x + (q2.x - p.x) * i / n, z: p.z + (q2.z - p.z) * i / n }); S.push(acc + len * i / n); }
-        acc += len;
+    const pad = [], cap = [], T = 0.22;
+    for (const f of TD_STANDS.exciteFence ?? []) {
+      const P = f.pts.map(([x, z]) => ({ x, z: z + ZH }));
+      for (let k = 0; k + 1 < P.length; k++) {
+        const a = P[k], b = P[k + 1], l = Math.hypot(b.x - a.x, b.z - a.z) || 1, ux = (b.x - a.x) / l, uz = (b.z - a.z) / l;
+        // (each run carried half the fence's thickness past its ends: the corners close)
+        const run = [{ x: a.x - ux * T / 2, z: a.z - uz * T / 2 }, { x: b.x + ux * T / 2, z: b.z + uz * T / 2 }];
+        pad.push(wallStrip(run, [f.h, f.h], { thick: T, ease: 0 }));
+        cap.push(wallStrip(run, [f.h + 0.05, f.h + 0.05], { y0: f.h, thick: T + 0.05, ease: 0 }));
       }
-      pts.push(src[src.length - 1]); S.push(acc);
-      const hs = S.map((s) => 0.95 + (1.85 - 0.95) * Math.max(0, (s - f.s0) / (acc - f.s0 || 1)));
-      const g = wallStrip(pts, hs, { thick: 0.22, ease: 0 });
-      if (g) root.add(new THREE.Mesh(g, lowMat));
+    }
+    if (pad.length) {
+      root.add(new THREE.Mesh(mergeGeometries(pad), std({ color: 0x0b2a1a, roughness: 0.8 })));
+      root.add(new THREE.Mesh(mergeGeometries(cap), std({ color: 0xc9cdc8, roughness: 0.75 })));
     }
   }
   // the yellow line along the top of the outfield fence, and its net

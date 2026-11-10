@@ -4,6 +4,13 @@ from standlib import Grid, disk, contours, STRAIGHT, sample, seat_mask
 from standgen import Level, poly_out, mask_polys, edge_walls, enclose, grow_under, redepth, trim_tunnels, front_parapet, relay_columns
 T0=time.time()
 st=pickle.load(open('td_stage1.pkl','rb'))
+# The 2nd floor's seats (D, E) as they stand in the committed stands: laid 0.5 m apart, block by block. td_gen.py's own
+# lay of them (0.42 m apart) is not the one the model was built from, so the seats are kept in td/td_seats2F.npy
+# and read back here; delete that file to lay them from td_gen.py again.
+import os
+if os.path.exists('td/td_seats2F.npy'):
+    _s2=np.load('td/td_seats2F.npy',allow_pickle=True); st['SD'],st['SE']=np.asarray(_s2[0],float),np.asarray(_s2[1],float)
+    print('2nd floor seats from td/td_seats2F.npy: D',len(st['SD']),'E',len(st['SE']))
 G=Grid(-140,140,-200,110,0.1)
 STRAIGHT.update(on=True,res=G.res)
 O=(0.0,-60.0)
@@ -314,7 +321,7 @@ Gx.d[EX&(Gx.d<0.01)]=0.01          # (the floor out past the seats' front line t
 _pxb=((_Xg*_s+_Hm[0])*_K).astype(np.float32); _pyb=((_Zg*_s+_Hm[1])*_K).astype(np.float32)
 EX_PITCH,EX_SEAT=0.85,0.65          # a row's depth and a seat's width (the map's blocks stand deeper than their rows: the front comes in, the backs stay on the stand)
 G_WALLED=('G03','G04','G05','G06','G44','G45','G46','G47')   # a low wall behind these; the others run straight on down from the 1st floor's stand
-G_BACK={'G09':1.09,'G10':1.27,'G11':1.30,'G12':1.16,'G13':1.17,'G14':0.80,'G41':1.06,'G40':1.28,'G39':1.30,'G38':1.24,'G37':1.19,'G36':0.73}
+G_BACK={}   # (no block is moved back into the 1st floor's stand any more: td_excite.py lays the excite seats on the field in front of it, and the stand keeps its own front rows)
 G_RISE=0.42                       # (the front rows down near the field, under the low fence: the stand's own front is about 2.1 m up)
 _gs,_gy=[],[]
 _Gd=np.maximum(dX-0.05,0.01).astype(np.float32)
@@ -1431,6 +1438,10 @@ _holes=_holes.buffer(0.12).intersection(_fnP).difference(_fiP.buffer(0.05))
 print('cracks closed behind the excite seats: %.1f m2'%_holes.area)
 _lvG['rows'].append({'r':0,'y':round(float(Gx.hs[0])-0.08,3),'polys':T1._polys_of(_holes)})       # (the floor between the fence and the seats: the seats' own concrete)
 data={'suites':{'line':suite_line,'y':H_C-0.4,'h':3.6,'depth':3.4},'levels':levels,'floors':floors,'flights':flights+aisle_flights,'outer':[poly_out(p) for p in ow],'field':[poly_out(p) for p in fw],'fence':[poly_out(p) for p in fnw],'rim':rim,'rimY':H_D,'rimC':rimC,'rimS':rimS,'rimCS':rimCS,'upperWalls':_upW,'rimCY':H_C,'rooms':encl,'signs':SIGNS,'pillars':PILLARS,'tunnels':_tunnels,'exciteGates':_egates,'exciteAisles':_gAis,'exciteOpen':_gOpen,'exciteFront':_xFront,'backscreen':_bsc,'cWalls':_cWalls}
+# What follows the raster build works on the finished outlines (td_post.py: the excite seats as the map and the photographs
+# show them, the upper tiers' outfield ends): kept apart so it can be run again on its own (python3 td_post.py)
+pickle.dump(data,open('td_pre.pkl','wb'))
+import td_post; data=td_post.apply(data)
 json.dump(data,open('td_stands.json','w'),separators=(',',':'))
 import os; print('json KB',os.path.getsize('td_stands.json')//1024, round(time.time()-T0,1))
 
