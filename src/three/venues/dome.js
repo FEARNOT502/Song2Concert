@@ -86,68 +86,104 @@ export function getDomeSeatCatalog() {
 
 export function membraneMaterial() {
   // The roof from inside, as the photographs show it: cables each way, 14 from one big triangle's side to the next, the
-  // same weight and the same distance apart, none on either centre line, with a
-  // clamp at each crossing; the fabric between them bellies out, sewn in widths.
+  // same distance apart, none on either centre line, with a
+  // clamp at each crossing; the fabric between them sewn in widths.
   // On each of the four diagonals the net stops at one crossing: past it, out to
   // the ring, one big plain triangle, its point at that crossing, its two short
   // sides the last two cables, its long side (about 36 m) the ring. A warm
   // off-white, lit through by the daylight outside.
+  // Closer up, as the photographs show it (from home, from the 2nd floor, by
+  // day and by night): the cables running from home to centre field (x = const)
+  // are thin and dark, taut and straight; the other way the fabric hangs a little
+  // between them, so each seam across (z = const) sags in a shallow arc from one
+  // dark cable to the next and reads as a scalloped grey line, much fainter than
+  // the cables. The rows of fabric hang between the seams like shingles: a soft
+  // shadow along each arc, pale in the middle. A small fitting at each crossing,
+  // a pale lamp either side of it; and from the crown out to each big triangle's
+  // point a staircase of pale lit strips along the cables, step by step down the
+  // diagonal. The colour a warm grey-white; by day warmer, lit through.
   const ZC = 81, TRI_X = 50.4, TRI_Z = 50.4, GRID = 2 * TRI_X / 13;
   const GL = GRID.toFixed(4), HG = (GRID / 2).toFixed(4);
-  const m = std({ color: 0xe9dcc4, roughness: 0.92, side: THREE.BackSide });
+  // how far the fabric hangs between the straight cables, and how much each row bellies between its seams (m)
+  const SAG_A = '0.85', SAG_B = '0.22';
+  const m = std({ color: 0xe5ddcf, roughness: 0.92, side: THREE.BackSide });
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uBounce = { value: new THREE.Color(0) };
     m.userData.shader = sh;
-    const triGL = `float bigTri(vec2 c, float zs, float e) { return smoothstep(${TRI_X.toFixed(1)} + e, ${TRI_X.toFixed(1)} + e + 0.2, abs(c.x)) * smoothstep(${TRI_Z.toFixed(1)} + e, ${TRI_Z.toFixed(1)} + e + 0.2, abs(zs)); }`;
+    const triGL = `float bigTri(vec2 c, float zs, float e) { return smoothstep(${TRI_X.toFixed(1)} + e, ${TRI_X.toFixed(1)} + e + 0.2, abs(c.x)) * smoothstep(${TRI_Z.toFixed(1)} + e, ${TRI_Z.toFixed(1)} + e + 0.2, abs(zs)); }
+      // (the hang dies away over the first few metres into each triangle, so the row beside it meets it without a step)
+      float triHang(vec2 c) { return smoothstep(${TRI_X.toFixed(1)}, ${(TRI_X + 3.5).toFixed(1)}, abs(c.x)) * smoothstep(${TRI_Z.toFixed(1)}, ${(TRI_Z + 3.5).toFixed(1)}, abs(c.y)); }`;
     sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
         varying vec3 vWP; varying float vRho; attribute float aRho; ${triGL}`)
-      // the fabric really bellies out between the cables, less and less out to the ring; the triangles lie flat
+      // the fabric hangs between the straight cables, less and less out to the ring; the triangles lie flat
       .replace('#include <begin_vertex>', `#include <begin_vertex>
         {
           vec2 c = position.xz - vec2(0.0, ${ZC.toFixed(1)});
           float dx = fract((c.x + ${HG}) / ${GL}) - 0.5, dz = fract((c.y + ${HG}) / ${GL}) - 0.5;
-          transformed.y += (0.32 * (1.0 - 4.0 * dx * dx) + 0.32 * (1.0 - 4.0 * dz * dz)) * (1.0 - smoothstep(0.84, 0.98, aRho)) * (1.0 - bigTri(c, c.y, 0.0));
+          // (in the mesh half the kink at the cable: the mesh is a metre or so fine, and a full kink smeared over
+          // its triangles made the straight cables wobble, none made the seams' arcs wavy; the shading keeps it all)
+          float ax = cos(3.14159 * dx); ax = 0.5 * ax * ax + 0.5 * (1.0 - 4.0 * dx * dx);
+          transformed.y -= (${SAG_A} * ax + ${SAG_B} * ax * (1.0 - 4.0 * dz * dz)) * (1.0 - smoothstep(0.84, 0.98, aRho)) * (1.0 - triHang(c));
           vRho = aRho;
         }`)
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
         varying vec3 vWP; varying float vRho; uniform vec3 uBounce; ${triGL}`)
+      // (the hang's slope, so the light falls on it as on the real thing: the normal faces into the house, down)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         {
           vec2 c = vWP.xz - vec2(0.0, ${ZC.toFixed(1)});
           float dx = fract((c.x + ${HG}) / ${GL}) - 0.5, dz = fract((c.y + ${HG}) / ${GL}) - 0.5;
-          normal = normalize(normal + (vec3(1.0, 0.0, 0.0) * dx + vec3(0.0, 0.0, 1.0) * dz) * 0.16 * (1.0 - bigTri(c, c.y, 0.0)));
+          float k = (1.0 - smoothstep(0.84, 0.98, vRho)) * (1.0 - triHang(c)) * 8.0 / ${GL};
+          vec3 g = vec3((${SAG_A} + ${SAG_B} * (1.0 - 4.0 * dz * dz)) * dx, 0.0, ${SAG_B} * (1.0 - 4.0 * dx * dx) * dz) * k;
+          normal = normalize(normal + mat3(viewMatrix) * g);
         }`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         {
           vec2 c = vWP.xz - vec2(0.0, ${ZC.toFixed(1)});
           vec2 fw = fwidth(c) + 1e-4;
           float fx = fract((c.x + ${HG}) / ${GL}), dx = fx - 0.5;
-          // the cables, each way
-          float along = abs(fract((c.x + ${HG}) / ${GL} + 0.5) - 0.5) * ${GL};
           float zs = c.y;
+          float dz = fract((zs + ${HG}) / ${GL}) - 0.5;
+          // distance (m) to the nearest straight cable, and to the nearest seam across
+          float along = abs(fract((c.x + ${HG}) / ${GL} + 0.5) - 0.5) * ${GL};
           float across = abs(fract((zs + ${HG}) / ${GL} + 0.5) - 0.5) * ${GL};
-          float inTri = bigTri(c, zs, 0.3);
-          // (never under a pixel or so across: from the far side of the house they still read as the photographs show them)
-          float hw = max(0.16, fw.x * 1.1), xw = max(0.16, fw.y * 1.1);
-          float hLine = (1.0 - smoothstep(hw, hw + fw.x, along)) * (1.0 - inTri);
-          float xLine = (1.0 - smoothstep(xw, xw + fw.y, across)) * (1.0 - inTri);
-          float clamp1 = (1.0 - smoothstep(0.32, 0.32 + fw.x * 1.5, along)) * (1.0 - smoothstep(0.32, 0.32 + fw.y * 1.5, across)) * (1.0 - inTri);
-          // the fabric's widths, side by side between the heavy cables
-          float seam = (1.0 - smoothstep(0.0, fwidth(fx * 3.0) * 1.5 + 0.02, abs(fract(fx * 3.0 + 0.5) - 0.5) * 2.0)) * (1.0 - inTri);
-          // the big triangles' own widths: faint, along the ring
-          float tv = (abs(c.x) + abs(zs)) / 1.41421 / 6.0;
+          float inTri = bigTri(c, zs, 0.3), net = 1.0 - inTri;
+          // the cables: about 0.18 m across, near-black; never drawn under a pixel or so, but then only as dark
+          // as their real width would make that pixel (with a floor, so from the far side they still read, thinly)
+          float hw = max(0.09, fw.x * 0.6);
+          float kA = 0.78 * max(0.09 / hw, 0.42);
+          float aLine = (1.0 - smoothstep(hw, hw + fw.x, along)) * net;
+          // the seams across: thinner and grey; but the two that bound each big triangle are cables, as dark
+          float edgeB = step(${TRI_X.toFixed(1)}, abs(c.x));
+          float rb = mix(0.05, 0.09, edgeB), xw = max(rb, fw.y * 0.6);
+          float kB = mix(0.42, 0.78, edgeB) * max(rb / xw, mix(0.3, 0.42, edgeB));
+          float bLine = (1.0 - smoothstep(xw, xw + fw.y, across)) * net;
+          // the fitting at each crossing (dark, a little wider than the cable), and its pale lamp either side
+          float cover = min(1.0, 0.25 / max(fw.x, fw.y));
+          float clampD = (1.0 - smoothstep(0.26, 0.26 + fw.x, along)) * (1.0 - smoothstep(0.2, 0.2 + fw.y, across)) * net * cover;
+          float lamp = (1.0 - smoothstep(0.17, 0.17 + max(fw.x, fw.y), length(vec2(along - 0.55, across)))) * net * cover * cover;
+          // the staircase of lit strips down each diagonal, from the crown to the triangle's point, beside the cables
+          vec2 a = abs(c) / ${GL};
+          float Lb = floor(a.y) + 0.5, La = floor(a.x) + 0.5;
+          float sB = step(Lb - 1.0, a.x) * step(a.x, Lb) * step(Lb, 6.6) * smoothstep(0.1, 0.1 + fw.y, (a.y - Lb) * ${GL}) * (1.0 - smoothstep(0.75, 0.75 + fw.y, (a.y - Lb) * ${GL}));
+          float sA = step(La, a.y) * step(a.y, La + 1.0) * step(La, 5.6) * smoothstep(0.1, 0.1 + fw.x, (a.x - La) * ${GL}) * (1.0 - smoothstep(0.75, 0.75 + fw.x, (a.x - La) * ${GL}));
+          float strip = max(sA, sB) * net * min(1.0, 0.65 / max(fw.x, fw.y));
+          // the fabric's widths, side by side between the cables: faint
+          float seam = (1.0 - smoothstep(0.0, fwidth(fx * 4.0) * 1.5 + 0.02, abs(fract(fx * 4.0 + 0.5) - 0.5) * 2.0)) * net;
+          // the big triangles' own widths: faint, square to the ring
+          float tv = (abs(c.x) - abs(zs)) / 1.41421 / 4.5;
           float tseam = (1.0 - smoothstep(0.0, fwidth(tv) * 1.5 + 0.01, abs(fract(tv + 0.5) - 0.5) * 2.0)) * inTri;
-          // the barrels: palest along their middles, darkest down the heavy cables; the triangles plain and a touch paler
-          float dz = fract((c.y + ${HG}) / ${GL}) - 0.5;
-          float barrel = mix((1.0 - 0.1 * 4.0 * dx * dx) * (1.0 - 0.1 * 4.0 * dz * dz), 1.08, inTri);
+          // each row of fabric: a soft shadow just past the seam it hangs from, pale through its middle; the triangles plain, a touch paler
+          float shade = mix((1.0 - 0.07 * 4.0 * dx * dx) * (1.0 - 0.12 * smoothstep(0.15, 0.5, abs(dz))), 1.07, inTri);
           // (every line the same in the fabric's own colour and in what the show throws on it: dark or lit, they stay sharp)
-          float lines = (1.0 - 0.9 * hLine) * (1.0 - 0.9 * xLine) * (1.0 - 0.8 * clamp1) * (1.0 - 0.1 * seam) * (1.0 - 0.08 * tseam);
-          diffuseColor.rgb *= barrel * lines;
-          totalEmissiveRadiance += uBounce * barrel * lines;
+          float lines = (1.0 - kA * aLine) * (1.0 - kB * bLine * (1.0 - aLine)) * (1.0 - 0.55 * clampD) * (1.0 - 0.06 * seam) * (1.0 - 0.06 * tseam);
+          float lit = max(0.35 * lamp, 0.45 * strip) * (1.0 - aLine), pale = 1.0 + lit;
+          diffuseColor.rgb *= shade * lines * pale;
+          totalEmissiveRadiance += uBounce * shade * lines * pale + diffuseColor.rgb * 0.7 * lit;
         }`);
   };
-  m.customProgramCacheKey = () => 'membrane11';
+  m.customProgramCacheKey = () => 'membrane12';
   return m;
 }
 
@@ -700,27 +736,55 @@ export function buildDome(ctx) {
     const { x, z } = edge((i + 0.5) / 14 * Math.PI * 2, 0.97);
     LIGHTS.push(V3(x, ringY(z) - 1.5, z));
   }
-  // Since the 2022 remodel nothing is lit on the membrane: the only house
-  // lights are the floods round its edge.
-  // The floods themselves (LED, about 650 since the 2016 retrofit): a band
-  // of box fixtures all the way round where the membrane meets the top of the
-  // wall, close-packed on the ring beam just under the membrane's edge, each
-  // face turned in at the field and only a little down, so from the stands
-  // and the field the faces are seen square on: an almost unbroken ring of
-  // lit boxes, as the photographs show it. Their faces light with the house.
+  // The house lights are the floods round its edge (the membrane's own small
+  // lamps and lit strips, in its material, light nothing).
+  // The floods themselves (LED, about 700 since the 2016–17 retrofit), as the
+  // photographs show them: banks, not a line. Each bank two rows of round
+  // lamps, six to a row, in square housings on a frame, the banks a few
+  // metres apart all the way round, on a steel catwalk with a handrail that
+  // runs round the ring just under the membrane's edge. Each bank set square
+  // to the ring, its faces turned in and a little down at the field. Their
+  // faces light with the house.
   const floodM = new THREE.MeshBasicMaterial({ color: 0x000000, toneMapped: false, side: THREE.DoubleSide });
   const floodGlow = [];
   {
-    const NL = 220, TILT = 0.35, body = [], faces = [];
-    for (let i = 0; i < NL; i++) {
-      const { x, z } = edge((i + 0.5) / NL * Math.PI * 2, 0.988);
-      const y = ringY(z) - 1.1, yaw = Math.atan2(-x, ZC - z);
-      const at = (lx, ly, lz) => V3(lx, ly, lz).applyAxisAngle(V3(1, 0, 0), TILT).applyAxisAngle(V3(0, 1, 0), yaw).add(V3(x, y, z));
-      const box = new THREE.BoxGeometry(2.3, 0.95, 0.5); box.rotateX(TILT); box.rotateY(yaw); box.translate(x, y, z); body.push(box.toNonIndexed());
-      const face = new THREE.PlaneGeometry(2.1, 0.78); face.rotateX(TILT); face.rotateY(yaw); face.translate(...at(0, 0, 0.26).toArray()); faces.push(face);
-      if (i % 2 === 0) floodGlow.push(pipe.flares.add(at(0, 0, 0.4), KELVIN(5200), 3.0, 0));
+    const RHO = 0.988, NB = 64, ROWS = 2, COLS = 6, PITCH = 1.05, TILT = 0.3, body = [], faces = [];
+    // (even spacing along the ring: arc length round it, sampled)
+    const NS = 2400, S = [0], P = [edge(0, RHO)];
+    for (let i = 1; i <= NS; i++) { const p = edge(i / NS * Math.PI * 2, RHO); S.push(S[i - 1] + Math.hypot(p.x - P[i - 1].x, p.z - P[i - 1].z)); P.push(p); }
+    const L = S[NS];
+    const atS = (s) => { s = ((s % L) + L) % L; let i = 1; while (S[i] < s) i++; const f = (s - S[i - 1]) / (S[i] - S[i - 1]); return { x: lerp(P[i - 1].x, P[i].x, f), z: lerp(P[i - 1].z, P[i].z, f) }; };
+    const frame = (s) => {
+      const p = atS(s), a = atS(s - 0.5), b = atS(s + 0.5);
+      let yaw = Math.atan2(b.x - a.x, b.z - a.z) - Math.PI / 2;          // face square to the ring...
+      const dx = Math.sin(yaw), dz = Math.cos(yaw);
+      if (dx * (0 - p.x) + dz * (ZC - p.z) < 0) yaw += Math.PI;          // ...and in, not out
+      return { ...p, yaw };
+    };
+    const place = (g, f, y, tilt = 0) => { g.rotateX(tilt); g.rotateY(f.yaw); g.translate(f.x, y, f.z); return g; };
+    for (let b = 0; b < NB; b++) {
+      const f = frame((b + 0.5) / NB * L), y = ringY(f.z) - 1.5;
+      const at = (lx, ly, lz) => V3(lx, ly, lz).applyAxisAngle(V3(1, 0, 0), TILT).applyAxisAngle(V3(0, 1, 0), f.yaw).add(V3(f.x, y, f.z));
+      // the bank's frame behind the lamps
+      body.push(place(new THREE.BoxGeometry(COLS * PITCH + 0.3, ROWS * PITCH + 0.25, 0.14), f, 0, TILT).translate(...at(0, 0, -0.3).sub(V3(f.x, 0, f.z)).toArray()).toNonIndexed());
+      for (let r = 0; r < ROWS; r++) for (let k = 0; k < COLS; k++) {
+        const lx = (k - (COLS - 1) / 2) * PITCH, ly = (r - (ROWS - 1) / 2) * PITCH;
+        const hb = new THREE.BoxGeometry(0.84, 0.84, 0.42); hb.rotateX(TILT); hb.rotateY(f.yaw); hb.translate(...at(lx, ly, 0).toArray()); body.push(hb.toNonIndexed());
+        const face = new THREE.CircleGeometry(0.34, 12); face.rotateX(TILT); face.rotateY(f.yaw); face.translate(...at(lx, ly, 0.22).toArray()); faces.push(face);
+      }
+      floodGlow.push(pipe.flares.add(at(0, 0, 0.45), KELVIN(5200), 4.2, 0));
     }
-    root.add(new THREE.Mesh(mergeGeometries(body), std({ color: 0x24252a, roughness: 0.6, metalness: 0.4 })));
+    // the catwalk: its deck under the banks and the handrail in front of them, all the way round
+    const NC = 200;
+    for (let i = 0; i < NC; i++) {
+      const s0 = i / NC * L, s1 = (i + 1) / NC * L, a = atS(s0), c = atS(s1), f = frame((s0 + s1) / 2), len = Math.hypot(c.x - a.x, c.z - a.z) + 0.05;
+      const m = { x: (a.x + c.x) / 2, z: (a.z + c.z) / 2, yaw: f.yaw };
+      const y = ringY(m.z) - 1.5, ix = Math.sin(f.yaw), iz = Math.cos(f.yaw);
+      const deck = place(new THREE.BoxGeometry(len, 0.12, 1.4), m, y - ROWS * PITCH / 2 - 0.35); deck.translate(ix * 0.3, 0, iz * 0.3); body.push(deck.toNonIndexed());
+      const rail = place(new THREE.BoxGeometry(len, 0.07, 0.07), m, y - ROWS * PITCH / 2 + 0.75); rail.translate(ix * 0.95, 0, iz * 0.95); body.push(rail.toNonIndexed());
+      const kick = place(new THREE.BoxGeometry(len, 0.2, 0.03), m, y - ROWS * PITCH / 2 - 0.2); kick.translate(ix * 0.98, 0, iz * 0.98); body.push(kick.toNonIndexed());
+    }
+    root.add(new THREE.Mesh(mergeGeometries(body), std({ color: 0x3a3c40, roughness: 0.6, metalness: 0.4 })));
     root.add(new THREE.Mesh(mergeGeometries(faces), floodM));
   }
   // the ring beam's support frame round the edge, 5 m deep, roofed at the
