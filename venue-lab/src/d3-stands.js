@@ -250,7 +250,20 @@ function vomParts(v, ox, oz) {
   };
   const T = 0.35, hw = v.w / 2, PAR = 1.0;
   const pit = [], cap = [], tunnel = [], floor = [], ceil = [], lamps = [], signs = [];
-  for (const sg of [-1, 1]) {
+  // (v.wall) a pit squared off in the data, its mouth under the row at its back: one parapet round its three
+  // sides, the sides' tops one even slope from t0 at the front to t1 at the back wall, the back wall across the
+  // mouth from the lintel's underside (roof) up to t1; the caps meet end to end, never overlapping
+  if (v.wall) {
+    const { t0, t1, roof } = v.wall, L = v.L, C = 0.03, H = 0.06;
+    for (const sg of [-1, 1]) {
+      const a = Math.min(sg * (hw - T), sg * hw), b = Math.max(sg * (hw - T), sg * hw);
+      pit.push(wall([[0, v.y], [L, v.y], [L, t1], [L - T, t1], [0, t0]], a, b));
+      cap.push(wall([[0, t0], [L - T, t1], [L + C, t1], [L + C, t1 + H], [L - T, t1 + H], [0, t0 + H]], a - C, b + C));
+    }
+    pit.push(box(L - T, L, -hw + T, hw - T, roof, t1));
+    cap.push(box(L - T - C, L + C, -hw + T + C, hw - T - C, t1, t1 + H));
+  }
+  for (const sg of v.wall ? [] : [-1, 1]) {
     // the rows' treads beside the pit, the wall's top a rail's height over each, raked from one row's middle to the next's
     const rows = v.sides.filter((sd) => sd[0] === sg).sort((p, q) => p[1] - q[1]);
     if (!rows.length) continue;
@@ -284,7 +297,8 @@ function vomParts(v, ox, oz) {
     for (let i = 0; i < n; i++) floor.push(box(i * 0.3, (i + 1) * 0.3, -hw + T, hw - T, mouth - 0.3, mouth + rise * (i + 1)));
     t0f = n * 0.3;
   }
-  floor.push(box(t0f, v.L + v.T, -hw, hw, v.y - 0.12, v.y + 0.005));
+  // (over a floor of the data's own at v.y, where there is one, clear of it)
+  floor.push(box(t0f, v.L + v.T, -hw, hw, v.y - 0.12, v.y + (v.wall ? 0.02 : 0.005)));
   // (v.bridge) a plate under the mouth's edge, out over the treads' end (a traced pit can stand a hand's breadth off the
   // last tread, a crack to walk into): just under the floor's first step
   if (v.bridge) {
