@@ -378,6 +378,13 @@ export function buildDome(ctx) {
       const P = [e.a, e.b].map(([x, z]) => ({ x, z: z + ZH }));
       parts.push(wallStrip(P, [e.y1, e.y1], { y0: e.y0, thick: 0.4, ease: 0 }));
     }
+    // (and the 2nd floor's deck carried on, bare, from its last seats to that end: over the balcony's last blocks)
+    for (const k of TD_STANDS.upperDecks ?? []) {
+      const shape = new THREE.Shape(k.pts.map(([x, z]) => new THREE.Vector2(x, -z)));
+      const gd = new THREE.ExtrudeGeometry(shape, { depth: k.y - k.y0, bevelEnabled: false });
+      gd.rotateX(-Math.PI / 2); gd.translate(0, k.y0, ZH); gd.deleteAttribute('uv');
+      parts.push(gd.toNonIndexed());
+    }
     const g = parts.filter(Boolean);
     if (g.length) { const m3 = new THREE.Mesh(mergeGeometries(g), std({ color: 0xcfc6b6, roughness: 0.9 })); m3.receiveShadow = true; root.add(m3); }
   }

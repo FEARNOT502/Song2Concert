@@ -16,8 +16,10 @@
 #   upperWall   one wall each side of the house behind the 2nd floor's top rows, a smooth line in plan that is
 #               never in front of a row, from behind home out to where the balcony ends, then square out to the
 #               building: {pts, y0 (a foot for each point)}; it stands to the ring
-#   levels D    the deck carried on from where its seats stop to where the balcony stops (no seats on it), and
-#               the level strips between a block's top row and that wall, where the wall's line leaves one
+#   upperDecks  the 2nd floor's deck carried on from where its seats stop to where the balcony's concourse stops
+#               (no seats on it): {pts, y, y0}
+#   levels D    the level strips between a block's top row and that wall, where the wall's line leaves one; the
+#               low walls td_build.py stood behind the top rows (D, E) go
 #   rimS        the 2nd floor's front band carried on with the deck
 #   upperEnds   the end wall across both decks at that line: {a, b, y0, y1}
 import numpy as np
@@ -30,6 +32,7 @@ BIN = 0.25                       # degrees
 E_END = 84.3                     # where the 2nd floor's upper rows (E) stop
 WALL_BACK = 0.15                 # the wall behind a top row's back edge
 EASE = 3.0                       # degrees: a notch in the rows' back narrower than this is closed by the wall's line
+SLANT = 2.0                      # metres a degree: the fastest the wall's line comes in towards the field
 D_FOOT = 18.1                    # the wall's foot past E's end: under the deck (as td_build.py's)
 END_Y0 = 13.6                    # the end wall across the decks: from under the balcony's front band
 PARAPET = 1.05
@@ -60,25 +63,48 @@ def apply(data):
     rCb, _ = _profile(L['C']['rows'], nb); rCf, _ = _profile(L['C']['rows'], nb, far=False)
     yD0 = min(r['y'] for r in L['D']['rows'])
     aD = float(np.nanmax(np.abs(TH[~np.isnan(rD)]))); aC = float(np.nanmax(np.abs(TH[~np.isnan(rCb)])))
-    a_end = aC + 0.15
+    # the balcony's concourse behind it: a box as high as 20.3, its front wall (the doors) right behind the balcony's back
+    # row. Where D's rows are over it they hide it; past them the wall over the deck stands in front of its face
+    rBox = np.full(nb, np.nan)
+    for x0, z0, x1, z1, y0, y1 in data['rooms']['walls']:
+        if abs(y0 - 16.2) > 0.01 or y1 < 20.0: continue
+        for t in np.linspace(0.0, 1.0, max(2, int(np.hypot(x1 - x0, z1 - z0) / 0.2) + 1)):
+            dx, dz = x0 + (x1 - x0) * t - O[0], z0 + (z1 - z0) * t - O[1]; r_ = np.hypot(dx, dz); k_ = int(round((np.degrees(np.arctan2(dx, dz)) + 180.0) / BIN)) % nb
+            if abs(TH[k_]) > 100.0 and not r_ >= rBox[k_]: rBox[k_] = r_
+    aBox = float(np.nanmax(np.abs(TH[~np.isnan(rBox)])))
+    a_end = max(aC + 0.15, aBox + 0.5)          # (clear of the box's own end wall)
+    box_face = data['rooms'].get('thick', 0.5) / 2 + 0.2 + 0.05           # (the box wall's half thickness, this wall's, and a little)
     out = Polygon(data['outer'][0][0]).buffer(0)
-    new_rows, walls, ends = [], [], []
-    rimS = [list(r) for r in data['rimS']]
+    new_rows, walls, ends, decks = [], [], [], []
+    rimS = [list(r) for r in data['rimS']]; rimCS = [list(r) for r in data['rimCS']]
     for sg in (-1, 1):
         m = (TH * sg >= 0.0) & (TH * sg <= a_end)
         th = np.abs(TH[m]); o = np.argsort(th); th = th[o]
-        e, ye, dd, yd, cb, cf = (v[m][o] for v in (rE, yE, rD, yD, rCb, rCf))
+        e, ye, dd, yd, cb, cf, bx = (v[m][o] for v in (rE, yE, rD, yD, rCb, rCf, rBox))
+        # (the box's front as one eased line)
+        # (at a door the front wall has no full-height piece and the nearest is the box's back wall: those bins opened away)
+        okb = ~np.isnan(bx); bxs = np.interp(th, th[okb], bx[okb]); kb = int(2.5 / BIN) | 1
+        bxs = gaussian_filter1d(maximum_filter1d(minimum_filter1d(bxs, kb, mode='nearest'), kb, mode='nearest'), 0.5 / BIN, mode='nearest')
         isE = (th <= E_END) & ~np.isnan(e)
         # the furthest tread at each angle, and its height: E's top row; past E's end D's (the wall there never in front of
         # the balcony's back wall under it); past D's end the deck carried on over the balcony
         far = np.where(isE, e, np.fmax(dd, cb - 0.25)); top = np.where(isE, ye, np.where(np.isnan(yd), yD0, yd))
         ok = ~np.isnan(far); far = np.interp(th, th[ok], far[ok]); top = np.where(ok, top, yD0)
+        past = th > aD - 0.2
+        far = np.where(past, bxs - box_face - WALL_BACK, far)
         # the wall's line: over every tread, eased until it turns no faster than a few degrees' run allows
         # (a block's notch closed, then the corners eased a few times over: the line keeps the stand's own sweep round
         # the pole, where an envelope eased until it stops moving would stand metres behind the rows)
         kq = int(EASE / BIN) | 1
         w = minimum_filter1d(maximum_filter1d(far + WALL_BACK, kq, mode='nearest'), kq, mode='nearest')
-        for _ in range(3): w = np.maximum(w, gaussian_filter1d(w, 0.8 / BIN, mode='nearest'))
+        # (and where the rows' back steps in, the line comes in on a slant, no faster than the stand's own sweep round
+        # the pole does: a square jog in the wall shows from the house as a fin up to the ring)
+        for step in (1, -1):
+            for i in (range(1, len(w)) if step > 0 else range(len(w) - 2, -1, -1)): w[i] = max(w[i], w[i - step] - SLANT * BIN)
+        for _ in range(3): w = np.maximum(w, gaussian_filter1d(w, 0.6 / BIN, mode='nearest'))
+        w[past] = np.maximum(gaussian_filter1d(w, 0.6 / BIN, mode='nearest'), far + WALL_BACK)[past]
+        # (a strip behind a top row lies no higher than the lowest top row near it: a step down behind the seats, never a kerb up)
+        top = minimum_filter1d(top, int(2.0 / BIN) | 1, mode='nearest')
         foot = np.where(isE, top - 1.2, D_FOOT); foot = minimum_filter1d(foot, int(3.0 / BIN) | 1, mode='nearest')
         P = _xy(th * sg, w)
         # (square out to the building's wall where the decks end)
@@ -99,29 +125,42 @@ def apply(data):
                 if g.area > 0.3: new_rows.append({'r': 0, 'y': round(float(top[i]), 3), 'y0': round(float(top[i]) - 0.6, 3), 'polys': [_poly_out(np.array(q.exterior.coords)[:-1])[0:1] for q in getattr(g, 'geoms', [g]) if q.area > 0.05]})
             i = j + 1
         # the deck on from D's last seats to the balcony's end, from the balcony's front line to the wall
-        k = (th >= aD - 0.4) & ~np.isnan(cf)
-        fr = np.interp(th[k], th[~np.isnan(cf)], cf[~np.isnan(cf)])
+        # (the balcony's front as a line: its last bins hold only the corner of its end, so the line is carried on from just short of it)
+        okf = ~np.isnan(cf) & (th < aC - 0.6); cl = np.polyfit(th[okf & (th > aC - 4.0)], cf[okf & (th > aC - 4.0)], 1)
+        cfl = np.where(th < aC - 0.6, np.interp(th, th[okf], cf[okf]), np.polyval(cl, th))
+        k = th >= aD - 0.4
+        fr = cfl[k]
         a = _xy(th[k] * sg, fr - 0.05); b = _xy(th[k] * sg, w[k] + 0.05)
-        a = np.vstack([a, _xy(np.array([a_end * sg]), np.array([fr[-1] - 0.05]))]); b = np.vstack([b, _xy(np.array([a_end * sg]), np.array([w[-1] + 0.05]))])
         g = Polygon(np.vstack([a, b[::-1]])).buffer(0)
-        new_rows.append({'r': 0, 'y': round(yD0, 3), 'y0': round(yD0 - 0.5, 3), 'polys': [_poly_out(np.array(q.exterior.coords)[:-1])[0:1] for q in getattr(g, 'geoms', [g]) if q.area > 0.05]})
+        # (a slab of its own, not one of D's treads: plain concrete as the wall over it, where a tread's would be the
+        # stands' weathered one across a floor four metres deep)
+        decks += [{'y': round(yD0, 3), 'y0': round(yD0 - 0.5, 3), 'pts': _poly_out(np.array(q.simplify(0.02).exterior.coords)[:-1])[0]} for q in getattr(g, 'geoms', [g]) if q.area > 0.05]
         # the 2nd floor's front band with it: on along the balcony's front, to the same end
         rim = rimS[0 if sg < 0 else 1]; ends_ = (rim[0], rim[-1]); at_end = 0 if np.hypot(*(np.array(rim[0]) - O)) > 0 and abs(np.degrees(np.arctan2(rim[0][0] - O[0], rim[0][1] - O[1]))) > 60 else -1
         a_rim = abs(np.degrees(np.arctan2(rim[at_end][0] - O[0], rim[at_end][1] - O[1])))
-        kk = (th > a_rim + 0.3) & ~np.isnan(cf)
-        ext = _xy(np.append(th[kk], a_end) * sg, np.append(np.interp(th[kk], th[~np.isnan(cf)], cf[~np.isnan(cf)]), fr[-1]))
+        kk = th > a_rim + 0.3
+        ext = _xy(th[kk] * sg, cfl[kk])
         ext = [[round(float(x), 2), round(float(z), 2)] for x, z in ext[::8].tolist() + [ext[-1].tolist()]]
         rimS[0 if sg < 0 else 1] = (ext[::-1] + rim) if at_end == 0 else (rim + ext)
+        rc = data['rimCS'][0 if sg < 0 else 1]; ac0, ac1 = (abs(np.degrees(np.arctan2(q[0] - O[0], q[1] - O[1]))) for q in (rc[0], rc[-1]))
+        pc = [round(float(v), 2) for v in _xy(np.array([a_end * sg]), np.array([fr[-1]]))[0]]
+        rimCS[0 if sg < 0 else 1] = ([pc] + rc) if ac0 > ac1 else (rc + [pc])
         # the end wall across the two decks
         p0 = _xy(np.array([a_end * sg]), np.array([fr[-1] - 0.45]))[0]
         ends.append({'a': [round(float(v), 2) for v in p0], 'b': [round(float(v), 2) for v in pe], 'y0': END_Y0, 'y1': round(yD0 + PARAPET, 2)})
     data = dict(data)
     D = dict(L['D']); D['rows'] = list(D['rows']) + [r for r in new_rows if r['polys']]
-    data['levels'] = [D if l['name'] == 'D' else l for l in data['levels']]
-    data['rimS'] = rimS
-    data['upperWall'] = walls; data['upperEnds'] = ends; data['upperWalls'] = []
+    # (the low walls td_build.py stood behind the top rows: the wall stands there now)
+    from shapely.geometry import LineString, Point
+    wl = [LineString(w_['pts']) for w_ in walls]; E = dict(L['E']); gone = 0
+    for lv in (D, E):
+        keep = [r_ for r_ in lv['rails'] if min(l_.distance(Point((r_[0] + r_[2]) / 2, (r_[1] + r_[3]) / 2)) for l_ in wl) > 0.7]
+        gone += len(lv['rails']) - len(keep); lv['rails'] = keep
+    data['levels'] = [D if l['name'] == 'D' else E if l['name'] == 'E' else l for l in data['levels']]
+    data['rimS'] = rimS; data['rimCS'] = rimCS
+    data['upperWall'] = walls; data['upperEnds'] = ends; data['upperDecks'] = decks; data['upperWalls'] = []
     # (td_build.py's landing at D's end, a step over the deck that now runs on past it: gone)
     data['floors'] = [f for f in data['floors'] if not (abs(f['y'] - 19.15) < 0.01 and sum(Polygon(p[0]).area for p in f['polys']) < 40)]
-    print('upper tier: D\'s seats end at %.1f, the balcony and both decks at %.1f degrees; wall %d points a side, level strips behind top rows %d (%.0f m2), deck carried on %.0f m2 a side'
-          % (aD, a_end, len(walls[0]['pts']), len(new_rows) - 2, sum(Polygon(p[0]).area for r in new_rows[:-1] for p in r['polys'] if r is not new_rows[len(new_rows) // 2 - 1]), Polygon(new_rows[-1]['polys'][0][0]).area))
+    print('upper tier: D\'s seats end at %.1f, the balcony at %.1f, its concourse and both decks at %.1f degrees; wall %d points a side; strips behind top rows %d, %.0f m2; low walls behind top rows gone %d'
+          % (aD, aC, a_end, len(walls[0]['pts']), len(new_rows), sum(Polygon(p[0]).area for r in new_rows for p in r['polys']), gone))
     return data
