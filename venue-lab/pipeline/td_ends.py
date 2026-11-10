@@ -29,6 +29,7 @@ from shapely.ops import unary_union
 
 O = np.array([0.0, -60.0])       # the dome's centre: angles from it, 0 towards home
 BIN = 0.25                       # degrees
+D_CUT = 106.5                    # where the 2nd floor (D) stops: just past the outfield's first aisle column (105.5), as the photographs show it; the map draws D01/D51 on to 112
 E_END = 84.3                     # where the 2nd floor's upper rows (E) stop
 WALL_BACK = 0.15                 # the wall behind a top row's back edge
 EASE = 3.0                       # degrees: a notch in the rows' back narrower than this is closed by the wall's line
@@ -56,7 +57,34 @@ def _profile(rows, nb, far=True):
 def _xy(th, r): t = np.radians(th); return np.c_[O[0] + np.sin(t) * r, O[1] + np.cos(t) * r]
 def _poly_out(P): return [[[round(float(x), 2), round(float(z), 2)] for x, z in P]]
 
+def _cut_D(data):
+    """the 2nd floor's stand stops at D_CUT: its rows, steps, low walls, seats and front band past it go"""
+    import base64
+    def sector(sg): return Polygon([tuple(O)] + [tuple(_xy(np.array([t * sg]), np.array([200.0]))[0]) for t in np.arange(D_CUT, 150.1, 2.0)])
+    cut = unary_union([sector(-1), sector(1)])
+    def th(x, z): return abs(np.degrees(np.arctan2(x - O[0], z - O[1])))
+    D = dict(next(l for l in data['levels'] if l['name'] == 'D')); rows = []
+    for r in D['rows']:
+        g = unary_union([Polygon(p[0], p[1:]).buffer(0) for p in r['polys']]).difference(cut)
+        polys = [[[[round(float(x), 2), round(float(z), 2)] for x, z in list(rg.coords)[:-1]] for rg in [q.exterior] + list(q.interiors)] for q in getattr(g, 'geoms', [g]) if q.geom_type == 'Polygon' and q.area > 0.02]
+        if polys: rows.append({**r, 'polys': polys})
+    D['rows'] = rows
+    def first(st):
+        q = st['polys'][0]
+        while isinstance(q[0][0], list): q = q[0]
+        return np.mean(q, axis=0)
+    D['steps'] = [st for st in D['steps'] if th(*first(st)) <= D_CUT - 0.3]
+    D['rails'] = [r for r in D['rails'] if th((r[0] + r[2]) / 2, (r[1] + r[3]) / 2) <= D_CUT]
+    sk = D.get('seatScale', 10); S = np.frombuffer(base64.b64decode(D['seats']), '<i2').reshape(-1, 4)
+    keep = np.abs(np.degrees(np.arctan2(S[:, 0] / sk - O[0], S[:, 1] / sk - O[1]))) <= D_CUT - 0.25
+    D['seats'] = base64.b64encode(S[keep].tobytes()).decode('ascii'); D.pop('labels', None)
+    data = dict(data); data['levels'] = [D if l['name'] == 'D' else l for l in data['levels']]
+    data['rimS'] = [[q for q in rim if th(*q) <= D_CUT] for rim in data['rimS']]
+    print('2nd floor cut at %.1f degrees: seats %d -> %d' % (D_CUT, len(S), int(keep.sum())))
+    return data
+
 def apply(data):
+    data = _cut_D(data)
     L = {l['name']: l for l in data['levels']}
     nb = int(round(360 / BIN)); TH = np.arange(nb) * BIN - 180.0
     rE, yE = _profile(L['E']['rows'], nb); rD, yD = _profile(L['D']['rows'], nb); rDn, _ = _profile(L['D']['rows'], nb, far=False)
