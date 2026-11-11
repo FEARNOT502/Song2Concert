@@ -869,7 +869,8 @@ function buildStands(data, {
     for (const st of L.steps) {
       prism(st.polys, st.y0, st.y, levelGeo);
       const c = st.polys[0].reduce((a, [x, z]) => [a[0] + x, a[1] + z], [0, 0]).map((v) => v / st.polys[0].length);
-      aisleLights.push({ x: c[0] + ox, y: st.y0 + 0.04, z: c[1] + oz });
+      // (a step can go unlit: `light: false`, to keep a level's many half steps to a reasonable count of lights)
+      if (st.light !== false) aisleLights.push({ x: c[0] + ox, y: st.y0 + 0.04, z: c[1] + oz });
     }
     // tunnel mouths: a floor, and walls up past the treads round them, left
     // open where the rows above leave headroom (the way through to the concourse)

@@ -357,54 +357,134 @@ export function buildDome(ctx) {
     sold: round ? () => true : (x, z) => z - 19.6 > Math.max(4, 0.12 * (Math.abs(x) - 33)),
     // the side walls where a stand drops away: the stands' own concrete,
     // not dark steel
-    materials: { rail: std({ color: 0xaaa499, roughness: 0.92, side: THREE.DoubleSide }), wall: std({ color: 0xb4aea3, roughness: 0.88, side: THREE.DoubleSide }) },
+    // (the balcony's own front rail from the data is not drawn: its glass front is, below, along rimCS)
+    materials: { rail: std({ color: 0xaaa499, roughness: 0.92, side: THREE.DoubleSide }), wall: std({ color: 0xb4aea3, roughness: 0.88, side: THREE.DoubleSide }), levelRail: { C: new THREE.MeshBasicMaterial({ visible: false }) } },
   });
   root.add(stands.group);
-  // the fronts of the balcony and the 2nd floor, faced in matt metal, from under each to its rail: one smooth line each, stood a little proud of the concrete
+  // The fronts of the balcony and the 2nd floor: one smooth line each along its rim, as the photographs show them.
+  //   2nd floor  a solid parapet, painted a light grey, 0.85 m over its front tread, its top 0.22 m thick; on its
+  //              seat side a stainless double rail: one tube along the face just under the top, the other 0.25 m
+  //              over the top (1.1 m up), bent down onto the face at posts along it
+  //   balcony    the slab's edge faced light (the sponsor band), and over it a low front of clear glass panes
+  //              between stainless posts, a round stainless rail on top: the seats show through from the field
+  // (the 2nd floor's front runs on unbroken behind home; the balcony's stops either side of the wall between S101 and S301)
   {
-    const metal = std({ color: 0x9a9da2, roughness: 0.62, metalness: 0.35, envMapIntensity: 0.5 });
-    // (the 2nd floor's front runs on unbroken behind home; the balcony's stops either side of the wall between S101 and S301)
-    for (const [lines, y, low] of [[[TD_STANDS.rimS.flat()], TD_STANDS.rimY, 1.5], [TD_STANDS.rimCS, TD_STANDS.rimCY, 1.2]]) {
-      for (const rim of lines ?? []) {
-        const pts2 = rim.map(([x, z]) => { const dx = -x, dz = -60 - z, l = Math.hypot(dx, dz) || 1; return { x: x + dx / l * 0.28, z: z + dz / l * 0.28 + ZH }; });
-        const g = wallStrip(pts2, pts2.map(() => y + 0.85), { y0: y - low, thick: 0.06, ease: 0 });
-        if (g) { const m3 = new THREE.Mesh(g, metal); m3.userData.noCollide = true; root.add(m3); }
+    const inward = ([x, z]) => { const dx = -x, dz = -60 - z, l = Math.hypot(dx, dz) || 1; return [dx / l, dz / l]; };
+    const along = (rim, d) => rim.map((p) => { const n = inward(p); return { x: p[0] + n[0] * d, z: p[1] + n[1] * d + ZH }; });
+    const steel = [], glass = [];
+    // a round tube through the points at height y (one per line, merged below)
+    const tube = (P, y, r) => {
+      if (P.length < 2) return;
+      const curve = new THREE.CatmullRomCurve3(P.map((p) => new THREE.Vector3(p.x, y, p.z)), false, 'centripetal');
+      steel.push(new THREE.TubeGeometry(curve, Math.max(8, P.length * 2), r, 6, false));
+    };
+    // posts along a line, about every `every` m: [y0, y1], `w` square
+    const posts = (P, y0, y1, w, every) => {
+      let acc = every;
+      for (let i = 0; i < P.length; i++) {
+        if (i) acc += Math.hypot(P[i].x - P[i - 1].x, P[i].z - P[i - 1].z);
+        if (acc < every && i !== P.length - 1) continue;
+        acc = 0;
+        const b = new THREE.BoxGeometry(w, y1 - y0, w); b.translate(P[i].x, (y0 + y1) / 2, P[i].z); steel.push(b.toNonIndexed());
+      }
+    };
+    const paint = std({ color: 0xb7b9b8, roughness: 0.85 });
+    // the 2nd floor
+    {
+      const rim = TD_STANDS.rimS.flat(), y = TD_STANDS.rimY;
+      const g = wallStrip(along(rim, 0.17), rim.map(() => y + 0.85), { y0: y - 1.5, thick: 0.22, ease: 0 });
+      if (g) { const m3 = new THREE.Mesh(g, paint); m3.receiveShadow = true; root.add(m3); }
+      const face = along(rim, 0.0);
+      tube(face, y + 0.74, 0.024);
+      tube(face, y + 1.1, 0.024);
+      posts(face, y + 0.7, y + 1.1, 0.045, 2.4);
+    }
+    // the balcony
+    {
+      const fascia = std({ color: 0xd9d9d5, roughness: 0.8 });
+      const y = TD_STANDS.rimCY;
+      for (const rim of TD_STANDS.rimCS ?? []) {
+        const g = wallStrip(along(rim, 0.28), rim.map(() => y + 0.08), { y0: y - 1.2, thick: 0.08, ease: 0 });
+        if (g) { const m3 = new THREE.Mesh(g, fascia); m3.receiveShadow = true; root.add(m3); }
+        const line = along(rim, 0.26);
+        const gl = wallStrip(line, rim.map(() => y + 0.93), { y0: y + 0.08, thick: 0.012, ease: 0 });
+        if (gl) glass.push(gl);
+        tube(line, y + 0.95, 0.028);
+        posts(line, y + 0.08, y + 0.95, 0.04, 1.5);
       }
     }
+    if (steel.length) {
+      const m3 = new THREE.Mesh(mergeGeometries(steel.map((s) => (s.index ? s.toNonIndexed() : s))), std({ color: 0xc9ccd0, roughness: 0.28, metalness: 0.85, envMapIntensity: 0.8 }));
+      m3.userData.noCollide = true; root.add(m3);
+    }
+    if (glass.length) {
+      const m3 = new THREE.Mesh(mergeGeometries(glass), std({ color: 0xd8e6ea, roughness: 0.08, metalness: 0.1, transparent: true, opacity: 0.1, depthWrite: false, side: THREE.DoubleSide }));
+      m3.renderOrder = 2; root.add(m3);
+    }
   }
-  // The wall behind the upper tier (td_ends.py): straight up to the ring from behind the 2nd floor's top rows, one
-  // smooth line in plan from behind home out past each pole to where the balcony and the deck over it end, then square
-  // out to the building's own wall; and the end wall across those two decks. Plain concrete, as the stands'.
+  // The back of the balcony: its lounges' and suites' glazing, lit from inside. Along the balcony's whole length, on
+  // the line of the concourse wall behind its top row (found from that wall's pieces, the openings between them
+  // glazed too), from the top tread up 2.3 m: glass in dark frames, a mullion about every 1.8 m.
   {
-    const parts = [];
-    for (const w of TD_STANDS.upperWall ?? []) {
-      const P = w.pts.map(([x, z]) => ({ x, z: z + ZH }));
-      parts.push(wallStrip(P, P.map((p) => ringY(p.z) + 0.5), { y0: w.y0, thick: 0.4, ease: 0 }));
-      const R = w.ret.map(([x, z]) => ({ x, z: z + ZH }));
-      parts.push(wallStrip(R, R.map((p) => ringY(p.z) + 0.5), { y0: w.retY0 ?? 13.6, thick: 0.4, ease: 0 }));
+    const C = TD_STANDS.levels.find((l) => l.name === 'C');
+    const top = Math.max(...C.rows.map((r) => r.y));
+    const W = (TD_STANDS.rooms?.walls ?? []).filter((w) => Math.abs(w[4] - top) < 0.05);
+    const segD = (px, pz, [x0, z0, x1, z1]) => {
+      const dx = x1 - x0, dz = z1 - z0, l2 = dx * dx + dz * dz || 1, t = Math.max(0, Math.min(1, ((px - x0) * dx + (pz - z0) * dz) / l2));
+      return Math.hypot(px - x0 - t * dx, pz - z0 - t * dz);
+    };
+    const panes = [], frames = [];
+    for (const rim of TD_STANDS.rimCS ?? []) {
+      // (the wall's distance behind the rim at each point: the nearest piece of it within 7 m; between, the run's middle value)
+      const D = rim.map(([x, z]) => { let m = Infinity; for (const w of W) if (Math.abs(w[0] - x) < 9 && Math.abs(w[1] - z) < 9) m = Math.min(m, segD(x, z, w)); return m < 7 ? m : null; });
+      const known = D.filter((d) => d !== null).sort((u, v) => u - v);
+      if (!known.length) continue;
+      const med = known[known.length >> 1];
+      const Ds = D.map((_, i) => { let sm = 0, n = 0; for (let k = -4; k <= 4; k++) { const d = D[i + k]; if (d != null) { sm += d; n++; } } return n ? sm / n : med; });
+      const line = (off) => rim.map(([x, z], i) => { const dx = -x, dz = -60 - z, l = Math.hypot(dx, dz) || 1; return { x: x - dx / l * (Ds[i] - off), z: z - dz / l * (Ds[i] - off) + ZH }; });
+      const P = line(0.05), F = line(0.09);
+      const g = wallStrip(P, P.map(() => top + 2.3), { y0: top + 0.02, thick: 0.02, ease: 0 });
+      if (g) panes.push(g);
+      const h = wallStrip(F, F.map(() => top + 2.45), { y0: top + 2.28, thick: 0.06, ease: 0 });
+      if (h) frames.push(h);
+      let acc = 0;
+      for (let i = 1; i < F.length; i++) {
+        const dx = F[i].x - F[i - 1].x, dz = F[i].z - F[i - 1].z, sl = Math.hypot(dx, dz);
+        acc += sl;
+        if (acc < 1.8) continue;
+        acc = 0;
+        const b = new THREE.BoxGeometry(0.08, 2.3, 0.08); b.rotateY(Math.atan2(dx, dz)); b.translate(F[i].x, top + 1.15, F[i].z);
+        frames.push(b.toNonIndexed());
+      }
     }
-    for (const e of TD_STANDS.upperEnds ?? []) {
-      const P = [e.a, e.b].map(([x, z]) => ({ x, z: z + ZH }));
-      parts.push(wallStrip(P, [e.y1, e.y1], { y0: e.y0, thick: 0.4, ease: 0 }));
+    if (panes.length) {
+      const m3 = new THREE.Mesh(mergeGeometries(panes), std({ color: 0x3a3833, emissive: 0xf2e4c9, emissiveIntensity: 0.8, roughness: 0.15, side: THREE.DoubleSide }));
+      m3.userData.noCollide = true; root.add(m3);
     }
-    // (and the 2nd floor's deck carried on, bare, from its last seats to that end: over the balcony's last blocks)
-    for (const k of TD_STANDS.upperDecks ?? []) {
-      const shape = new THREE.Shape(k.pts.map(([x, z]) => new THREE.Vector2(x, -z)));
-      const gd = new THREE.ExtrudeGeometry(shape, { depth: k.y - k.y0, bevelEnabled: false });
-      gd.rotateX(-Math.PI / 2); gd.translate(0, k.y0, ZH); gd.deleteAttribute('uv');
-      parts.push(gd.toNonIndexed());
+    if (frames.length) {
+      const m3 = new THREE.Mesh(mergeGeometries(frames.map((f) => { f.deleteAttribute('uv'); return f; })), std({ color: 0x232427, roughness: 0.6 }));
+      m3.userData.noCollide = true; root.add(m3);
     }
-    const g = parts.filter(Boolean);
-    if (g.length) { const m3 = new THREE.Mesh(mergeGeometries(g), std({ color: 0xcfc6b6, roughness: 0.9 })); m3.receiveShadow = true; root.add(m3); }
   }
-  // the balcony's blocks divided by concrete walls, on the lines of the columns under it
+  // The balcony's partitions. Its rows run on unbroken along the Premium Lounge (1B and 3B sides: rows of 70-odd
+  // seats); only the suites (THE SUITE TOKYO, behind the backstop) are divided, by low cream panels, a metre over
+  // the treads, on the lines of the columns under them. The suites hold 284 of the balcony's 1,804 seats: the
+  // stretch nearest home on each side holding that share of its seats.
   if (TD_STANDS.cWalls?.length) {
-    const parts = TD_STANDS.cWalls.map((w) => {
-      const g = new THREE.BoxGeometry(0.2, w.y1 - w.y0, w.len);
+    const C = TD_STANDS.levels.find((l) => l.name === 'C'), S = decodeSeats(C.seats), sk = C.seatScale ?? 10;
+    const lim = new Map();
+    for (const side of [-1, 1]) {
+      const a = [];
+      for (let i = 0; i < S.length; i += 4) if (Math.sign(S[i]) === side) a.push(Math.abs(Math.atan2(S[i] / sk, -S[i + 1] / sk)) / DEG);
+      a.sort((u, v) => v - u);
+      lim.set(side, a.length ? a[Math.floor(a.length * 284 / 1804)] : 180);
+    }
+    const parts = TD_STANDS.cWalls.filter((w) => Math.abs(Math.atan2(w.x, -w.z)) / DEG > lim.get(Math.sign(w.x) || 1)).map((w) => {
+      const g = new THREE.BoxGeometry(0.08, w.y1 - w.y0, w.len);
       g.rotateY(Math.atan2(w.ax, w.az)); g.translate(w.x, (w.y0 + w.y1) / 2, w.z + ZH);
       return g.toNonIndexed();
     });
-    root.add(new THREE.Mesh(mergeGeometries(parts), std({ color: 0xb4aea3, roughness: 0.88 })));
+    if (parts.length) root.add(new THREE.Mesh(mergeGeometries(parts), std({ color: 0xd8cdb8, roughness: 0.8 })));
   }
   {
     const rows = new Map();
