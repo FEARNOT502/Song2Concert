@@ -4,12 +4,13 @@
 #   td_ends.py    the outfield ends of the balcony (C) and the 2nd floor (D), and the walls there
 #   td_tidy.py    the upper rows' (E) vomitories squared off, the outfield's aisle columns on their aisles' middles
 #   td_steps.py   the half steps up the 1st floor's rear aisles (B), where a row rises more than 0.2 m
+#   td_balcony.py the rooms behind the balcony (suites, lounge), its glazing, the 2nd floor's smooth underside over it and its end
 #
 # td_build.py pickles its stands (td_pre.pkl) and calls apply(); `python3 td_post.py` runs these
 # stages again on that pickle, writes td_stands.json and relabels the seats (td_labels.py): seconds,
 # where td_build.py takes five minutes.
 import json, pickle, importlib
-STAGES = ('td_excite', 'td_ends', 'td_tidy', 'td_steps')
+STAGES = ('td_excite', 'td_ends', 'td_tidy', 'td_steps', 'td_balcony')
 def apply(data):
     for name in STAGES:
         try: m = importlib.import_module(name)

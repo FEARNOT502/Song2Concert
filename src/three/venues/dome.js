@@ -464,49 +464,138 @@ export function buildDome(ctx) {
       m3.renderOrder = 2; root.add(m3);
     }
   }
-  // The back of the balcony: its lounges' and suites' glazing, lit from inside. Along the balcony's whole length, on
-  // the line of the concourse wall behind its top row (found from that wall's pieces, the openings between them
-  // glazed too), from the top tread up 2.3 m: glass in dark frames, a mullion about every 1.8 m.
+  // The back of the balcony (td_balcony.py): the rooms behind its top row, glazed onto it, from the suites behind home
+  // out to where the 2nd floor's seats stop; past that a plain wall. THE SUITE TOKYO (official page: 28 rooms behind
+  // the backstop on the 3rd-floor balcony, "ガラス扉はフルオープン"; its room photographs and Kotobuki's of the suite
+  // balcony): a room a block, warm wood-lined, full-width glass doors in black frames straight behind the top row,
+  // divided by walls on the balcony's partition lines. The Premium Lounge (Kotobuki's photograph along its rows: a white
+  // back wall with openings into the lounge, a light ceiling with downlights over the seats): one long room behind
+  // white piers on the column lines, glazed between. Lit from inside with the house: dark (nearly) while the show
+  // plays. Over the glazing, a strip of wall up to the 2nd floor's underside, and that underside one smooth surface
+  // (light, the balcony's ceiling), not the rows' slabs stepping.
+  // (the rooms' lights: their own list, dimmed to 4% while the show plays; the stands' self-lit pieces are in houseLit above)
+  const roomLit = [];
   {
-    const C = TD_STANDS.levels.find((l) => l.name === 'C');
-    const top = Math.max(...C.rows.map((r) => r.y));
-    const W = (TD_STANDS.rooms?.walls ?? []).filter((w) => Math.abs(w[4] - top) < 0.05);
-    const segD = (px, pz, [x0, z0, x1, z1]) => {
-      const dx = x1 - x0, dz = z1 - z0, l2 = dx * dx + dz * dz || 1, t = Math.max(0, Math.min(1, ((px - x0) * dx + (pz - z0) * dz) / l2));
-      return Math.hypot(px - x0 - t * dx, pz - z0 - t * dz);
+    const BR = TD_STANDS.balconyRooms;
+    const lit = (color, emissive, e, o = {}) => { const m = std({ color, roughness: 0.85, emissive, emissiveIntensity: e, ...o }); roomLit.push([m, e]); return m; };
+    const P3 = ([x, z], y) => [x, y, z + ZH];
+    // a ribbon between two lines at heights (per point), facing up or down
+    const ribbon = (A, B, ya, yb, down) => {
+      const P = [];
+      for (let i = 0; i + 1 < A.length; i++) {
+        const a0 = P3(A[i], ya[i]), a1 = P3(A[i + 1], ya[i + 1]), b0 = P3(B[i], yb[i]), b1 = P3(B[i + 1], yb[i + 1]);
+        if (down) P.push(...a0, ...b0, ...b1, ...a0, ...b1, ...a1); else P.push(...a0, ...b1, ...b0, ...a0, ...a1, ...b1);
+      }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.computeVertexNormals(); return g;
     };
-    const panes = [], frames = [];
-    for (const rim of TD_STANDS.rimCS ?? []) {
-      // (the wall's distance behind the rim at each point: the nearest piece of it within 7 m; between, the run's middle value)
-      const D = rim.map(([x, z]) => { let m = Infinity; for (const w of W) if (Math.abs(w[0] - x) < 9 && Math.abs(w[1] - z) < 9) m = Math.min(m, segD(x, z, w)); return m < 7 ? m : null; });
-      const known = D.filter((d) => d !== null).sort((u, v) => u - v);
-      if (!known.length) continue;
-      const med = known[known.length >> 1];
-      const Ds = D.map((_, i) => { let sm = 0, n = 0; for (let k = -4; k <= 4; k++) { const d = D[i + k]; if (d != null) { sm += d; n++; } } return n ? sm / n : med; });
-      const line = (off) => rim.map(([x, z], i) => { const dx = -x, dz = -60 - z, l = Math.hypot(dx, dz) || 1; return { x: x - dx / l * (Ds[i] - off), z: z - dz / l * (Ds[i] - off) + ZH }; });
-      const P = line(0.05), F = line(0.09);
-      const g = wallStrip(P, P.map(() => top + 2.3), { y0: top + 0.02, thick: 0.02, ease: 0 });
-      if (g) panes.push(g);
-      const h = wallStrip(F, F.map(() => top + 2.45), { y0: top + 2.28, thick: 0.06, ease: 0 });
-      if (h) frames.push(h);
-      let acc = 0;
-      for (let i = 1; i < F.length; i++) {
-        const dx = F[i].x - F[i - 1].x, dz = F[i].z - F[i - 1].z, sl = Math.hypot(dx, dz);
-        acc += sl;
-        if (acc < 1.8) continue;
-        acc = 0;
-        const b = new THREE.BoxGeometry(0.08, 2.3, 0.08); b.rotateY(Math.atan2(dx, dz)); b.translate(F[i].x, top + 1.15, F[i].z);
-        frames.push(b.toNonIndexed());
+    // (which way is up for a ribbon from front to back: its winding as seen from above)
+    const upward = (A, B) => { const dx = A[1][0] - A[0][0], dz = A[1][1] - A[0][1], ex = B[0][0] - A[0][0], ez = B[0][1] - A[0][1]; return dx * ez - dz * ex < 0; };
+    const box = (out, w, h, d, x, y, z, rotY) => { const b = new THREE.BoxGeometry(w, h, d); b.rotateY(rotY); b.translate(x, y, z + ZH); out.push(b.toNonIndexed()); };
+    if (BR) {
+      const y = BR.y, cy = BR.ceil;
+      const wood = lit(0xa27a52, 0x6b4a2c, 0.55), white = lit(0xe2ded6, 0x8c877d, 0.5), ceilM = lit(0xe6e2da, 0x8f8a80, 0.55, { side: THREE.DoubleSide });
+      const carpet = lit(0x6e6258, 0x2e2822, 0.5, { side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+      const lamp = glowMat(0xfff0da, 1.6, { side: THREE.DoubleSide }); const lampC = lamp.color.clone();
+      roomLit.push([{ set emissiveIntensity(v) { lamp.color.copy(lampC).multiplyScalar(v / 0.6); } }, 0.6]);
+      const geo = { wood: [], white: [], ceil: [], floor: [], frame: [], glass: [], lamp: [], header: [] };
+      const angOf = ([x, z]) => Math.abs(Math.atan2(x - 0, z + 60)) / DEG;
+      for (const sd of BR.sides) {
+        const F = sd.front, K = sd.back, n = F.length;
+        const up = upward(F, K);
+        geo.floor.push(ribbon(F, K, F.map(() => y + 0.015), K.map(() => y + 0.015), !up));
+        geo.ceil.push(ribbon(F, K, F.map(() => cy), K.map(() => cy), up));
+        // the back wall: wood behind the suites, white behind the lounge
+        const iL = sd.ang.findIndex((a) => a >= sd.lounge[0] - 1e-6);
+        const backOf = (i0, i1) => wallStrip(K.slice(i0, i1 + 1).map(([x, z]) => ({ x, z: z + ZH })), K.slice(i0, i1 + 1).map(() => cy + 0.02), { y0: y, thick: 0.1, ease: 0 });
+        if (iL > 0) geo.wood.push(backOf(0, iL));
+        geo.white.push(backOf(Math.max(0, iL), n - 1));
+        // the glazing: panes from the top tread to the frame band; the band; the header over it up to the underside
+        const G = sd.glass, Hd = sd.header;
+        const line = (pts, off) => pts.map(([x, z]) => { const dx = x, dz = z + 60, l = Math.hypot(dx, dz) || 1; return { x: x + dx / l * off, z: z + dz / l * off + ZH }; });
+        const gp = wallStrip(line(G, 0.03), G.map((g) => g[2]), { y0: y + 0.01, thick: 0.02, ease: 0 }); if (gp) geo.glass.push(gp);
+        const fb = wallStrip(line(G, 0.06), Hd.map((h) => h[2]), { y0: G.map((g) => g[2]), thick: 0.12, ease: 0 }); if (fb) geo.frame.push(fb);
+        const hd = wallStrip(line(Hd, 0.15), Hd.map((h) => h[3]), { y0: Hd.map((h) => h[2] - 0.01), thick: 0.3, ease: 0 }); if (hd) geo.header.push(hd);
+        // mullions: the suites' doors about every 1.3 m, the lounge's glazing every 1.8 m; at each suite's wall a broad one
+        const L = line(G, 0.06);
+        let acc = 0;
+        for (let i = 1; i < n; i++) {
+          const dx = L[i].x - L[i - 1].x, dz = L[i].z - L[i - 1].z;
+          acc += Math.hypot(dx, dz);
+          const suite = sd.ang[i] < sd.lounge[0];
+          if (acc < (suite ? 1.3 : 1.8)) continue;
+          acc = 0;
+          const b = new THREE.BoxGeometry(0.07, G[i][2] - y, 0.1); b.rotateY(Math.atan2(dx, dz)); b.translate(L[i].x, (y + G[i][2]) / 2, L[i].z); geo.frame.push(b.toNonIndexed());
+        }
+        // downlights over the rooms, down their middle
+        for (let i = 2; i < n; i += 8) {
+          const mx = (F[i][0] * 0.55 + K[i][0] * 0.45), mz = (F[i][1] * 0.55 + K[i][1] * 0.45);
+          box(geo.lamp, 0.35, 0.02, 0.35, mx, cy - 0.02, mz, 0);
+        }
+      }
+      // the walls across: between the suites (wood), the rooms' ends; a dark mullion where each meets the glazing
+      for (const [x0, z0, x1, z1] of BR.walls) {
+        const len = Math.hypot(x1 - x0, z1 - z0), rot = Math.atan2(x1 - x0, z1 - z0);
+        box(geo.wood, 0.15, cy - y, len, (x0 + x1) / 2, (y + cy) / 2, (z0 + z1) / 2, rot);
+        box(geo.frame, 0.16, 2.6, 0.14, x0, y + 1.3, z0, rot);
+      }
+      // the lounge's piers on the column lines: white, from the tread to the header
+      for (const [x, z] of BR.piers) {
+        const rot = Math.atan2(x, z + 60);
+        box(geo.white, 1.1, cy - y, 0.3, x + Math.sin(rot) * 0.2, (y + cy) / 2, z + Math.cos(rot) * 0.2, rot);
+      }
+      const add = (list, mat, collide = true) => {
+        const g = list.filter(Boolean).map((q) => { const t = q.index ? q.toNonIndexed() : q; if (t.attributes.uv) t.deleteAttribute('uv'); return t; });
+        if (!g.length) return null;
+        const m3 = new THREE.Mesh(mergeGeometries(g), mat); if (!collide) m3.userData.noCollide = true; m3.receiveShadow = true; root.add(m3); return m3;
+      };
+      add(geo.wood, wood); add(geo.white, white); add(geo.ceil, ceilM, false); add(geo.floor, carpet, false); add(geo.lamp, lamp, false);
+      add(geo.frame, std({ color: 0x1f2023, roughness: 0.5, metalness: 0.3 }));
+      add(geo.header, lit(0xcfc9bd, 0x4a463f, 0.35));
+      const gm = add(geo.glass, std({ color: 0xbfd2d8, roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide }));
+      if (gm) gm.renderOrder = 2;
+      // the 2nd floor's underside over the balcony: light, its downlights with the house
+      const S = [];
+      for (const sd of BR.sides) {
+        const sec = sd.soffit;
+        for (let k = 0; k + 1 < sec.length; k++) {
+          const a = sec[k], b = sec[k + 1];
+          if (Math.abs(angOf(a[0]) - angOf(b[0])) > 1.5) continue;
+          for (let i = 0; i + 1 < a.length; i++) {
+            const p = [a[i], a[i + 1], b[i + 1], b[i]].map(([x, z, yy]) => [x, yy, z + ZH]);
+            // (facing down: the winding by the side)
+            if (sd.sg > 0) S.push(...p[0], ...p[1], ...p[2], ...p[0], ...p[2], ...p[3]); else S.push(...p[0], ...p[2], ...p[1], ...p[0], ...p[3], ...p[2]);
+          }
+        }
+      }
+      if (S.length) {
+        const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(S, 3)); g.computeVertexNormals();
+        const m3 = new THREE.Mesh(g, lit(0xdcd8d0, 0x8a857c, 0.5, { side: THREE.DoubleSide })); m3.userData.noCollide = true; root.add(m3);
       }
     }
-    if (panes.length) {
-      const m3 = new THREE.Mesh(mergeGeometries(panes), std({ color: 0x3a3833, emissive: 0xf2e4c9, emissiveIntensity: 0.8, roughness: 0.15, side: THREE.DoubleSide }));
-      m3.userData.noCollide = true; root.add(m3);
+  }
+  // The wall behind the upper tier (td_ends.py, td_balcony.py): straight up to the ring from behind the 2nd floor's top
+  // rows, one smooth line in plan from behind home out past each pole, over the balcony's back wall where it stands
+  // over it (its foot on the glazing's header, past the rooms on the balcony's top tread), to where the balcony ends,
+  // then square out to the building's own wall; the end faces across the decks (the 2nd floor's with its foot on the
+  // underside's line). Plain concrete, as the stands'.
+  {
+    const parts = [];
+    for (const w of TD_STANDS.upperWall ?? []) {
+      const P = w.pts.map(([x, z]) => ({ x, z: z + ZH }));
+      parts.push(wallStrip(P, P.map((p) => ringY(p.z) + 0.5), { y0: w.y0, thick: 0.4, ease: 0 }));
+      const R = w.ret.map(([x, z]) => ({ x, z: z + ZH }));
+      parts.push(wallStrip(R, R.map((p) => ringY(p.z) + 0.5), { y0: w.retY0 ?? 13.6, thick: 0.4, ease: 0 }));
     }
-    if (frames.length) {
-      const m3 = new THREE.Mesh(mergeGeometries(frames.map((f) => { f.deleteAttribute('uv'); return f; })), std({ color: 0x232427, roughness: 0.6 }));
-      m3.userData.noCollide = true; root.add(m3);
+    for (const e of TD_STANDS.upperEnds ?? []) {
+      if (e.pts) { parts.push(wallStrip(e.pts.map(([x, z]) => ({ x, z: z + ZH })), e.y1, { y0: e.y0, thick: e.thick ?? 0.3, ease: 0 })); continue; }
+      const P = [e.a, e.b].map(([x, z]) => ({ x, z: z + ZH }));
+      parts.push(wallStrip(P, [e.y1, e.y1], { y0: e.y0, thick: 0.4, ease: 0 }));
     }
+    const g = parts.filter(Boolean);
+    // (lifted a little with the house, as the house lights fill the bowl: an end face turned from the floods reads as
+    // concrete, not as a black mass; off in the show. No shadows on it: the floods graze it, and the seats' and the
+    // shadow map's own acne showed on it as dark slivers)
+    if (g.length) { const wm = std({ color: 0xcfc6b6, roughness: 0.9, emissive: 0x6a655c, emissiveIntensity: 0.5 }); roomLit.push([wm, 0.5]); root.add(new THREE.Mesh(mergeGeometries(g), wm)); }
   }
   // The balcony's partitions. Its rows run on unbroken along the Premium Lounge (1B and 3B sides: rows of 70-odd
   // seats); only the suites (THE SUITE TOKYO, behind the backstop) are divided, by low cream panels, a metre over
@@ -1282,6 +1371,7 @@ export function buildDome(ctx) {
       // (half what they were: at full the deck, the trusses and the roof threw
       // too much of them back)
       floodM.color.copy(KELVIN(5200)).multiplyScalar(0.03 + 2.6 * f.house);
+      for (const [m, e] of roomLit) m.emissiveIntensity = e * (0.04 + 0.96 * f.house);
       if (membrane.userData.uSky) membrane.userData.uSky.value = 0.06 + 0.94 * f.house;
       for (const g of floodGlow) g.intensity = 0.9 * f.house;
       house.forEach((l) => { l.intensity = 1.6 * f.house; });
@@ -1369,6 +1459,7 @@ export function buildDome(ctx) {
         const [bl, sb] = RC.run(f, { follow: 90000, wash: 12000 });
         runShow(rig, tw, f, { house: V3(0, 30, STAGE.z), stage: RC.stage, span: 60 });
         floodM.color.copy(KELVIN(5200)).multiplyScalar(0.03 + 2.6 * f.house);
+        for (const [m, e] of roomLit) m.emissiveIntensity = e * (0.04 + 0.96 * f.house);
         if (membrane.userData.uSky) membrane.userData.uSky.value = 0.06 + 0.94 * f.house;
         for (const g of floodGlow) g.intensity = 0.9 * f.house;
         house.forEach((l) => { l.intensity = 1.6 * f.house; });
