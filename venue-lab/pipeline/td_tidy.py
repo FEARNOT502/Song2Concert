@@ -442,14 +442,13 @@ def _outfield_voms(data):
         # the seats in it or against its walls
         q = xy - p; s_ = q @ w; t_ = q @ u
         keep &= ~((np.abs(s_) < hw + SEAT_CLEAR) & (t_ > -0.3) & (t_ < Lp + 0.3))
-        # the pit roofed over from its front to the back wall (the mouth at its front, 6.webp's dark openings either side
-        # of the column; 12.webp's soffit over the passage): the soffit one slope over the stairs, OUT_PIT_HEAD over the
-        # pit's floor at the front up to the back wall's opening (roof); the walls either side up to it, closed
-        roof0 = round(floor + OUT_PIT_HEAD, 3)
-        t0 = round(roof0 + OUT_SLAB, 2); t1 = round(roof + OUT_SLAB, 2)
+        # (open to the roof, as the user asked: no slab over the pit; its side walls a parapet's height over the rows beside
+        # them, from row 15's tread at the front to the concourse's floor at the back; no wall across the back, the pit
+        # running straight on into the passage)
+        t0 = round(float(band[14][2]) + PAR, 2); t1 = round(y_top + PAR, 2)
         F['voms'].append({'p': [round(float(p[0]), 2), round(float(p[1]), 2)], 'u': [round(float(u[0]), 4), round(float(u[1]), 4)],
-                          'w': OUT_VOM_W, 'L': Lp, 'T': 0.0, 'y': floor, 'roof': roof, 'roof0': roof0, 'slab': OUT_SLAB, 'top': y_top, 'sides': [],
-                          'wall': {'t0': t0, 't1': t1, 'roof': roof}})
+                          'w': OUT_VOM_W, 'L': Lp, 'T': 0.0, 'y': floor, 'roof': roof, 'top': y_top, 'sides': [],
+                          'wall': {'t0': t0, 't1': t1, 'roof': roof, 'open': True}})
         # the column in the middle of the mouth at its front (12.webp), on the pit's front lip, its front face just
         # inside the pit's front edge, square to the rows; plain (no plate: the user's call)
         q2 = p + u * (OUT_RZ + 0.05)

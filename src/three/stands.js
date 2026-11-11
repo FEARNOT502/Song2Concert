@@ -680,8 +680,11 @@ export function vomParts(v, ox, oz) {
       pit.push(wall([[0, v.y], [L, v.y], [L, t1], [L - T, t1], [0, t0]], a, b));
       cap.push(wall([[0, t0], [L - T, t1], [L + C, t1], [L + C, t1 + H], [L - T, t1 + H], [0, t0 + H]], a - C, b + C));
     }
-    pit.push(box(L - T, L, -hw + T, hw - T, roof, t1));
-    cap.push(box(L - T - C, L + C, -hw + T + C, hw - T - C, t1, t1 + H));
+    // (an open pit runs straight on into its passage: no wall across its back)
+    if (!v.wall.open) {
+      pit.push(box(L - T, L, -hw + T, hw - T, roof, t1));
+      cap.push(box(L - T - C, L + C, -hw + T + C, hw - T - C, t1, t1 + H));
+    }
   }
   for (const sg of v.wall ? [] : [-1, 1]) {
     // the rows' treads beside the pit, the wall's top a rail's height over each, raked from one row's middle to the next's
