@@ -496,12 +496,12 @@ PILLAR_RX,PILLAR_RZ=0.6,0.8      # half the column's width across its aisle and 
 OUT_VOM_W,OUT_HEAD=3.4,2.4       # the outfield's vomitories: width (two ways out, the column between them), head room
 COL_TO_C=(1,2,5,6,43,44,46,47,48,49,57,58)     # by the poles: these go on up to the balcony's height (the photographs)
 OUT_NO_VOM=(53,54)                # the two either side of centre: no vomitory, a column carrying the screen, further back
-# The outfield stand has no vomitories through its rows (photographs: Commons "Tokyo Dome (April 11, 2015).jpg" and
-# "Interior of Tokyo Dome 2019" full views: every aisle's steps run unbroken from the front row to the top, the ways
-# out are doors at the top, on the walkway behind the last row, either side of a column standing at the aisle's head;
-# the seat chart agrees: rows 1-14 run full across every block, only the rows behind them stop short of the aisles).
-# So no pits, tunnels or side walls: the columns stand at the aisles' heads behind the last row, light grey-white,
-# about 0.8 m square (measured off the 2019 photograph against the blocks' width), numbered or hung with banners
+# The outfield stand has no vomitories through the middle of its rows (photographs: Commons "Tokyo Dome (April 11,
+# 2015).jpg" and "Interior of Tokyo Dome 2019": every aisle's steps run unbroken from the front row up to row 14), so
+# none of the deep pits to the lower concourse here: the columns stand at the aisles' heads, light grey-white, about
+# 0.8 m square, numbered or hung with banners. Its vomitories are shallow, cut down through the top rows (15-21) at
+# every other aisle to a mouth in the back wall, the numbered column in the mouth (the user's 6.webp, the same 2015
+# photograph; the chart's rows 15-21 stop short of those aisles): td_tidy.py lays them, and sets the columns.
 OUT_VOMS=False
 OUT_COL=dict(rx=0.4,rz=0.4,color=0xe4e2dc)
 OUT_HEADS={}

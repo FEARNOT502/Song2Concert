@@ -539,7 +539,8 @@ export function signSheet(list, ox, oz, bg = '#15181f', fg = '#f2f2ee') {
 // The columns at the heads of the 1st floor's aisles (data.pillars: {x, z, r,
 // y0, y1, and the aisle's direction ax, az}): square-cornered, as the building's
 // are, 2rx across their aisle and 2rz along it (or 2r each way); in one mesh.
-// (a column with its own `color` is drawn in that colour, the rest in `mat`)
+// (a column with its own `color` is drawn in that colour, the rest in `mat`; its own material marked `userData.houseLit`,
+// its glow the full value: a venue that dims its house lights can take the glow down with them)
 export function pillars(list, ox, oz, mat) {
   const groups = new Map();
   for (const p of list) {
@@ -553,7 +554,7 @@ export function pillars(list, ox, oz, mat) {
   const out = new THREE.Group();
   for (const [k, parts] of groups) {
     let mm = mat;
-    if (k !== null) { mm = mat.clone(); mm.color = new THREE.Color(k); if (mm.emissive) { mm.emissive = new THREE.Color(k).multiplyScalar(0.25); mm.emissiveIntensity = 1; } if (mm.map) mm.map = null; mm.needsUpdate = true; }
+    if (k !== null) { mm = mat.clone(); mm.color = new THREE.Color(k); if (mm.emissive) { mm.emissive = new THREE.Color(k).multiplyScalar(0.25); mm.emissiveIntensity = 1; } if (mm.map) mm.map = null; mm.needsUpdate = true; mm.userData.houseLit = 1; }
     const m = new THREE.Mesh(mergeGeometries(parts), mm);
     m.receiveShadow = true;
     out.add(m);

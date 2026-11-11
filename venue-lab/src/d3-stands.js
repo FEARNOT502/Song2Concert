@@ -129,17 +129,28 @@ function signSheet(list, ox, oz, bg = '#15181f', fg = '#f2f2ee') {
   return m;
 }
 
-// The columns at the heads of the 1st floor's aisles (data.pillars: {x, z, r, y0, y1}):
-// round, in one mesh.
+// The columns at the heads of the 1st floor's aisles (data.pillars: {x, z, r, y0, y1, and the aisle's direction ax,
+// az}): square-cornered, as the app's (src/three/stands.js), 2rx across their aisle and 2rz along it (or 2r each way),
+// their faces square to the rows they stand at (td_tidy.py); a column with its own `color` in that colour.
 function pillars(list, ox, oz, mat) {
-  const parts = list.map((p) => {
-    const g = new THREE.CylinderGeometry(p.r, p.r, p.y1 - p.y0, 24, 1, false);
+  const groups = new Map();
+  for (const p of list) {
+    const g = new THREE.BoxGeometry(2 * (p.rx ?? p.r), p.y1 - p.y0, 2 * (p.rz ?? p.r));
+    g.rotateY(Math.atan2(p.ax ?? 0, p.az ?? 1));
     g.translate(p.x + ox, (p.y0 + p.y1) / 2, p.z + oz);
-    return g.toNonIndexed();
-  });
-  const m = new THREE.Mesh(mergeGeometries(parts), mat);
-  m.receiveShadow = true;
-  return m;
+    const k = p.color ?? null;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(g.toNonIndexed());
+  }
+  const out = new THREE.Group();
+  for (const [k, parts] of groups) {
+    let mm = mat;
+    if (k !== null) { mm = mat.clone(); mm.color = new THREE.Color(k); if (mm.map) mm.map = null; mm.needsUpdate = true; }
+    const m = new THREE.Mesh(mergeGeometries(parts), mm);
+    m.receiveShadow = true;
+    out.add(m);
+  }
+  return out;
 }
 
 // The doors' frames (data.frames: {x, z, yaw, w, h, y}): a post each side and a lintel across, as deep as the

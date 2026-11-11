@@ -11,8 +11,15 @@
 #                     seats in or against the pit, the half steps in it and the concourse's walls in its way go;
 #                     the pit gets `wall`, a parapet of its own round its three sides that stands.js draws as one
 #                     piece: {t0: top at the front, t1: top at the back, roof: the lintel's underside}.
-#   aisle columns     The outfield stand's (F) un-numbered columns at the heads of its aisles: each set across onto
-#                     its aisle's centre line, at the same distance from the dome's centre.
+#   aisle columns     The outfield stand's (F) un-numbered columns at the heads of its aisles: each on its aisle's
+#                     middle line (halfway between the two blocks' end seats), on the top tread, the sides mirrored.
+#   screen columns    The two td_build.py stood either side of the backscreen (53, 54) taken away: no photograph has them.
+#   back wall         The outfield's concourse walls, traced as raster stairs, traced again smooth.
+#   columns squared   Every column turned so its faces are square to the rows (or the walls) it stands at.
+#   outfield voms     A shallow vomitory at every other outfield aisle (49-52, 55-58): a pit down through rows 15-21
+#                     with stairs up it to the concourse, a mouth in the back wall, the numbered column in the middle
+#                     of the mouth at its front, its plate on it (stands.js's vomParts `wall`; dome.js draws the
+#                     plates, banners and the passage's green walls and soffit).
 #   balcony columns   The columns standing up through the balcony (C) to carry the 2nd floor (D), where D now stops
 #                     short of them (td_ends.D_CUT): ended under the balcony's rows.
 import math, base64
@@ -179,13 +186,48 @@ def _seats(L, voms):
     return int((~keep).sum())
 
 
+def _head_columns(data):
+    """the outfield's columns between the vomitories' (the un-numbered ones, `color` and `aisle`): each on the middle
+    line of the aisle between its two blocks (_aisle_lines: halfway between the blocks' end seats, rows 1-14), at the
+    aisle's head, just behind the stand's last tread on that line; the two sides then made each other's mirror image
+    (x -> -x), the pair's positions averaged. Returns each column's move (m)."""
+    F = next(l for l in data['levels'] if l['name'] == 'F')
+    lines = _aisle_lines()
+    whole = unary_union([Polygon(q[0], q[1:]).buffer(0) for r in F['rows'] for q in r['polys']] + [Polygon(q[0], q[1:]).buffer(0) for r in data.get('backscreen', []) for q in r['polys']])
+    cols = [c for c in data['pillars'] if c.get('aisle') and 'color' in c]
+    moved = []
+    for c in cols:
+        pc = np.array([c['x'], c['z']])
+        nrm = lambda ln: np.array([-ln[2][1], ln[2][0]])
+        names, m, d = min(lines, key=lambda ln: abs(float((pc - ln[1]) @ nrm(ln))))
+        x = whole.intersection(LineString([m - d * 30, m + d * 30]))
+        ts = [float((np.array(p) - m) @ d) for gg in (x.geoms if hasattr(x, 'geoms') else [x]) for p in gg.coords] if not x.is_empty else [float((pc - m) @ d)]
+        # (on the top tread at the aisle's head, its back face just inside the stand's back edge: 6.webp, the columns
+        # rise from the top rows, not from the walkway behind them)
+        q = m + d * (max(ts) - max(c.get('rz', c['r']), c.get('rx', c['r'])) - 0.03)
+        c['_q'] = q; c['_names'] = names
+    for c in cols:
+        mates = [o for o in cols if o is not c and np.hypot(o['_q'][0] + c['_q'][0], o['_q'][1] - c['_q'][1]) < 3.0]
+        q = c['_q'] if not mates else np.array([np.sign(c['_q'][0]) * (abs(c['_q'][0]) + abs(mates[0]['_q'][0])) / 2, (c['_q'][1] + mates[0]['_q'][1]) / 2])
+        c['_q2'] = q
+    for c in cols:
+        q = c.pop('_q2'); c.pop('_q'); names = c.pop('_names')
+        moved.append(('|'.join(names), round(float(np.hypot(q[0] - c['x'], q[1] - c['z'])), 2)))
+        c['x'], c['z'] = round(float(q[0]), 2), round(float(q[1]), 2); c['color'] = OUT_GREY
+        # (its foot on the lowest tread under it: no gap under it where it stands across two rows)
+        foot = Point(c['x'], c['z']).buffer(max(c.get('rz', c['r']), c.get('rx', c['r'])))
+        ys = [r['y'] for r in F['rows'] for q_ in r['polys'] if Polygon(q_[0], q_[1:]).buffer(0).intersects(foot)]
+        if ys: c['y0'] = round(min(ys), 3)
+    return moved
+
+
 def _aisle_columns(data):
     F = next(l for l in data['levels'] if l['name'] == 'F')
     S = np.frombuffer(base64.b64decode(F['seats']), '<i2').reshape(-1, 4).astype(float); S[:, :2] /= F.get('seatScale', 10)
     U = [Polygon(s['polys'][0]).buffer(0) for s in F['steps']]
     moved = []
     for c in data['pillars']:
-        if not c.get('aisle'): continue
+        if not c.get('aisle') or 'color' in c: continue      # (the outfield's own: _head_columns)
         p = np.array([c['x'], c['z']]); R = np.linalg.norm(p - O); ur = (p - O) / R; ut = np.array([ur[1], -ur[0]])
         # the aisle's middle across a few metres either side of the column's radius: the gap between the seats
         # beside it, and the half steps' own middle, a line fitted to each
@@ -223,6 +265,294 @@ def _aisle_columns(data):
         for s_ in data.get('signs', []):
             if abs(s_['x'] - (c['x'] - dx)) < 0.05 and abs(s_['z'] - (c['z'] - dz)) < 0.05: s_['x'], s_['z'] = c['x'], c['z']
     return moved
+
+
+# The outfield's vomitories (photographs: the user's 6.webp of the left-field stand, Commons "Tokyo Dome (April 11,
+# 2015).jpg"): at the head of every other aisle, the ones the map rings as entrances (49-52, 55-58: F02|F03, F04|F05,
+# F06|F07, F08|F09 and their mirror images), a pit cut down through the top rows to a mouth in the back wall, a column
+# in the middle of the mouth (two ways out, one either side of it) carrying a white plate with a number on it. The
+# chart agrees: at those aisles rows 15-21 stop four or five seats short either side (rows 1-14 run full across), at
+# the others one or two. So: a pit along the aisle's middle (the line between the two blocks' end seats, rows 1-14)
+# from row 15's front to the back of the stand, stairs in it from row 14's tread up to the concourse's floor, walled
+# round (stands.js's vomParts, `wall`), the back wall open over it to a soffit 2.6 m over the concourse, the column
+# (grey concrete) in the middle of that mouth at its front, a way out either side of it (the user's 12.webp, taken
+# from the concourse looking out through one: the column at the front of the mouth, stairs down either side).
+OUT_VOM_W = 4.0          # the pit's width: the column and a way out 1.25 m wide either side of it (12.webp), a little over
+                         # a third of the aisles' spacing (6.webp); the chart leaves 5.7 m between the seats there
+OUT_GREY = 0xa9a69f      # the columns' concrete (12.webp: grey, not white)
+OUT_HEAD = 2.6           # the mouth's height over the concourse's floor, to the soffit (12.webp)
+# the plates on the columns: the Giants' retired numbers on the six middle ones (photographs: 14, 4, 16 in left
+# field from the pole in; 34, 3, 1 in right field from the middle out), the passage's own number on the two by the poles
+OUT_PLATES = {50: '14', 51: '4', 52: '16', 55: '34', 56: '3', 57: '1'}
+
+
+def _aisle_lines():
+    """the outfield's aisles between neighbouring blocks: [(names, a point on the aisle's middle, its unit direction
+    out of the stand)], from the end seats either side of each in rows 1-14 (td_seatlab.pkl: the seats as laid)"""
+    import pickle, os
+    pj = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'td_seatlab.pkl')
+    P, LB = pickle.load(open(pj, 'rb'))['F']
+    P = np.asarray(P, float)
+    ends = {}
+    for (b, r, s), q in zip(LB, P):
+        if r > 14: continue
+        e = ends.setdefault(b, {}).setdefault(r, [None, None])
+        if e[0] is None or s < e[0][0]: e[0] = (s, q)
+        if e[1] is None or s > e[1][0]: e[1] = (s, q)
+    ang = {b: math.degrees(math.atan2(*np.mean([q for e in rs.values() for _, q in e], 0) * [1, -1])) for b, rs in ends.items()}
+    order = sorted(ends, key=lambda b: ang[b])
+    out = []
+    for A, B in zip(order, order[1:]):
+        mids = []
+        for r in set(ends[A]) & set(ends[B]):
+            ea, eb = ends[A][r], ends[B][r]
+            qa, qb = min(((x[1], y[1]) for x in ea for y in eb), key=lambda t: np.linalg.norm(t[0] - t[1]))
+            if np.linalg.norm(qa - qb) < 4.0: mids.append((qa + qb) / 2)
+        if len(mids) < 6: continue
+        M = np.array(mids); m = M.mean(0); _, _, vt = np.linalg.svd(M - m); d = vt[0]
+        if d @ (m - O) < 0: d = -d
+        out.append(((A, B), m, d / np.linalg.norm(d)))
+    return out
+
+
+def _outfield_voms(data):
+    F = next(l for l in data['levels'] if l['name'] == 'F')
+    lines = _aisle_lines()
+    hw = OUT_VOM_W / 2
+    rows = [(k, r, unary_union([Polygon(q[0], q[1:]).buffer(0) for q in r['polys']])) for k, r in enumerate(F['rows'])]
+    sc = F.get('seatScale', 10)
+    seats = np.frombuffer(base64.b64decode(F['seats']), '<i2').reshape(-1, 4)
+    keep = np.ones(len(seats), bool)
+    xy = seats[:, :2].astype(float) / sc
+    F['voms'] = []
+    done = []
+    plan = []
+    for c in data['pillars']:
+        if 'color' not in c or c.get('aisle'): continue
+        pc = np.array([c['x'], c['z']])
+        a_h = abs(math.degrees(math.atan2(c['x'], -c['z'])))
+        if np.hypot(*pc) < 110 or a_h < 12.5 or a_h > 41: continue      # (53, 54: the screen's two by the middle)
+        # its aisle: the line passing nearest it
+        dist = lambda ln: abs(float((pc - ln[1]) @ np.array([-ln[2][1], ln[2][0]])))
+        names, m, u = min(lines, key=dist)
+        if dist((names, m, u)) > 3.0: print('tidy: no aisle for the outfield column at', c['x'], c['z']); continue
+        # (the pit square to the rows, as its column is: _square_columns)
+        u = np.array([c['ax'], c['az']], float); u /= np.linalg.norm(u)
+        plan.append([c, names, m, u])
+    # (each pit and its mirror image across the house made one another's exact mirror: the two averaged)
+    for e in plan:
+        o = min(plan, key=lambda f: np.hypot(f[2][0] + e[2][0], f[2][1] - e[2][1]))
+        if o is e or e[2][0] < 0 or np.hypot(o[2][0] + e[2][0], o[2][1] - e[2][1]) > 3.0: continue
+        mm = np.array([(e[2][0] - o[2][0]) / 2, (e[2][1] + o[2][1]) / 2]); uu = np.array([(e[3][0] - o[3][0]) / 2, (e[3][1] + o[3][1]) / 2]); uu /= np.linalg.norm(uu)
+        e[2], e[3] = mm, uu; o[2], o[3] = mm * [-1, 1], uu * [-1, 1]
+    for c, names, m, u in plan:
+        pc = np.array([c['x'], c['z']])
+        w = np.array([-u[1], u[0]])
+        st = lambda q: (float((np.asarray(q) - m) @ w), float((np.asarray(q) - m) @ u))
+        # the rows beside the pit: where each crosses a line a little out from either side of it
+        near = [(k, r, g) for k, r, g in rows if g.distance(Point(*pc)) < 14]
+        band = {}; back13 = -np.inf
+        for k, r, g in near:
+            for so in (-hw - 0.4, -hw, -hw / 2, 0.0, hw / 2, hw, hw + 0.4):
+                ln = LineString([m + w * so - u * 25, m + w * so + u * 25])
+                x = g.intersection(ln)
+                if x.is_empty: continue
+                ts = [st(p)[1] for gg in (x.geoms if hasattr(x, 'geoms') else [x]) for p in gg.coords]
+                if r['r'] % 22 == 13 and abs(so) <= hw: back13 = max(back13, max(ts))
+                if abs(so) <= hw: continue
+                b = band.setdefault(r['r'] % 22, [np.inf, -np.inf, r['y']])
+                b[0] = min(b[0], min(ts)); b[1] = max(b[1], max(ts))
+        if 14 not in band or 13 not in band: print('tidy: no rows 14-15 by the outfield column at', c['x'], c['z']); continue
+        # (from the back of row 14 across the pit's width: rows run round the dome's centre, not square across it)
+        t_f = max(band[14][0], back13)
+        t_b = max(b[1] for k, b in band.items() if k >= 14)
+        y_top = max(b[2] for b in band.values())
+        floor = round(band[13][2], 3)
+        p = m + u * t_f; Lp = round(t_b - t_f, 2)
+        # (the concourse's floor behind the stand: the stairs come up to it)
+        behind = Point(*(p + u * (Lp + 1.0)))
+        ys = [f['y'] for f in data['floors'] if y_top - 0.5 < f['y'] < y_top + 1.5
+              for q in f['polys'] if Polygon(q[0], q[1:]).buffer(0).distance(behind) < 1.5]
+        y_top = max(ys) if ys else y_top
+        roof = round(y_top + OUT_HEAD, 3)
+        loc = lambda q: (float((np.asarray(q) - p) @ w), float((np.asarray(q) - p) @ u))
+        frame = lambda s0, s1, t0, t1: Polygon([p + w * s + u * t for s, t in ((s0, t0), (s1, t0), (s1, t1), (s0, t1))])
+        pit = frame(-hw, hw, -0.02, Lp)
+        # the rows from row 15 back: cut over the pit
+        for k, r, _ in near:
+            if r['r'] % 22 < 14: continue
+            g = unary_union([Polygon(q[0], q[1:]).buffer(0) for q in r['polys']])
+            if g.intersects(pit): r['polys'] = [_out(q) for q in _polys(g.difference(pit))]
+        # the concourse's floor: gone over the pit
+        fl = []
+        for f in data['floors']:
+            g = unary_union([Polygon(q[0], q[1:]).buffer(0) for q in f['polys']])
+            if abs(f['y'] - y_top) > 0.05 or not g.intersects(pit): fl.append(f); continue
+            rest = g.difference(pit)
+            if not rest.is_empty: fl.append({**f, 'polys': [_out(q) for q in _polys(rest)]})
+        data['floors'] = fl
+        # the stairs up the pit from row 14's tread to the concourse's floor, between its walls (12.webp: down either
+        # side of the column, rails along the walls)
+        nst = max(1, int(round(Lp / 0.3))); dst = Lp / nst; rise = (y_top - floor) / nst; hs = hw - 0.35
+        for i in range(nst):
+            F['steps'].append({'y0': round(floor - 0.12, 3), 'y': round(floor + rise * (i + 1), 3), 'light': False,
+                               'polys': [_out(frame(-hs, hs, i * dst - (0.02 if i == 0 else 0.0), (i + 1) * dst + 0.01))]})
+        # the concourse's walls standing in the pit; the back wall cut by the pit made one straight piece across
+        # the mouth, from the soffit up as high as it stood
+        inpit = frame(-hw, hw, -0.02, Lp + 0.02).buffer(0.02)
+        R = data['rooms']; top = None
+        for key in ('walls', 'thinWalls'):
+            out = []
+            for wl in R[key]:
+                seg = LineString([wl[:2], wl[2:4]])
+                cut = seg.intersects(inpit) and wl[5] > floor + 0.02
+                if cut and wl[4] < roof + 0.6: top = max(top or 0.0, wl[5])
+                if not cut: out.append(wl); continue
+                rest = seg.difference(inpit)
+                for gg in (rest.geoms if hasattr(rest, 'geoms') else [rest]):
+                    if gg.is_empty or gg.length < 0.05: continue
+                    (x0, z0), (x1, z1) = list(gg.coords)[0], list(gg.coords)[-1]
+                    out.append([round(x0, 2), round(z0, 2), round(x1, 2), round(z1, 2), wl[4], wl[5]])
+            R[key] = out
+        if top and top > roof + 0.3:
+            a_, b_ = p + w * hw + u * Lp, p + w * -hw + u * Lp      # (its room, the concourse, on its left: behind it)
+            R['walls'].append([round(float(a_[0]), 2), round(float(a_[1]), 2), round(float(b_[0]), 2), round(float(b_[1]), 2), roof, top])
+        # the rails ringing the old notch round the column at the stand's back
+        zone = frame(-hw - 0.3, hw + 0.3, -0.3, Lp + 0.6)
+        F['rails'] = [rl for rl in F['rails'] if not zone.contains(Point((rl[0] + rl[2]) / 2, (rl[1] + rl[3]) / 2))]
+        # the seats in it or against its walls
+        q = xy - p; s_ = q @ w; t_ = q @ u
+        keep &= ~((np.abs(s_) < hw + SEAT_CLEAR) & (t_ > -0.3) & (t_ < Lp + 0.3))
+        # (the walls' tops one slope from a rail's height over row 15 at the front up to the soffit at the back: the
+        # passage's own walls either side of the mouth, 12.webp)
+        t0 = round(band[14][2] + PAR, 2); t1 = roof
+        F['voms'].append({'p': [round(float(p[0]), 2), round(float(p[1]), 2)], 'u': [round(float(u[0]), 4), round(float(u[1]), 4)],
+                          'w': OUT_VOM_W, 'L': Lp, 'T': 0.0, 'y': floor, 'roof': roof, 'top': y_top, 'sides': [],
+                          'wall': {'t0': t0, 't1': t1, 'roof': roof}})
+        # the column in the middle of the mouth, from the pit's floor; its plate over the mouth, to the field
+        q2 = p + u * (Lp - max(c.get('rz', c['r']), c.get('rx', c['r'])) - 0.03)      # (its back face just inside the stand's back edge)
+        x0, z0 = c['x'], c['z']
+        c.update({'x': round(float(q2[0]), 2), 'z': round(float(q2[1]), 2), 'y0': floor, 'color': OUT_GREY, 'ax': round(float(u[0]), 3), 'az': round(float(u[1]), 3)})
+        sg_ = [s for s in data['signs'] if abs(s['x'] - x0) < 0.05 and abs(s['z'] - z0) < 0.05]
+        n_ = int(sg_[0]['label']) if sg_ and sg_[0]['label'].isdigit() else None
+        for s in sg_: data['signs'].remove(s)
+        yaw = math.atan2(-u[0], -u[1])
+        data['signs'].append({'x': c['x'], 'y': round(y_top + 1.9, 2), 'z': c['z'], 'yaw': round(yaw, 3), 'w': 1.0, 'h': 0.9,
+                              'r': max(c.get('rx', c['r']), c.get('rz', c['r'])), 'label': OUT_PLATES.get(n_, str(n_)), 'plate': True, 'n': n_})
+        c['vom'] = n_
+        done.append((n_, '|'.join(names), Lp, floor, roof))
+    F['seats'] = base64.b64encode(seats[keep].astype('<i2').tobytes()).decode('ascii')
+    return done, int((~keep).sum())
+
+
+def _square_columns(data, skip=()):
+    """every column turned square to the rows it stands at: its front face (across ax, az) parallel to the treads
+    beside it, its sides square to them. The direction is the rows' edges' within 4 m of it (the one level's whose
+    tread is nearest, at or under its foot; their lengths' doubled angles averaged, so front and back edges agree);
+    where those do not agree on one direction (a corner of the stand: the blocks behind home, the poles' ends) or none
+    is near, the walls round it within 3 m instead (the concourse's, parallel to the stand's back). Its plates turn
+    with it. Returns each column's turn in degrees."""
+    segs = []
+    for L in data['levels']:
+        for r in L['rows']:
+            for q in r['polys']:
+                for ring in q:
+                    a = np.array(list(ring) + [ring[0]], float)
+                    for p0, p1 in zip(a[:-1], a[1:]): segs.append((p0[0], p0[1], p1[0], p1[1], r['y'], r['y'], 1, L['name']))
+    for w in data['rooms']['walls'] + data['rooms']['thinWalls']: segs.append((w[0], w[1], w[2], w[3], w[4], w[5], 0, ''))
+    A = np.array([s_[:7] for s_ in segs], float); LV = np.array([s_[7] for s_ in segs])
+    S0, S1, Y0, Y1, K = A[:, 0:2], A[:, 2:4], A[:, 4], A[:, 5], A[:, 6] > 0
+    D = S1 - S0; Ln = np.hypot(*D.T)
+    turns = []
+    for c in data['pillars']:
+        if any(c is k for k in skip): continue
+        P = np.array([c['x'], c['z']])
+        t = np.clip(((P - S0) * D).sum(1) / np.maximum(Ln ** 2, 1e-9), 0, 1); dist = np.hypot(*(S0 + D * t[:, None] - P).T)
+        def mean(m):
+            th = np.arctan2(D[m, 1], D[m, 0]); z = (Ln[m] * np.exp(2j * th)).sum() / max(Ln[m].sum(), 1e-9)
+            return np.angle(z) / 2, abs(z), Ln[m].sum()
+        rows = K & (dist < 4.0) & (Ln > 0.02) & (Y0 <= c['y0'] + 0.6) & (Y0 >= c['y0'] - 3.0)
+        th = None
+        if rows.any():
+            lv = LV[rows][np.argmin(dist[rows])]
+            th, coh, W = mean(rows & (LV == lv))
+            if coh < 0.8 or W < 20: th = None
+        if th is None:
+            walls = (~K) & (dist < 3.0) & (Ln > 0.02) & (Y0 < c['y1'] - 0.1) & (Y1 > c['y0'] + 0.1)
+            if Ln[walls].sum() > 2.0: th = mean(walls)[0]
+            elif rows.any(): th = mean(rows & (LV == lv))[0]
+            else: turns.append(None); continue
+        n = np.array([math.sin(th), -math.cos(th)])
+        a = np.array([c.get('ax', 0.0), c.get('az', 1.0)])
+        if n @ a < 0: n = -n
+        turn = math.atan2(n[0], n[1]) - math.atan2(a[0], a[1])
+        turns.append(round(math.degrees((turn + math.pi) % (2 * math.pi) - math.pi), 1))
+        c['ax'], c['az'] = round(float(n[0]), 4), round(float(n[1]), 4)
+        for s_ in data.get('signs', []):
+            if s_.get('r') and abs(s_['x'] - c['x']) < 0.05 and abs(s_['z'] - c['z']) < 0.05: s_['yaw'] = round(s_['yaw'] + turn, 3)
+    return turns
+
+
+def _drop_screen_columns(data):
+    """the two columns td_build.py stands either side of the backscreen (the map's entrances 53 and 54, no vomitory,
+    'a column carrying the screen'): no photograph shows a column there (the user's 6.webp and 11.webp, Commons
+    "Tokyo Dome (April 11, 2015).jpg": the stand ends at the backscreen with the block's own last aisle, no column at
+    its head), so they go, with their plates and the seats cleared for them (none: they stood behind the last row).
+    The screen's band rests on the next real columns (dome.js). Returns the positions taken away."""
+    gone = []
+    for c in list(data['pillars']):
+        a = abs(math.degrees(math.atan2(c['x'], -c['z'])))
+        if 'color' in c and not c.get('aisle') and math.hypot(c['x'], c['z']) > 110 and a < 12.5:
+            data['pillars'].remove(c); gone.append((c['x'], c['z']))
+            data['signs'] = [s_ for s_ in data['signs'] if not (abs(s_['x'] - c['x']) < 0.05 and abs(s_['z'] - c['z']) < 0.05)]
+    return gone
+
+
+def _smooth_back_wall(data, a_max=50.0, r_min=95.0):
+    """the concourse's walls round the back of the outfield stand (td_build.py's rooms, traced off the raster): stairs
+    of 0.1-0.4 m pieces, which stands.js draws 0.5 m thick, each step its own jamb and cap, a picket of slabs of
+    every shade seen along it from the stand (the user's 7.webp). Each run of them (one height, end to end) is
+    traced again smooth: resampled every 0.25 m, eased over 1.5 m either way (its ends where they were), and laid
+    as pieces about a metre long. Returns (runs, pieces before, after)."""
+    R = data['rooms']
+    key = lambda x, z: (round(x, 2), round(z, 2))
+    def outf(w):
+        x, z = (w[0] + w[2]) / 2, (w[1] + w[3]) / 2
+        return math.hypot(x, z) > r_min and abs(math.degrees(math.atan2(x, -z))) < a_max
+    sel = [w for w in R['walls'] if outf(w)]
+    rest = [w for w in R['walls'] if not outf(w)]
+    groups = {}
+    for w in sel: groups.setdefault((w[4], w[5]), []).append(w)
+    out = []; nrun = 0
+    for (y0, y1), ws in groups.items():
+        nxt = {}; deg = {}
+        for w in ws:
+            nxt.setdefault(key(w[0], w[1]), []).append(w)
+            deg[key(w[2], w[3])] = deg.get(key(w[2], w[3]), 0) + 1
+        used = set()
+        starts = [w for w in ws if deg.get(key(w[0], w[1]), 0) == 0] + ws
+        for w0 in starts:
+            if id(w0) in used: continue
+            chain = [w0]; used.add(id(w0))
+            while True:
+                cand = [w for w in nxt.get(key(chain[-1][2], chain[-1][3]), []) if id(w) not in used]
+                if not cand: break
+                chain.append(cand[0]); used.add(id(cand[0]))
+            P = np.array([[chain[0][0], chain[0][1]]] + [[w[2], w[3]] for w in chain], float)
+            Lr = np.r_[0, np.cumsum(np.hypot(*np.diff(P, axis=0).T))]
+            if Lr[-1] < 3.0 or len(chain) < 4: out += chain; continue
+            nrun += 1
+            t = np.linspace(0, Lr[-1], max(2, int(Lr[-1] / 0.25) + 1))
+            Q = np.c_[np.interp(t, Lr, P[:, 0]), np.interp(t, Lr, P[:, 1])]
+            k = 6; Qs = Q.copy()
+            for i in range(len(Q)):
+                a, b = max(0, i - k), min(len(Q), i + k + 1); h = min(i - a, b - 1 - i)
+                Qs[i] = Q[i - h:i + h + 1].mean(0)
+            idx = np.unique(np.r_[np.arange(0, len(Qs), 4), len(Qs) - 1])
+            for i, j in zip(idx[:-1], idx[1:]):
+                out.append([round(float(Qs[i, 0]), 2), round(float(Qs[i, 1]), 2), round(float(Qs[j, 0]), 2), round(float(Qs[j, 1]), 2), y0, y1])
+    R['walls'] = rest + out
+    return nrun, len(sel), len(out)
 
 
 def _balcony_columns(data):
@@ -350,8 +680,17 @@ def apply(data):
     done = [(v,) + _vom(data, E, v)[1:] for v in E['voms']]
     n = _seats(E, done)
     moved = _aisle_columns(data)
+    heads = _head_columns(data)
+    print('tidy: the outfield\'s columns between the vomitories onto their aisles\' middles (aisle, moved m)', heads)
+    print('tidy: the screen\'s two columns by the backscreen taken away', _drop_screen_columns(data))
+    sw = _smooth_back_wall(data)
+    print('tidy: the walls round the back of the outfield stand traced smooth: %d runs, %d pieces -> %d' % sw)
+    sq = _square_columns(data)
+    fv, fn = _outfield_voms(data)
+    print('tidy: outfield vomitories (passage, aisle, pit length, floor, lintel)', fv, '; seats cleared', fn)
     cut = _balcony_columns(data)
     gaps = _wall_gap(data)
+    print('tidy: columns turned square to their rows (degrees)', sq)
     print('tidy: seats under a column taken away', _column_seats(data))
     print('tidy: E vomitories %d (mouths at %s m), seats cleared %d; aisle columns set across %s; balcony columns ended %s'
           % (len(done), sorted({round(Lc, 1) for _, Lc in done}), n, [m[0] for m in moved], cut))
