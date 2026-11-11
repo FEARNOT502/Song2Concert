@@ -328,9 +328,6 @@ export function buildDome(ctx) {
     pillars: TD_STANDS.pillars.map((p) => (isScr(p) || p.y1 >= 99 ? { ...p, ...(MV.colMoved.get(p) ?? {}), y1: underMV(p) ? MV.y1 + 0.3 : ringY(p.z + ZH) - 1.2 } : p)),
     signs: TD_STANDS.signs.map((s) => { const m = movedFrom.find(({ c }) => Math.hypot(c.x - s.x, c.z - s.z) < 0.2); return m ? { ...s, x: m.q.x, z: m.q.z } : s; }),
   };
-  // (the outfield's plates are drawn here, below, not on the stands' sheet of aisle numbers)
-  const PLATES = TD.signs.filter((s) => s.plate);
-  TD.signs = TD.signs.filter((s) => !s.plate);
   const stands = buildStands(TD, {
     // (the lightsticks' blocks: the real ones, as each seat is labelled; where
     // a level has no labels, by the stands' own aisles)
@@ -366,50 +363,14 @@ export function buildDome(ctx) {
     materials: { rail: std({ color: 0xaaa499, roughness: 0.92, side: THREE.DoubleSide }), wall: std({ color: 0xb4aea3, roughness: 0.88, side: THREE.DoubleSide }), levelRail: { C: new THREE.MeshBasicMaterial({ visible: false }) } },
   });
   root.add(stands.group);
-  // The outfield's columns (photographs: the user's 6.webp, Commons "Tokyo Dome (April 11, 2015).jpg"): white, square,
-  // at the head of every aisle; those in the mouths of the vomitories carry a white plate with a number in black over
-  // the mouth (td_tidy.py: the retired numbers, the passages' own by the poles), the others a narrow white banner
-  // hung down the face to the field, its lettering in blue. Plates and banners are lit by the room; the columns'
-  // own glow (stands.js: `houseLit`) and the plates' go down with the house lights in the show.
+  // The outfield's columns (td_tidy.py): plain grey, as the 1st floor's, at the head of every aisle and in the front
+  // of every vomitory's mouth. Anything here with a glow of its own (stands.js: `houseLit`) goes down with the
+  // house lights in the show.
   const houseLit = [];
   stands.group.traverse((o) => { const m = o.material; if (m?.userData?.houseLit && !houseLit.some(([q]) => q === m)) houseLit.push([m, m.emissiveIntensity]); });
   {
     const ZO = OFF.z ?? ZH, XO = OFF.x ?? 0;
-    const tex = (w, h, draw) => {
-      const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
-      draw(cv.getContext('2d'), w, h);
-      const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
-      return t;
-    };
-    const card = (x, y, z, yaw, w, h, map, P) => {
-      const g = new THREE.PlaneGeometry(w, h); g.rotateY(yaw); g.translate(x, y, z);
-      const m = std({ map, roughness: 0.8, emissive: 0xffffff, emissiveMap: map, emissiveIntensity: 0.3 });
-      m.userData.houseLit = 1; houseLit.push([m, 0.3]);
-      const mesh = new THREE.Mesh(g, m); mesh.userData.noCollide = true; P.add(mesh);
-    };
     const grp = new THREE.Group();
-    for (const s of PLATES) {
-      const map = tex(200, 180, (g, w, h) => {
-        g.fillStyle = '#f4f3ee'; g.fillRect(0, 0, w, h);
-        g.strokeStyle = '#c9c7bf'; g.lineWidth = 6; g.strokeRect(3, 3, w - 6, h - 6);
-        g.fillStyle = '#16171b'; g.font = `bold ${s.label.length > 1 ? 112 : 128}px Arial, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
-        g.fillText(s.label, w / 2, h / 2 + 6);
-      });
-      const off = (s.r ?? 0.4) + 0.015;
-      card(s.x + XO + Math.sin(s.yaw) * off, s.y, s.z + ZO + Math.cos(s.yaw) * off, s.yaw, s.w ?? 1.0, s.h ?? 0.9, map, grp);
-    }
-    // (the banners: no sponsor of the photographs' own, a run of blue strokes for its lettering)
-    const banner = tex(64, 320, (g, w, h) => {
-      g.fillStyle = '#f2f2ee'; g.fillRect(0, 0, w, h);
-      g.fillStyle = '#1d3f8f'; const rnd = prng(77);
-      for (let y = 22; y < h - 30; y += 34) { const k = 2 + Math.floor(rnd() * 3); for (let i = 0; i < k; i++) g.fillRect(14 + rnd() * 8, y + i * 9, 26 + rnd() * 10, 5); }
-    });
-    for (const c of TD.pillars) {
-      const a = Math.abs(Math.atan2(c.x, -c.z) / DEG);
-      if (!c.aisle || Math.hypot(c.x, c.z) < 110 || a < 12 || a > 45) continue;
-      const yaw = Math.atan2(-(c.ax ?? 0), -(c.az ?? 1)), off = (c.rz ?? c.r) + 0.015;
-      card(c.x + XO + Math.sin(yaw) * off, c.y0 + 2.9, c.z + ZO + Math.cos(yaw) * off, yaw, 0.62, 3.1, banner, grp);
-    }
     // (each vomitory's mouth: the passage on from the top of its stairs into the concourse between green-painted
     // walls, under a soffit (12.webp), 2.4 m deep)
     const greenM = std({ color: 0x2e5a4e, roughness: 0.9, side: THREE.DoubleSide }), soffitM = std({ color: 0x8e8b85, roughness: 0.9, side: THREE.DoubleSide });
@@ -425,6 +386,19 @@ export function buildDome(ctx) {
       const g = new THREE.PlaneGeometry(2 * hw, D); g.rotateX(Math.PI / 2); g.rotateY(Math.atan2(ux, uz));
       const [x, z] = at(v.L + D / 2, 0); g.translate(x, v.roof, z);
       grp.add(new THREE.Mesh(g, soffitM));
+      // the pit roofed from its front (the mouth, the column standing in its middle) back to the wall: a slab
+      // rising with the stairs under it, between the pit's walls (td_tidy.py: roof0 at the front, roof at the back)
+      if (v.roof0 != null) {
+        const sw = hw - 0.35, k = v.slab ?? 0.3, P = [];
+        const c = (t, s, y) => { const [x2, z2] = at(t, s); return [x2, y, z2]; };
+        const y0 = v.roof0, y1 = v.roof;
+        const quad = (a, b, cc, d) => P.push(...a, ...b, ...cc, ...a, ...cc, ...d);
+        quad(c(0, -sw, y0), c(0, sw, y0), c(v.L, sw, y1), c(v.L, -sw, y1));                 // underside
+        quad(c(0, -sw, y0 + k), c(v.L, -sw, y1 + k), c(v.L, sw, y1 + k), c(0, sw, y0 + k)); // top
+        quad(c(0, -sw, y0), c(0, -sw, y0 + k), c(0, sw, y0 + k), c(0, sw, y0));             // the lintel's face
+        const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); sg.computeVertexNormals();
+        grp.add(new THREE.Mesh(sg, std({ color: 0x9d9a93, roughness: 0.9, side: THREE.DoubleSide })));
+      }
     }
     root.add(grp);
   }

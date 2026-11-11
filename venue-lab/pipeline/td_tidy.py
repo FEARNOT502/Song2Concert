@@ -18,8 +18,9 @@
 #   columns squared   Every column turned so its faces are square to the rows (or the walls) it stands at.
 #   outfield voms     A shallow vomitory at every other outfield aisle (49-52, 55-58): a pit down through rows 15-21
 #                     with stairs up it to the concourse, a mouth in the back wall, the numbered column in the middle
-#                     of the mouth at its front, its plate on it (stands.js's vomParts `wall`; dome.js draws the
-#                     plates, banners and the passage's green walls and soffit).
+#                     of the mouth at its front, the pit roofed from the mouth back (stands.js's vomParts `wall`;
+#                     dome.js draws the soffit and the passage's green walls). The columns plain grey, the 1st
+#                     floor's size and finish, no plates or banners (the user's call).
 #   balcony columns   The columns standing up through the balcony (C) to carry the 2nd floor (D), where D now stops
 #                     short of them (td_ends.D_CUT): ended under the balcony's rows.
 import math, base64
@@ -188,30 +189,41 @@ def _seats(L, voms):
 
 def _head_columns(data):
     """the outfield's columns between the vomitories' (the un-numbered ones, `color` and `aisle`): each on the middle
-    line of the aisle between its two blocks (_aisle_lines: halfway between the blocks' end seats, rows 1-14), at the
-    aisle's head, just behind the stand's last tread on that line; the two sides then made each other's mirror image
+    line of the aisle between its two blocks (_aisle_lines: halfway between the blocks' end seats, rows 1-14), as deep
+    in the stand as the vomitories' columns (its front face at the front of row 15), standing in the aisle with the way
+    up it either side; its foot on the lowest tread under it; the two sides then made each other's mirror image
     (x -> -x), the pair's positions averaged. Returns each column's move (m)."""
     F = next(l for l in data['levels'] if l['name'] == 'F')
     lines = _aisle_lines()
-    whole = unary_union([Polygon(q[0], q[1:]).buffer(0) for r in F['rows'] for q in r['polys']] + [Polygon(q[0], q[1:]).buffer(0) for r in data.get('backscreen', []) for q in r['polys']])
+    r15 = [(r, unary_union([Polygon(q[0], q[1:]).buffer(0) for q in r['polys']])) for r in F['rows'] if r['r'] % 22 == 14]
     cols = [c for c in data['pillars'] if c.get('aisle') and 'color' in c]
+    for c in cols: c['rx'], c['rz'] = OUT_RX, OUT_RZ
     moved = []
     for c in cols:
         pc = np.array([c['x'], c['z']])
         nrm = lambda ln: np.array([-ln[2][1], ln[2][0]])
         names, m, d = min(lines, key=lambda ln: abs(float((pc - ln[1]) @ nrm(ln))))
-        x = whole.intersection(LineString([m - d * 30, m + d * 30]))
-        ts = [float((np.array(p) - m) @ d) for gg in (x.geoms if hasattr(x, 'geoms') else [x]) for p in gg.coords] if not x.is_empty else [float((pc - m) @ d)]
-        # (on the top tread at the aisle's head, its back face just inside the stand's back edge: 6.webp, the columns
-        # rise from the top rows, not from the walkway behind them)
-        q = m + d * (max(ts) - max(c.get('rz', c['r']), c.get('rx', c['r'])) - 0.03)
-        c['_q'] = q; c['_names'] = names
+        # (as deep in the stand as the vomitories' columns: its front face just behind the front of row 15, where
+        # the pits begin, standing in the aisle (the chart's rows 15-21 stop a seat or two further short of these
+        # aisles than rows 1-14 do), the way up the aisle on either side of it)
+        f15 = [g for r, g in r15 if g.distance(Point(*pc)) < 14]
+        x = unary_union(f15).intersection(LineString([m - d * 30, m + d * 30])) if f15 else None
+        # (where the aisle is the seam between two runs of rows laid apart, the poles' blocks, row 15 may not cross
+        # its line: the column's mirror image across the house stands for it, below)
+        if x is None or x.is_empty: c['_q'] = pc; c['_names'] = names; c['_ok'] = False; continue
+        t15 = min(float((np.array(p) - m) @ d) for gg in (x.geoms if hasattr(x, 'geoms') else [x]) for p in gg.coords)
+        q = m + d * (t15 + c['rz'] + 0.05)
+        c['_q'] = q; c['_names'] = names; c['_ok'] = True
     for c in cols:
-        mates = [o for o in cols if o is not c and np.hypot(o['_q'][0] + c['_q'][0], o['_q'][1] - c['_q'][1]) < 3.0]
-        q = c['_q'] if not mates else np.array([np.sign(c['_q'][0]) * (abs(c['_q'][0]) + abs(mates[0]['_q'][0])) / 2, (c['_q'][1] + mates[0]['_q'][1]) / 2])
+        mates = sorted((o for o in cols if o is not c and o['x'] * c['x'] < 0), key=lambda o: np.hypot(o['x'] + c['x'], o['z'] - c['z']))[:1]
+        mates = [o for o in mates if np.hypot(o['x'] + c['x'], o['z'] - c['z']) < 4.0]
+        if not mates: q = c['_q']
+        elif not c['_ok'] and mates[0]['_ok']: q = mates[0]['_q'] * [-1, 1]
+        elif c['_ok'] and not mates[0]['_ok']: q = c['_q']
+        else: q = np.array([np.sign(c['_q'][0]) * (abs(c['_q'][0]) + abs(mates[0]['_q'][0])) / 2, (c['_q'][1] + mates[0]['_q'][1]) / 2])
         c['_q2'] = q
     for c in cols:
-        q = c.pop('_q2'); c.pop('_q'); names = c.pop('_names')
+        q = c.pop('_q2'); c.pop('_q'); c.pop('_ok'); names = c.pop('_names')
         moved.append(('|'.join(names), round(float(np.hypot(q[0] - c['x'], q[1] - c['z'])), 2)))
         c['x'], c['z'] = round(float(q[0]), 2), round(float(q[1]), 2); c['color'] = OUT_GREY
         # (its foot on the lowest tread under it: no gap under it where it stands across two rows)
@@ -279,9 +291,12 @@ def _aisle_columns(data):
 # from the concourse looking out through one: the column at the front of the mouth, stairs down either side).
 OUT_VOM_W = 4.0          # the pit's width: the column and a way out 1.25 m wide either side of it (12.webp), a little over
                          # a third of the aisles' spacing (6.webp); the chart leaves 5.7 m between the seats there
-OUT_GREY = 0xa9a69f      # the columns' concrete (12.webp: grey, not white)
+OUT_GREY = 0xa9a69f      # (while laid: marks the outfield's columns; taken off at the end, _plain_columns)
+OUT_RX, OUT_RZ = 0.6, 0.8  # the columns' half sizes across and along their aisle: the 1st floor's own (td_build.py PILLAR_RX, PILLAR_RZ)
+OUT_PIT_HEAD = 2.4       # the mouth's height at its front, over the pit's floor (the soffit rises with the stairs behind it)
+OUT_SLAB = 0.3           # the soffit's slab
 OUT_HEAD = 2.6           # the mouth's height over the concourse's floor, to the soffit (12.webp)
-# the plates on the columns: the Giants' retired numbers on the six middle ones (photographs: 14, 4, 16 in left
+# (not drawn, the user's call) the plates on the columns: the Giants' retired numbers on the six middle ones (photographs: 14, 4, 16 in left
 # field from the pole in; 34, 3, 1 in right field from the middle out), the passage's own number on the two by the poles
 OUT_PLATES = {50: '14', 51: '4', 52: '16', 55: '34', 56: '3', 57: '1'}
 
@@ -393,10 +408,14 @@ def _outfield_voms(data):
         data['floors'] = fl
         # the stairs up the pit from row 14's tread to the concourse's floor, between its walls (12.webp: down either
         # side of the column, rails along the walls)
+        # (two runs, one either side of the column standing on the pit's front lip: the steps it stands in are cut round it)
+        c['rx'], c['rz'] = OUT_RX, OUT_RZ
         nst = max(1, int(round(Lp / 0.3))); dst = Lp / nst; rise = (y_top - floor) / nst; hs = hw - 0.35
         for i in range(nst):
-            F['steps'].append({'y0': round(floor - 0.12, 3), 'y': round(floor + rise * (i + 1), 3), 'light': False,
-                               'polys': [_out(frame(-hs, hs, i * dst - (0.02 if i == 0 else 0.0), (i + 1) * dst + 0.01))]})
+            ta, tb = i * dst - (0.02 if i == 0 else 0.0), (i + 1) * dst + 0.01
+            parts = [frame(-hs, -OUT_RX - 0.02, ta, tb), frame(OUT_RX + 0.02, hs, ta, tb)] if ta < 2 * OUT_RZ + 0.1 else [frame(-hs, hs, ta, tb)]
+            for g_ in parts:
+                F['steps'].append({'y0': round(floor - 0.12, 3), 'y': round(floor + rise * (i + 1), 3), 'light': False, 'polys': [_out(g_)]})
         # the concourse's walls standing in the pit; the back wall cut by the pit made one straight piece across
         # the mouth, from the soffit up as high as it stood
         inpit = frame(-hw, hw, -0.02, Lp + 0.02).buffer(0.02)
@@ -423,22 +442,22 @@ def _outfield_voms(data):
         # the seats in it or against its walls
         q = xy - p; s_ = q @ w; t_ = q @ u
         keep &= ~((np.abs(s_) < hw + SEAT_CLEAR) & (t_ > -0.3) & (t_ < Lp + 0.3))
-        # (the walls' tops one slope from a rail's height over row 15 at the front up to the soffit at the back: the
-        # passage's own walls either side of the mouth, 12.webp)
-        t0 = round(band[14][2] + PAR, 2); t1 = roof
+        # the pit roofed over from its front to the back wall (the mouth at its front, 6.webp's dark openings either side
+        # of the column; 12.webp's soffit over the passage): the soffit one slope over the stairs, OUT_PIT_HEAD over the
+        # pit's floor at the front up to the back wall's opening (roof); the walls either side up to it, closed
+        roof0 = round(floor + OUT_PIT_HEAD, 3)
+        t0 = round(roof0 + OUT_SLAB, 2); t1 = round(roof + OUT_SLAB, 2)
         F['voms'].append({'p': [round(float(p[0]), 2), round(float(p[1]), 2)], 'u': [round(float(u[0]), 4), round(float(u[1]), 4)],
-                          'w': OUT_VOM_W, 'L': Lp, 'T': 0.0, 'y': floor, 'roof': roof, 'top': y_top, 'sides': [],
+                          'w': OUT_VOM_W, 'L': Lp, 'T': 0.0, 'y': floor, 'roof': roof, 'roof0': roof0, 'slab': OUT_SLAB, 'top': y_top, 'sides': [],
                           'wall': {'t0': t0, 't1': t1, 'roof': roof}})
-        # the column in the middle of the mouth, from the pit's floor; its plate over the mouth, to the field
-        q2 = p + u * (Lp - max(c.get('rz', c['r']), c.get('rx', c['r'])) - 0.03)      # (its back face just inside the stand's back edge)
+        # the column in the middle of the mouth at its front (12.webp), on the pit's front lip, its front face just
+        # inside the pit's front edge, square to the rows; plain (no plate: the user's call)
+        q2 = p + u * (OUT_RZ + 0.05)
         x0, z0 = c['x'], c['z']
         c.update({'x': round(float(q2[0]), 2), 'z': round(float(q2[1]), 2), 'y0': floor, 'color': OUT_GREY, 'ax': round(float(u[0]), 3), 'az': round(float(u[1]), 3)})
         sg_ = [s for s in data['signs'] if abs(s['x'] - x0) < 0.05 and abs(s['z'] - z0) < 0.05]
         n_ = int(sg_[0]['label']) if sg_ and sg_[0]['label'].isdigit() else None
         for s in sg_: data['signs'].remove(s)
-        yaw = math.atan2(-u[0], -u[1])
-        data['signs'].append({'x': c['x'], 'y': round(y_top + 1.9, 2), 'z': c['z'], 'yaw': round(yaw, 3), 'w': 1.0, 'h': 0.9,
-                              'r': max(c.get('rx', c['r']), c.get('rz', c['r'])), 'label': OUT_PLATES.get(n_, str(n_)), 'plate': True, 'n': n_})
         c['vom'] = n_
         done.append((n_, '|'.join(names), Lp, floor, roof))
     F['seats'] = base64.b64encode(seats[keep].astype('<i2').tobytes()).decode('ascii')
@@ -553,6 +572,15 @@ def _smooth_back_wall(data, a_max=50.0, r_min=95.0):
                 out.append([round(float(Qs[i, 0]), 2), round(float(Qs[i, 1]), 2), round(float(Qs[j, 0]), 2), round(float(Qs[j, 1]), 2), y0, y1])
     R['walls'] = rest + out
     return nrun, len(sel), len(out)
+
+
+def _plain_columns(data):
+    """the outfield's columns drawn as the 1st floor's are (stands.js pillars(): the concourse's grey, no colour of
+    their own): their marker taken off. Returns how many."""
+    n = 0
+    for c in data['pillars']:
+        if c.pop('color', None) is not None: n += 1
+    return n
 
 
 def _balcony_columns(data):
@@ -691,6 +719,7 @@ def apply(data):
     cut = _balcony_columns(data)
     gaps = _wall_gap(data)
     print('tidy: columns turned square to their rows (degrees)', sq)
+    print('tidy: the outfield\'s columns made plain grey, the 1st floor\'s size:', _plain_columns(data))
     print('tidy: seats under a column taken away', _column_seats(data))
     print('tidy: E vomitories %d (mouths at %s m), seats cleared %d; aisle columns set across %s; balcony columns ended %s'
           % (len(done), sorted({round(Lc, 1) for _, Lc in done}), n, [m[0] for m in moved], cut))
