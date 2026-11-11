@@ -18,12 +18,14 @@
 # across each aisle is small and the rake changes smoothly from one block to the
 # next (see fit_profiles); the blocks beside the poles are then each given one
 # straight slope (fit_straight).
-import numpy as np, cv2
+import numpy as np
+import shapely, cv2
 from shapely.geometry import Polygon
 from shapely.ops import unary_union
 from standlib import disk, rings_field
 
 DA, DB = 0.74, 0.748          # the rows' pitch in A (1-26) and in B (27-)
+DF = 0.74                     # the outfield's (F), from its fence (td_build.py sets it)
 C1F = 10.6                    # the 1st-floor concourse
 HIN_A = lambda r: 1.0 + 0.17 * (r - 1)
 HIN_B = lambda r: 5.5 + 0.255 * (r - 27)
@@ -507,7 +509,7 @@ def fit_rake(G, res, Fh, wF=1.5, rmin=0.15, rmax=0.6, sec=(3, 12, 10.0), drop=(0
             ys, xs = np.nonzero(m); sel = np.arange(0, len(ys), step); ys, xs = ys[sel], xs[sel]
             ax, az = G.m(xs, ys); bx, bz = G.m(xs + dx, ys + dy)
             outp.append((A_[ys, xs], B_[ys, xs], np.c_[ax, az], np.c_[bx, bz], Fh[ys, xs], Fh[ys + dy, xs + dx],
-                         np.floor(dF[ys, xs] / 0.74), np.floor(dF[ys + dy, xs + dx] / 0.74)))
+                         np.floor(dF[ys, xs] / DF), np.floor(dF[ys + dy, xs + dx] / DF)))
         ka, kb, pa, pb, fa, fb, ra, rb = [np.concatenate([o[i] for o in outp]) for i in range(8)]
         ra = np.clip(ra, 0, nF - 1); rb = np.clip(rb, 0, nF - 1)
     else:
@@ -582,35 +584,32 @@ def outfield_classes(G, res, Fpolys, k=3):
     for i, j in cls.items(): out[(lab == i + 1) & zf] = j
     return out
 
-# The 3B side's B31-B33 (behind row 35) and B35-B39 (behind row 38/39): the press/table/box seats
-# in the upper rows that the fan chart leaves out (the 1B side's B11-B19 have ordinary rows 36-47 there)
+# The 3B side's B31-B33 (behind row 35) and B35-B39 (behind row 38/39): rows the fan chart leaves out (the 1B side's
+# B11-B19 have ordinary rows to 45-47 there). No ordinary seats are laid there: the 3rd Platinum Box and the press
+# seats stand in them (td_boxes.py), the rest of the treads bare.
 TABLE = {31: 36, 32: 36, 33: 36, 35: 40, 36: 39, 37: 39, 38: 40, 39: 40}
 # rows the official map gives a block past the fan chart's last one (seated as the outline lets)
 EXTRA = {'B22': 46, 'B28': 46}
-# rows a block's chart leaves out that its mirror block has (seated by the mirror's numbers): A02's
-# front rows 14-19, which the 3B side's A48 has
-MIRROR_FILL = {'A02': 'A48'}
-# the blocks at the poles, seated wall to wall as the real ones are (their rows' outfield ends, and the
-# rows the chart leaves out, seated a 0.45 m apart, not left bare)
-DENSE = {'A01', 'A02', 'A03', 'A47', 'A48', 'A49', 'B02', 'B48'}
 
 def real_block(fg, kind):
     """The chart's name of a finger's block: A01 / A49 (the wedges at the poles: their rows on past the walkway are A's too) or A/B + key."""
     if fg.n == 1: return 'A01' if fg.key == 1 else 'A49'
     return f'{kind}{fg.key:02d}'
 
-def lay_real(G, res, real, plim=(0.45, 0.55), pitch=0.5, inset=0.18):
+def lay_real(G, res, real, plim=(0.44, 0.55), pitch=0.5, inset=-0.25, avoid=None):
     """Seats along every row of every A and B block as the detailed chart numbers them (`real`:
-    td/td_rows_real.json): in each row, seat number s at (s - s0 + 0.5) seat widths from the row's
+    td_chart.load()): in each row, seat number s at (s - s0 + 0.5) seat widths from the row's
     home-side end (s0 the row's first number: the smaller numbers are towards home), the width the
     row's length over its span of numbers, kept within `plim` (what is left at the outfield end stays
-    bare; what does not fit is dropped and counted). A row the chart has no line for: seated as the
-    outline lets (a `pitch` apart) if the chart skips it inside the block's rows, if the official map
-    gives the block that row (EXTRA), or if it is one of the table rows (TABLE); otherwise bare.
-    Returns (positions, row id into meta, yaw, table flag, report {block: [chart seats, laid]})."""
+    bare; what does not fit is dropped and counted). A row the chart has no line for is bare, but for
+    the rows the official map gives a block past the chart's last (EXTRA: seated as the outline lets,
+    `pitch` apart). The rows behind the 3B side's B31-B39 the chart leaves out (TABLE) are returned
+    as `spare`, for the boxes (td_boxes.py).
+    Returns (positions, row id into meta, yaw, table flag (0), report {block: [chart seats, laid]},
+    labels [(block, row, seat or 0)], spare {block: [(row number, row id, [(t_lo, t_hi)], fg, cc, home_hi)]})."""
     meta = res['meta']; F = res['fingers']; band_g = res['band']
-    S, R, Y, T = [], [], [], []
-    rep = {}
+    S, R, Y, T, LB = [], [], [], [], []
+    rep = {}; spare = {}
     rows_of = {}
     for i, m in enumerate(meta):
         if m[1] in 'AB': rows_of.setdefault(m[0], []).append(i)
@@ -620,12 +619,13 @@ def lay_real(G, res, real, plim=(0.45, 0.55), pitch=0.5, inset=0.18):
         for P in [fg.pa] + ([fg.pb] if fg.pb is not None else []):
             m = np.zeros(band_c.shape, np.uint8); gx, gz = G.g(*np.array(P.exterior.coords).T)
             cv2.fillPoly(m, [np.c_[gx - sl[1].start, gz - sl[0].start].round().astype(np.int32)], 1)
-            ok |= cv2.erode(m, disk(inset / G.res))
-        ok = ok > 0
+            # (a negative inset: the seats run on past the map's outline into the aisle it draws, up to that far)
+            ok |= cv2.erode(m, disk(max(inset, G.res) / G.res)) if inset >= 0 else cv2.dilate(m, disk(-inset / G.res))
+        ok = (ok > 0) & ((res['finger_of'][sl] == k) | (inset >= 0))
         if fg.n == 1:
             # extend A01/A49 seating mask forward to the fence between its lateral aisle edges
             _fok = (res['finger_of'][sl] == k) & (band_c >= 0) & (cv2.dilate(ok.astype(np.uint8), disk(2.2 / G.res)) > 0)
-            ok = ok | cv2.erode(_fok.astype(np.uint8), disk(inset / G.res)) > 0
+            ok = ok | cv2.erode(_fok.astype(np.uint8), disk(max(inset, G.res) / G.res)) > 0
         u = np.array([-fg.f[1], fg.f[0]])
         # (the wedges at the poles number their rows their own way: the offset that matches most of them)
         off = 0
@@ -645,30 +645,24 @@ def lay_real(G, res, real, plim=(0.45, 0.55), pitch=0.5, inset=0.18):
             C = fg.row_point(us, cc)
             gxx, gzz = G.g(C[:, 0], C[:, 1])
             ii = np.clip(np.round(gxx).astype(int) - sl[1].start, 0, m.shape[1] - 1); jj = np.clip(np.round(gzz).astype(int) - sl[0].start, 0, m.shape[0] - 1)
-            idx = np.nonzero(m[jj, ii])[0]
+            hit = m[jj, ii]
+            # (nor over a gate's pit in the aisle beside it: the row stops short of it, as it does at the map's outline)
+            if avoid is not None: hit &= ~shapely.contains_xy(avoid, C[:, 0], C[:, 1])
+            idx = np.nonzero(hit)[0]
             if not len(idx): continue
-            run = max(np.split(idx, np.nonzero(np.diff(idx) > 1)[0] + 1), key=len)
+            runs_g = np.split(idx, np.nonzero(np.diff(idx) > 1)[0] + 1)
+            run = max(runs_g, key=len)
             t_lo, t_hi = us[run[0]] - 0.025, us[run[-1]] + 0.025; L = t_hi - t_lo
             nm = real_block(fg, kind); rr = r + off; blk = real.get(nm)
             runs = blk['rows'].get(str(rr)) if blk else None
-            if runs is None and nm in MIRROR_FILL:
-                mb = real.get(MIRROR_FILL[nm])
-                if mb and str(rr) in mb['rows']: blk = {'rows': {**mb['rows'], **blk['rows']}}; runs = mb['rows'][str(rr)]
-            table = k in TABLE and kind == 'B' and rr >= TABLE[k]
-            def put(t, tab):
+            def put(t, tab, sn):
                 pt = fg.row_point(t, cc)[0]
                 g = fg.facing(t - float(fg.ref @ u) if fg.w is not None else 0.0, t, kind == 'B', pt)
-                S.append(pt); R.append(i); Y.append(np.arctan2(g[0], g[1])); T.append(tab)
-            if nm in DENSE and not table:
-                kk = int((L + 0.05) // 0.45)
-                if kk >= 1:
-                    p = L / kk; e = rep.setdefault(nm, [0, 0])
-                    if runs: e[0] += sum(b - a + 1 for a, b in runs)
-                    for q in range(kk):
-                        d = (q + 0.5) * p; put(t_hi - d if home_hi else t_lo + d, 0); e[1] += 1
+                S.append(pt); R.append(i); Y.append(np.arctan2(g[0], g[1])); T.append(tab); LB.append((nm, rr, sn))
+            if k in TABLE and kind == 'B' and rr >= TABLE[k]:
+                spare.setdefault(nm, []).append((rr, i, [(us[q[0]] - 0.025, us[q[-1]] + 0.025) for q in runs_g], fg, cc, home_hi))
                 continue
-            rs = [int(q) for q in blk['rows']] if blk else []
-            if runs and not table:
+            if runs:
                 s0 = runs[0][0]
                 nums = [s for a, b in runs for s in range(a, b + 1)]
                 p = float(np.clip(L / (runs[-1][1] - s0 + 1), *plim))
@@ -676,23 +670,18 @@ def lay_real(G, res, real, plim=(0.45, 0.55), pitch=0.5, inset=0.18):
                 for s in nums:
                     d = (s - s0 + 0.5) * p
                     if d + 0.5 * p > L + 0.05: continue
-                    put(t_hi - d if home_hi else t_lo + d, 0); e[1] += 1
-                if kind == 'A' and rs and rr <= min(rs) + 2:
-                    s_next = runs[-1][1] + 1
-                    while (s_next - s0 + 0.5) * p + 0.5 * p <= L + 0.05:
-                        d = (s_next - s0 + 0.5) * p
-                        put(t_hi - d if home_hi else t_lo + d, 0); e[1] += 1
-                        s_next += 1
+                    put(t_hi - d if home_hi else t_lo + d, 0, s); e[1] += 1
                 continue
-            gap = bool(rs) and ((kind == 'A' and rr < max(rs)) or (min(rs) < rr < max(rs)))
-            if not (table or gap or (nm in EXTRA and rr <= EXTRA[nm]) or blk is None): continue
+            if not (nm in EXTRA and rr <= EXTRA[nm] and blk and rr > max(int(q) for q in blk['rows'])): continue
+            # (numbered on from the row in front's first number, as the chart's rows before it are)
+            last = blk['rows'][str(max(int(q) for q in blk['rows']))]
             kk = int(L // pitch)
             if kk < 1: continue
-            t0 = t_lo + (L - kk * pitch) / 2 + pitch / 2
             e = rep.setdefault(nm, [0, 0])
             for q in range(kk):
-                put(t0 + q * pitch, 1 if table else 0); e[1] += 1
-    return np.array(S).reshape(-1, 2), np.array(R, int), np.array(Y), np.array(T, int), rep
+                d = (q + 0.5) * pitch + (L - kk * pitch) / 2
+                put(t_hi - d if home_hi else t_lo + d, 0, last[0][0] + q); e[1] += 1
+    return np.array(S).reshape(-1, 2), np.array(R, int), np.array(Y), np.array(T, int), rep, LB, spare
 
 POLE_BACK = {1: 0.0, 2: 0.0, 3: 0.0, 4: 0.3, 5: 1.0, 6: 2.0}      # (the pull of a back to the concourse's height: a pole finger's back is set by its neighbours)
 

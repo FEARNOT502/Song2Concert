@@ -4,13 +4,10 @@ from standlib import Grid, disk, contours, STRAIGHT, sample, seat_mask
 from standgen import Level, poly_out, mask_polys, edge_walls, enclose, grow_under, redepth, trim_tunnels, front_parapet, relay_columns
 T0=time.time()
 st=pickle.load(open('td_stage1.pkl','rb'))
-# The 2nd floor's seats (D, E) as they stand in the committed stands: laid 0.5 m apart, block by block. td_gen.py's own
-# lay of them (0.42 m apart) is not the one the model was built from, so the seats are kept in td/td_seats2F.npy
-# and read back here; delete that file to lay them from td_gen.py again.
+# The 2nd floor's seats (D, E): td_gen.py lays them from the chart (td_lay2f.py), each with its block, row and number
 import os
-if os.path.exists('td/td_seats2F.npy'):
-    _s2=np.load('td/td_seats2F.npy',allow_pickle=True); st['SD'],st['SE']=np.asarray(_s2[0],float),np.asarray(_s2[1],float)
-    print('2nd floor seats from td/td_seats2F.npy: D',len(st['SD']),'E',len(st['SE']))
+from scipy.spatial import cKDTree
+SEATLAB={'D':(np.asarray(st['SD'],float),list(st['SD_lab'])),'E':(np.asarray(st['SE'],float),list(st['SE_lab']))}
 G=Grid(-140,140,-200,110,0.1)
 STRAIGHT.update(on=True,res=G.res)
 O=(0.0,-60.0)
@@ -34,7 +31,11 @@ LV={}
 # on past the walkway to row 40, as B. Each block its own, the outfield's
 # F20/F01 beside them another stand
 ra=pickle.load(open('td_rowsA.pkl','rb'))
-LV['F']=Level(G,'F',st['SF'],0.74,H_F,R_F,'ground',centre=O,rmax=180,hull_close=2.0)
+# the outfield's rows: the chart's 21 (F01/F20 18) and a standing aisle behind them, 0.66 m a row from the fence (the map's
+# outline is 14-15 m deep behind centre field, 11-12 m near the poles: 21 rows at 0.74 m do not go in anywhere)
+F_D,F_ROWS=0.66,21
+T1_DF=F_D
+LV['F']=Level(G,'F',st['SF'],F_D,H_F,R_F,'ground',centre=O,rmax=180,hull_close=2.0)
 # The upper tiers' fronts are the lines their rings of seats were laid along
 # (td_gen.py: the hull's distance, the balcony's and the 2nd floor's moved back
 # beyond the poles), not the front a level finds for itself from its seats by
@@ -58,6 +59,9 @@ for _i,_w in enumerate(_W0):
         if not (1<=_n<=48 or 51<=_n<=97): continue
         _p=(np.array([(_w[0]+_W0[_i+1][2])/2,(_w[1]+_W0[_i+1][3])/2])-_Hm0)/_s0-np.array(O)
         _cA[1 if _n<=48 else 3].append(float(U.c_squeeze(abs(np.degrees(np.arctan2(_p[0],_p[1]))))))
+# (the 3B side's C50, the mirror of C48 by home, has no label on the map: the 3B side C50-C97 is the 1B side's
+# C48-C01 mirrored, block k across from block 98 - k)
+_cA[3].append(min(_cA[1])); _cA[3].sort()
 _cCentres=[t_ for t_ in sorted(_cA[1])]+[-t_ for t_ in sorted(_cA[3])]
 _sCentres=[sg_*(VIP_TH+(k_+0.5)*_sw) for sg_ in (1,-1) for k_ in range(S_NB)]
 _rs=np.arange(20.0,200.0,0.04)
@@ -73,6 +77,10 @@ def _span(A_):
         lo_=(A_[i_-1]+t_)/2 if i_>0 else t_-(A_[1]-t_)/2; hi_=(t_+A_[i_+1])/2 if i_<len(A_)-1 else t_+(t_-A_[i_-1])/2
         out_.append((t_,hi_-lo_))
     return out_
+# Seats: the Premium Lounge (the C blocks, 1,520 seats) and the Suite Balcony (the S blocks behind home, 284) are
+# 1,804 in all (Kotobuki 2022): four rows of four a C block (96 blocks: 1,536), rows of 3, 3, 2 and 2 an S block
+# (28: 280), the outline taking fewer where it is narrow
+C_ROW=(4,4,4,4); S_ROW=(3,3,2,2)
 _cSp=[(t_,w_,6) for t_,w_ in _span(_cA[1])]+[(-t_,w_,6) for t_,w_ in _span(_cA[3])]+[(t_,_sw,7) for t_ in _sCentres]
 _perB=[]
 for th0_,wd_,mx_ in _cSp:
@@ -82,28 +90,36 @@ for th0_,wd_,mx_ in _cSp:
     _r00=_rowR((33.7+(abs(th0_)-33.7)/_kq)*np.sign(th0_),-9.0) if mx_==6 else r0_
     per_=int(min(mx_,max(2,np.floor((np.radians(wd_/_kq)*_r00-0.35)/0.5)))); _perB.append(per_)
     _pit=min(0.5,(np.radians(wd_)*r0_-0.14)/per_)
-    for k_ in range(per_):
-        off_=(k_-(per_-1)/2)*_pit
-        for r_ in range(4):
+    for r_ in range(4):
+        nr_=min(per_,(S_ROW if mx_==7 else C_ROW)[r_])
+        for k_ in range(nr_):
+            off_=(k_-(nr_-1)/2)*min(0.55,(np.radians(wd_)*r0_-0.14)/nr_)
             th_=th0_+np.degrees(off_/r0_); rr_=_rowR(th_,-9.0+0.9*(r_+0.5))
             _laid.append([O[0]+rr_*np.sin(np.radians(th_)),O[1]+rr_*np.cos(np.radians(th_))])
 _Sseats=np.array(_laid)
 print('balcony blocks',len(_cCentres),'C',len(_sCentres),'S; seats laid',len(_Sseats),'seats a row, counted',{v_:_perB.count(v_) for v_ in sorted(set(_perB))})
 LV['C']=Level(G,'C',_Sseats,0.9,H_C,R_C,0.5,1.2,centre=O,rmax=180,open_w=4.0,hull_close=4.0,max_rows=4,F=_front(dOut-U.tau_c(TH),C0W,(abs(TH)<=U.C_END)&(abs(TH)>=VIP_TH)))
-LV['D']=Level(G,'D',st['SD'],0.8,H_D,R_D,0.5,1.5,centre=O,rmax=180,open_w=3.0,hull_close=3.0,max_rows=10,F=_front(dOut-U.tau_d(TH),D0,abs(TH)<=U.D_END))
-LV['E']=Level(G,'E',st['SE'],0.8,H_E,R_E,0.5,0.6,centre=O,rmax=180,open_w=2.2,hull_close=3.0,F=_front(dOut-U.tau_d(TH),E0,abs(TH)<=84.2))
+LV['D']=Level(G,'D',np.vstack([st['SD'],st['SD_ph']]),0.8,H_D,R_D,0.5,1.5,centre=O,rmax=180,open_w=3.0,hull_close=3.0,max_rows=10,F=_front(dOut-U.tau_d(TH),D0,abs(TH)<=U.D_END))
+LV['E']=Level(G,'E',np.vstack([st['SE'],st['SE_ph']]),0.8,H_E,R_E,0.5,0.6,centre=O,rmax=180,open_w=2.2,hull_close=3.0,F=_front(dOut-U.tau_d(TH),E0,abs(TH)<=84.2))
+# (the one-row end blocks' phantom second rows, laid only for their treads: taken away again, each seat nearer a
+# phantom than any seat the chart has)
+for _k in 'DE':
+    _l=LV[_k]; _d1,_=cKDTree(st['S'+_k]).query(_l.seats); _d2,_=cKDTree(st['S'+_k+'_ph']).query(_l.seats); _kp=_d1<=_d2
+    print(_k,'phantom seats taken away',int((~_kp).sum()),'of',len(st['S'+_k+'_ph']))
+    _l.seats,_l.row,_l.yaw=_l.seats[_kp],_l.row[_kp],_l.yaw[_kp]
+    # (their raw positions and footprint stay: the treads are drawn round those later)
 # the outfield stand's rows from the fence, level along it (4.6 m over the
-# outfield's tall fence), each 0.333 m higher, up to the 1st-floor concourse
-# at its 19th (the doors at the backs of its aisles open onto it)
+# outfield's tall fence), each 0.286 m higher, the standing aisle behind the 21st at the 1st-floor concourse's
+# height (the doors at the backs of its aisles open onto it)
 _F=LV['F']
-_nF=_F.nrows
-_riseF=(C1F-H_F)/18
+_nF=F_ROWS+1
+_riseF=(C1F-H_F)/(_nF-1)
 _F.hs=np.array([min(C1F,H_F+_riseF*b) for b in range(_nF)]); _F.h0=H_F
 # its rows counted from the fence (the distance from the field), so its
 # front row is level all along it
 _dFence=(cv2.distanceTransform((~field).astype(np.uint8),cv2.DIST_L2,5)*G.res).astype(np.float32)
 _F.set_depth(_dFence); _F.nrows=_nF
-_F.band=np.where(_F.R>0,np.clip(np.floor(_F.d/0.74).astype(int),0,_nF-1),-1)
+_F.band=np.where(_F.R>0,np.clip(np.floor(_F.d/F_D).astype(int),0,_nF-1),-1)
 _ff=(_F.R>0)&(cv2.dilate(field.astype(np.uint8),disk(2.0/G.res))>0)
 print('outfield front band median',np.median(_F.band[_ff]) if _ff.any() else None)
 print('outfield stand rows',_nF,'seats',len(_F.seats))
@@ -120,7 +136,14 @@ VOM2=[t for _,t in _f2]; VOM2N=[n for n,_ in _f2]
 print('entrances: 1st floor',len(ENT1),'2nd floor',len(VOM2))
 # the tunnels from the 2nd-floor concourse through E's first rows, made straight
 _dOutD0=dOut-U.tau_d(TH)
-VOMS={'E':LV['E'].make_voms(C2F,detect=False,cands=[(np.abs(TH-tv)<np.degrees(1.1/RRO))&(_dOutD0>=E0-0.3)&(_dOutD0<E0+5*DP) for tv in VOM2])}
+# each on the aisle the chart leaves it (rows 11-14 stop three seats short of it on either side: td_lay2f.vom_aisles),
+# along the aisle (square to the rows), as wide as that gap less a little landing either side, four rows deep
+VOM_W=3.2
+def _vom_cand(p_,n_):
+    w_=np.array([-n_[1],n_[0]]); s_=(_Xg-p_[0])*w_[0]+(_Zg-p_[1])*w_[1]
+    return (np.abs(s_)<VOM_W/2)&(_dOutD0>=E0-0.3)&(_dOutD0<E0+4*DP)&(np.hypot(_Xg-p_[0],_Zg-p_[1])<12)
+VOMA=sorted(st['VOMA'],key=lambda q: q[3]); VOM2=[q[3] for q in VOMA]; VOM2N=[q[0] for q in VOMA]
+VOMS={'E':LV['E'].make_voms(C2F,head=1.85,detect=False,cands=[_vom_cand(q[1],q[2]) for q in VOMA])}
 # each named for the E block it runs under, as the signs over them are
 _lab=json.load(open('td/td_labeled.json')); _Hm=np.array([579.2,441.7]); _s=2.996
 _Esp=[]
@@ -138,7 +161,7 @@ print('voms E',len(VOMS['E']),[(v['sign'],v['label']) for v in VOMS['E']])
 def dil(m,r): return cv2.dilate(m.astype(np.uint8),disk(r/G.res))>0
 # no seat stands over a vomitory's pit (td_gen.py leaves the notch at the same
 # angle, this keeps the two from drifting apart)
-_E=LV['E']; _pit=dil(_E.pits,0.25)
+_E=LV['E']; _pit=_E.pits.copy()    # (its own raster: it runs 0.4 m into the first row over the mouth, short of that row's seats)
 _gx,_gz=G.g(_E.seats[:,0],_E.seats[:,1])
 _keep=~_pit[np.clip(np.round(_gz).astype(int),0,G.H-1),np.clip(np.round(_gx).astype(int),0,G.W-1)]
 print('E seats over the vomitories dropped',int((~_keep).sum()))
@@ -403,6 +426,7 @@ field_out=lab_==(1+int(np.argmax(st_[1:,4])))
 # side's mirror image). The outfield's F blocks keep their rows from the fence,
 # cut to their outlines. ──
 import td_stand1 as T1
+T1.DF=T1_DF
 from shapely.ops import unary_union
 import shapely
 from shapely.geometry import Polygon
@@ -432,7 +456,7 @@ _db=_Q1-_p1b; _frA=np.array([-_db[1],_db[0]],float); _frA=_frA/np.linalg.norm(_f
 T1.KINKR.update({1:(tuple(_frA),tuple(_Q0),tuple(_Q1)),2:(tuple(_frA),tuple(_Q0),tuple(_Q1))})
 print('the outfield\'s rows run on into A01, A02, B02 behind the line',np.round(_Q0,1),np.round(_Q1,1))
 S1=T1.build(G,_A_ch,_B_ch,_F_ch,_frames,hull1>0,field|EX)
-_FhF=np.where(S1['zoneF'],np.minimum(C1F,H_F+_riseF*np.floor(_dFence/0.74)),np.nan).astype(np.float32)
+_FhF=np.where(S1['zoneF'],np.minimum(C1F,H_F+_riseF*np.floor(_dFence/F_D)),np.nan).astype(np.float32)
 _Fcls=T1.outfield_classes(G,S1,_F_ch,k=4)
 _dF2=_dFence.copy()
 for _sg in (-1, 1):
@@ -448,7 +472,7 @@ for _sg in (-1, 1):
     _dr2=(_Xg[_m2]-_p0[0])*_n1[0]+(_Zg[_m2]-_p0[1])*_n1[1]+_d0
     _dF2[_m2]=np.maximum(_dFence[_m2],_dr2)
 print('outfield pole blocks: F20/F01 straight rows matching A01/A49, F19/F02 diagonal transition, max diff %.1f m'%float(np.nanmax(np.where(S1['zoneF'],np.abs(_dF2-_dFence),0))))
-_FhF=np.where(S1['zoneF'],np.minimum(C1F,H_F+_riseF*np.floor(_dF2/0.74)),np.nan).astype(np.float32)
+_FhF=np.where(S1['zoneF'],np.minimum(C1F,H_F+_riseF*np.floor(_dF2/F_D)),np.nan).astype(np.float32)
 _profs,_Fcl=T1.fit_rake(G,S1,_FhF,Fcls=_Fcls,dF=_dF2,nF=_nF,land=(4,3.5),wF=3.0)
 T1.apply_profiles(S1,_profs)
 # no excite seat with its footprint on the stand's treads behind it (they stood in the A blocks'
@@ -457,7 +481,7 @@ _kx=sample(G,dil(S1['zoneAB']|S1['zoneF'],0.25).astype(np.uint8),Gx.seats)==0
 _kx|=np.isin(Gx.gblock,list(G_BACK))       # (those moved back stand on the flat treads, cut away for them later)
 print('excite seats under the stand dropped',int((~_kx).sum()))
 Gx.seats,Gx.row,Gx.yaw,Gx.gblock=Gx.seats[_kx],Gx.row[_kx],Gx.yaw[_kx],Gx.gblock[_kx]; Gx.raw=Gx.seats.copy(); Gx.seatmask=seat_mask(G,Gx.seats)
-_FhF2=_FhF.copy(); _rowF=np.clip(np.floor(_dF2/0.74),0,_nF-1).astype(int)
+_FhF2=_FhF.copy(); _rowF=np.clip(np.floor(_dF2/F_D),0,_nF-1).astype(int)
 for _j,_h in _Fcl.items(): _FhF2[_Fcls==_j]=_h[_rowF[_Fcls==_j]]
 _st=T1.seam_steps(S1,T1.seam_pairs(G,S1,_FhF2)); _cn=sum(v[0] for v in _st.values())
 print('steps across the aisles: mean %.3f m, the largest %.2f m (between fingers); into the outfield stand: mean %.2f, largest %.2f m'%(
@@ -472,6 +496,15 @@ PILLAR_RX,PILLAR_RZ=0.6,0.8      # half the column's width across its aisle and 
 OUT_VOM_W,OUT_HEAD=3.4,2.4       # the outfield's vomitories: width (two ways out, the column between them), head room
 COL_TO_C=(1,2,5,6,43,44,46,47,48,49,57,58)     # by the poles: these go on up to the balcony's height (the photographs)
 OUT_NO_VOM=(53,54)                # the two either side of centre: no vomitory, a column carrying the screen, further back
+# The outfield stand has no vomitories through its rows (photographs: Commons "Tokyo Dome (April 11, 2015).jpg" and
+# "Interior of Tokyo Dome 2019" full views: every aisle's steps run unbroken from the front row to the top, the ways
+# out are doors at the top, on the walkway behind the last row, either side of a column standing at the aisle's head;
+# the seat chart agrees: rows 1-14 run full across every block, only the rows behind them stop short of the aisles).
+# So no pits, tunnels or side walls: the columns stand at the aisles' heads behind the last row, light grey-white,
+# about 0.8 m square (measured off the 2019 photograph against the blocks' width), numbered or hung with banners
+OUT_VOMS=False
+OUT_COL=dict(rx=0.4,rz=0.4,color=0xe4e2dc)
+OUT_HEADS={}
 def _on_stand(p):
     i_,j_=[int(round(float(c))) for c in G.g(p[0],p[1])]
     return 0<=i_<G.W and 0<=j_<G.H and S1['band'][j_,i_]>=0
@@ -485,21 +518,24 @@ print('gates',len(_sites),{n_:'B%d|B%d%+d'%(s_['pair'][0],s_['pair'][1],s_['side
 _lv=T1.split_levels(S1)
 # the seats as the detailed chart numbers them (td/td_rows_real.json, a fan's transcription of the
 # ticket seller's block charts): each row its own count, from its home-side end (td_stand1.lay_real)
-_S1seats,_S1row,_S1yaw,_S1tab,_rep=T1.lay_real(G,S1,json.load(open('td/td_rows_real.json')),plim=(0.40,0.55),inset=0.08)
+import td_chart, td_boxes
+REAL=td_chart.load()
+# (the map draws its aisles between blocks some 1.7 m clear: the seats run on 0.25 m past its outlines, leaving 1.2 m)
+_S1seats,_S1row,_S1yaw,_S1tab,_rep,_S1lab,_spare=T1.lay_real(G,S1,REAL,inset=-0.25,avoid=unary_union([s_['pit'] for s_ in _sites]).buffer(0.25+0.22))
 _rc=sum(v[0] for v in _rep.values()); _rl=sum(min(v[0],v[1]) for v in _rep.values() if v[0])
-print('1st floor seats by the chart: %d of the chart %d laid (%d more where it has no line: table seats, rows it skips)'%(_rl,_rc,len(_S1seats)-_rl))
+print('1st floor seats by the chart: %d of the chart %d laid (%d more where it has no line: B22/B28 past row 40)'%(_rl,_rc,len(_S1seats)-_rl))
 print('  blocks off by more than 3:',[(n_,v_[0],v_[1]) for n_,v_ in sorted(_rep.items()) if v_[0] and abs(v_[0]-v_[1])>3])
+# the 3B side's rows past the chart behind B31-B39: the press seats and the 3rd Platinum Box (td_boxes.py)
+_bxS,_bxR,_bxY,_bxL,BOXROWS=td_boxes.lay(_spare,REAL)
+if len(_bxS):
+    _S1seats=np.vstack([_S1seats,_bxS]); _S1row=np.r_[_S1row,_bxR]; _S1yaw=np.r_[_S1yaw,_bxY]; _S1tab=np.r_[_S1tab,np.zeros(len(_bxS),int)]; _S1lab=list(_S1lab)+list(_bxL)
 # no seat over a pit (or, below, a stair's cut)
 _gz=unary_union([s_['pit'] for s_ in _sites]).buffer(0.25)
 _kg=~shapely.contains_xy(_gz,_S1seats[:,0],_S1seats[:,1])
-print('seats over the gates dropped',int((~_kg).sum()))
-_S1seats,_S1row,_S1yaw,_S1tab=_S1seats[_kg],_S1row[_kg],_S1yaw[_kg],_S1tab[_kg]
-# the table seats' areas (the 3B side's B31-B33 behind row 35: the renderer paints the seats in them blue)
+print('seats over the gates dropped',int((~_kg).sum()),sorted(set(_S1lab[i_][0] for i_ in np.nonzero(~_kg)[0])))
+_S1seats,_S1row,_S1yaw,_S1tab=_S1seats[_kg],_S1row[_kg],_S1yaw[_kg],_S1tab[_kg]; _S1lab=[q for q,k_ in zip(_S1lab,_kg) if k_]
+SEATLAB['AB']=(_S1seats.copy(),list(_S1lab))
 _tabs=[]
-for _k in sorted(T1.TABLE):
-    _m=_S1tab.astype(bool)&np.array([S1['meta'][i][0]==_k for i in _S1row])
-    if _m.sum()>=3: _tabs.append(T1._ring(np.array(shapely.MultiPoint(_S1seats[_m]).convex_hull.buffer(0.25,join_style=2).exterior.coords)))
-print('table seats',int(_S1tab.sum()),'in',len(_tabs),'areas')
 _S1kind=np.array([S1['meta'][i][1] for i in _S1row])
 _dFE=(cv2.distanceTransform((~(field|EX)).astype(np.uint8),cv2.DIST_L2,5)*G.res).astype(np.float32)
 def _shell(name,D,lv,kinds,rows_fn):
@@ -529,7 +565,16 @@ _Fm=np.zeros(F.R.shape,np.uint8)
 for _p in _F_ch:
     _gx,_gz=G.g(*np.array(_p.exterior.coords).T); cv2.fillPoly(_Fm,[np.c_[_gx,_gz].round().astype(np.int32)],1)
 _Fm=(cv2.erode(_Fm,disk(0.18/G.res))>0)&(F.R>0)
-F.seats,F.row,F.yaw=T1.lay_curved(G,_Fm,np.where(S1['zoneF'],_dF2,_dFence).astype(np.float32),F.D,F.nrows,O)
+# (each block by the number the map prints in its outline: the map has F06's outline twice)
+_Fnamed={}
+for _o in _labc:
+    if _o['L']!='F' or len(_o['nums'])>6: continue
+    _kF=next((v_ for v_ in _o['nums'][:2] if 1<=v_<=20),None)
+    if _kF is not None: _Fnamed.setdefault('F%02d'%_kF,T1._outline([T1._toR(_o['poly'])]))
+import td_layF
+F.seats,F.row,F.yaw,_Flab,_Frep=td_layF.lay(G,np.where(S1['zoneF'],_dF2,_dFence).astype(np.float32),(F.R>0),sorted(_Fnamed.items()),REAL,F_D,F_ROWS,O,inset=-0.25)
+print('outfield seats by the chart:',sum(v_[1] for v_ in _Frep.values()),'of',sum(v_[0] for v_ in _Frep.values()),{k_:tuple(v_) for k_,v_ in sorted(_Frep.items()) if v_[0]!=v_[1]})
+SEATLAB['F']=(F.seats.copy(),list(_Flab))
 F.raw=F.seats.copy()
 F.seatmask=seat_mask(G,F.seats); F.hull=F.R.copy()
 # the outfield's pole blocks at their own heights: row ids per block class (class c's row r is
@@ -720,6 +765,8 @@ for n_,q,a_ in zip(ENT1N,ENT1,_axF):
     for t in np.arange(tw-0.4,tw-20,-0.05):
         if te is None and _tF(t)-T1.GATE_SLAB-_hF<OUT_HEAD+0.15: te=float(t)
         if _tF(t)<=_hF+0.02: t1=float(t); break
+    OUT_HEADS[n_]=(a,u,s_c,tw)
+    if not OUT_VOMS: continue
     if t1 is None or te is None: print('no pit at',n_); continue
     te=max(te,t1+1.0)
     W_=OUT_VOM_W; pit=T1._tbox(a,u,t1,te,s_c-W_/2,s_c+W_/2)
@@ -732,6 +779,8 @@ _corrs=T1.gate_corridors(G,_sites,(B.R>0)|(F.R>0),c1,O,[(q_[0],q_[1],PILLAR_R) f
 print('lower concourse tunnels: outfield',[(s_['n'],s_['tunnel'] is not None) for s_ in _sites if s_.get('out')])
 _pF=unary_union([s_['pit'] for s_ in _sites if s_.get('out')]+[st_['trench'] for c_ in _corrs for st_ in c_['stairs']]).buffer(0.25)
 _kv=~shapely.contains_xy(_pF,F.seats[:,0],F.seats[:,1]); print('outfield seats over the pits',int((~_kv).sum()))
+_tF_=cKDTree(SEATLAB['F'][0]); _iF_=_tF_.query(F.seats[~_kv])[1]
+import collections as _co; print('  by block and row',sorted(_co.Counter((SEATLAB['F'][1][i_][0],SEATLAB['F'][1][i_][1]) for i_ in _iF_).items()))
 F.seats,F.row,F.yaw=F.seats[_kv],F.row[_kv],F.yaw[_kv]
 if len(F.raw): F.raw=F.raw[~shapely.contains_xy(_pF,F.raw[:,0],F.raw[:,1])]
 print('lower concourses',{c_['name']:'%.0f m2, %d gates, floor %.2f'%(c_['poly'].area,len(c_['gates']),c_['floor']) for c_ in _corrs})
@@ -836,7 +885,7 @@ for name,l in LV.items():
     rails,walls=edge_walls(G,l,outside_fn(spec[name]),drs,flush=flushmode[name],skip=skip,front=fronts.get(name),**({'door_w':2.0,'open_stand':True} if drs is DOORS1 else {}))
     if fronts.get(name): rails+=front_parapet(G,l,fronts[name])
     levels.append({'name':name,'D':l.D,'h0':l.h0,'rise':l.rise,**({'hs':[round(float(v),3) for v in l.hs]} if l.hs is not None else {}),'rows':l.rows_out(),'steps':l.aisles_out(),'holes':[],'voms':VOMS.get(name,[]),
-                   'seats':l.seats_out(scale=50 if name in ('A','B') else 10),**({'gblocks':[str(b_) for b_ in Gx.gblock]} if name=='G' else {}),**({'seatScale':50} if name in ('A','B') else {}),**({'tables':_tabs} if name=='B' else {}),'rails':rails,'walls':walls,
+                   'seats':l.seats_out(scale=50),**({'gblocks':[str(b_) for b_ in Gx.gblock]} if name=='G' else {}),'seatScale':50,**({'boxRows':BOXROWS} if name=='B' else {}),'rails':rails,'walls':walls,
                    **({'gateRails':[r_ for s_ in _sites for r_ in s_['rails']]+[r_ for c_ in _corrs for st_ in c_['stairs'] for r_ in st_['rails']],'gateRailT':T1.RAIL_T} if name=='B' else {})})
     print(name,'rows',len(levels[-1]['rows']),'steps',len(levels[-1]['steps']),'holes',len(levels[-1]['holes']),'rails',len(rails),'walls',len(walls))
 # Behind the outfield there is no upper tier: the wall behind its top rows
@@ -1036,14 +1085,16 @@ for n_,d_,a_,w_ in DOOR1:
     # (the outfield's: in the mouth of its opening, on the top row, as the photographs show)
     _vf=next((s_ for s_ in _sites if s_.get('out') and s_['n']==n_),None)
     # (an outfield column in the middle of its vomitory's mouth; the infield's where the map's circle has it)
-    q_=_vf['a']*(_vf['t_front']+0.55*(_vf['t_end']-_vf['t_front']))+_vf['u']*_vf['s_c'] if _vf else np.array(w_,float)-np.array(a_,float)*1.5 if n_ in OUT_NO_VOM else _off_the_wall(ENT1[ENT1N.index(n_)].copy())
+    _oh=OUT_HEADS.get(n_) if not OUT_VOMS and n_ not in OUT_NO_VOM else None
+    q_=_vf['a']*(_vf['t_front']+0.55*(_vf['t_end']-_vf['t_front']))+_vf['u']*_vf['s_c'] if _vf else np.array(w_,float)-np.array(a_,float)*1.5 if n_ in OUT_NO_VOM else (_oh[0]*(_oh[3]+0.45)+_oh[1]*_oh[2]) if _oh else _off_the_wall(ENT1[ENT1N.index(n_)].copy())
     i_,j_=[int(round(float(c))) for c in G.g(q_[0],q_[1])]
-    y0=_vf['h0'] if _vf else float(TOP1[j_,i_]) if n_ in OUT_NO_VOM else max(float(TOP1[j_,i_]),C1F if c1[j_,i_] else 0.0) or C1F
+    y0=_vf['h0'] if _vf else float(TOP1[j_,i_]) if n_ in OUT_NO_VOM else C1F if _oh else max(float(TOP1[j_,i_]),C1F if c1[j_,i_] else 0.0) or C1F
     rt=float(roomtop[j_,i_])
     # up to what it carries: the underside of the tier over it, or nothing over it but the roof (99: dome.js ends it)
     ov=_overhead_at(i_,j_,y0)
     y1=ov if np.isfinite(ov) else 99.0
-    PILLARS.append({'x':round(float(q_[0]),2),'z':round(float(q_[1]),2),'r':PILLAR_RZ,'rx':0.4 if _vf else PILLAR_RX,'rz':0.6 if _vf else PILLAR_RZ,'y0':round(y0,2),'y1':round(y1,2),'ax':round(float(a_[0]),3),'az':round(float(a_[1]),3)})      # (ax, az: the way out of the stand, for the lights of the entrance)
+    PILLARS.append({'x':round(float(q_[0]),2),'z':round(float(q_[1]),2),'r':PILLAR_RZ,'rx':0.4 if _vf else PILLAR_RX,'rz':0.6 if _vf else PILLAR_RZ,'y0':round(y0,2),'y1':round(y1,2),'ax':round(float(a_[0]),3),'az':round(float(a_[1]),3)})
+    if n_>=49 and not OUT_VOMS: PILLARS[-1].update(OUT_COL)      # (ax, az: the way out of the stand, for the lights of the entrance)
     if n_ in COL_TO_C and PILLARS[-1]['y1']<=16.6:
         PILLARS[-1]['y1']=round(min(_overhead_at(i_,j_,16.8),19.0),2); PILLARS[-1]['upC']=True
     yaw=float(np.arctan2(a_[0],a_[1]))
@@ -1062,14 +1113,16 @@ for b_ in _bnd:
     u_=np.array([np.sin(np.radians(b_)),-np.cos(np.radians(b_))]); q_=None
     for r_ in np.arange(200.0,100.0,-0.1):
         i_,j_=[int(round(float(c))) for c in G.g(*(u_*r_))]
-        if 0<=j_<G.H and 0<=i_<G.W and TOP1[j_,i_]>0.5: q_=u_*(r_-3.6); break
+        if 0<=j_<G.H and 0<=i_<G.W and TOP1[j_,i_]>0.5: q_=u_*(r_-3.6 if OUT_VOMS else r_+0.45); break
     if q_ is None: continue
     i_,j_=[int(round(float(c))) for c in G.g(q_[0],q_[1])]
     y0=float(TOP1[j_,i_]); ov=_overhead_at(i_,j_,y0)
     # (its foot down at the lowest tread round it: it stands in the aisle, whose steps are lower than the rows either side)
     _r0=int(round(1.1/G.res)); _nb=TOP1[max(0,j_-_r0):j_+_r0+1,max(0,i_-_r0):i_+_r0+1]; _nb=_nb[_nb>0.5]
-    y0=float(_nb.min())-0.3 if _nb.size else y0
+    y0=(float(_nb.min())-0.3 if _nb.size else y0) if OUT_VOMS else C1F
+    if not OUT_VOMS: ov=_overhead_at(i_,j_,y0)
     PILLARS.append({'x':round(float(q_[0]),2),'z':round(float(q_[1]),2),'r':0.6,'rx':0.4,'rz':0.6,'y0':round(y0,2),'y1':round(ov if np.isfinite(ov) else (99.0 if abs(b_)<21.6 else y0+5.4),2),'ax':round(float(u_[0]),3),'az':round(float(u_[1]),3),'aisle':True}); _extra+=1
+    if not OUT_VOMS: PILLARS[-1].update(OUT_COL)
     # (the one between 49 and 50, and its mirror image, on up to the 2nd floor's deck)
     if False and abs(abs(q_[0])-64.1)<1.2 and abs(q_[1]+94.9)<1.2:
         PILLARS[-1]['y1']=round(min(_overhead_at(i_,j_,16.8),19.0),2); PILLARS[-1]['upC']=True
@@ -1282,10 +1335,10 @@ _lvA_['rows']=_rowsA
 _raw0=np.frombuffer(_b64.b64decode(_lvG['seats']),'<i2').reshape(-1,4).copy()
 for _i,b_ in enumerate(_lvG['gblocks']):
     _sh=_gShift.get(str(b_),0.0); _nfb=_gf[str(b_)][2]
-    _raw0[_i,0]+=int(round(_nfb[0]*_sh*10)); _raw0[_i,1]+=int(round(_nfb[1]*_sh*10))
+    _raw0[_i,0]+=int(round(_nfb[0]*_sh*50)); _raw0[_i,1]+=int(round(_nfb[1]*_sh*50))
 _lvG['seats']=_b64.b64encode(_raw0.astype('<i2').tobytes()).decode('ascii')
 # no seat on a flight
-_S=np.frombuffer(_b64.b64decode(_lvG['seats']),'<i2').reshape(-1,4)/np.array([10.0,10.0,1.0,1.0])
+_S=np.frombuffer(_b64.b64decode(_lvG['seats']),'<i2').reshape(-1,4)/np.array([50.0,50.0,1.0,1.0])
 _stU=unary_union([_LS2([a_['a'],a_['b']]).buffer(a_['w']/2+0.02,cap_style=2) for a_ in _gAis])
 _kg2=~shapely.contains_xy(_stU,_S[:,0],_S[:,1]); print('excite seats on the flights dropped',int((~_kg2).sum()))
 _raw=np.frombuffer(_b64.b64decode(_lvG['seats']),'<i2').reshape(-1,4)[_kg2]
@@ -1370,7 +1423,7 @@ print('balcony block walls',len(_cWalls))
 if _cWalls:
     import base64 as _b64c
     _lvC2=next(l_ for l_ in levels if l_['name']=='C')
-    _Sc=np.frombuffer(_b64c.b64decode(_lvC2['seats']),dtype='<i2').reshape(-1,4); _xy=_Sc[:,:2]/10.0
+    _Sc=np.frombuffer(_b64c.b64decode(_lvC2['seats']),dtype='<i2').reshape(-1,4); _xy=_Sc[:,:2]/_lvC2.get('seatScale',10)
     _wcx=np.array([[w_['x'],w_['z'],w_['ax'],w_['az'],w_['len']] for w_ in _cWalls])
     _dv=_xy[:,None,:]-_wcx[None,:,:2]; _al=_dv[...,0]*_wcx[None,:,2]+_dv[...,1]*_wcx[None,:,3]; _ac=np.abs(_dv[...,0]*_wcx[None,:,3]-_dv[...,1]*_wcx[None,:,2])
     _kc2=~(((np.abs(_al)<=_wcx[None,:,4]/2+0.3)&(_ac<0.14)).any(axis=1))
@@ -1441,6 +1494,8 @@ data={'suites':{'line':suite_line,'y':H_C-0.4,'h':3.6,'depth':3.4},'levels':leve
 # What follows the raster build works on the finished outlines (td_post.py: the excite seats as the map and the photographs
 # show them, the upper tiers' outfield ends): kept apart so it can be run again on its own (python3 td_post.py)
 pickle.dump(data,open('td_pre.pkl','wb'))
+# each seat's block, row and number as it was laid, by its position (td_labels.py)
+pickle.dump(SEATLAB,open('td_seatlab.pkl','wb'))
 import td_post; data=td_post.apply(data)
 json.dump(data,open('td_stands.json','w'),separators=(',',':'))
 import os; print('json KB',os.path.getsize('td_stands.json')//1024, round(time.time()-T0,1))

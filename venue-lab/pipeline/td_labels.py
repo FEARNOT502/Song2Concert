@@ -19,6 +19,44 @@ def get_bid(nm):
         block_names.append(nm)
     return block_id_of[nm]
 
+# Each seat's block, row and number as it was laid (td_build.py's td_seatlab.pkl: the chart's, td_gen.py's for the
+# upper deck), found by its position; a seat it has none for is named as below, from where it stands
+import pickle
+from scipy.spatial import cKDTree
+SIDE = pickle.load(open(PJ('td_seatlab.pkl'), 'rb')) if os.path.exists(PJ('td_seatlab.pkl')) else {}
+SIDE_TOL = 0.12          # m: the seats move this little at most after they are laid (int16 at 1/10 or 1/50 m)
+F_NROWS = 22             # the outfield's row ids per block class (td_build.py's F_ROWS + 1, its standing aisle)
+STATS = {}
+USED = {}
+def from_side(key, pts, labels, rows=None, tol=SIDE_TOL, tag=None, todo=None):
+    """fill `labels` (n, 3) from the sidecar's labels by position (and, given `rows`, the chart row each seat stands
+    in: the upper deck's seats are drawn onto their rows' lines after they are laid, up to 0.3 m), each laid seat
+    given to one seat only, nearest first; -> the mask of seats it named"""
+    got = np.zeros(len(pts), bool) if todo is None else ~todo
+    if key not in SIDE or not len(pts): return got
+    P, LB = SIDE[key]; P = np.asarray(P, float)
+    if not len(P): return got
+    rP = np.array([q[1] for q in LB])
+    pairs = []
+    free = np.ones(len(P), bool); free[list(USED.get(key, ()))] = False
+    io0 = np.nonzero(~got)[0]
+    groups = [(io0, np.nonzero(free)[0])] if rows is None else [(io0[rows[io0] == r], np.nonzero(free & (rP == r))[0]) for r in np.unique(rows[io0])]
+    for io, js in groups:
+        if not len(io) or not len(js): continue
+        dd, jj = cKDTree(P[js]).query(pts[io], k=min(3, len(js)))
+        dd = np.atleast_2d(dd.T).T if dd.ndim == 1 else dd; jj = np.atleast_2d(jj.T).T if jj.ndim == 1 else jj
+        for a_, i in enumerate(io):
+            for c in range(dd.shape[1]):
+                if dd[a_, c] < tol: pairs.append((dd[a_, c], i, js[jj[a_, c]]))
+    pairs.sort(); used = USED.setdefault(key, set()); far = 0.0
+    for dv, i, j in pairs:
+        if got[i] or j in used: continue
+        got[i] = True; used.add(j); far = max(far, dv)
+        nm, rr, sn = LB[j]
+        labels[i] = (get_bid(nm), rr, sn)
+    STATS[tag or key] = (int(got.sum()), len(pts), round(max(far, STATS.get(tag or key, (0, 0, 0))[2]), 3))
+    return got
+
 def base_seat_of(nm, fallback_idx=0):
     if nm in real and real[nm]['rows']:
         return min(lo for ivs in real[nm]['rows'].values() for lo, _ in ivs)
@@ -54,14 +92,14 @@ for nm in ('A', 'B'):
         js = np.unique(S[m_blk, 2])
         if not len(js): continue
         # Order seats within each row from home-plate side toward outfield side
-        pts_blk = S[m_blk, :2].astype(float) / 10.0
+        pts_blk = S[m_blk, :2].astype(float) / L.get('seatScale', 10)
         c_blk = pts_blk.mean(0)
         # vector along row from home side to outfield side:
         # home plate is at (0, 0); for k==25 (behind home), +x (1B side) is lower seat numbers
         for j in js:
             idx = np.where(S[:, 2] == j)[0]
             rr = int(26 - (js[-1] - j)) if nm == 'A' else int(27 + (j - js[0]))
-            pts = S[idx, :2].astype(float) / 10.0
+            pts = S[idx, :2].astype(float) / L.get('seatScale', 10)
             if k == 25:
                 order = np.argsort(-pts[:, 0])
             else:
@@ -72,13 +110,14 @@ for nm in ('A', 'B'):
             nums = nums_for(bnm, rr, len(idx_ord))
             for pos, sn in zip(idx_ord, nums):
                 labels[pos] = (bid, rr, sn)
+    from_side('AB', S[:, :2].astype(float) / L.get('seatScale', 10), labels, tag=nm)
     L['labels'] = base64.b64encode(labels.tobytes()).decode('ascii')
 
 # 2. Level F (F01..F20)
 # Build 20 F block centroids ordered by angle from left-field pole (-45 deg) to right-field pole (+45 deg)
 L_F = next(l for l in d['levels'] if l['name'] == 'F')
 S_F = np.frombuffer(base64.b64decode(L_F['seats']), dtype=np.int16).reshape(-1, 4)
-pts_F = S_F[:, :2].astype(float) / 10.0
+pts_F = S_F[:, :2].astype(float) / L_F.get('seatScale', 10)
 # Use chart_blocks F polygons from td_stand1
 _K = 6.0
 _ink = np.zeros((int(900 * _K), int(1200 * _K)), np.uint8)
@@ -130,11 +169,13 @@ for pt in pts_F:
     if best_nm == 'F10' and pt[0] > 0: best_nm = 'F11'
     f_owner.append(best_nm)
 f_owner = np.array(f_owner)
-r_F = (S_F[:, 2] % 19) + 1
+r_F = (S_F[:, 2] % F_NROWS) + 1
+# (no chart, no name: F10 is the backscreen's, F11 has rows 5-10 only)
+f_owner = np.where((f_owner == 'F10') | ((f_owner == 'F11') & ((r_F < 5) | (r_F > 10))), np.where(pts_F[:, 0] > 0, 'F12', 'F09'), f_owner)
 for bnm in sorted(set(f_owner)):
     bid = get_bid(bnm)
     k_num = int(bnm[1:])
-    for rr in range(1, 20):
+    for rr in range(1, F_NROWS + 1):
         idx = np.where((f_owner == bnm) & (r_F == rr))[0]
         if not len(idx): continue
         pts = pts_F[idx]
@@ -145,12 +186,13 @@ for bnm in sorted(set(f_owner)):
         nums = nums_for(bnm, rr, len(idx_ord))
         for pos, sn in zip(idx_ord, nums):
             labels_F[pos] = (bid, rr, sn)
+from_side('F', pts_F, labels_F, rows=r_F)
 L_F['labels'] = base64.b64encode(labels_F.tobytes()).decode('ascii')
 
 # 3. Level G (Excite Seats G05..G15 on 1B, G35..G45 on 3B)
 L_G = next(l for l in d['levels'] if l['name'] == 'G')
 S_G = np.frombuffer(base64.b64decode(L_G['seats']), dtype=np.int16).reshape(-1, 4)
-pts_G = S_G[:, :2].astype(float) / 10.0
+pts_G = S_G[:, :2].astype(float) / L_G.get('seatScale', 10)
 g_centers = []
 for _w in vec['words']:
     if re.fullmatch(r'G\d\d', _w[4]) and _w[4] not in ('G03', 'G04', 'G46', 'G47'):
@@ -159,6 +201,7 @@ for _w in vec['words']:
         g_centers.append((_w[4], pt_m))
 labels_G = np.zeros((len(S_G), 3), dtype=np.int16)
 # (td_build.py names each seat's block as it lays them from the chart)
+g_nums = np.array(L_G.pop('gnums')) if 'gnums' in L_G else None
 g_owner = np.array(L_G.pop('gblocks')) if 'gblocks' in L_G else np.array([min(g_centers, key=lambda item: np.hypot(pt[0] - item[1][0], pt[1] - item[1][1]))[0] for pt in pts_G])
 for bnm in sorted(set(g_owner)):
     bid = get_bid(bnm)
@@ -170,7 +213,7 @@ for bnm in sorted(set(g_owner)):
         ang = np.abs(np.arctan2(pts[:, 0], -pts[:, 1]))
         order = np.argsort(ang)
         idx_ord = idx[order]
-        nums = nums_for(bnm, rr, len(idx_ord))
+        nums = nums_for(bnm, rr, len(idx_ord)) if g_nums is None else g_nums[idx_ord]
         for pos, sn in zip(idx_ord, nums):
             labels_G[pos] = (bid, rr, sn)
 L_G['labels'] = base64.b64encode(labels_G.tobytes()).decode('ascii')
@@ -184,7 +227,7 @@ if 'seatY' in L_G:
 # 4. Level C (2F Balcony C01..C48 on 1B, C51..C97 on 3B)
 L_C = next(l for l in d['levels'] if l['name'] == 'C')
 S_C = np.frombuffer(base64.b64decode(L_C['seats']), dtype=np.int16).reshape(-1, 4)
-pts_C = S_C[:, :2].astype(float) / 10.0
+pts_C = S_C[:, :2].astype(float) / L_C.get('seatScale', 10)
 th_C = np.degrees(np.arctan2(pts_C[:, 0] - O[0], pts_C[:, 1] - O[1]))
 _wds = vec['words']
 _cth = []
@@ -194,11 +237,13 @@ for _i, _w in enumerate(_wds):
         if 1 <= _n <= 48 or 51 <= _n <= 97:
             _p = (np.array([(_w[0] + _wds[_i + 1][2]) / 2, (_w[1] + _wds[_i + 1][3]) / 2]) - Hm) / s_map - O
             import td_upper as _U; _cth.append((_n, float(_U.c_squeeze(abs(np.degrees(np.arctan2(_p[0], _p[1])))))))
+# (C50, the mirror of C48, has no label on the map: td_build.py lays it there)
+_cth.append((50, min(t for n, t in _cth if n <= 48)))
 _cth.sort()
 # Pair boundaries for C blocks (24 sectors per side -> C02..C48 even/odd pairs)
 c_angles = sorted([abs(t) for n, t in _cth if n <= 48])
 c_bounds = [0.5 * (c_angles[i] + c_angles[i + 1]) for i in range(len(c_angles) - 1)]
-c_angles3 = sorted([abs(t) for n, t in _cth if n >= 51])
+c_angles3 = sorted([abs(t) for n, t in _cth if n >= 50])
 c_bounds3 = [0.5 * (c_angles3[i] + c_angles3[i + 1]) for i in range(len(c_angles3) - 1)]
 labels_C = np.zeros((len(S_C), 3), dtype=np.int16)
 c_owner = []
@@ -208,7 +253,7 @@ for th in th_C:
     if th > 0:
         blk_n = max(1, min(48, 48 - sec_i))
     else:
-        blk_n = max(51, min(97, 51 + sec_i))
+        blk_n = max(50, min(97, 50 + sec_i))
     # (behind home, the S blocks, 14 a side, out from the VIP box)
     if ath < 33.7:
         k_s = max(0, min(13, int((ath - 2.6) / ((33.7 - 2.6) / 14))))
@@ -219,7 +264,7 @@ c_owner = np.array(c_owner)
 for bnm in sorted(set(c_owner)):
     bid = get_bid(bnm)
     k_num = int(bnm[1:])
-    s0 = 1 if bnm[0] == 'S' else ((48 - k_num) if k_num <= 48 else (k_num - 51)) * 6 + 1
+    s0 = 1 if bnm[0] == 'S' else ((48 - k_num) if k_num <= 48 else (k_num - 50)) * 16 + 1
     for r0 in range(4):
         rr = r0 + 1
         idx = np.where((c_owner == bnm) & (S_C[:, 2] == r0))[0]
@@ -257,7 +302,7 @@ secE = list(zip(range(6, 47), aisle_sectors(allE, 110.0, 1.3)))
 for nm, secs, r_base in (('D', secD, 1), ('E', secE, 11)):
     L = next(l for l in d['levels'] if l['name'] == nm)
     S = np.frombuffer(base64.b64decode(L['seats']), dtype=np.int16).reshape(-1, 4)
-    pts = S[:, :2].astype(float) / 10.0
+    pts = S[:, :2].astype(float) / L.get('seatScale', 10)
     th = np.degrees(np.arctan2(pts[:, 0] - O[0], pts[:, 1] - O[1]))
     labels = np.zeros((len(S), 3), dtype=np.int16)
     owner = []
@@ -280,7 +325,27 @@ for nm, secs, r_base in (('D', secD, 1), ('E', secE, 11)):
             nums = nums_for(bnm, rr, len(idx_ord))
             for pos, sn in zip(idx_ord, nums):
                 labels[pos] = (bid, rr, sn)
+    _g = from_side(nm, pts, labels, rows=S[:, 2].astype(int) + r_base, tol=0.45)
+    # (where the level draws a seat onto the next row's tread, near the poles: by position alone)
+    from_side(nm, pts, labels, tol=0.9, todo=~_g)
     L['labels'] = base64.b64encode(labels.tobytes()).decode('ascii')
+
+# the box rows the renderer gives counters (dome.js): the Sky Terrace (D rows 8-9 where the chart has two boxes a row)
+# and the 3B side's press seats and 3rd Platinum Box (td_boxes.py, carried in B's `boxRows`)
+_box = [{'level': 'D', 'block': nm, 'row': int(r), 'per': 4, 'kind': 'terrace'} for nm, v in sorted(real.items()) if nm[0] == 'D' for r, ivs in v['rows'].items() if len(ivs) == 2]
+_LB = next(l for l in d['levels'] if l['name'] == 'B')
+_box += [dict(level='B', **q) for q in _LB.pop('boxRows', d.get('boxRows', [])) if 'level' not in q] + [q for q in d.get('boxRows', []) if 'level' in q and q['level'] == 'B']
+d['boxRows'] = _box
+_LB.pop('tables', None)
+
+# every seat's name once, numbers along each row in order
+_seen = {}; _dups = 0
+for l in d['levels']:
+    lab_arr = np.frombuffer(base64.b64decode(l['labels']), dtype=np.int16).reshape(-1, 3)
+    for q in map(tuple, lab_arr):
+        if q in _seen: _dups += 1
+        _seen[q] = 1
+print('labels from the lay (matched / seats / furthest m):', STATS, ' duplicate names:', _dups)
 
 d['blockNames'] = block_names
 s_json = json.dumps(d, separators=(',', ':'))

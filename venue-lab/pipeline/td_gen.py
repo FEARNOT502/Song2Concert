@@ -174,47 +174,21 @@ _allD=sorted([(t0,t1) for t0,t1,_ in Dsp]+[(t0,t1) for t0,t1,_ in U.both_sides(U
 _allE=sorted([(t0,t1) for t0,t1,_ in Esp]+[(t0,t1) for t0,t1,_ in U.both_sides(U.EX)],reverse=True)
 _secD=aisle_sectors(_allD,85.0,1.3)
 _secE=aisle_sectors(_allE,110.0,1.3)
-def _lay_real_tier(L, b_nums, secs, d0, dp, r_base, n_rows, min_cap):
-    curves={}
-    for r_idx in range(n_rows):
-        dc=d0+0.45+r_idx*dp
-        ys,xs=np.nonzero(np.abs(dOutD-dc)<0.055)
-        ths=TH[ys,xs]; oo=np.argsort(ths)
-        curves[r_idx]=(ths[oo],X[ys,xs][oo],Z[ys,xs][oo],RRO[ys,xs][oo])
-    pts=[]
-    for k,(a,b) in zip(b_nums,secs):
-        rows=dict(_real[f'{L}{k:02d}']['rows'])
-        if len(rows)==1:
-            only_r=next(iter(rows))
-            rows[str(int(only_r)+1)]=rows[only_r]
-        s_min=min(lo for ivs in rows.values() for lo,hi in ivs)
-        r_ints={int(rk):ivs for rk,ivs in rows.items()}
-        for r_num,ivs in sorted(r_ints.items()):
-            r_idx=r_num-r_base
-            if r_idx<0 or r_idx>=n_rows: continue
-            ths_c,xc,zc,rc=curves[r_idx]
-            ref_r=max(r_num,r_base+5) if L=='E' else r_num
-            cap=max(hi-s_min+1 for rk,ivs2 in r_ints.items() if rk<=ref_r for _,hi in ivs2)
-            cap=max(cap,max(hi-s_min+1 for _,hi in ivs),min_cap)
-            if len(ivs)==2 and L=='D':
-                s_ids=np.array([0,1,2,3,4.15,5.15,6.15,7.15],float)
-                cap=8.15
-            elif len(ivs)==2:
-                s_ids=np.array([sn-s_min for sn in range(ivs[0][0],ivs[0][1]+1)]+[sn-s_min+1 for sn in range(ivs[1][0],ivs[1][1]+1)],float)
-                cap=max(ivs[1][1]-s_min+2,1)
-            else:
-                s_ids=np.array([sn-s_min for lo,hi in ivs for sn in range(lo,hi+1)],float)
-            u=(s_ids+0.5)/max(cap,1)
-            th_s=a+u*(b-a) if k<=26 else b-u*(b-a)
-            if L=='E' and r_idx<5:
-                rm=np.interp(th_s,ths_c,rc)
-                keep=np.ones(len(th_s),bool)
-                for tv in VOM: keep&=~(np.abs(th_s-tv)<np.degrees(1.1/rm))
-                th_s=th_s[keep]
-            if len(th_s):
-                pts.append(np.c_[np.interp(th_s,ths_c,xc),np.interp(th_s,ths_c,zc)])
-    return np.vstack(pts)
-SD=_lay_real_tier('D',range(1,52),_secD,D0,DP,1,10,12)
-SE=_lay_real_tier('E',range(6,47),_secE,E0,DP,11,23,14)
+# the upper deck's seats from the chart, block by block, row by row (td_lay2f.py); the vomitories through E's front
+# rows on the aisles the chart leaves them
+import td_lay2f as L2
+_dcD=[D0+0.45+r*DP for r in range(10)]; _dcE=[E0+0.45+r*DP for r in range(23)]
+_curv=L2.row_curves(dOutD,TH,G,O,_dcD+_dcE)
+_secD,_slD=L2.balance('D',_real,list(range(1,52)),_secD,_curv,_dcD,1,np.array(O))
+_secE,_slE=L2.balance('E',_real,list(range(6,47)),_secE,_curv,_dcE,11,np.array(O))
+print('upper deck aisles balanced: room to spare at 0.45 m a seat, D %.2f..%.2f m, E %.2f..%.2f m'%(min(_slD.values()),max(_slD.values()),min(_slE.values()),max(_slE.values())))
+SD,SD_lab,SD_yaw,_edD,_pD=L2.lay_tier('D',_real,list(range(1,52)),_secD,_curv,_dcD,1,np.array(O))
+SE,SE_lab,SE_yaw,_edE,_pE=L2.lay_tier('E',_real,list(range(6,47)),_secE,_curv,_dcE,11,np.array(O))
+SD_ph=L2.phantoms('D',_real,SD,SD_lab,_curv,_dcD,1,np.array(O)); SE_ph=L2.phantoms('E',_real,SE,SE_lab,_curv,_dcE,11,np.array(O))
+VOMA=L2.vom_aisles(_real,_edE,_curv,_dcE,np.array(O),td_entrances.load(O)[1])
+for _nm,_pp in (('D',_pD),('E',_pE)):
+    _ps=np.array([q[2] for q in _pp]); print(_nm,'seat widths: %.3f-%.3f, median %.3f; rows spilling into their aisles %d, centred %d'%(_ps.min(),_ps.max(),np.median(_ps),sum(1 for q in _pp if q[3]/q[4]<L2.PITCH[0]-1e-6 and q[2]<0.6),sum(1 for q in _pp if q[3]/q[4]>(L2.BOX_PITCH[1] if q[2]>0.56 else L2.PITCH[1]))))
+print('E vomitories on the aisles',[(n_,j_) for n_,_,_,_,j_ in VOMA])
+VOM=[th_ for _,_,_,th_,_ in VOMA]
 print('seats C',len(SC),'D',len(SD),'E',len(SE),round(time.time()-T0,1))
-pickle.dump(dict(SA=SA,SB=SB,SF=SF,SC=SC,SD=SD,SE=SE,hull1=hull1,hullC=hullC,field=field,dOut=dOut,dOut1=dOut1,TH=TH,VOM=VOM,E0=E0,SUITE_TH=SUITE_TH),open('td_stage1.pkl','wb'))
+pickle.dump(dict(SA=SA,SB=SB,SF=SF,SC=SC,SD=SD,SE=SE,SD_lab=SD_lab,SE_lab=SE_lab,SD_ph=SD_ph,SE_ph=SE_ph,SD_yaw=SD_yaw,SE_yaw=SE_yaw,VOMA=VOMA,hull1=hull1,hullC=hullC,field=field,dOut=dOut,dOut1=dOut1,TH=TH,VOM=VOM,E0=E0,SUITE_TH=SUITE_TH),open('td_stage1.pkl','wb'))

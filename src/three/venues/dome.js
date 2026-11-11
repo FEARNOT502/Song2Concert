@@ -22,32 +22,9 @@ let _domeCatalog = null;
 export function getDomeSeatCatalog() {
   if (_domeCatalog) return _domeCatalog;
   const ZH = 114;
-  const BOX = { level: 'D', phi: [92.2, 118.8], per: 4 };
   const BSC = 9.7;
   const inBackscreen = (x, z) => Math.abs(Math.atan2(x, -z)) / DEG < BSC;
-  const boxTop = new Map();
-  {
-    const L = TD_STANDS.levels.find((l) => l.name === BOX.level), S = decodeSeats(L.seats), sk = L.seatScale ?? 10;
-    const seen = new Map();
-    for (let i = 0; i < S.length; i += 4) {
-      const x = S[i] / sk, z = S[i + 1] / sk, f = Math.floor(Math.abs(Math.atan2(x, -z)) / DEG);
-      if (f < BOX.phi[0] || f > BOX.phi[1]) continue;
-      const key = `${Math.sign(x)}:${S[i + 2]}`;
-      if (!seen.has(key)) seen.set(key, new Set());
-      seen.get(key).add(f);
-    }
-    const span = BOX.phi[1] - BOX.phi[0] + 1;
-    for (const [key, fs] of seen) {
-      const [side, row] = key.split(':').map(Number);
-      if (fs.size >= 0.65 * span) boxTop.set(side, Math.max(boxTop.get(side) ?? 0, row));
-    }
-  }
-  const inRun = (name, x, z) => {
-    if (name !== BOX.level) return false;
-    const f = Math.abs(Math.atan2(x, -z)) / DEG;
-    return f >= BOX.phi[0] && f <= BOX.phi[1];
-  };
-  const seatKeep = (name, x, z, row) => !(name === 'F' && inBackscreen(x, z)) && !(inRun(name, x, z) && row > boxTop.get(Math.sign(x)));
+  const seatKeep = (name, x, z) => !(name === 'F' && inBackscreen(x, z));
   const bNames = TD_STANDS.blockNames || [];
   const byBlock = new Map();
   for (const L of TD_STANDS.levels) {
@@ -56,7 +33,7 @@ export function getDomeSeatCatalog() {
     if (!LB) continue;
     for (let i = 0; i < S.length; i += 4) {
       const rx = S[i] / sk, rz = S[i + 1] / sk, rIdx = S[i + 2], yaw = S[i + 3] * DEG;
-      if (!seatKeep(L.name, rx, rz, rIdx)) continue;
+      if (!seatKeep(L.name, rx, rz)) continue;
       const x = rx, z = rz + ZH;
       const y = L.hs ? L.hs[Math.min(rIdx, L.hs.length - 1)] : L.h0 + L.rise * rIdx;
       const lk = (i >> 2) * 3;
@@ -268,49 +245,33 @@ export function buildDome(ctx) {
   // seat that can see the face of the wall, the restricted-view ones beside
   // the stage and the outfield's ends past the poles included; the outfield
   // behind the set not.
-  // ── the 2nd floor's box seats (the 2022 renewal) ──
-  // Two rows across the 2nd floor on the 1st- and 3rd-base sides, in the
-  // infield (about six of its blocks, as the photographs show it, not out
-  // towards the outfield): the last two rows of D, under the walkway between
-  // D and E, made into boxes of four seats. Each row has a long light-wood counter at table height in front
-  // of its seats, with cup holes, on a wooden front down to the tread; light-wood
-  // half-height partitions between the boxes; the seats grey, not blue. Phi is
-  // the angle from the centre-field line seen from home plate (the foul lines
-  // at 45). (D's last rows run ragged: the two rows are the two highest that
-  // run the whole way along it, on each side, and the odd seats that stand
-  // up behind them there are left out, so the boxes run as two clean rows.)
-  const BOX = { level: 'D', phi: [92.2, 118.8], per: 4 };
-  // the backscreen's sector of the outfield stand, either side of the
-  // centre-field line (the official map's F09 and F12 begin at 8.4°; the screens' boxes run to 9.7°)
+  // ── the box seats, as the data names them (td_labels.py's boxRows, each seat by its label) ──
+  // The Sky Terrace (the 2022 renewal): rows 8 and 9 of D14-D18 and D32-D38, two boxes of four a row, grey seats
+  // behind a long light-wood counter at table height with cup holes, on a wooden front down to the tread, light-wood
+  // half-height partitions between the boxes. On the 3B side's 1st floor behind B31-B39, in the rows the chart leaves
+  // out (td_boxes.py): THE 3rd PLATINUM BOX, white leather sofas with black tables and partitions (Travel Watch 2023's
+  // photograph; Kotobuki: white leather, dark-toned tables and partitions); the press seats, blue seats at plain dark
+  // desks (no photograph found: the user's account), no partitions.
   const BSC = 9.7;
   const inBackscreen = (x, z) => Math.abs(Math.atan2(x, -z)) / DEG < BSC;
-  // (each side's top box row: the highest with a seat in at least four
-  // degrees of every five along the run)
-  const boxTop = new Map();
+  const BOX_COLOR = { terrace: 0x6a6b6e, platinum: 0xeceae4, press: 0x2646b8 };
+  // (their counters and partitions: light wood for the Sky Terrace, black for the Platinum Box, dark for the press desks)
+  const BOX_WOOD = { terrace: 0xc9a06a, platinum: 0x1c1c1e, press: 0x2b2d31 };
+  const boxOf = new Map();          // `${level}:${x * scale}:${z * scale}` -> its box row
   {
-    const L = TD_STANDS.levels.find((l) => l.name === BOX.level), S = decodeSeats(L.seats), sk = L.seatScale ?? 10;
-    const seen = new Map();
-    for (let i = 0; i < S.length; i += 4) {
-      const x = S[i] / sk, z = S[i + 1] / sk, f = Math.floor(Math.abs(Math.atan2(x, -z)) / DEG);
-      if (f < BOX.phi[0] || f > BOX.phi[1]) continue;
-      const key = `${Math.sign(x)}:${S[i + 2]}`;
-      if (!seen.has(key)) seen.set(key, new Set());
-      seen.get(key).add(f);
-    }
-    const span = BOX.phi[1] - BOX.phi[0] + 1;
-    for (const [key, fs] of seen) {
-      const [side, row] = key.split(':').map(Number);
-      if (fs.size >= 0.65 * span) boxTop.set(side, Math.max(boxTop.get(side) ?? 0, row));
+    const want = new Map((TD_STANDS.boxRows ?? []).map((b) => [`${b.level}:${b.block}:${b.row}`, b]));
+    const names = TD_STANDS.blockNames || [];
+    for (const L of TD_STANDS.levels) {
+      if (!L.labels || !(TD_STANDS.boxRows ?? []).some((b) => b.level === L.name)) continue;
+      const S = decodeSeats(L.seats), LB = decodeSeats(L.labels);
+      for (let i = 0, j = 0; i < S.length; i += 4, j += 3) {
+        const b = want.get(`${L.name}:${names[LB[j]]}:${LB[j + 1]}`);
+        if (b) boxOf.set(`${L.name}:${S[i]}:${S[i + 1]}`, b);
+      }
     }
   }
-  const inRun = (name, x, z) => {
-    if (name !== BOX.level) return false;
-    const f = Math.abs(Math.atan2(x, -z)) / DEG;
-    return f >= BOX.phi[0] && f <= BOX.phi[1];
-  };
-  const inBox = (name, x, z, row) => inRun(name, x, z) && (row === boxTop.get(Math.sign(x)) || row === boxTop.get(Math.sign(x)) - 1);
-  // the table seats behind the 3B side's B31-B33 (the rows past their 35th): bright blue
-  const TABLES = (TD_STANDS.levels.find((l) => l.name === 'B')?.tables ?? []).map((r) => r.map(([x, z]) => ({ x, z })));
+  const scaleOf = new Map(TD_STANDS.levels.map((l) => [l.name, l.seatScale ?? 10]));
+  const boxAt = (name, x, z) => { const k = scaleOf.get(name) ?? 10; return boxOf.get(`${name}:${Math.round(x * k)}:${Math.round(z * k)}`); };
   // ── the main screen's line (built further on) ──
   // Along the curve of the outfield stand's back, over its back rows, where
   // the columns at the heads of its aisles stand: they carry it.
@@ -383,10 +344,10 @@ export function buildDome(ctx) {
     // (the concrete a clean, neutral light grey, as the photographs show it: no warm cast of its own, little mottling)
     offset: OFF, stage: STAGE, seed: 400, concreteTone: 0.64, concreteWarm: 0.0, concreteEven: 0.8, roofY: (x, z) => ringY(z + ZH) + 0.3,
     seatColors: { A: 0x1a2f6a, B: 0x1a2f6a, F: 0x1a2f6a, K: 0x1a2f6a, G: 0x1a2f6a, C: 0x5a5d63, D: 0x1a2f6a, E: 0x1a2f6a },
-    seatColorAt: (name, x, z, row) => (inBox(name, x, z, row) ? 0x6a6b6e : name === 'B' && TABLES.some((r) => inRing(r, x, z)) ? 0x2646b8 : null),
+    seatColorAt: (name, x, z) => { const b = boxAt(name, x, z); return b ? BOX_COLOR[b.kind] ?? 0x6a6b6e : null; },
     // the backscreen: the outfield stand's middle, between F09 and F12, has
     // no seats (its steps are painted dark, below)
-    seatKeep: (name, x, z, row) => !(name === 'F' && inBackscreen(x, z)) && !(inRun(name, x, z) && row > boxTop.get(Math.sign(x))),
+    seatKeep: (name, x, z) => !(name === 'F' && inBackscreen(x, z)),
     crowd: !!q.crowd,
     // the lightsticks' floors as the building counts them, [floor, band from
     // the front]: the 1st floor (the field-level seats, A, B behind it, and
@@ -446,18 +407,23 @@ export function buildDome(ctx) {
     root.add(new THREE.Mesh(mergeGeometries(parts), std({ color: 0xb4aea3, roughness: 0.88 })));
   }
   {
-    const L = TD_STANDS.levels.find((l) => l.name === BOX.level), S = decodeSeats(L.seats), sk = L.seatScale ?? 10;
     const rows = new Map();
-    for (let i = 0; i < S.length; i += 4) {
-      const x = S[i] / sk, z = S[i + 1] / sk, row = S[i + 2];
-      if (!inBox(L.name, x, z, row)) continue;
-      const yaw = S[i + 3] * DEG, side = Math.sign(x), key = `${side}:${row}`;
-      if (!rows.has(key)) rows.set(key, []);
-      rows.get(key).push({ x, z: z + ZH, y: L.hs ? L.hs[row] : L.h0 + L.rise * row, fx: Math.sin(yaw), fz: Math.cos(yaw), a: Math.atan2(x, -z) });
+    for (const L of TD_STANDS.levels) {
+      if (!(TD_STANDS.boxRows ?? []).some((b) => b.level === L.name)) continue;
+      const S = decodeSeats(L.seats), sk = L.seatScale ?? 10;
+      for (let i = 0; i < S.length; i += 4) {
+        const bx = boxOf.get(`${L.name}:${S[i]}:${S[i + 1]}`);
+        if (!bx) continue;
+        const x = S[i] / sk, z = S[i + 1] / sk, row = S[i + 2], yaw = S[i + 3] * DEG, key = `${L.name}:${bx.block}:${bx.row}`;
+        if (!rows.has(key)) rows.set(key, Object.assign([], { per: bx.per, kind: bx.kind }));
+        rows.get(key).push({ x, z: z + ZH, y: L.hs ? L.hs[row] : L.h0 + L.rise * row, fx: Math.sin(yaw), fz: Math.cos(yaw), a: Math.atan2(x, -z) });
+      }
     }
-    const wood = [], holes = [];
+    const woods = new Map(), holes = [];
+    const woodOf = (k) => { if (!woods.has(k)) woods.set(k, []); return woods.get(k); };
     const piece = (out, w, h, d, x, y, z, rotY) => { const b = new THREE.BoxGeometry(w, h, d); b.rotateY(rotY); b.translate(x, y, z); out.push(b); };
     for (const seats of rows.values()) {
+      const wood = woodOf(seats.kind ?? 'terrace');
       seats.sort((p, q2) => p.a - q2.a);
       const blocks = [];
       for (const s of seats) {
@@ -482,7 +448,7 @@ export function buildDome(ctx) {
           piece(holes, 0.08, 0.004, 0.08, cx + tX * u + fX * 0.52, y + 0.74, cz + tZ * u + fZ * 0.52, rot);
         }
         const parts = [-(W / 2 - 0.02), W / 2 - 0.02];
-        for (let k = BOX.per; k < n; k += BOX.per) {
+        for (let k = seats.per; seats.per > 0 && k < n; k += seats.per) {
           const uA = (blk[k - 1].x - cx) * tX + (blk[k - 1].z - cz) * tZ;
           const uB = (blk[k].x - cx) * tX + (blk[k].z - cz) * tZ;
           parts.push((uA + uB) / 2);
@@ -492,9 +458,11 @@ export function buildDome(ctx) {
         }
       }
     }
-    const birch = std({ color: 0xc9a06a, roughness: 0.9, envMapIntensity: 0.3 });
-    const wm = new THREE.Mesh(mergeGeometries(wood), birch); wm.receiveShadow = true; wm.castShadow = true;
-    root.add(wm, new THREE.Mesh(mergeGeometries(holes), std({ color: 0x141414, roughness: 0.9 })));
+    for (const [k, wood] of woods) {
+      const wm = new THREE.Mesh(mergeGeometries(wood), std({ color: BOX_WOOD[k] ?? 0xc9a06a, roughness: 0.9, envMapIntensity: 0.3 })); wm.receiveShadow = true; wm.castShadow = true;
+      root.add(wm);
+    }
+    if (holes.length) root.add(new THREE.Mesh(mergeGeometries(holes), std({ color: 0x141414, roughness: 0.9 })));
   }
   // the wall in front of the 1st floor (behind the excite seats along the
   // lines): padded 4.0 m with 0.24 m of net and the

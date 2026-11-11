@@ -47,7 +47,8 @@ END_GAP = 0.7                    # along that wall, between the diagonal's end a
 ROW0, PITCH = 0.85, 1.00         # the first row's seats behind the block's front line, and a row's depth (wide seats with room to pass)
 STEP_BACK = 0.45                 # a row's tread ends this far behind its seats' middles
 Y0, RISE = 0.30, 0.20            # the first row's floor over the field, and a row's step
-SEAT_W = 0.60
+SEAT_W = 0.58
+SEAT_MIN = 0.44
 FENCE_H = 1.15                   # over the field: a padded fence about 0.85 m over the first row's floor
 FENCE_CLEAR, WALL_CLEAR = 0.55, 0.45
 GATES = (('G14', 'G13'), ('G12', 'G11'), ('G10', 'G09'), ('G08', 'G07'), ('G06', 'G05'))   # steps up to the stand's aisle between these
@@ -79,7 +80,7 @@ def _side(sg, chart, FN, standY, mouth=None):
         if f[0][1] < f[1][1]: f, b = f[::-1], b[::-1]
         al = _u(f[1] - f[0]); nb = np.array([-al[1], al[0]])
         if nb @ (b[0] - f[0]) < 0: nb = -nb
-        B[n] = dict(f0=f[0], f1=f[1], b0=b[0], b1=b[1], al=al, nb=nb, rows=chart[name(n)])
+        B[n] = dict(f0=f[0], f1=f[1], b0=b[0], b1=b[1], al=al, nb=nb, rows=[len(q) for q in chart[name(n)]], nums=chart[name(n)])
     # the lines between the blocks (and at the two ends): a point on each and its direction back to the stand
     L = [(B[ORDER[0]]['f0'], _u(B[ORDER[0]]['b0'] - B[ORDER[0]]['f0']))]
     for p, c in zip(ORDER, ORDER[1:]):
@@ -135,17 +136,7 @@ def _side(sg, chart, FN, standY, mouth=None):
             hi = ROW0 + r * PITCH + STEP_BACK if r < nr - 1 else 30.0
             g = cell.intersection(strip(lo, hi))
             if not g.is_empty: rows.append({'r': r, 'y': round(ys[r], 3), 'y0': 0.0, 'polys': _polys(g)})
-        # the seats: each row along the block's own front, between the lines either side, as many as the chart's widest row
-        nmax = max(b['rows'])
-        for r in range(nr):
-            d = ROW0 + r * PITCH
-            ta = float((_x(o + nb * d, al, p0, d0) - o) @ al); tb = float((_x(o + nb * d, al, p1, d1) - o) @ al)
-            w = min(SEAT_W, (abs(tb - ta) - 1.0) / nmax); mid = (ta + tb) / 2
-            for k in range(nmax):
-                q = o + nb * d + al * (mid + (k - (nmax - 1) / 2) * w)
-                pt = Point(*q)
-                if not cell.contains(pt) or fenceL.distance(pt) < FENCE_CLEAR or wallE.distance(pt) < WALL_CLEAR: continue
-                seats.append((q[0], q[1], r, float(np.degrees(np.arctan2(-nb[0], -nb[1]))), name(n), ys[r]))
+        b['lines'] = (p0, d0, p1, d1)
     # the steps up to the stand's aisles, through gaps in its wall
     def deckY(q):
         pt = Point(*q)
@@ -171,9 +162,30 @@ def _side(sg, chart, FN, standY, mouth=None):
         foot, y0 = best
         aisles.append({'a': [round(float(x), 2) for x in foot], 'b': [round(float(x), 2) for x in T + d * 0.25], 'w': STAIR_W, 'y0': round(float(y0), 2), 'y1': round(float(y1), 2)})
         gates.append({'p': [round(float(x), 2) for x in T], 'u': [round(float(d[0]), 4), round(float(d[1]), 4)], 'w': STAIR_W + 0.15})
-    if aisles:
-        st = unary_union([LineString([s['a'], s['b']]).buffer(STAIR_W / 2 + 0.3, cap_style=2) for s in aisles])
-        seats = [s for s in seats if not st.contains(Point(s[0], s[1]))]
+    st = unary_union([LineString([s['a'], s['b']]).buffer(STAIR_W / 2 + 0.3, cap_style=2) for s in aisles]) if aisles else Polygon()
+    # the seats: each row along the block's own front, between the lines either side, the chart's seats in it from
+    # the home-side end (its numbers rise away from home; a short row is the field end's, cut by the fence's
+    # diagonal), a seat the block's widest row's share of the room (SEAT_W at most); where the fence, the wall or the
+    # steps up to the stand take the row's room, its seats close up (to SEAT_MIN) on what is left of it
+    for n in ORDER:
+        if n not in cells: continue
+        b = B[n]; cell = cells[n]; al, nb, o = b['al'], b['nb'], b['c0']; p0, d0, p1, d1 = b['lines']
+        nmax = max(b['rows'])
+        for r in range(len(b['rows'])):
+            d = ROW0 + r * PITCH
+            ta = float((_x(o + nb * d, al, p0, d0) - o) @ al); tb = float((_x(o + nb * d, al, p1, d1) - o) @ al)
+            w = min(SEAT_W, (abs(tb - ta) - 1.0) / nmax); mid = (ta + tb) / 2
+            lo, hi = min(ta, tb), max(ta, tb)
+            ok = [t for t in np.arange(lo, hi, 0.05) if (lambda pt: cell.buffer(-0.2).contains(pt) and fenceL.distance(pt) >= FENCE_CLEAR
+                  and wallE.distance(pt) >= WALL_CLEAR and st.distance(pt) > 0.25)(Point(*(o + nb * d + al * t)))]
+            if not ok: continue
+            t0 = max(mid - (nmax - 1) / 2 * w, ok[0] + 0.0); t1 = ok[-1]
+            nn = len(b['nums'][r]); ww = w if (t1 - t0) >= (nn - 1) * w - 1e-6 else max(SEAT_MIN, (t1 - t0) / max(nn - 1, 1))
+            for k, sn in enumerate(b['nums'][r]):
+                t = t0 + k * ww
+                if t > t1 + 0.02: break
+                q = o + nb * d + al * t
+                seats.append((q[0], q[1], r, float(np.degrees(np.arctan2(-nb[0], -nb[1]))), name(n), b['ys'][r], sn))
     # (no block of one seat: what the diagonal leaves of G03)
     cnt = {}
     for s in seats: cnt[s[4]] = cnt.get(s[4], 0) + 1
@@ -182,11 +194,8 @@ def _side(sg, chart, FN, standY, mouth=None):
 
 def apply(data, chart_path='td/td_rows_real.json'):
     real = json.load(open(chart_path))
-    chart = {k: [sum(hi - lo + 1 for lo, hi in v['rows'][str(r + 1)]) for r in range(len(v['rows']))] for k, v in real.items() if k[0] == 'G'}
-    # (the two sides alike: a block's rows as the fuller of the pair has them; the chart gives G15 one seat a row, G35 four)
-    for k in list(chart):
-        m = 'G%02d' % (50 - int(k[1:]))
-        if m in chart and len(chart[m]) == len(chart[k]): chart[k] = chart[m] = [max(a, b) for a, b in zip(chart[k], chart[m])]
+    # each block's rows as the chart numbers them, its own (the two sides differ a little: G15 one seat a row, G35 four)
+    chart = {k: [[sn for lo, hi in v['rows'][str(r + 1)] for sn in range(lo, hi + 1)] for r in range(len(v['rows']))] for k, v in real.items() if k[0] == 'G'}
     FN = Polygon(data['fence'][0][0]).buffer(0)
     LA = next(l for l in data['levels'] if l['name'] == 'A')
     Ar = [(_geom(r['polys']), float(r['y'])) for r in LA['rows']]; tree = STRtree([g for g, _ in Ar])
@@ -201,10 +210,10 @@ def apply(data, chart_path='td/td_rows_real.json'):
     if mouth is not None: mouth = {**mouth, 'p': [abs(mouth['p'][0]), mouth['p'][1]], 'u': [abs(mouth['u'][0]), mouth['u'][1]]}
     sides = [_side(sg, chart, FN, standY, mouth) for sg in (1, -1)]
     seats = [s for sd in sides for s in sd['seats']]
-    S = np.array([[round(s[0] * 10), round(s[1] * 10), s[2], round(s[3])] for s in seats], '<i2')
+    S = np.array([[round(s[0] * 50), round(s[1] * 50), s[2], round(s[3])] for s in seats], '<i2')
     G = {'name': 'G', 'D': PITCH, 'h0': Y0, 'rise': RISE, 'hs': [round(Y0 + RISE * k, 3) for k in range(8)],
          'rows': [r for sd in sides for r in sd['rows']], 'steps': [], 'holes': [], 'voms': [],
-         'seats': base64.b64encode(S.tobytes()).decode('ascii'), 'gblocks': [s[4] for s in seats], 'seatY': [round(s[5], 3) for s in seats],
+         'seats': base64.b64encode(S.tobytes()).decode('ascii'), 'seatScale': 50, 'gblocks': [s[4] for s in seats], 'gnums': [s[6] for s in seats], 'seatY': [round(s[5], 3) for s in seats],
          'rails': [], 'walls': []}
     data = dict(data)
     data['levels'] = [G if l['name'] == 'G' else l for l in data['levels']]
@@ -217,6 +226,6 @@ def apply(data, chart_path='td/td_rows_real.json'):
     for k in ('exciteOpen', 'exciteFront'): data.pop(k, None)
     by = {}
     for s in seats: by[s[4]] = by.get(s[4], 0) + 1
-    print('excite seats', len(seats), 'of the chart\'s', sum(sum(v) for v in chart.values()), {k: (by.get(k, 0), sum(chart[k])) for k in sorted(chart)})
+    print('excite seats', len(seats), 'of the chart\'s', sum(len(q) for v in chart.values() for q in v), {k: (by.get(k, 0), sum(len(q) for q in chart[k])) for k in sorted(chart)})
     print('excite stands: %.0f m2 each, fence %d points, steps up to the stand' % (sides[0]['X'].area, len(sides[0]['fence'])), [(a['y0'], a['y1']) for a in data['exciteAisles']])
     return data

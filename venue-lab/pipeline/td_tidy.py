@@ -24,7 +24,7 @@ from shapely import affinity
 O = np.array([0.0, -60.0])
 PAR = 1.0            # the parapet over the treads (stands.js's vomParts)
 WALL_T = 0.35        # the parapet's thickness (stands.js's vomParts)
-HEAD = 2.0           # the headroom over the pit's floor the mouth needs
+HEAD = 1.85          # the headroom over the pit's floor the mouth needs (under row 15's tread: rows 11-14 are the pit, as the chart's notches)
 SIDE = 2.6           # how far either side of the pit the rows are drawn again
 BEHIND = 1.6         # and how far behind its mouth
 SEAT_CLEAR = 0.24    # a seat's centre at least this far from the pit's side
@@ -205,7 +205,10 @@ def _aisle_columns(data):
             c_ = np.array([xy for gg in (x.geoms if hasattr(x, 'geoms') else [x]) for xy in gg.coords]); sv = (c_ - p) @ ut
             if np.ptp(sv) > 1.2: mid.append((r0, (sv.min() + sv.max()) / 2))
         # (the half steps are the aisle as it is seen: theirs where they run full width, else the seats' gap)
-        off = float(np.polyfit(*np.array(mid if len(mid) >= 3 else gap).T, 1)[1])
+        off = float(np.polyfit(*np.array(mid if len(mid) >= 3 else gap).T, 1)[1]) if (len(mid) >= 3 or len(gap) >= 2) else 0.0
+        # (a column at the aisle's head, behind the last row (td_build.py: the map's aisle middle), stays there: the
+        # rows behind row 14 stop short of the aisles, so the gap between their seats is no guide to the aisle)
+        if 'color' in c and abs(off) > 0.6: off = 0.0
         # along the row: round the dome's centre, at the same radius
         th = math.atan2(*(p - O)) + math.atan2(off, R)
         q2 = O + R * np.array([math.sin(th), math.cos(th)])
@@ -318,6 +321,28 @@ def _square(E):
     return [round(t, 2) for t in turn]
 
 
+def _column_seats(data):
+    """the seats a column stands on (the outfield's aisle columns, set across onto their aisles' middles above, and any
+    other column through a level's treads): taken away, with a hand's breadth round the column"""
+    out = {}
+    for L in data['levels']:
+        sc = L.get('seatScale', 10)
+        a = np.frombuffer(base64.b64decode(L['seats']), '<i2').reshape(-1, 4)
+        xy = a[:, :2].astype(float) / sc
+        hs = np.array(L['hs']) if 'hs' in L else None
+        y = hs[np.clip(a[:, 2].astype(int), 0, len(hs) - 1)] if hs is not None else L['h0'] + L.get('rise', 0) * a[:, 2]
+        keep = np.ones(len(a), bool)
+        for c in data['pillars']:
+            r = max(c.get('rx', c['r']), c.get('rz', c['r'])) + 0.15
+            keep &= ~((np.hypot(xy[:, 0] - c['x'], xy[:, 1] - c['z']) < r) & (y + 0.4 > c['y0']) & (y < c['y1']))
+        if (~keep).any():
+            L['seats'] = base64.b64encode(a[keep].astype('<i2').tobytes()).decode('ascii')
+            for k in ('gblocks', 'gnums', 'seatY'):
+                if k in L: L[k] = [v for v, kk in zip(L[k], keep) if kk]
+            out[L['name']] = int((~keep).sum())
+    return out
+
+
 def apply(data):
     E = next(l for l in data['levels'] if l['name'] == 'E')
     turned = _square(E)
@@ -327,6 +352,7 @@ def apply(data):
     moved = _aisle_columns(data)
     cut = _balcony_columns(data)
     gaps = _wall_gap(data)
+    print('tidy: seats under a column taken away', _column_seats(data))
     print('tidy: E vomitories %d (mouths at %s m), seats cleared %d; aisle columns set across %s; balcony columns ended %s'
           % (len(done), sorted({round(Lc, 1) for _, Lc in done}), n, [m[0] for m in moved], cut))
     print('tidy: the 1st floor\'s front carried on to the field\'s wall: %d strips, %.1f m2 on the 1B side, %.1f m2 on the 3B side'
