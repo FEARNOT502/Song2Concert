@@ -318,7 +318,9 @@ export function buildDome(ctx) {
     return { F, ftop, pts, len, mid, band, lower, y0, y1, yl, a0: band[0].a, a1: band[band.length - 1].a, colMoved };
   })();
   // (the columns under it end at its frame)
-  const underMV = (p) => Math.hypot(p.x, p.z) > 110 && (() => { const a = Math.atan2(p.x, -p.z) / DEG; return a >= MV.a0 && a <= MV.a1; })();
+  // (and the band's two end columns, at the second vomitory from each pole (50, 57): moved forward to their mouths they
+  // stand a touch outside the band's angle, but they carry its ends: they stop at its top, the arms on them, the user's call)
+  const underMV = (p) => p.vom === 50 || p.vom === 57 || (Math.hypot(p.x, p.z) > 110 && (() => { const a = Math.atan2(p.x, -p.z) / DEG; return a >= MV.a0 && a <= MV.a1; })());
   // (a column with nothing over it from the data, y1 99, goes on up to the ring)
   // (the columns that carry the screen stop behind its frame: nothing shows over it)
   // (and those set back take their number plates with them)
@@ -373,7 +375,7 @@ export function buildDome(ctx) {
     const grp = new THREE.Group();
     // (each vomitory's mouth: the passage on from the top of its stairs into the concourse between green-painted
     // walls, under a soffit (12.webp), 2.4 m deep)
-    const greenM = std({ color: 0x2e5a4e, roughness: 0.9, side: THREE.DoubleSide }), soffitM = std({ color: 0x8e8b85, roughness: 0.9, side: THREE.DoubleSide });
+    const greenM = std({ color: 0x2e5a4e, roughness: 0.9, side: THREE.DoubleSide }), soffitM = greenM;   // (the doorway's head green as its walls: the passage on to the concourse)
     for (const v of TD.levels.find((l) => l.name === 'F')?.voms ?? []) {
       if (v.top == null || v.roof == null) continue;
       const [ux, uz] = v.u, vx = -uz, vz = ux, hw = v.w / 2, D = 2.4, h = v.roof - v.top;

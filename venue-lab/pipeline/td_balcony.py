@@ -319,7 +319,7 @@ def apply(data):
             off = 0.17 / np.mean(RR); ae = aD + np.degrees(off)
             P = _xy(np.full(len(RR), ae * sg), RR)
             ends = [e for e in ends if not ('b' in e and np.sign(e['b'][0]) == sg and abs(e['y0'] - 13.6) >= 0.5)]
-            ends.append({'pts': [[_R2(x), _R2(z)] for x, z in P], 'y0': [_R2(v) for v in y0s], 'y1': [_R2(v) for v in y1s], 'thick': 0.3})
+            pass   # (D's end wall down to the balcony's front band: taken away at the user's request)
             yEndTop = y1s[-1]
         else:
             yEndTop = None

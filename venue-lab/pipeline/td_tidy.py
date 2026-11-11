@@ -295,7 +295,7 @@ OUT_GREY = 0xa9a69f      # (while laid: marks the outfield's columns; taken off 
 OUT_RX, OUT_RZ = 0.6, 0.8  # the columns' half sizes across and along their aisle: the 1st floor's own (td_build.py PILLAR_RX, PILLAR_RZ)
 OUT_PIT_HEAD = 2.4       # the mouth's height at its front, over the pit's floor (the soffit rises with the stairs behind it)
 OUT_SLAB = 0.3           # the soffit's slab
-OUT_HEAD = 2.6           # the mouth's height over the concourse's floor, to the soffit (12.webp)
+OUT_HEAD = 2.1           # the doorway's height over the concourse's floor (the user's call: the back wall closed above a door's height)
 # (not drawn, the user's call) the plates on the columns: the Giants' retired numbers on the six middle ones (photographs: 14, 4, 16 in left
 # field from the pole in; 34, 3, 1 in right field from the middle out), the passage's own number on the two by the poles
 OUT_PLATES = {50: '14', 51: '4', 52: '16', 55: '34', 56: '3', 57: '1'}
