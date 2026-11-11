@@ -238,12 +238,97 @@ def _balcony_columns(data):
     return out
 
 
+def _wall_gap(data):
+    """the 1st floor's (A) front carried on to the back of the field's wall where it stops short of it, beside the
+    excite seats: one strip per metre or so along the wall, each at the height of the front tread beside it (at the
+    top of the excite seats' steps where they come up through the wall), a hair under the tread where they meet"""
+    ring = data['fence'][0][0]
+    field = Polygon(ring).buffer(0)
+    A = next(l for l in data['levels'] if l['name'] == 'A')
+    G = next(l for l in data['levels'] if l['name'] == 'G')
+    pieces = lambda rows: [(Polygon(q[0], q[1:]).buffer(0), r['y']) for r in rows for q in r['polys']]
+    a_rows = pieces(A['rows'])
+    a_all = unary_union([g for g, _ in a_rows])
+    span = unary_union([g for g, _ in pieces(G['rows'])]).buffer(4.0)
+    other = [g for L in data['levels'] if L['name'] != 'A' for g, _ in pieces(L['rows'])]
+    other += [Polygon(q[0], q[1:]).buffer(0) for f in data['floors'] for q in f['polys']]
+    for t in data.get('tunnels', []):
+        p = np.array(t['p']); u = np.array(t['u']); v = np.array([-u[1], u[0]]); h = t['w'] / 2 + 0.05
+        # (a tunnel's mouth, its open cut, side walls and the rows over it stay as they are: nothing within 3 m)
+        other.append(Polygon([p - v * h - u * 0.5, p + v * h - u * 0.5, p + v * h + u * t['L'], p - v * h + u * t['L']]).buffer(3.0))
+    aisles = []
+    for a in data.get('exciteAisles', []):
+        ab = LineString([a['a'], a['b']]); aisles.append((ab.buffer(a['w'] / 2, cap_style=2), a))
+    other += [g for g, _ in aisles]
+    other = unary_union(other)
+    band = field.buffer(2.5, join_style=2).difference(field).intersection(span)
+    gap = band.difference(a_all).difference(other)
+    edge = LineString(ring + [ring[0]])
+    out = []
+    for comp in _polys(gap):
+        if comp.area < 0.05 or comp.distance(edge) > 0.02 or comp.distance(a_all) > 0.05: continue
+        # in pieces round the dome's centre, a metre or so each
+        P = np.array(comp.exterior.coords) - O
+        th = np.degrees(np.arctan2(P[:, 0], P[:, 1]))
+        for a0 in np.arange(np.floor(th.min() / 0.8) * 0.8, th.max(), 0.8):
+            wedge = Polygon([tuple(O)] + [tuple(O + 200 * np.array([math.sin(math.radians(a)), math.cos(math.radians(a))])) for a in np.linspace(a0, a0 + 0.8, 5)])
+            for c in _polys(comp.intersection(wedge)):
+                ys = [a for g, a in aisles if g.distance(c) < 0.3 and Point(a['b']).distance(c) < 0.6]
+                if ys: y = ys[0]['y1']
+                else: y = min(a_rows, key=lambda gy: (round(gy[0].distance(c), 1), gy[1]))[1] - 0.01
+                # (a few centimetres in under the tread it meets: no crack between them)
+                c = c.union(c.buffer(0.04, join_style=2).intersection(a_all)).difference(other)
+                out.append((c, round(y, 3)))
+    for c, y in out:
+        A['rows'].append({'r': 0, 'y': y, 'y0': 0.0, 'polys': [_out(q) for q in _polys(c)]})
+    return [(round(c.area, 2), y, c.centroid.x) for c, y in out]
+
+
+def _square(E):
+    """each pit's axis square to the rows it cuts through: the rows' fronts beside it (a metre and a half either side,
+    the rows the pit runs up through) fitted with one line, the axis turned onto that line's normal; then each pit
+    and its mirror image across the house (x -> -x) made one another's exact mirror, the two halves averaged.
+    Returns the turn (degrees) of each pit's axis, as td_build.py's raster gave it."""
+    rows = [unary_union([Polygon(q[0], q[1:]).buffer(0) for q in r['polys']]) for r in E['rows']]
+    turn = []
+    for v in E['voms']:
+        p, u, w, *_ = _frame(v)
+        hw = v['w'] / 2
+        S_, T_ = [], []
+        for g in rows:
+            for s in [sg * (hw + d) for sg in (-1, 1) for d in (0.4, 0.8, 1.2, 1.6)]:
+                x = g.intersection(LineString([p + w * s - u * 1.0, p + w * s + u * (v['L'] + 1.0)]))
+                if x.is_empty: continue
+                ts = [(np.array(c) - p) @ u for gg in (x.geoms if hasattr(x, 'geoms') else [x]) for c in gg.coords]
+                if 0.0 < min(ts) < v['L'] - 0.3: S_.append(s); T_.append(min(ts) - 0.8 * round((min(ts) - 0.3) / 0.8))
+        # (each row's front brought down to the first's, so one line fits them all)
+        b = np.polyfit(S_, T_, 1)[0] if len(S_) > 8 else 0.0
+        n = u - b * w; n /= np.linalg.norm(n)
+        turn.append(math.degrees(math.atan2(n[0], n[1]) - math.atan2(u[0], u[1])))
+        v['u'] = [float(n[0]), float(n[1])]
+    vs = E['voms']
+    for v in vs:
+        m = min(vs, key=lambda q: math.hypot(q['p'][0] + v['p'][0], q['p'][1] - v['p'][1]))
+        if m is v or math.hypot(m['p'][0] + v['p'][0], m['p'][1] - v['p'][1]) > 1.0 or v['p'][0] < 0: continue
+        th = (math.atan2(v['u'][0], v['u'][1]) - math.atan2(m['u'][0], m['u'][1])) / 2
+        px, pz = (v['p'][0] - m['p'][0]) / 2, (v['p'][1] + m['p'][1]) / 2
+        v['u'] = [round(math.sin(th), 4), round(math.cos(th), 4)]; m['u'] = [-v['u'][0], v['u'][1]]
+        v['p'] = [round(px, 2), round(pz, 2)]; m['p'] = [-v['p'][0], v['p'][1]]
+        v['w'] = m['w'] = max(v['w'], m['w'])
+    return [round(t, 2) for t in turn]
+
+
 def apply(data):
     E = next(l for l in data['levels'] if l['name'] == 'E')
+    turned = _square(E)
+    print('tidy: E vomitories squared to their rows, turned', turned)
     done = [(v,) + _vom(data, E, v)[1:] for v in E['voms']]
     n = _seats(E, done)
     moved = _aisle_columns(data)
     cut = _balcony_columns(data)
+    gaps = _wall_gap(data)
     print('tidy: E vomitories %d (mouths at %s m), seats cleared %d; aisle columns set across %s; balcony columns ended %s'
           % (len(done), sorted({round(Lc, 1) for _, Lc in done}), n, [m[0] for m in moved], cut))
+    print('tidy: the 1st floor\'s front carried on to the field\'s wall: %d strips, %.1f m2 on the 1B side, %.1f m2 on the 3B side'
+          % (len(gaps), sum(a for a, y, x in gaps if x > 0), sum(a for a, y, x in gaps if x < 0)))
     return data
