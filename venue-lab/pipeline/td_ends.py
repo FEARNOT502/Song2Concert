@@ -26,10 +26,11 @@ import numpy as np
 from scipy.ndimage import gaussian_filter1d, minimum_filter1d, maximum_filter1d
 from shapely.geometry import Polygon
 from shapely.ops import unary_union
+from td_upper import D_END
 
 O = np.array([0.0, -60.0])       # the dome's centre: angles from it, 0 towards home
 BIN = 0.25                       # degrees
-D_CUT = 106.5                    # where the 2nd floor (D) stops: just past the outfield's first aisle column (105.5), as the photographs show it; the map draws D01/D51 on to 112
+D_CUT = D_END                    # retain the full one-row blocks D01 and D51 from the seating chart
 E_END = 84.3                     # where the 2nd floor's upper rows (E) stop
 WALL_BACK = 0.15                 # the wall behind a top row's back edge
 EASE = 3.0                       # degrees: a notch in the rows' back narrower than this is closed by the wall's line

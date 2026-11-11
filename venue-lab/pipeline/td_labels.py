@@ -4,6 +4,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 PJ = lambda *a: os.path.join(HERE, *a)
 import td_upper as U
+from td_seat_gaps import fill_seat_gaps
 
 d = json.load(open(PJ('td_stands.json')))
 real = json.load(open(PJ('td', 'td_rows_real.json')))
@@ -338,6 +339,9 @@ _box += [dict(level='B', **q) for q in _LB.pop('boxRows', d.get('boxRows', [])) 
 d['boxRows'] = _box
 _LB.pop('tables', None)
 
+d['blockNames'] = block_names
+fill_seat_gaps(d)
+
 # every seat's name once, numbers along each row in order
 _seen = {}; _dups = 0
 for l in d['levels']:
@@ -347,7 +351,6 @@ for l in d['levels']:
         _seen[q] = 1
 print('labels from the lay (matched / seats / furthest m):', STATS, ' duplicate names:', _dups)
 
-d['blockNames'] = block_names
 s_json = json.dumps(d, separators=(',', ':'))
 open(PJ('td_stands.json'), 'w').write(s_json)
 chunks = [repr(s_json[i:i+4000]) for i in range(0, len(s_json), 4000)]

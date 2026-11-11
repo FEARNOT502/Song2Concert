@@ -108,6 +108,47 @@ for _k in 'DE':
     print(_k,'phantom seats taken away',int((~_kp).sum()),'of',len(st['S'+_k+'_ph']))
     _l.seats,_l.row,_l.yaw=_l.seats[_kp],_l.row[_kp],_l.yaw[_kp]
     # (their raw positions and footprint stay: the treads are drawn round those later)
+
+def set_back_short_rows(positions, labels):
+    # Leave room for the end parapet beside the two shortest stepped rows.
+    for block, row in (('D03', 3), ('D49', 3), ('D04', 5), ('D48', 5)):
+        indices = [i for i, (b, r, _) in enumerate(labels) if b == block and r == row]
+        if len(indices) < 2:
+            continue
+        indices.sort(key=lambda i: labels[i][2])
+        towards_home = positions[indices[0]] - positions[indices[-1]]
+        positions[indices] += towards_home * (0.14 / np.linalg.norm(towards_home))
+
+
+# Keep the chart's rows intact at the ends. Redistancing the raster front
+# curves there can put adjacent chairs from the same row on different steps.
+def align_upper_end(name, first_row, blocks):
+    level = LV[name]
+    positions = st['S' + name]
+    labels = st['S' + name + '_lab']
+    target = np.array([int(block[1:]) in blocks for block, _, _ in labels])
+    _, source = cKDTree(positions).query(level.seats)
+    keep = ~target[source]
+    rows = np.array([row - first_row for _, row, _ in labels])
+    if name == 'D':
+        positions = positions.copy()
+        set_back_short_rows(positions, labels)
+    level.seats = np.vstack([level.seats[keep], positions[target]])
+    level.row = np.r_[level.row[keep], rows[target]]
+    level.yaw = np.r_[level.yaw[keep], st['S' + name + '_yaw'][target]]
+
+align_upper_end('D', 1, (*range(1, 7), *range(46, 52)))
+align_upper_end('E', 11, (6, 7, 8, 44, 45, 46))
+# The same distance field used to lay the end rows defines their treads.
+# Transition across the aisle between D06/D07 and D45/D46.
+_D = LV['D']
+_weight = np.clip((np.abs(TH) - 79.9) / 0.6, 0.0, 1.0)
+_D.d = (_D.d + _weight * (dOut - U.tau_d(TH) - D0 - _D.d)).astype(np.float32)
+_D.behind = _D.d >= 0
+_D.band = np.where((_D.R > 0) & _D.behind,
+                   np.clip(np.floor(_D.d / DP).astype(int), 0, _D.nrows - 1), -1)
+del _D, _weight
+
 # the outfield stand's rows from the fence, level along it (4.6 m over the
 # outfield's tall fence), each 0.286 m higher, the standing aisle behind the 21st at the 1st-floor concourse's
 # height (the doors at the backs of its aisles open onto it)
