@@ -103,12 +103,16 @@ export function membraneMaterial() {
   // point a staircase of pale lit strips along the cables, step by step down the
   // diagonal. The colour a warm grey-white; by day warmer, lit through.
   const ZC = 81, TRI_X = 50.4, TRI_Z = 50.4, GRID = 2 * TRI_X / 13;
+  const LAYER = '1.6';               // metres between the inner liner and the outer skin
   const GL = GRID.toFixed(4), HG = (GRID / 2).toFixed(4);
   // how far the fabric hangs between the straight cables, and how much each row bellies between its seams (m)
   const SAG_A = '0.85', SAG_B = '0.22';
   const m = std({ color: 0xe5ddcf, roughness: 0.92, side: THREE.BackSide });
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uBounce = { value: new THREE.Color(0) };
+    // (how bright the lit strips and the small lamps on the roof read: daylight through the fabric and the house's own light
+    // on them — full with the house up, very faint during the show)
+    sh.uniforms.uSky = m.userData.uSky = { value: 1 };
     m.userData.shader = sh;
     const triGL = `float bigTri(vec2 c, float zs, float e) { return smoothstep(${TRI_X.toFixed(1)} + e, ${TRI_X.toFixed(1)} + e + 0.2, abs(c.x)) * smoothstep(${TRI_Z.toFixed(1)} + e, ${TRI_Z.toFixed(1)} + e + 0.2, abs(zs)); }
       // (the hang dies away over the first few metres into each triangle, so the row beside it meets it without a step)
@@ -128,7 +132,15 @@ export function membraneMaterial() {
         }`)
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
-        varying vec3 vWP; varying float vRho; uniform vec3 uBounce; ${triGL}`)
+        varying vec3 vWP; varying float vRho; uniform vec3 uBounce; uniform float uSky; ${triGL}
+        // the staircase of slots down each diagonal: 1 inside the band from w0 to w1 metres past its cable, on the cells along the diagonal
+        float stripAt(vec2 c, vec2 fw, float w0, float w1) {
+          vec2 a = abs(c) / ${GL};
+          float Lb = floor(a.y) + 0.5, La = floor(a.x) + 0.5;
+          float sB = step(Lb - 1.0, a.x) * step(a.x, Lb) * step(Lb, 6.6) * smoothstep(w0, w0 + fw.y, (a.y - Lb) * ${GL}) * (1.0 - smoothstep(w1, w1 + fw.y, (a.y - Lb) * ${GL}));
+          float sA = step(La, a.y) * step(a.y, La + 1.0) * step(La, 5.6) * smoothstep(w0, w0 + fw.x, (a.x - La) * ${GL}) * (1.0 - smoothstep(w1, w1 + fw.x, (a.x - La) * ${GL}));
+          return max(sA, sB);
+        }`)
       // (the hang's slope, so the light falls on it as on the real thing: the normal faces into the house, down)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         {
@@ -164,11 +176,12 @@ export function membraneMaterial() {
           float clampD = (1.0 - smoothstep(0.26, 0.26 + fw.x, along)) * (1.0 - smoothstep(0.2, 0.2 + fw.y, across)) * net * cover;
           float lamp = (1.0 - smoothstep(0.17, 0.17 + max(fw.x, fw.y), length(vec2(along - 0.55, across)))) * net * cover * cover;
           // the staircase of lit strips down each diagonal, from the crown to the triangle's point, beside the cables
-          vec2 a = abs(c) / ${GL};
-          float Lb = floor(a.y) + 0.5, La = floor(a.x) + 0.5;
-          float sB = step(Lb - 1.0, a.x) * step(a.x, Lb) * step(Lb, 6.6) * smoothstep(0.1, 0.1 + fw.y, (a.y - Lb) * ${GL}) * (1.0 - smoothstep(0.75, 0.75 + fw.y, (a.y - Lb) * ${GL}));
-          float sA = step(La, a.y) * step(a.y, La + 1.0) * step(La, 5.6) * smoothstep(0.1, 0.1 + fw.x, (a.x - La) * ${GL}) * (1.0 - smoothstep(0.75, 0.75 + fw.x, (a.x - La) * ${GL}));
-          float strip = max(sA, sB) * net * min(1.0, 0.65 / max(fw.x, fw.y));
+          // (each is a slot in the inner liner, beside a cable, through which the outer skin shows, the daylight in it: the
+          // outer skin is ${LAYER} m above, so what shows through a slot moves with where it is seen from — square on, the
+          // whole slot is lit; from the side the liner's edge covers part of it, and from far round, all of it)
+          vec3 vdir = normalize(vWP - cameraPosition);
+          vec2 par = vdir.xz / max(vdir.y, 0.12) * ${LAYER};
+          float strip = stripAt(c, fw, 0.1, 0.75) * stripAt(c + par, fw, -0.15, 1.0) * net * min(1.0, 0.65 / max(fw.x, fw.y));
           // the fabric's widths, side by side between the cables: faint
           float seam = (1.0 - smoothstep(0.0, fwidth(fx * 4.0) * 1.5 + 0.02, abs(fract(fx * 4.0 + 0.5) - 0.5) * 2.0)) * net;
           // the big triangles' own widths: faint, square to the ring
@@ -178,12 +191,12 @@ export function membraneMaterial() {
           float shade = mix((1.0 - 0.07 * 4.0 * dx * dx) * (1.0 - 0.12 * smoothstep(0.15, 0.5, abs(dz))), 1.07, inTri);
           // (every line the same in the fabric's own colour and in what the show throws on it: dark or lit, they stay sharp)
           float lines = (1.0 - kA * aLine) * (1.0 - kB * bLine * (1.0 - aLine)) * (1.0 - 0.55 * clampD) * (1.0 - 0.06 * seam) * (1.0 - 0.06 * tseam);
-          float lit = max(0.35 * lamp, 0.45 * strip) * (1.0 - aLine), pale = 1.0 + lit;
+          float lit = max(0.35 * lamp, 0.45 * strip) * (1.0 - aLine) * uSky, pale = 1.0 + lit;
           diffuseColor.rgb *= shade * lines * pale;
           totalEmissiveRadiance += uBounce * shade * lines * pale + diffuseColor.rgb * 0.7 * lit;
         }`);
   };
-  m.customProgramCacheKey = () => 'membrane12';
+  m.customProgramCacheKey = () => 'membrane14';
   return m;
 }
 
@@ -1179,6 +1192,7 @@ export function buildDome(ctx) {
       // (half what they were: at full the deck, the trusses and the roof threw
       // too much of them back)
       floodM.color.copy(KELVIN(5200)).multiplyScalar(0.03 + 2.6 * f.house);
+      if (membrane.userData.uSky) membrane.userData.uSky.value = 0.06 + 0.94 * f.house;
       for (const g of floodGlow) g.intensity = 0.9 * f.house;
       house.forEach((l) => { l.intensity = 1.6 * f.house; });
       ringTint(ringM.color, f.pal.a).multiplyScalar((0.6 + 0.8 * f.kick) * show + 0.2);
@@ -1265,6 +1279,7 @@ export function buildDome(ctx) {
         const [bl, sb] = RC.run(f, { follow: 90000, wash: 12000 });
         runShow(rig, tw, f, { house: V3(0, 30, STAGE.z), stage: RC.stage, span: 60 });
         floodM.color.copy(KELVIN(5200)).multiplyScalar(0.03 + 2.6 * f.house);
+        if (membrane.userData.uSky) membrane.userData.uSky.value = 0.06 + 0.94 * f.house;
         for (const g of floodGlow) g.intensity = 0.9 * f.house;
         house.forEach((l) => { l.intensity = 1.6 * f.house; });
         const sh = membrane.userData.shader;
