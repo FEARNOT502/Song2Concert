@@ -60,7 +60,8 @@ export function wembleyArch({ x0 = 50, zc = 64, span = 315 } = {}) {
   for (let i = 0; i <= 120; i++) pts.push(at(i / 120));
   const curve = new THREE.CatmullRomCurve3(pts);
   const geo = new THREE.TubeGeometry(curve, 240, 3.7, 16, false);
-  const m = std({ color: 0xe8e8ea, roughness: 0.5, metalness: 0.2, emissive: 0x9aa0aa, emissiveIntensity: 0.55, side: THREE.DoubleSide });
+  // (floodlit white, but not a glare from inside the bowl: round 41)
+  const m = std({ color: 0xc9cbce, roughness: 0.75, metalness: 0.1, emissive: 0x9aa0aa, emissiveIntensity: 0.18, side: THREE.DoubleSide });
   m.onBeforeCompile = (sh) => {
     sh.fragmentShader = sh.fragmentShader.replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
       {
@@ -185,19 +186,30 @@ export function buildStadium(ctx) {
   // the precast concrete a pale warm grey, the aisles' steps the same a shade
   // darker and warmer (worn, their nosings), the boxes' glass dark and the
   // balustrades in front of them glass. (round 41: the concrete was a dark grey)
-  const aisleConc = withRepeat(concreteTex({ key: 'wbaisle', tone: 0.5, warm: 0.05, seed: 37 }), 1 / 2, 1 / 2);
+  const aisleConc = withRepeat(concreteTex({ key: 'wbaisle', tone: 0.42, warm: 0.05, seed: 37 }), 1 / 2, 1 / 2);
   const wallConc = withRepeat(concreteTex({ key: 'wbwall', tone: 0.56, warm: 0.03, seed: 43 }), 1 / 3, 1 / 3);
+  const floorConc = withRepeat(concreteTex({ key: 'wbtread', tone: 0.44, warm: 0.03, seed: 47 }), 1 / 3, 1 / 3);
+  // (matt: precast concrete has no sheen; without the texture's roughness map,
+  // which took it down to 0.8, and with little of the sky's reflection, the
+  // treads no longer glare where the show's light falls on them)
+  const matt = (set, color) => std({ ...set, roughnessMap: null, color, roughness: 1, metalness: 0, envMapIntensity: 0.25 });
   const boxGlass = std({ color: 0x10141a, roughness: 0.12, metalness: 0.65, side: THREE.DoubleSide });
   const balGlass = new THREE.MeshPhysicalMaterial({ color: 0xa8bcc8, roughness: 0.08, metalness: 0, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false });
   const stands = buildStands(WB_STANDS, {
     // (the lightsticks' blocks by the stands' own aisles, not the seats'
     // labelled blocks: Level 1's real blocks meet between two seats)
-    byAisle: true, aisleFirst: true,
+    byAisle: true, aisleFirst: ['L1', 'L2', 'L5'],     // (the boxes' balconies, with no aisle, box by box)
     // (one wedge across every level, cut where Level 1's aisles run, drawn on
     // straight through the tiers over it: a seat goes by the wedge it is in,
     // whatever its level, its own level's blocks not kept whole)
     sectors: ['L1'],
-    sectorEven: 1.6, sectorFacing: 4, sectorWhole: 0, sectorSplitEnds: true, round,
+    // (the lines: Level 1's aisles' middle lines, straight, as wb_labels.py
+    // fits them (WB_STANDS.sectorLines); every seat of every level, the
+    // boxes' balconies and the Royal Box too, by the wedge between two of
+    // them it is in, its own level's blocks not kept whole)
+    sectorWhole: 0, sectorSplitEnds: true, sectorSplitWide: 1.6, round,
+    // (a thin wedge, the corner tunnel's between its walls or beside one, run in with the thinner beside it)
+    sectorMin: 0.4,
     offset: OFF, stage: STAGE, seatColor: 0x9a1418, concreteTone: 0.58, concreteWarm: 0.03, seed: 600, roofY: ROOF,
     // Club Wembley's padded seats (Level 2) a deeper red, the boxes' balcony
     // seats (Levels 3 and 4) claret, the Royal Box (Level 2's middle on the
@@ -205,8 +217,9 @@ export function buildStadium(ctx) {
     seatColors: { L2: 0x8a1018, L3: 0x5e0d15, L4: 0x5e0d15 },
     seatColorAt: (name, x, z) => (name === 'L2' && x > 70 && Math.abs(z) < 11.5 ? 0x4a0a10 : null),
     materials: {
-      step: std({ ...aisleConc, color: 0xffffff, roughness: 0.92 }),
-      wall: std({ ...wallConc, color: 0xffffff, roughness: 0.92, side: THREE.DoubleSide }),
+      struct: matt(floorConc, 0xffffff),
+      step: matt(aisleConc, 0xffffff),
+      wall: Object.assign(matt(wallConc, 0x9c9890), { side: THREE.DoubleSide }),   // (the walls stand in the tiers' shade: Level 1's back wall under Level 2)
       levelWall: { L3: boxGlass, L4: boxGlass },
       levelRail: { L3: balGlass, L4: balGlass },
       partition: balGlass,
@@ -241,8 +254,8 @@ export function buildStadium(ctx) {
   // back, under a light canopy.
   const housingMat = std({ color: 0x2a2c30, roughness: 0.7, metalness: 0.3 });
   const cladMat = std({ color: 0x74777c, roughness: 0.75, metalness: 0.2 });
-  const soffitMat = std({ ...wallConc, color: 0xffffff, roughness: 0.92 });   // the notch's sides: the stand's own concrete
-  const panelMat = std({ ...wallConc, color: 0xe4e2de, roughness: 0.9 });       // the panelled wall set back in the notch, beside the board
+  const soffitMat = matt(wallConc, 0xffffff);   // the notch's sides: the stand's own concrete
+  const panelMat = matt(wallConc, 0xe4e2de);       // the panelled wall set back in the notch, beside the board
   const glassMat = new THREE.MeshPhysicalMaterial({ color: 0x9fb2bf, roughness: 0.08, metalness: 0, transmission: 0.0, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false });
   const steelDark = std({ color: 0x1a1b1e, roughness: 0.5, metalness: 0.5 });
   const L5h0 = WB_STANDS.levels.find((l) => l.name === 'L5').h0;
@@ -610,12 +623,14 @@ export function buildStadium(ctx) {
       rodInto(cables, V3(path[i].x + off, path[i].y + 0.4, path[i].z), V3(path[i + 1].x + off, path[i + 1].y + 0.4, path[i + 1].z), 0.07, 0.07, 4);
     }
   }
-  const steelMat = holdAtDistance(std({ color: 0xe6e7e8, roughness: 0.5, metalness: 0.35, emissive: 0x2c2e32, emissiveIntensity: 0.2 }));
+  // (painted steel, a light grey but not white, and dull: round 41, it glared
+  // white under the house lights and their own glow)
+  const steelMat = holdAtDistance(std({ color: 0x6a6d72, roughness: 0.85, metalness: 0.1, emissive: 0x2c2e32, emissiveIntensity: 0.06 }));
   root.add(new THREE.Mesh(mergeGeometries(steel), steelMat));
-  root.add(new THREE.Mesh(mergeGeometries(cables), holdAtDistance(std({ color: 0xb8bcc2, roughness: 0.4, metalness: 0.7, emissive: 0x202226, emissiveIntensity: 0.2 }))));
+  root.add(new THREE.Mesh(mergeGeometries(cables), holdAtDistance(std({ color: 0x8e9196, roughness: 0.6, metalness: 0.4, emissive: 0x202226, emissiveIntensity: 0.08 }))));
   // the gantry lights along the roof's inner edge
   const flood = [];
-  for (let k = 0; k < edge.length; k += 1) flood.push(pipe.flares.add(V3(edge[k].x, ROOF - 3.4, edge[k].z), KELVIN(5600), 1.8, 0));
+  for (let k = 0; k < edge.length; k += 1) flood.push(pipe.flares.add(V3(edge[k].x, ROOF - 3.4, edge[k].z), KELVIN(5600), 1.0, 0));   // (round 41: smaller, dimmer glows)
   root.add(wembleyArch({ zc: ZC }));
 
   // the press box: desks in front of every other row, a screen between
@@ -630,7 +645,8 @@ export function buildStadium(ctx) {
     let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
     for (const [x, z] of ring) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
     for (let z = z0 + 0.6; z < z1 - 0.4; z += 1.2) {
-      const m = new THREE.BoxGeometry(0.04, 0.3, 0.5); m.rotateZ(0.25); m.translate((x0 + x1) / 2, dk.y + 0.17, z + ZC); deskScr.push(m.toNonIndexed());
+      // (a laptop-height screen sitting on the desk, leaning back a little: round 41, they stood too tall over it)
+      const m = new THREE.BoxGeometry(0.03, 0.22, 0.42); m.translate(0, 0.11, 0); m.rotateZ(0.18); m.translate((x0 + x1) / 2, dk.y + 0.005, z + ZC); deskScr.push(m.toNonIndexed());
     }
   }
   if (deskGeo.length) {
@@ -739,7 +755,7 @@ export function buildStadium(ctx) {
   // pitch, a glare off the decks; the set stands in front of it)
   for (const [x, z] of [[-70, 20], [70, 20], [-70, 110], [70, 110], [0, 150]]) {
     const l = new THREE.SpotLight(KELVIN(5600), 0, 320, 1.1, 1, 2);
-    l.position.set(x, ROOF - 2, z); l.target.position.set(x * 0.7, 0, ZC + (z - ZC) * 0.7);
+    l.position.set(x * 0.8, ROOF - 6, ZC + (z - ZC) * 0.8); l.target.position.set(x * 0.7, 0, ZC + (z - ZC) * 0.7);   // (in from the leading edge's truss, clear of it: round 41, a spot a metre from its chords lit the whole ring white)
     l.userData.offWhenDark = 'house'; root.add(l, l.target); house.push(l);
   }
   // the bowl's own light: the sky over the opening, and in house light the
@@ -812,10 +828,10 @@ export function buildStadium(ctx) {
       stageWash.color.copy(f.pal.a); stageWash.intensity = (26000 + 30000 * f.energy + 12000 * f.kick) * show;
       fill.forEach((l, i) => { l.color.copy(i ? f.pal.b : f.pal.a); l.intensity = (600 + 1600 * f.energy) * show; });
       house.forEach((l) => { l.intensity = 38000 * f.house; });
-      flood.forEach((h) => { h.intensity = 0.05 + 0.7 * f.house; });
+      flood.forEach((h) => { h.intensity = 0.02 + 0.15 * f.house; });
       hemi.intensity = 0.25 + 1.4 * f.house;
       hemi.groundColor.setRGB(0.016 + 0.1 * f.house, 0.016 + 0.09 * f.house, 0.024 + 0.08 * f.house);
-      steelMat.emissiveIntensity = 0.12 + 0.5 * f.house;
+      steelMat.emissiveIntensity = 0.04 + 0.12 * f.house;
       ringTint(ringM.color, f.pal.a).multiplyScalar((0.6 + 0.8 * f.kick) * show + 0.2);
       cu.uRimColor.value.copy(f.pal.a).lerp(new THREE.Color(1, 1, 1), 0.3).multiplyScalar((0.2 + 0.25 * f.kick) * show);
       cu.uStage.value.set(0, 18, 16);
@@ -874,7 +890,7 @@ export function buildStadium(ctx) {
     const house = [];
     for (const [x, z] of [[-70, 20], [70, 20], [-70, 110], [70, 110], [0, 150], [0, -22]]) {
       const l = new THREE.SpotLight(KELVIN(5600), 0, 320, 1.1, 1, 2);
-      l.position.set(x, ROOF - 2, z); l.target.position.set(x * 0.7, 0, ZC + (z - ZC) * 0.7);
+      l.position.set(x * 0.8, ROOF - 6, ZC + (z - ZC) * 0.8); l.target.position.set(x * 0.7, 0, ZC + (z - ZC) * 0.7);   // (in from the leading edge's truss, clear of it: round 41, a spot a metre from its chords lit the whole ring white)
       l.userData.offWhenDark = 'house'; root.add(l, l.target); house.push(l);
     }
     const hemi = new THREE.HemisphereLight(0x10131e, 0x040406, 0.25);
@@ -898,10 +914,10 @@ export function buildStadium(ctx) {
         const [bl, sb] = RC.run(f, { follow: 120000, wash: 26000 });
         runShow(rig, tw, f, { house: V3(0, 40, ZC), stage: RC.stage, span: 80 });
         house.forEach((l) => { l.intensity = 38000 * f.house; });
-        flood.forEach((h) => { h.intensity = 0.05 + 0.7 * f.house; });
+        flood.forEach((h) => { h.intensity = 0.02 + 0.15 * f.house; });
         hemi.intensity = 0.25 + 1.4 * f.house;
         hemi.groundColor.setRGB(0.016 + 0.1 * f.house, 0.016 + 0.09 * f.house, 0.024 + 0.08 * f.house);
-        steelMat.emissiveIntensity = 0.12 + 0.5 * f.house;
+        steelMat.emissiveIntensity = 0.04 + 0.12 * f.house;
         cu.uRimColor.value.copy(f.pal.a).lerp(new THREE.Color(1, 1, 1), 0.3).multiplyScalar((0.2 + 0.25 * f.kick) * show);
         cu.uStage.value.set(0, 18, ZC);
         cu.uWash.value.copy(f.pal.b).multiplyScalar(0.012 * show + 0.3 * f.house);

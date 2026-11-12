@@ -18,10 +18,12 @@ await page.evaluate(([v, m]) => window.__stage.setVenue(v, m), [VENUE, MODE]);
 await page.waitForFunction((v) => window.__stage.stats().venue === v, VENUE);
 await page.waitForFunction(() => { let f = false; window.__stage.debug.pipe.scene.traverse((o) => { if (o.userData?.standsPeople) f = true; }); return f; });
 const data = await page.evaluate(() => {
-  let ps = null; window.__stage.debug.pipe.scene.traverse((o) => { if (o.userData?.standsPeople) ps = o.userData.standsPeople; });
-  return ps.filter((p) => p.zone).map((p) => [Math.round(p.x * 10) / 10, Math.round(p.z * 10) / 10, p.zone.lv, p.zone.block]);
+  let ps = null, lines = null; window.__stage.debug.pipe.scene.traverse((o) => { if (o.userData?.standsPeople) ps = o.userData.standsPeople; if (o.userData?.sectorLines) lines = o.userData.sectorLines; });
+  return { people: ps.filter((p) => p.zone).map((p) => [Math.round(p.x * 10) / 10, Math.round(p.z * 10) / 10, p.zone.lv, p.zone.block]), lines };
 });
-fs.writeFileSync(OUT, JSON.stringify(data));
+fs.writeFileSync(OUT, JSON.stringify(data.people));
+fs.writeFileSync(OUT.replace(/\.json$/, '') + '-lines.json', JSON.stringify(data.lines));
+console.log('lines', data.lines?.length);
 console.log('sitters', data.length);
 await browser.close();
 await server.close();

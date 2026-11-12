@@ -45,25 +45,30 @@ def interp_bins(arr, nb, th):
     f = (np.asarray(th) + np.pi) / (2 * np.pi) * nb - 0.5
     i0 = np.floor(f).astype(int); w = f - i0
     return arr[i0 % nb] * (1 - w) + arr[(i0 + 1) % nb] * w
+x0g, z0g, resg, Wg, Hg = M['grid']
+def _atg(A, P):
+    i_ = np.clip(np.round((P[:, 0] - x0g) / resg).astype(int), 0, Wg - 1); j_ = np.clip(np.round((P[:, 1] - z0g) / resg).astype(int), 0, Hg - 1)
+    return A[j_, i_]
 def unwarp(name, P):
     """the model's seats back to where the plan draws them"""
     th = np.arctan2(P[:, 0], P[:, 1]); r = np.hypot(P[:, 0], P[:, 1])
     if name == 'L5':
         r0 = r + interp_bins(M['SHIFT5'], M['NB5'], th)
-    elif name == 'L2':
-        dd = r - interp_bins(M['R2F'], M['NB2'], th)
-        r0 = np.where(dd >= M['WD2'] + 0.25 * M['D2'] + M['W2'], r - M['W2'], r)
-    else: r0 = r
-    return P * (r0 / np.maximum(r, 1e-9))[:, None]
+        return P * (r0 / np.maximum(r, 1e-9))[:, None]
+    if name == 'L2':      # (Level 2's walkway: square from its front, wb_gen.py's warp2)
+        Q = P - np.c_[_atg(M['GX2'], P), _atg(M['GZ2'], P)] * M['W2']
+        return np.where((_atg(M['DIST2'], P) >= M['THR2'] + M['W2'])[:, None], Q, P)
+    return P
 def warp(name, P):
     """the plan's frame on to the model's (for the plan's numbers)"""
     th = np.arctan2(P[:, 0], P[:, 1]); r = np.hypot(P[:, 0], P[:, 1])
-    if name == 'L5': r1 = r - interp_bins(M['SHIFT5'], M['NB5'], th)
-    elif name == 'L2':
-        dd = r - interp_bins(M['R2F'], M['NB2'], th)
-        r1 = np.where(dd >= M['WD2'] + 0.25 * M['D2'], r + M['W2'], r)
-    else: r1 = r
-    return P * (r1 / np.maximum(r, 1e-9))[:, None]
+    if name == 'L5':
+        r1 = r - interp_bins(M['SHIFT5'], M['NB5'], th)
+        return P * (r1 / np.maximum(r, 1e-9))[:, None]
+    if name == 'L2':
+        Q = P + np.c_[_atg(M['GX2'], P), _atg(M['GZ2'], P)] * M['W2']
+        return np.where((_atg(M['DIST2'], P) >= M['THR2'])[:, None], Q, P)
+    return P
 def decode(L):
     a = np.frombuffer(base64.b64decode(L['seats']), '<i2').reshape(-1, 4).astype(float)
     return a[:, :2] / L.get('seatScale', 10), a[:, 2].astype(int)
@@ -170,7 +175,7 @@ for L in d['levels']:
         m = blk == k; bc = np.bincount(R[m]); b_first = int(np.nonzero(bc >= 3)[0][0]) if (bc >= 3).any() else int(R[m].min())
         first[NAMES[k]] = b_first
         if name == 'L1': rr = R[m]                     # (bands 1-44: rows 1-44, as the plan's back row)
-        elif name == 'L2': rr = np.where(R[m] >= 9, R[m] - 1, R[m] + 1)
+        elif name == 'L2': rr = np.where(R[m] >= 9, R[m] - 1, np.minimum(R[m] + 1, 7))     # (band 7, the walkway's front half, row 7 where it runs on to it)
         else:
             north = S[m, 0].mean() > 30 and b_first >= 5
             rr = R[m] - b_first + 1 if north else R[m] + 1
@@ -224,3 +229,68 @@ d['blockNames'] = names
 json.dump(d, open('wb_stands.json', 'w'), separators=(',', ':'))
 json.dump(report, open('wb/wb_labels_report.json', 'w'), indent=1)
 print('blockNames', len(names))
+# ── the lightsticks' lines: Level 1's aisles, straight ──
+# Every aisle of Level 1 is a run of gaps between its rows' seats, one a row:
+# the gaps' middles within 1.4 m of one another, row to row, eight rows or
+# more, are one aisle; each aisle a straight line fitted through them (the
+# strays dropped), and an aisle's pieces either side of the walkway that
+# run on in one line made one. The app cuts every level by these lines
+# (stands.js `data.sectorLines`), the boxes' balconies and the Royal Box too.
+from scipy.spatial import cKDTree as _KD
+L1d = next(L for L in d['levels'] if L['name'] == 'L1')
+S1, R1 = decode(L1d)
+# each row's gaps between seats (an aisle: 1.0-3.0 m; wider, a vomitory's mouth or a tunnel), their middles
+ph1 = phi(S1); C, CR = [], []
+for r in np.unique(R1):
+    idx = np.nonzero(R1 == r)[0]; o = idx[np.argsort(ph1[idx])]
+    P = S1[o]; g = np.linalg.norm(np.diff(P, axis=0), axis=1)
+    for k in np.nonzero((g > 1.0) & (g < 3.0))[0]: C.append((P[k] + P[k + 1]) / 2); CR.append(r)
+C = np.array(C); CR = np.array(CR)
+# an aisle: the middles row to row (the next row's within 1.4 m)
+par = list(range(len(C)))
+def _r(i):
+    while par[i] != i: par[i] = par[par[i]]; i = par[i]
+    return i
+for i, j in _KD(C).query_pairs(1.4):
+    if abs(CR[i] - CR[j]) == 1: par[_r(i)] = _r(j)
+groups = collections.defaultdict(list)
+for i in range(len(C)): groups[_r(i)].append(i)
+groups = {k: v for k, v in groups.items() if len(set(CR[v])) >= 8}
+def fit(P):
+    keep = np.ones(len(P), bool)
+    for _ in range(5):
+        m = P[keep].mean(0); u = np.linalg.svd(P[keep] - m)[2][0]
+        dd = np.abs((P - m) @ np.array([-u[1], u[0]]))
+        nk = dd <= max(0.4, 2.5 * np.median(dd))
+        if nk.sum() < 4 or (nk == keep).all(): break
+        keep = nk
+    m = P[keep].mean(0); u = np.linalg.svd(P[keep] - m)[2][0]
+    if u @ m < 0: u = -u                       # (pointing out from the middle)
+    return m, u, P[keep]
+lines = [fit(C[g]) for g in groups.values()]
+# (two pieces of one aisle, either side of the walkway: in one line, within 1.5 m of each other's line and 6 degrees)
+merged = True
+while merged:
+    merged = False
+    for a in range(len(lines)):
+        for b in range(a + 1, len(lines)):
+            ma, ua, Pa = lines[a]; mb, ub, Pb = lines[b]
+            if abs(ua @ ub) < np.cos(np.radians(6)): continue
+            if abs((mb - ma) @ np.array([-ua[1], ua[0]])) > 1.5 or abs((ma - mb) @ np.array([-ub[1], ub[0]])) > 1.5: continue
+            # (and end to end: not two aisles that happen to lie in one line at the two ends of the bowl)
+            ta, tb = Pa @ ua, Pb @ ua
+            if max(tb.min() - ta.max(), ta.min() - tb.max()) > 15: continue
+            lines[a] = fit(np.r_[Pa, Pb]); lines.pop(b); merged = True; break
+        if merged: break
+# (the corner tunnels, the widest aisles of all, through the middle of a
+# corner's seats: their two side walls (cutWalls), each a line, where no
+# aisle's runs alongside)
+for w in d.get('cutWalls', []):
+    P = np.array(w['pts'], float)[:, :2]
+    m0 = P.mean(0); u = np.linalg.svd(P - m0)[2][0]
+    if u @ m0 < 0: u = -u
+    if any(abs(u @ ul) > np.cos(np.radians(8)) and abs((ml - m0) @ np.array([-u[1], u[0]])) < 1.5 for ml, ul, _ in lines): continue
+    lines.append((m0, u, None))
+d['sectorLines'] = [[round(float(m[0]), 3), round(float(m[1]), 3), round(float(u[0]), 5), round(float(u[1]), 5)] for m, u, _ in sorted(lines, key=lambda t: np.arctan2(t[0][0], t[0][1]))]
+json.dump(d, open('wb_stands.json', 'w'), separators=(',', ':'))
+print('Level 1 aisles (lightsticks\' lines)', len(d['sectorLines']), 'from', len(groups), 'runs of gaps')
