@@ -22,7 +22,9 @@ LATE_LO, LATE_HI = 0.4, 0.7   # by the share of its treads finding their line wh
 def plan_bits(G, path='wb/wb_plan.png'):
     P = cv2.imread(path, cv2.IMREAD_UNCHANGED)
     assert P.shape == (G.H, G.W), P.shape
-    return {name: tuple(((P >> (3 * k + b)) & 1).astype(bool) for b in range(3)) for k, name in enumerate(('L1', 'L2', 'L5'))}
+    # (aisle, line, lettering, and the big lettering over the rows: a block's number, the watermark)
+    return {name: tuple(((P >> (3 * k + b)) & 1).astype(bool) for b in range(3)) + (((P >> (9 + k)) & 1).astype(bool),)
+            for k, name in enumerate(('L1', 'L2', 'L5'))}
 
 def _runs(m):
     d = np.diff(np.r_[0, m.astype(np.int8), 0])
@@ -36,7 +38,7 @@ def _resample(P, step):
 class Reseat:
     def __init__(s, G, l, bits):
         s.G, s.l = G, l
-        s.aisle, s.line, s.text = bits
+        s.aisle, s.line, s.text, s.big = bits
         gz, gx = l._grad if getattr(l, '_grad', None) is not None else np.gradient(cv2.GaussianBlur(l.d.astype(np.float32), (9, 9), 0))
         s.gx, s.gz = gx, gz
         s.rows = []
@@ -153,6 +155,154 @@ class Reseat:
                         s.rows[jj]['ais'][max(0, cc - hw):cc + hw + 1] = True; added += 1
                     pend = []
         return added
+    def neighbours(s, row, dr):
+        # for each of the row's samples, the sample of row r+dr straight up
+        # (or down) the rake from it, and whether there is one
+        D = s.l.D; idx = np.full(len(row['Q']), -1); which = np.full(len(row['Q']), -1)
+        cands = s.byr.get(row['r'] + dr, [])
+        if not cands: return idx, which
+        P = row['Q'] + row['g'] * (dr * D)
+        best = np.full(len(P), np.inf)
+        for ii in cands:
+            d_, c_ = s.rows[ii]['tree'].query(P)
+            take = (d_ < 0.35) & (d_ < best)
+            best[take] = d_[take]; idx[take] = c_[take]; which[take] = ii
+        return idx, which
+    def vote(s, passes=3):
+        """What the plan hides under its lettering, read off the rows either side:
+        - a stair aisle whose row numbers (teal, printed over the aisle) or
+          the watermark hide it in a row or two: where the rows below and
+          above both have the aisle, so does this one (else a seat or two
+          stood in the aisle);
+        - a row whose line a block's number or the watermark covers: where
+          the rows below and above both have their line, so does this one
+          (else the row stood empty across the block's middle).
+        Only between the two: an aisle that starts or a row that ends is
+        left as the plan draws it."""
+        nf = na = 0
+        for _ in range(passes):
+            new_ais, new_ev = [], []
+            for row in s.rows:
+                okt = row['okt']
+                up = [s.neighbours(row, d) for d in (1, 2, 3, 4, 5)]; dn = [s.neighbours(row, -d) for d in (1, 2, 3, 4, 5)]
+                def has(nb, key):
+                    i, w = nb; out = np.zeros(len(i), bool)
+                    for ii in np.unique(w[w >= 0]):
+                        m = w == ii; out[m] = s.rows[ii][key][i[m]]
+                    return out
+                a_up = has(up[0], 'ais') | has(up[1], 'ais'); a_dn = has(dn[0], 'ais') | has(dn[1], 'ais')
+                # (Level 1's block numbers cover up to five rows: a line is looked for up to five rows away)
+                e_up = np.logical_or.reduce([has(n_, 'ev') for n_ in up]); e_dn = np.logical_or.reduce([has(n_, 'ev') for n_ in dn])
+                ais = row['ais'] | (a_up & a_dn & okt)
+                # (only lines the plan's lettering or its watermark could hide)
+                # (the rows' own lines under the lettering: see fill_holes, on the seats once laid)
+                ev = row['ev'] | (e_up & e_dn & okt & ~ais & s.near_text(row) & s.bounded(row, ais, 2.5))
+                na += int((ais & ~row['ais']).sum()); nf += int((ev & ~row['ev']).sum())
+                new_ais.append(ais); new_ev.append(ev)
+            for row, a, e in zip(s.rows, new_ais, new_ev): row['ais'] = a; row['ev'] = e
+        return na, nf
+    def near_text(s, row):
+        if 'txtn' not in row:
+            t = np.zeros(len(row['Q']), bool)
+            for o in np.arange(-1.5, 1.51, 0.25) * s.l.D: t |= s.at(s.text, row['Q'] + row['g'] * o)
+            # (a word's letters are apart: a run of lettering, bridged across its gaps)
+            k = int(round(3.0 / STEP)); t = np.convolve(t.astype(float), np.ones(k), 'full')[k // 2:k // 2 + len(t)] > 0
+            row['txtn'] = t
+        return row['txtn']
+    def near_big(s, row):
+        if 'bign' not in row:
+            t = np.zeros(len(row['Q']), bool)
+            for o in np.arange(-1.0, 1.01, 0.25) * s.l.D: t |= s.at(s.big, row['Q'] + row['g'] * o)
+            row['bign'] = t
+        return row['bign']
+    def bounded(s, row, ais, maxlen=7.0):
+        # samples in a hole in the row's own line, the line drawn on both sides
+        # of it within the same stretch between aisles, the hole no longer than
+        # maxlen (a block's number; not a walkway, which has no line at all, nor
+        # a stretch the plan leaves unseated across a block)
+        ev = row['ev']; ok = row['okt'] & ~ais; out = np.zeros(len(ev), bool)
+        for a, b in _runs(ok):
+            e = np.nonzero(ev[a:b])[0]
+            if len(e) < 2: continue
+            for i, j in zip(e[:-1], e[1:]):
+                if 1 < j - i <= maxlen / STEP: out[a + i + 1:a + j] = True
+        return out
+    def fill_holes(s, S, pitch, maxlen=7.0, reach=3, tol=0.45):
+        """Holes in a row's seats that the rows round it do not have, seated:
+        where the plan's lettering (a block's number, the watermark) hides a
+        row's line, or its rows are drawn a row or two off the stand's, a row
+        stood empty across the middle of a block. A hole (1.2 m to maxlen
+        long) is seated when, within `reach` rows up and down, a row is seated
+        all the way across it (so a vomitory's mouth, a walkway or an aisle,
+        empty in the rows round it too, is left). And a seat or two standing
+        alone where the rows either side have an aisle is taken out (the plan's
+        row numbers printed over a stair hid its aisle in that row).
+        S: (x, z, r, yaw) -> S with the holes seated and the strays gone."""
+        D = s.l.D; R_ = S[:, 2].astype(int)
+        trees = {r: cKDTree(S[R_ == r, :2]) for r in np.unique(R_)}
+        def seated(r, P):
+            t = trees.get(r)
+            return t is not None and (t.query(P)[0] < tol).all()
+        add, drop = [], np.zeros(len(S), bool)
+        for ii, row in enumerate(s.rows):
+            r = row['r']
+            m = np.nonzero(R_ == r)[0]
+            if not len(m): continue
+            d_, c_ = row['tree'].query(S[m, :2]); on = d_ < 0.3
+            m, c_ = m[on], c_[on]
+            if len(m) < 2: continue
+            o = np.argsort(c_); m, c_ = m[o], c_[o]
+            for k in range(len(m) - 1):
+                L_ = (c_[k + 1] - c_[k]) * STEP
+                if not (2.0 * pitch < L_ <= maxlen): continue
+                ts = np.linspace(c_[k], c_[k + 1], max(3, int(L_ / 0.5)))[1:-1].round().astype(int)
+                Q, g = row['Q'][ts], row['g'][ts]
+                up = any(seated(r + j, Q + g * (j * D)) for j in range(1, reach + 1))
+                dn = any(seated(r - j, Q - g * (j * D)) for j in range(1, reach + 1))
+                if not (up and dn): continue
+                n = int(round(L_ / pitch)) - 1
+                for j in range(1, n + 1):
+                    t = c_[k] + (c_[k + 1] - c_[k]) * j / (n + 1)
+                    i0 = int(np.floor(t)); f = t - i0; i1 = min(i0 + 1, len(row['Q']) - 1)
+                    q = row['Q'][i0] * (1 - f) + row['Q'][i1] * f; gg = row['g'][i0]
+                    add.append((q[0], q[1], r, np.arctan2(-gg[0], -gg[1])))
+            # strays: a run of one or two seats, the rows either side empty there
+            gaps = np.r_[np.inf, np.diff(c_) * STEP, np.inf]
+            k = 0
+            while k < len(m):
+                j = k
+                while j + 1 < len(m) and gaps[j + 1] < 1.6 * pitch: j += 1
+                if j - k <= 1 and gaps[k] > 1.0 and gaps[j + 1] > 1.0:
+                    P = S[m[k:j + 1], :2]; gg = row['g'][c_[k:j + 1]]
+                    empty = lambda rr, Pq: rr not in trees or (trees[rr].query(Pq)[0] > 0.45).all()
+                    if empty(r - 1, P - gg * D) and empty(r + 1, P + gg * D): drop[m[k:j + 1]] = True
+                k = j + 1
+        out = S[~drop]
+        if add: out = np.r_[out, np.array(add)]
+        return out, len(add), int(drop.sum())
+    def front_fill(s, S, pitch, tol=0.45):
+        """A tier's front row, seated as wide as the row behind it: the plan
+        draws its first row on the tier's front edge, where its line falls
+        outside the tread and the row was left empty (Level 2's and Level 5's
+        row 1 all round). Where a row has no tread in front of it (the front)
+        and the row behind is seated, it is seated too, a pitch apart."""
+        D = s.l.D; R_ = S[:, 2].astype(int)
+        trees = {r: cKDTree(S[R_ == r, :2]) for r in np.unique(R_)}
+        add = []
+        for row in s.rows:
+            r = row['r']; Q, g = row['Q'], row['g']
+            front = s.at(s.l.band, Q - g * (0.9 * D)) < 0
+            behind = trees[r + 1].query(Q + g * D)[0] < tol if (r + 1) in trees else np.zeros(len(Q), bool)
+            own = trees[r].query(Q)[0] < 0.7 * pitch if r in trees else np.zeros(len(Q), bool)
+            ok = row['okt'] & ~row['ais'] & front & behind & ~own
+            for a, b in _runs(ok):
+                L_ = (b - a - 1) * STEP - 0.3
+                if L_ < 0: continue
+                n = int(L_ / pitch + 1e-6) + 1; t0 = a * STEP + 0.15 + (L_ - (n - 1) * pitch) / 2
+                for k in range(n):
+                    i0 = min(int(round((t0 + k * pitch) / STEP)), len(Q) - 1)
+                    add.append((Q[i0, 0], Q[i0, 1], r, np.arctan2(-g[i0, 0], -g[i0, 1])))
+        return (np.r_[S, np.array(add)] if add else S), len(add)
     def place(s, pitch, end):
         out = []
         for row in s.rows:
@@ -187,12 +337,20 @@ class Reseat:
                         out.append((q[0], q[1], row['r'], np.arctan2(-g[0], -g[1])))
         return np.array(out)
 
-def reseat(G, l, bits, pitch, end=0.35):
+def reseat(G, l, bits, pitch, end=0.35, front=True):
     """Level l's seats laid out again along its rows (l.seats, l.row, l.yaw,
     l.seatmask). Returns (seats, aisles cleaned, aisles carried on)."""
     R = Reseat(G, l, bits)
     nc = R.clean_aisles(); ne = R.extend_aisles()
+    nv = R.vote()
+    print('  vote: aisle samples opened', nv[0], 'line samples filled', nv[1])
     S = R.place(pitch, end)
+    for _ in range(2):
+        S, na_, nd_ = R.fill_holes(S, pitch)
+        print('  holes seated', na_, 'strays taken out', nd_)
+    if front:
+        S, nf_ = R.front_fill(S, pitch)
+        print('  front rows seated', nf_)
     l.seats, l.row, l.yaw = S[:, :2].copy(), S[:, 2].astype(int), S[:, 3].copy()
     l.seatmask = seat_mask(G, l.seats)
     return len(S), nc, ne

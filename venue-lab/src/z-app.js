@@ -567,6 +567,7 @@ window.__set = async (o = {}) => {
   if (o.nobeams) App.pipe.beams.mesh.visible = false;
   if (o.nomask) App.pipe.mask.clear();
   if (o.nobloom) App.pipe.bloom.enabled = false;
+  if (o.exp) App.pipe.final.material.uniforms.uExposure.value = +o.exp;   // (a check's render, brighter: exp=3)
   for (let i = 0; i < (o.frames ?? 2); i++) await new Promise((r) => requestAnimationFrame(r));
   App.pipe.final.material.uniforms.uFade.value = 1;
   if (o.pause) { App.frame(0.016, performance.now() / 1000); App.paused = true; }

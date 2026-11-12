@@ -244,7 +244,7 @@ export default function App() {
     setVenueId(id);
     if (mode) setVenueMode(id, mode);
     setWetDry(findVenue(id).position.wet); // reset wet/dry to the venue default
-    if (id === 'dome') {
+    if (id === 'dome' || id === 'stadium') {      // (the rooms whose seats are named: see Modals' SEAT_ROOMS)
       setDomeSeat(seat || null);
       setActiveSeat(seat || null);
       stageRef.current?.setSeat(seat || null);

@@ -13,6 +13,47 @@ gy, gx = np.mgrid[0:G.H, 0:G.W]
 GX, GZ = G.m(gx, gy)
 TH = np.arctan2(GX, GZ); RR = np.hypot(GX, GZ)
 def dil(m, r): return cv2.dilate(m.astype(np.uint8), disk(r / G.res)) > 0
+# ── Level 2's walkway, made room for ──
+# The plan draws Level 2's 16 rows with no gap; the walkway goes in between
+# rows 7 and 8: everything of Level 2's from row 8 back (its seats, the back
+# of its footprint, its bits of wb_plan.png) moves out along its ray by the
+# walkway's depth (W2: two rows). The front, per half degree, is the plan's
+# front line (a low percentile over 12 degrees: the Royal Box's notch aside).
+W2ROW = 7                                    # the walkway between rows 7 and 8 (H2, below)
+NB2 = 720; D2 = float(o['L2']['D']); W2 = 2 * D2
+BIN2 = ((TH + np.pi) / (2 * np.pi) * NB2).astype(int) % NB2
+def _front2():
+    m = G.empty(); q = tr(o['L2']['front']); gx_, gz_ = G.g(q[:, 0], q[:, 1])
+    cv2.fillPoly(m, [np.c_[gx_, gz_].round().astype(np.int32)], 1); m = m > 0
+    out = np.zeros(NB2); np.maximum.at(out, BIN2[m], RR[m])
+    k = 12; ext = np.r_[out[-k:], out, out[:k]]
+    return np.array([np.percentile(ext[i:i + 2 * k + 1], 20) for i in range(NB2)])
+R2F = _front2()
+WD2 = (W2ROW - 0.0) * D2 - 0.25 * D2          # (a seat of row 7 stands at 0.55 of its row: the cut a little before row 8's front)
+def front2_of(th):
+    f = (np.asarray(th) + np.pi) / (2 * np.pi) * NB2 - 0.5
+    i0 = np.floor(f).astype(int); w = f - i0
+    return R2F[i0 % NB2] * (1 - w) + R2F[(i0 + 1) % NB2] * w
+def warp2(P):
+    P = np.asarray(P, float); th = np.arctan2(P[:, 0], P[:, 1]); r = np.hypot(P[:, 0], P[:, 1])
+    d = r - front2_of(th)
+    s = np.where(d >= WD2 + 0.25 * D2, (r + W2) / np.maximum(r, 1e-9), 1.0)
+    return P * s[:, None]
+def warp2_mask(M):
+    d = RR - front2_of(TH)
+    s = np.where(d >= WD2 + 0.25 * D2 + W2, (RR - W2) / np.maximum(RR, 1e-9), 1.0)
+    out = cv2.remap(M.astype(np.uint8), *[a.astype(np.float32) for a in G.g(GX * s, GZ * s)], cv2.INTER_NEAREST) > 0
+    return out & ~((d >= WD2 + 0.25 * D2) & (d < WD2 + 0.25 * D2 + W2))
+def _dense(P, step=0.25):
+    Q = np.r_[P, P[:1]]; out = []
+    for a, b in zip(Q[:-1], Q[1:]):
+        n = max(1, int(np.ceil(np.linalg.norm(b - a) / step)))
+        out.append(a + (b - a) * (np.arange(n)[:, None] / n))
+    return np.concatenate(out)
+_un = lambda P: np.c_[P[:, 1], -P[:, 0]]       # world (north, east) -> the plan's frame
+o['L2']['seats'] = _un(warp2(tr(o['L2']['seats'])))
+o['L2']['foot'] = [_un(warp2(tr(_dense(P)))) for P in o['L2']['foot']]
+print('L2 walkway: rows from 8 out by', W2, 'm; front', np.round(np.percentile(R2F, [0, 50, 100]), 1))
 
 def sightline(D0, y0, T, n, C, eye=1.2):
     D, N = D0, y0 + eye; hs = [y0]
@@ -21,8 +62,17 @@ def sightline(D0, y0, T, n, C, eye=1.2):
     return np.round(hs, 3)
 # rakes from the side stands' sightlines to the near touchline
 H1r = sightline(12.9, 1.5, 0.80, 46, 0.07)
-H2 = sightline(40.5, 17.8, 0.90, 17, 0.06)
-H5 = sightline(61.4, 29.3, 0.80, 54, 0.03)    # (to 54 rows: room for the north side's rows numbered on, see section_depth)
+H2r = sightline(40.5, 17.8, 0.90, 17, 0.06)
+# Level 2 is two sections too (asked 2026-11-12: "like Level 1, its lower and
+# upper blocks parted by a walkway between them"; the photographs: a walkway
+# a third of the way up with a glass rail, the vomitories opening on to it).
+# Rows 1-7 below it, raked from the front; the walkway (two rows' depth) at
+# row 7's height; rows 8-16 behind it on a wall a step higher, raked as before
+STEP2 = 0.2
+H2 = np.r_[H2r[:W2ROW], [H2r[W2ROW - 1]] * 2, H2r[W2ROW:] + STEP2]
+# (Level 5 0.5 m higher than in round 40: room for the box level's glass under
+# its front, over the boxes' balcony seats behind Level 2's last row)
+H5 = sightline(61.4, 29.8, 0.80, 54, 0.03)    # (to 54 rows: room for the north side's rows numbered on, see section_depth)
 # Level 1 is two sections, as Wembley's lower tier is: the rows up to the
 # walkway (row 28 on it, the vomitories opening on to it) raked from the
 # front, and behind the plan's second dotted line (a barrier) the rows from 31
@@ -34,7 +84,7 @@ def stepped(H, b, D0, T, C, head=1.8, eye=1.2):
     Dw, Db = D0 + T * (b - 1), D0 + T * b
     return np.r_[H[:b], sightline(Db, Db / Dw * (H[b - 1] + head + C) - eye, T, len(H) - b, C)]
 H1 = stepped(H1r, STEP1, 12.9, 0.80, 0.07)
-print('rake L1', H1[[0, 28, 43]], 'step', round(float(H1[STEP1] - H1[STEP1 - 1]), 3), 'L2', H2[[0, 15]], 'L5', H5[[0, 12, 23, 44]])
+print('rake L1', H1[[0, 28, 43]], 'step', round(float(H1[STEP1] - H1[STEP1 - 1]), 3), 'L2', H2[[0, 6, 7, 9, 17]], 'L5', H5[[0, 12, 23, 44]])
 RISE, RUN = 0.19, 0.28
 
 def vom_plan(H, bw, D):
@@ -50,7 +100,7 @@ def vom_plan(H, bw, D):
 # floor and the rows they cut through (the back's rows over them stand higher)
 V1 = vom_plan(H1r, 29, 0.8); V5 = vom_plan(H5, 12, 0.8)
 print('vom L1 (steps, open row, concourse)', V1, 'L5', V5)
-C1, C2, C5 = V1[2], float(H2[15]), V5[2]
+C1, C5 = V1[2], V5[2]          # (C2: Level 2's vomitories', below)
 
 def front_raster(P):
     F = G.empty(); gx_, gz_ = G.g(P[:, 0], P[:, 1])
@@ -75,7 +125,8 @@ def bottom_fn(kind):
 # two steps for the Level 4 boxes' balcony in front of it) the shift is carried
 # across from either side.
 NB5 = 720
-OVER5 = 3.0
+BAL3 = 2 * 0.85                              # the boxes' balcony (round 41): two rows behind Level 2's last row, to the glass
+OVER5 = 3.0 + BAL3                           # Level 5's front over the glass: 3 m over Level 2's last row, as in round 40
 def tread_mask(name):
     m = G.empty()
     for i, P in enumerate(sorted(o[name]['foot'], key=lambda P: -abs(cv2.contourArea(P.astype(np.float32))))):
@@ -85,13 +136,13 @@ def tread_mask(name):
 BIN = ((TH + np.pi) / (2 * np.pi) * NB5).astype(int) % NB5
 def r_per_bin(m, fn, fill):
     out = np.full(NB5, fill); fn.at(out, BIN[m], RR[m]); return out
-R2b = r_per_bin(tread_mask('L2'), np.maximum, 0.0)
+R2b = r_per_bin(tread_mask('L2'), np.maximum, 0.0) + BAL3     # (the glass line)
 def inside_of(P):
     m = G.empty(); q = tr(P); gx_, gz_ = G.g(q[:, 0], q[:, 1])
     cv2.fillPoly(m, [np.c_[gx_, gz_].round().astype(np.int32)], 1); return m > 0
 R5f = r_per_bin(inside_of(o['L5']['front']), np.maximum, 0.0)      # (its front: the line round the pitch)
 GAP5 = R5f - R2b
-reg = GAP5 < 4.3
+reg = GAP5 + W2 + BAL3 < 4.3          # (as before round 41: from Level 2's back without its walkway and the balcony)
 # (the irregular runs, and a degree past their ends either way)
 reg &= np.roll(reg, 2) & np.roll(reg, -2)
 idx_ = np.arange(NB5)
@@ -116,7 +167,7 @@ _PB = None
 def plan_bits(G_):
     global _PB
     if _PB is None:
-        _PB = _plan_bits(G_); _PB['L5'] = tuple(warp5_mask(m) for m in _PB['L5'])
+        _PB = _plan_bits(G_); _PB['L5'] = tuple(warp5_mask(m) for m in _PB['L5']); _PB['L2'] = tuple(warp2_mask(m) for m in _PB['L2'])
     return _PB
 for t_ in ('seats', 'front'): o['L5'][t_] = (lambda P: np.c_[P[:, 1], -P[:, 0]])(warp5(tr(o['L5'][t_])))
 o['L5']['foot'] = [(lambda P: np.c_[P[:, 1], -P[:, 0]])(warp5(tr(P))) for P in o['L5']['foot']]
@@ -277,10 +328,11 @@ print('L5 bays', [round(float(np.linalg.norm(b['bridge'][-1] - b['bridge'][0])),
 # there). The pitches give each level its official count once the
 # vomitories, tunnels and press box are cut (34,303, 16,532 and 39,165 seats).
 from wb_reseat import reseat
-PITCH = {'L1': 0.551, 'L2': 0.5, 'L5': 0.515}
+PITCH = {'L1': 0.556, 'L2': 0.529, 'L5': 0.536}     # (round 41: with the rows the lettering hid and the front rows seated, back to the official counts)
 PLAN = plan_bits(G)
 for name_, l_ in LV.items():
-    print('reseat', name_, reseat(G, l_, PLAN[name_], PITCH[name_]), round(time.time() - T0, 1))
+    # (Level 1's front band is before its row 1: no front row to fill there)
+    print('reseat', name_, reseat(G, l_, PLAN[name_], PITCH[name_], front=name_ != 'L1'), round(time.time() - T0, 1))
 
 # ── the four corner tunnels ──
 # At each corner of the pitch the Level 1 front is cut square across, and
@@ -398,7 +450,7 @@ def add_vom(n_, l, P, bw, V, width, fl=None):
 # by its angle about the centre, the map's ring and the row's line each
 # scaled to a unit circle.
 BLK = json.load(open('wb/wb_blocks.json'))
-VOM_ROW = {'L1': 29, 'L2': 4, 'L5': 12}
+VOM_ROW = {'L1': 29, 'L2': W2ROW + 1, 'L5': 12}     # (Level 2's: off its walkway, rows 8 on cut)
 def official_pts(n_):
     Pl, _ = band_line(LV[n_], VOM_ROW[n_])
     phi = np.arctan2(Pl[:, 0] / np.abs(Pl[:, 0]).max(), Pl[:, 1] / np.abs(Pl[:, 1]).max())
@@ -473,10 +525,11 @@ def gap_at(t, a, b):
 print('corner tunnel cuts', [(t['block'], t['p'].round(2).tolist(), t['u'].round(4).tolist(), round(t['a_end'], 1),
                               round(float(gap_at(t, 1.0, -1) + gap_at(t, 1.0, 1)) - 2 * (ROW_END + WALL_T), 2), round(t['w'] - 2 * WALL_T, 2)) for t in TUNNELS[:4]])
 H2v = np.r_[H2]
-V2 = vom_plan(H2v, 4, 0.9)
+V2 = vom_plan(H2v, W2ROW + 1, 0.9)
+C2 = V2[2]                 # Level 2's concourse: under its upper rows, at its vomitories' foot
 print('vom L2 (steps, open row, concourse)', V2)
 VOM_LABEL = {n_: [] for n_ in LV}
-VPLAN = {'L1': (V1, 2.5, None), 'L2': (V2, 2.4, FL2), 'L5': (V5, 2.4, None)}
+VPLAN = {'L1': (V1, 2.5, None), 'L2': (V2, 2.4, None), 'L5': (V5, 2.4, None)}
 for n_ in LV:
     V_, w_, fl_ = VPLAN[n_]
     for P, v in zip(VOMP[n_], BLK['levels'][n_]['voms']):
@@ -491,7 +544,6 @@ print('vomitories L1', n1, 'L2', n2, 'L5', n5, round(time.time() - T0, 1))
 # over it, the ones above left as the tunnel's roof
 VOMS = {'L1': L1.make_voms(C1, head=2.2, cands=vom_masks['L1'], detect=False), 'L5': L5.make_voms(C5, head=2.2, cands=vom_masks['L5'], detect=False),
         'L2': L2.make_voms(V2[2], head=2.2, cands=vom_masks['L2'], detect=False)}
-for v in VOMS['L2']: v['end'] = True           # to the club concourse under the tier, through doors
 print('voms', {k: len(v) for k, v in VOMS.items()})
 
 # ── the press box ──
@@ -664,7 +716,11 @@ def rback(l):
     return rb[bi]
 c1 = outer & ~inside1 & (L1.d >= V1[1] * L1.D) & L1.behind
 c1 |= holes_mask['L1']
-c2 = outer & (RR > rback(L2) + 0.05) & ~(L2.R > 0)
+# Level 2's concourse under its upper rows, as Level 1's and Level 5's are
+# (round 41: before, a corridor behind its last row reached by doors at the
+# top of its aisles; that is the boxes' balcony now)
+c2 = outer & (L2.d >= V2[1] * L2.D) & L2.behind
+c2 |= holes_mask['L2']
 c5 = outer & (L5.d >= V5[1] * L5.D) & L5.behind
 c5 |= holes_mask['L5']
 print('masks', round(time.time() - T0, 1))
@@ -855,13 +911,14 @@ R5n = r_per_bin(L5.band >= 0, np.minimum, np.inf)
 def side_of(M, t, q): v = np.array([t[1], -t[0]]); return (q[..., 0] - M[0]) * v[1] - (q[..., 1] - M[1]) * v[0]
 ref_ = np.array([100.0, 0.0]); QQ = np.stack([GX, GZ], -1)
 IN4 = (np.sign(side_of(Ma_, ta_, QQ)) == np.sign(side_of(Ma_, ta_, ref_))) & (np.sign(side_of(Mb_, tb_, QQ)) == np.sign(side_of(Mb_, tb_, ref_))) & (GX > 20)
-D4 = RR - R2g[BIN]
-B4 = R5n[BIN] - R2g[BIN]                     # Level 5's front, from Level 2's back
+RGL = R2g + BAL3                              # the boxes' glass (Level 3), behind their balcony seats
+D4 = RR - RGL[BIN]
+B4 = R5n[BIN] - RGL[BIN]                     # Level 5's front, from the glass
 ROW4 = 0.85
 k4 = K5 + 1                                  # the glass: a row in under Level 5
 UNDER4 = float(L5.h(k4)) - 0.6
-Y4F = 28.0                                   # the balcony's underside: Level 3's ceiling
-Y4S = [round(min(28.6, UNDER4 - 2.6), 3), round(min(28.95, UNDER4 - 2.3), 3)]
+Y4F = 28.5                                   # the balcony's underside: Level 3's ceiling (round 41: Level 5 0.5 m higher)
+Y4S = [round(min(29.1, UNDER4 - 2.6), 3), round(min(29.45, UNDER4 - 2.3), 3)]
 CORNER5 = (L5.band >= 0) & ~SEC5           # Level 5's rows not the north side's (the corner blocks, where they reach over the seam)
 M4 = IN4 & (D4 > -OVER5) & np.isfinite(B4) & (D4 < B4 + L5.D) & ~(cv2.dilate(CORNER5.astype(np.uint8), disk(0.3 / G.res)) > 0)
 M4 = cv2.morphologyEx(M4.astype(np.uint8), cv2.MORPH_OPEN, disk(0.3 / G.res)) > 0
@@ -917,8 +974,7 @@ def door_out(p):
         if not WALK2[j_, i_] and not (L2.R[j_, i_] > 0): break
         q = q + u * 0.1
     return [round(float(q[0]), 2), round(float(q[1]), 2)]
-doors2 = [door_out(p) for p in L2.aisle_doors()]
-print('walkway L2', int(WALK2.sum() * G.res ** 2), 'm2; doors', len(doors2))
+doors2 = []           # (round 41: Level 2's aisles end at the boxes' balcony, not at doors)
 # The end screens stand right behind Level 2's last row, a flat board across
 # its curve: the box level's wall in front of the board's plane (where the
 # row's back curves forward under its ends) gives way to it, so nothing of
@@ -937,16 +993,87 @@ for i_, b_ in enumerate(BAYS5):
     BOARD[i_] = round(Sb, 3)
     cutL2 |= c2 & (np.abs(Tg) < SCREEN_HW + 0.2) & (Dg < Sb + 0.3) & (Dg > Sb - 4)
 print('screen boards at', BOARD, 'm behind the mouth; room cut', int(cutL2.sum() * G.res ** 2), 'm2')
+# ── Level 3: the boxes' balcony seats ──
+# Behind Level 2's last row, all round, the executive boxes of Level 3, each
+# with its own padded seats outside its glass ("seats directly outside the
+# box", Wembley's hospitality pages; asked 2026-11-12: the doors that stood
+# at the top of Level 2's aisles were these). Two rows on a step up from
+# Level 2's last row, then the glass, under Level 5's front (OVER5: its fascia
+# over the glass). Not under the end screens (their boards stand right behind
+# Level 2's last row), nor where Level 2's back is not its line round the bowl.
+# Closed to the walker, as Level 4's balcony: the seats are reached through
+# the boxes, which are not modelled.
+ROW3 = BAL3 / 2
+YL2 = float(L2.h(L2.nrows - 1))
+Y3S = [round(YL2 + 0.22, 3), round(YL2 + 0.67, 3)]
+Y3F = Y3S[1]                                  # the boxes' floor
+UNDER3 = float(L5.h(0)) - 1.5                 # Level 5's fascia's underside
+D3 = RR - R2g[BIN]
+R2gs = np.convolve(np.r_[R2g[-6:], R2g, R2g[:6]], np.ones(13) / 13, 'valid')
+REG3 = (np.abs(R2g - R2gs) < 0.6)[BIN]        # (Level 2's back where it is its line round the bowl)
+noscr = np.ones_like(c2)
+for i_, b_ in enumerate(BAYS5):
+    if i_ not in BOARD: continue
+    a0_, a1_ = b_['bridge'][0], b_['bridge'][-1]; u_ = unit(a1_ - a0_); c_ = (a0_ + a1_) / 2
+    # (the notch's whole width: either side of the board, in its plane, the glass and Level 5's fascia carried across, k-stadium.js)
+    noscr &= ~(np.abs((GX - c_[0]) * u_[0] + (GZ - c_[1]) * u_[1]) < np.linalg.norm(a1_ - a0_) / 2 + 0.5)
+M3 = outer & (D3 >= -0.05) & (D3 < BAL3) & REG3 & noscr & ~(L2.R > 0)
+M3 = cv2.morphologyEx(M3.astype(np.uint8), cv2.MORPH_OPEN, disk(0.3 / G.res)) > 0
+near3 = cv2.dilate(M3.astype(np.uint8), disk(0.4 / G.res)) > 0
+L3_rails = seg_runs(D3, 0.03, near3, Y3S[0] - 0.02, Y3S[0] + 0.9)          # a glass balustrade over Level 2's last row
+# the boxes' glass, up to Level 5's underside over it (its rows, 3 m and more back from its front, stand above)
+L3_walls = seg_runs(D3, BAL3, near3, Y3F, UNDER3)
+_bot5 = np.array([L5.bot(r) for r in range(L5.nrows)])
+for w_ in L3_walls:
+    q = np.array([(w_[0] + w_[2]) / 2, (w_[1] + w_[3]) / 2]); u = q / (np.linalg.norm(q) + 1e-9)
+    i_, j_ = [int(round(float(c))) for c in G.g(*(q + u * 0.3))]
+    b5 = L5.band[j_, i_]
+    if b5 >= 0: w_[5] = round(float(_bot5[b5]) + 0.3, 2)
+L3_rows = []
+for r_, (a_, b_) in enumerate(((-0.05, ROW3), (ROW3, BAL3 + 0.05))):
+    m_ = M3 & (D3 >= a_) & (D3 < b_)
+    L3_rows.append({'r': r_, 'y': Y3S[r_], 'y0': C2 + 3.0, 'polys': mask_polys(G, m_.astype(np.uint8), eps=0.03, minarea=0.5)})
+# the boxes: one every BOX3 along the glass, a glass partition between them
+# out to the balustrade; each box's seats, two rows, clear of its partitions
+BOX3 = 4.8
+S3, R3, B3 = [], [], []
+from skimage import measure as _meas3
+gl = [resample(np.c_[c[:, 1] * G.res + G.x0, c[:, 0] * G.res + G.z0], 0.05, closed=False)
+      for c in _meas3.find_contours(D3, BAL3 - 0.02, mask=near3) if len(c) > 20]
+gl = [q for q in gl if len(q) * 0.05 > BOX3]
+nbox = 0; parts = []
+for Q in gl:
+    L_ = (len(Q) - 1) * 0.05; nb = max(1, int(round(L_ / BOX3))); w_ = L_ / nb
+    for k in range(nb + 1):
+        q = Q[min(int(round(k * w_ / 0.05)), len(Q) - 1)]; u = q / (np.linalg.norm(q) + 1e-9)
+        a, b = q - u * (BAL3 - 0.05), q
+        parts.append([round(float(a[0]), 2), round(float(a[1]), 2), round(float(b[0]), 2), round(float(b[1]), 2), round(Y3S[0], 2), round(Y3F + 1.1, 2)])
+    for k in range(nb):
+        nbox += 1
+        for r_ in (0, 1):
+            # this row's line inside the box: the glass line in by the row's middle
+            t0, t1 = k * w_ + 0.45, (k + 1) * w_ - 0.45
+            n = int((t1 - t0) / 0.6 + 1e-6) + 1; off = (t1 - t0 - (n - 1) * 0.6) / 2
+            for j in range(n):
+                q = Q[min(int(round((t0 + off + j * 0.6) / 0.05)), len(Q) - 1)]; u = q / (np.linalg.norm(q) + 1e-9)
+                p_ = q - u * (BAL3 - (r_ + 0.5) * ROW3)
+                i_, j_ = [int(round(float(c))) for c in G.g(p_[0], p_[1])]
+                if not M3[j_, i_]: continue
+                S3.append(p_); R3.append(r_); B3.append(nbox)
+S3 = np.array(S3).reshape(-1, 2); R3 = np.array(R3, int); B3 = np.array(B3, int)
+Y3yaw = np.arctan2(-S3[:, 0], -S3[:, 1])
+print('Level 3 balcony', int(M3.sum() * G.res ** 2), 'm2; boxes', nbox, 'seats', len(S3), 'treads', Y3S, 'glass to', round(UNDER3, 2))
 rooms = [{'name': 'L1', 'mask': c1, 'y': C1, 'cl': 4.0, 'own': [L1], 'doors': [], 'open': L1.pits},
-         {'name': 'L2', 'mask': c2 & ~cutL2, 'y': C2, 'cl': 4.0, 'own': [L2], 'doors': doors2, 'walk': WALK2},
+         {'name': 'L2', 'mask': c2 & ~cutL2, 'y': C2, 'cl': 4.0, 'own': [L2], 'doors': [], 'open': L2.pits},
          {'name': 'L5', 'mask': c5, 'y': C5, 'cl': 4.0, 'own': [L5], 'doors': [], 'open': L5.pits}]
-trim_tunnels(G, VOMS['L1'], c1); trim_tunnels(G, VOMS['L5'], c5)
+trim_tunnels(G, VOMS['L1'], c1); trim_tunnels(G, VOMS['L2'], c2); trim_tunnels(G, VOMS['L5'], c5)
 # numbered round each level from the north, as Wembley's blocks are
 for name, vs in VOMS.items():
     vs.sort(key=lambda v: np.arctan2(v['p'][1], v['p'][0]) % (2 * np.pi))
     # each carries the block it serves, as the official maps number them
     for v in vs: v['label'] = min(VOM_LABEL[name], key=lambda q: np.hypot(*(q[0] - v['p'])))[1]
-encl, roomtop = enclose(G, rooms, [L1, L2, L5], slabs + [(M4, Y4F, Y4S[1])], flights)
+BOXF = outer & (D3 >= BAL3 - 0.05) & REG3 & noscr                      # the boxes' floor, behind the glass
+encl, roomtop = enclose(G, rooms, [L1, L2, L5], slabs + [(M4, Y4F, Y4S[1]), (M3, C2 + 3.0, Y3S[1]), (BOXF, Y3F - 0.4, Y3F)], flights)
 flights += FL2
 print('enclose', round(time.time() - t_, 1), {k: len(v) for k, v in encl.items()})
 skip = lambda ox, oy, h: roomtop[oy, ox] >= h + 1.0 or (WALK2[oy, ox] and abs(h - C2) <= 0.6)
@@ -986,15 +1113,17 @@ def tunnel_rows(rows):
     return out
 levels = []
 NOTCH1d = dil(NOTCH1, 0.5)
-spec = {'L1': ((inside1, 0.0), (c1, C1)), 'L2': ((c2, C2),), 'L5': ((c5, C5),)}
-flushmode = {'L1': 'open', 'L2': 'doors', 'L5': 'open'}
+spec = {'L1': ((inside1, 0.0), (c1, C1)), 'L2': ((M3, Y3S[0]), (c2, C2)), 'L5': ((c5, C5),)}
+flushmode = {'L1': 'open', 'L2': 'open', 'L5': 'open'}
 for name, l in LV.items():
     skip_ = (lambda ox, oy, h: skip(ox, oy, h) or NOTCH1d[oy, ox]) if name == 'L1' else \
         (lambda ox, oy, h: skip(ox, oy, h) or cutL2[oy, ox]) if name == 'L2' else skip   # (the screens' boards stand there)
-    rails, walls = edge_walls(G, l, outside_fn(spec[name]), l.aisle_doors() if name == 'L2' else (), flush=flushmode[name], skip=skip_, front=fronts.get(name))
+    rails, walls = edge_walls(G, l, outside_fn(spec[name]), (), flush=flushmode[name], skip=skip_, front=fronts.get(name))
     if fronts.get(name): rails += front_parapet(G, l, fronts[name])
     # (the north side's front: its first row is row K5)
     if name == 'L5' and K5: rails += front_parapet(G, l, fronts[name], b0=K5, within=SEC5)
+    # (Level 2's upper section: a rail along its front, over the walkway)
+    if name == 'L2': rails += front_parapet(G, l, ('tread', 0.8), b0=W2ROW + 2)
     holes = []
     rows_ = l.rows_out()
     if name == 'L1': rows_ = tunnel_rows(rows_)
@@ -1034,6 +1163,9 @@ def aisle_walls(l, aisles):
 for lv in levels:
     if lv['name'] == 'L5': lv['walls'] += list(aisle_walls(L5, AISLES5))
 import base64 as _b64
+levels.append({'name': 'L3', 'D': ROW3, 'h0': Y3S[0], 'rise': 0, 'hs': Y3S, 'rows': L3_rows, 'steps': [], 'holes': [], 'voms': [],
+               'seats': _b64.b64encode(np.c_[np.round(S3 * 100), R3, np.round(np.degrees(Y3yaw))].astype('<i2').tobytes()).decode('ascii'),
+               'seatScale': 100, 'rails': L3_rails, 'walls': L3_walls, 'partitions': parts, 'boxes': B3.tolist(), 'closed': True})
 levels.append({'name': 'L4', 'D': ROW4, 'h0': Y4S[0], 'rise': 0, 'hs': Y4S, 'rows': L4_rows, 'steps': [], 'holes': [], 'voms': [],
                'seats': _b64.b64encode(np.c_[np.round(S4 * 100), R4, np.round(np.degrees(Y4yaw))].astype('<i2').tobytes()).decode('ascii'),
                'seatScale': 100, 'rails': L4_rails, 'walls': L4_walls})
@@ -1061,4 +1193,7 @@ data = {'levels': levels, 'floors': floors, 'flights': flights, 'outer': [poly_o
         'concourse': {'L1': C1, 'L2': C2, 'L5': C5}, 'rooms': encl, 'bays': bays_out, 'tunnels': tunnels_out, 'desks': DESKS, 'cutWalls': CUT_WALLS, 'cutWallTone': 0.85}
 json.dump(data, open('wb_stands.json', 'w'), separators=(',', ':'))
 import os; print('json KB', os.path.getsize('wb_stands.json') // 1024, round(time.time() - T0, 1))
-pickle.dump({'c1': c1, 'c2': c2, 'c5': c5, 'inside1': inside1, 'outer': outer}, open('wb_masks.pkl', 'wb'))
+pickle.dump({'c1': c1, 'c2': c2, 'c5': c5, 'inside1': inside1, 'outer': outer,
+             # (for wb_labels.py: the stand's seats back to the plan's frame)
+             'R2F': R2F, 'NB2': NB2, 'WD2': WD2, 'W2': W2, 'D2': D2, 'SHIFT5': SHIFT5, 'NB5': NB5,
+             'bands': {n_: (l_.band.copy(), l_.D) for n_, l_ in LV.items()}, 'grid': (G.x0, G.z0, G.res, G.W, G.H)}, open('wb_masks.pkl', 'wb'))

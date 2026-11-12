@@ -9,6 +9,7 @@ import Scene from './Scene.jsx';
 import { PlayFace, formatTime } from './BottomTransport.jsx';
 import { CrowdLightToggle, EffectsToggle } from './TopBar.jsx';
 import { CROWD_LIGHT_VENUES } from '../useCrowdLight.js';
+import { SEAT_ROOMS, seatText } from './Modals.jsx';
 
 // Brand mark — same "Wave → Hall Arc" as the desktop TopBar, inlined.
 function BrandMark({ size = 20 }) {
@@ -158,9 +159,9 @@ export default function MobileLayout({
                 <div>
                   <div className="text-white text-[22px] font-light leading-tight font-tight">{venue.name}{venueMode === '360' && <span className="ml-1.5 text-[0.62em] tracking-[0.2em] text-[oklch(0.78_0.16_55)] align-middle">360</span>}</div>
                   <div className="text-[12px] text-neutral-500 mt-0.5">{venue.type}</div>
-                  {venue.id === 'dome' && (
+                  {SEAT_ROOMS.includes(venue.id) && (
                     <div className="text-[11px] text-[oklch(0.78_0.16_55)] mt-1 tabular-nums">
-                      {seat ? `${seat.block} · ROW ${seat.row} · SEAT ${seat.num}` : 'FOH · ARENA'}
+                      {seatText(seat, venue.id)}
                     </div>
                   )}
                 </div>

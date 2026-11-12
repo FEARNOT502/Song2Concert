@@ -1304,7 +1304,7 @@ export function buildStands(data, {
   offset = V3(0, 0, 0), stage = V3(0, 2, 0), seatColors = {}, seatColor = 0x22262e,
   concreteTone = 0.22, concreteWarm = 0, concreteEven = 0, sold = () => true, occupancy = 0.97, seed = 5, roofY = 36, crowd = true,
   materials = {}, seatMesh = null, seatColorAt = null, tiers = null, wedges = null,
-  seatKeep = null, byAisle = false, sectors = null, sectorEven = 0, sectorFacing = 0, sectorJoin = null, sectorMin = 0.5, sectorWhole = 0.35, sectorBlocks = false, sectorPair = null, sectorOver = null, round = false,
+  seatKeep = null, byAisle = false, aisleFirst = false, sectors = null, sectorEven = 0, sectorFacing = 0, sectorJoin = null, sectorMin = 0.5, sectorWhole = 0.35, sectorBlocks = false, sectorPair = null, sectorOver = null, sectorSplitEnds = false, round = false,
 }) {
   const g = new THREE.Group();
   const ox = offset.x, oz = offset.z;
@@ -1431,11 +1431,11 @@ export function buildStands(data, {
   const solid = [], floors = [], stairs = [], mouthFloors = [];
   const voms = { pit: [], cap: [], tunnel: [], floor: [], ceil: [], lamps: [], signs: [] };
   for (const L of data.levels) {
-    const levelGeo = [];
+    const levelGeo = [], stepGeo = materials.step ? [] : levelGeo;     // (a venue's aisles in their own finish: materials.step)
     for (const row of L.rows) for (const polys of row.polys) prism(polys, row.y0, row.y, levelGeo);
     // the half steps up the aisles
     for (const st of L.steps) {
-      prism(st.polys, st.y0, st.y, levelGeo);
+      prism(st.polys, st.y0, st.y, stepGeo);
       const c = st.polys[0].reduce((a, [x, z]) => [a[0] + x, a[1] + z], [0, 0]).map((v) => v / st.polys[0].length);
       // (a step can go unlit: `light: false`, to keep a level's many half steps to a reasonable count of lights)
       if (st.light !== false) aisleLights.push({ x: c[0] + ox, y: st.y0 + 0.04, z: c[1] + oz });
@@ -1489,7 +1489,11 @@ export function buildStands(data, {
       }
       g.add(new THREE.Mesh(mergeGeometries(pp), materials.partition ?? std({ color: 0x1a1b1f, roughness: 0.6, metalness: 0.3 })));
     }
-    for (const [x0, z0, x1, z1, y0, y1] of smoothRuns(L.walls)) panel('wall', x0, z0, x1, z1, y0, y1);
+    // A venue can finish its box walls, steps and tier structure separately.
+    const ownWall = materials.levelWall?.[L.name];
+    for (const [x0, z0, x1, z1, y0, y1] of smoothRuns(L.walls)) panel(ownWall ? 'own' : 'wall', x0, z0, x1, z1, y0, y1);
+    if (ownWall && panels.own[0].length) { g.add(new THREE.Mesh(mkPanels(panels.own), ownWall)); panels.own = [[], []]; }
+    if (stepGeo !== levelGeo && stepGeo.length) { const sm = new THREE.Mesh(mergeGeometries(stepGeo), materials.step); sm.receiveShadow = true; g.add(sm); }
     const mesh = new THREE.Mesh(mergeGeometries(levelGeo), materials.levelStruct?.[L.name] ?? structMat);
     mesh.receiveShadow = true;
     g.add(mesh);
@@ -1502,7 +1506,9 @@ export function buildStands(data, {
     // the level's blocks, for the lightsticks' control
     const anchors = (L.voms || []).filter((v) => v.label).map((v) => ({ x: v.p[0] + ox, z: v.p[1] + oz, label: v.label }));
     // (the real blocks, where the seats are labelled with them)
-    const blocks = !crowd ? null : LB && bNames ? labelBlocks(S, sk, ox, oz, LB) : byAisle ? aisleBlocks(S, sk, ox, oz, L.steps.map((st) => st.polys)) : seatBlocks(S, sk, ox, oz, stage, { anchors, tidy: !!tiers, wedges: wedges && { x: wedges.x + ox, z: wedges.z + oz } });
+    // (`aisleFirst`: the lightsticks' blocks by the aisles even where the seats are labelled with their real
+    // blocks, whose edges are not always aisles: Wembley's Level 1 blocks meet between two seats)
+    const blocks = !crowd ? null : LB && bNames && !aisleFirst ? labelBlocks(S, sk, ox, oz, LB) : byAisle ? aisleBlocks(S, sk, ox, oz, L.steps.map((st) => st.polys)) : seatBlocks(S, sk, ox, oz, stage, { anchors, tidy: !!tiers, wedges: wedges && { x: wedges.x + ox, z: wedges.z + oz } });
     if (blocks) levelBlocks.push({ count: blocks.count, ySum: 0, n: 0, name: L.name, at: new Map(), names: blocks.ids && bNames ? blocks.ids.map((b) => bNames[b]) : null });
     // (the seats of the levels that set the wedges: where each block's rows end)
     if (blocks && sectors?.includes(L.name)) for (let i = 0; i < S.length; i += 4) edgeSeats.push({ x: S[i] / sk + ox, z: S[i + 1] / sk + oz, row: S[i + 2], yaw: S[i + 3] * DEG, k: levelBlocks.length * 4096 + blocks.block[i / 4] });
@@ -1822,7 +1828,9 @@ export function buildStands(data, {
       const r = Math.hypot(p.x - mx, p.z - mz), t = bear(p.x, p.z);
       let last = -Infinity;
       for (let k = 0; k < lines.length; k++) { last = Math.max(last, cross(lines[k], r)); if (last >= t) return k; }
-      return 0;
+      // (past the last line: round to the first, unless `sectorSplitEnds`: the wedge round the back of the
+      // house, behind an end stage, parted there, each side of it its own)
+      return sectorSplitEnds ? lines.length : 0;
     };
     const wk = new Map();
     for (const p of seated) wk.set(p, cut(p));
@@ -2016,7 +2024,10 @@ export function buildStands(data, {
     for (let i = 0; i < order.length && order.length > 1;) {
       // (none with the real blocks: each of them a wedge however small)
       if (byBear || order[i].m.n >= med * sectorMin) { i++; continue; }
-      const L2 = order[(i - 1 + order.length) % order.length], R2 = order[(i + 1) % order.length], to = L2.m.n < R2.m.n ? L2 : R2;
+      const L2 = order[(i - 1 + order.length) % order.length], R2 = order[(i + 1) % order.length];
+      // (never across the open end, `sectorSplitEnds`: a scrap at either end of the house goes in with its own neighbour)
+      const ends = sectorSplitEnds;
+      const to = ends && i === 0 ? R2 : ends && i === order.length - 1 ? L2 : L2.m.n < R2.m.n ? L2 : R2;
       into.set(order[i].k, to.k);
       for (const f of ['x', 'z', 'n', 's', 'c']) to.m[f] += order[i].m[f];
       order.splice(i, 1);

@@ -134,11 +134,28 @@ function buildStadium(ctx) {
     const wl = side(-1), wr = side(1), Db = Math.max(...b.ring.map(D)) + 0.1;
     return { b, nx, nz, cx, cz, ux, uz, T, D, Sf, wl, wr, Db, yaw: Math.atan2(nx, nz) };
   });
+  // The finishes, off the photographs in daylight (geograph 2952295, 8222730):
+  // the precast concrete a pale warm grey, the aisles' steps the same a shade
+  // darker and warmer (worn, their nosings), the boxes' glass dark and the
+  // balustrades in front of them glass. (round 41: the concrete was a dark grey)
+  const aisleConc = withRepeat(concreteTex({ key: 'wbaisle', tone: 0.5, warm: 0.05, seed: 37 }), 1 / 2, 1 / 2);
+  const wallConc = withRepeat(concreteTex({ key: 'wbwall', tone: 0.56, warm: 0.03, seed: 43 }), 1 / 3, 1 / 3);
+  const boxGlass = std({ color: 0x10141a, roughness: 0.12, metalness: 0.65, side: THREE.DoubleSide });
+  const balGlass = new THREE.MeshPhysicalMaterial({ color: 0xa8bcc8, roughness: 0.08, metalness: 0, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false });
   const stands = buildStands(WB_STANDS, {
-    offset: OFF, stage: STAGE, seatColor: 0x9a1418, concreteTone: 0.26, seed: 600, roofY: ROOF,
+    offset: OFF, stage: STAGE, seatColor: 0x9a1418, concreteTone: 0.58, concreteWarm: 0.03, seed: 600, roofY: ROOF,
+    materials: {
+      step: std({ ...aisleConc, color: 0xffffff, roughness: 0.92 }),
+      wall: std({ ...wallConc, color: 0xffffff, roughness: 0.92, side: THREE.DoubleSide }),
+      levelWall: { L3: boxGlass, L4: boxGlass },
+      levelRail: { L3: balGlass, L4: balGlass },
+      partition: balGlass,
+    },
     sold: (x, z) => z - 8 > Math.max(2, 0.12 * (Math.abs(x) - 31)),   // in front of the wall (face z 8, 62 m wide)
   });
   root.add(stands.group);
+    if (geos.length) root.add(new THREE.Mesh(mergeGeometries(geos), std({ color: 0x232845, roughness: 0.5, metalness: 0.1, emissive: 0x0b0f2a, emissiveIntensity: 0.35, side: THREE.DoubleSide })));
+  }
   const ring = (poly) => poly[0].map(([x, z]) => ({ x, z: z + ZC }));
   const field = ring(WB_STANDS.field[0]);
   const outerRing = ring(WB_STANDS.outer[0]);
@@ -162,9 +179,8 @@ function buildStadium(ctx) {
   // back, under a light canopy.
   const housingMat = std({ color: 0x2a2c30, roughness: 0.7, metalness: 0.3 });
   const cladMat = std({ color: 0x74777c, roughness: 0.75, metalness: 0.2 });
-  const soffitMat = std({ color: 0x8a8d92, roughness: 0.9, metalness: 0.05 });   // the notch's sides: the stand's own concrete
-  const fasciaMat = std({ color: 0x5a5d62, roughness: 0.7, metalness: 0.2 });    // Level 5's fascia, carried across the notch
-  const glassBandMat = std({ color: 0x14181d, roughness: 0.15, metalness: 0.6 }); // the box level's glass under it
+  const soffitMat = std({ ...wallConc, color: 0xffffff, roughness: 0.92 });   // the notch's sides: the stand's own concrete
+  const panelMat = std({ ...wallConc, color: 0xe4e2de, roughness: 0.9 });       // the panelled wall set back in the notch, beside the board
   const glassMat = new THREE.MeshPhysicalMaterial({ color: 0x9fb2bf, roughness: 0.08, metalness: 0, transmission: 0.0, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false });
   const steelDark = std({ color: 0x1a1b1e, roughness: 0.5, metalness: 0.5 });
   const L5h0 = WB_STANDS.levels.find((l) => l.name === 'L5').h0;
@@ -194,7 +210,7 @@ function buildStadium(ctx) {
     if (screen) {
       const q = screenBays.find((g) => g.b === b);
       const at = (t, d) => [q.cx + q.ux * t - q.nx * d, q.cz + q.uz * t - q.nz * d];
-      const L5 = WB_STANDS.levels.find((l) => l.name === 'L5'), L2top = WB_STANDS.concourse.L2;
+      const L5 = WB_STANDS.levels.find((l) => l.name === 'L5'), L2top = Math.max(...WB_STANDS.levels.find((l) => l.name === 'L2').rows.map((r) => r.y));   // (Level 2's last row's tread)
       const hw = SCREEN_W / 2 + 0.3;
       // The board stands right behind Level 2's last row (`board`: its plane,
       // from the mouth, given by the generator, which leaves the box level's
@@ -239,16 +255,24 @@ function buildStadium(ctx) {
         const [wx, wz] = at(0, Sb + d0 + depth);
         m.position.set(wx, 0, wz + ZC); m.rotation.y = q.yaw; root.add(m); return m;
       };
-      const fasc0 = L5.h0 - 1.5, fasc1 = L5.h0 + 1.0;
+      // (round 41, off the photograph of the board from the pitch, geograph
+      // 2952295: either side of the board the flanking blocks' rows end on
+      // their own side faces, pale concrete, a diagonal from Level 5's fascia
+      // up to the board's top corner; under that diagonal a pale panelled wall
+      // set back in the notch, with a railed ledge at the board's foot; Level
+      // 5's fascia and the boxes' glass stop where the notch begins, and the
+      // board has only a thin frame of its own, no dark housing beside it)
       for (const [sg, w, P] of [[1, wR, pr], [-1, wL, pl]]) {
-        inPlane([[sg * hw, L2top], [sg * w, L2top], [sg * w, fasc0], [sg * hw, fasc0]], glassBandMat, 0.6, 0.6);
-        inPlane([[sg * hw, fasc0], [sg * w, fasc0], [sg * w, fasc1], [sg * hw, fasc1]], fasciaMat, 0, 1.2);
-        const up = P.pts.filter(([, y]) => y > fasc1 + 0.02);
-        inPlane([[sg * hw, fasc1], [sg * w, fasc1], ...up, [sg * P.wb, top + 0.3], [sg * hw, top + 0.3]], soffitMat);
+        const up = P.pts.filter(([, y]) => y > L5.h0 - 1.5 + 0.02);
+        inPlane([[sg * hw, L2top], [sg * w, L2top], ...up, [sg * hw, top + 0.3]], panelMat, 1.4, 0.6);
+        // the ledge at the board's foot, a rail along it
+        inPlane([[sg * hw, L2top], [sg * Math.min(w, hw + 6), L2top], [sg * Math.min(w, hw + 6), L2top + 0.25], [sg * hw, L2top + 0.25]], soffitMat, 0, 1.4);
+        const [rx0, rz0] = at(sg * hw, Sb + 0.1), [rx1, rz1] = at(sg * Math.min(w, hw + 6), Sb + 0.1);
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(Math.hypot(rx1 - rx0, rz1 - rz0), 0.05, 0.05), steelDark);
+        rail.position.set((rx0 + rx1) / 2, L2top + 1.25, (rz0 + rz1) / 2 + ZC); rail.rotation.y = Math.atan2(-(rz1 - rz0), rx1 - rx0); root.add(rail);
       }
-      // the board's housing, behind it back to the rows behind, its top a
-      // walkway level with their front; a dark ledge under its foot
-      extrude([at(-pl.wb, Sb), at(pr.wb, Sb), at(pr.wb, q.Db), at(-pl.wb, q.Db)], L2top, top + 0.3, housingMat);
+      // the board's own frame behind it, as wide as it is, back to the rows behind
+      extrude([at(-hw, Sb), at(hw, Sb), at(hw, q.Db), at(-hw, q.Db)], L2top, top + 0.3, housingMat);
       const scr = ledScreen({ w: SCREEN_W, h: SCREEN_H, tex: ctx.art.texture(SCREEN_W / SCREEN_H), pitch: 0.012, bright: 1.3, kind: 'main', frame: 0.25, light: false });
       for (const c of scr.children) if (c.material && c.material === scr.userData.bezel) c.visible = false;   // a plain black frame, as the real boards
       const [sx, sz] = at(0, Sb - 0.1);
