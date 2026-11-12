@@ -27,6 +27,10 @@ for o in lab:
     elif L in 'BE' and len(n) == 3:
         off.setdefault(f'{L}{n[0]:02d}', (n[1], n[2], None))
 
+# These labels put seat 1 before the final row; numeric ordering alone
+# confuses it with the row endpoint. Verified against the visible map.
+off.update({'A25':(1,26,1),'D26':(1,10,1)})
+
 mirror = {}
 for i in range(1, 50):
     mirror[f'A{i:02d}'] = f'A{50 - i:02d}'

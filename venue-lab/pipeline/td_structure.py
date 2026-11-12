@@ -71,16 +71,7 @@ def _columns(data):
         # The wall position is a photographic estimate. Keep its continuous
         # vertical alignment, but align it locally with the seat/aisle gaps
         # rather than putting a nearest-point projection through a block end.
-        nearby=[(p[np.linalg.norm(p-[q.x,q.y],axis=1)<6],h[np.linalg.norm(p-[q.x,q.y],axis=1)<6],yaw[np.linalg.norm(p-[q.x,q.y],axis=1)<6],weight)
-                for p,h,yaw,weight in seat_sets]
-        candidates=[]
-        for delta in np.arange(-2.5,2.51,.1):
-            pt=line.interpolate(np.clip(d+delta,0,line.length))
-            trial={**c,'x':pt.x,'z':pt.y}
-            cost=sum(weight*np.count_nonzero(~pillar_clear(p,h,[trial],yaw)) for p,h,yaw,weight in nearby)
-            candidates.append((cost,abs(delta),delta,pt))
-        _,_,delta,q=min(candidates,key=lambda a:a[:2])
-        c.update(x=round(q.x,3),z=round(q.y,3))
+        delta=0.0
         for s in data.get('signs', []):
             if old.distance(Point(s['x'], s['z'])) < 0.05:
                 s.update(x=round(c['x']+c['ax']*.3,3), z=round(c['z']+c['az']*.3,3),

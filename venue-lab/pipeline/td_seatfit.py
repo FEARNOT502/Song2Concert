@@ -11,6 +11,7 @@ import shapely
 from shapely.geometry import Polygon, LineString, Point
 from shapely.ops import unary_union
 from scipy.spatial import cKDTree
+from shapely.strtree import STRtree
 
 
 def decode(s, width):
@@ -25,7 +26,7 @@ def intervals(ivs):
     return [n for a,b in ivs for n in range(a,b+1)]
 
 
-def pillar_clear(points, heights, pillars, yaws=None, margin=.03):
+def pillar_clear(points, heights, pillars, yaws=None, margin=.03, padded=False):
     """Keep the complete folded chair clear of each actual shaft section.
 
     A chair extends 10–28 cm behind its origin and 22 cm to either side.
@@ -37,20 +38,30 @@ def pillar_clear(points, heights, pillars, yaws=None, margin=.03):
     yaws=np.zeros(len(points)) if yaws is None else np.asarray(yaws)
     back=np.c_[np.sin(yaws),np.cos(yaws)]
     width=np.c_[np.cos(yaws),-np.sin(yaws)]
-    centres=points-back*.19
+    centres=points-back*(.055 if padded else .19)
+    half_width=.325 if padded else .22
+    half_depth=.245 if padded else .09
     for c in pillars:
         axis=np.array([c.get('ax',0),c.get('az',1)],float)
         axis/=max(np.linalg.norm(axis),1e-6)
         across=np.array([-axis[1],axis[0]])
-        along_pad=.22*abs(width@axis)+.09*abs(back@axis)+margin
-        across_pad=.22*abs(width@across)+.09*abs(back@across)+margin
+        along_pad=half_width*abs(width@axis)+half_depth*abs(back@axis)+margin
+        across_pad=half_width*abs(width@across)+half_depth*abs(back@across)+margin
         for section in c.get('sections',[c]):
             q=centres-np.array([c['x'],c['z']])-axis*section.get('offsetAlong',0)
-            active=(heights+.86>section['y0'])&(heights+.4<section['y1'])
+            active=(heights+(1.03 if padded else .86)>section['y0'])&(heights+.4<section['y1'])
             rz=section.get('rz',c.get('rz',c['r']))
             rx=section.get('rx',c.get('rx',c['r']))
             clear &= ~(active & (abs(q@axis)<rz+along_pad) & (abs(q@across)<rx+across_pad))
     return clear
+
+
+def chair_rectangles(points,yaws,padded=False,margin=0.):
+    back=np.c_[np.sin(yaws),np.cos(yaws)]
+    across=np.c_[np.cos(yaws),-np.sin(yaws)]
+    centre=points-back*(.055 if padded else .19)
+    w=(.325 if padded else .22)+margin;d=(.245 if padded else .09)+margin
+    return shapely.polygons(np.stack([centre+across*a+back*b for a,b in [(-w,-d),(w,-d),(w,d),(-w,d)]],axis=1))
 
 
 def ordered_fit(s, target, separation=.44):
@@ -97,7 +108,7 @@ def apply(data, real, side):
         scale=level.get('seatScale',10)
         seats[:,:2]/=scale
         sy=np.array(level['hs'])[seats[:,2].astype(int)] if level.get('hs') else level['h0']+level['rise']*seats[:,2]
-        shaft_clear=pillar_clear(seats[:,:2],sy,data.get('pillars',[]),np.deg2rad(seats[:,3]))
+        shaft_clear=pillar_clear(seats[:,:2],sy,data.get('pillars',[]),np.deg2rad(seats[:,3]),padded=level['name']=='C')
         groups=defaultdict(list)
         for i,(b,r,n) in enumerate(labels):groups[(names[b],int(r))].append(i)
         row_geoms=defaultdict(list)
@@ -146,8 +157,8 @@ def apply(data, real, side):
             # Do not move a repaired row into another block's seats.
             other=np.ones(len(seats),bool);other[idx]=False
             height=level['hs'][ranks[0]] if level.get('hs') else level['h0']+level['rise']*ranks[0]
-            other &= abs(sy-height)<.23
-            neighbours=cKDTree(seats[other,:2]) if other.any() else None
+            other &= abs(sy-height)<(.64 if level['name']=='C' else .47)
+            neighbours=STRtree(chair_rectangles(seats[other,:2],np.deg2rad(seats[other,3]),padded=level['name']=='C',margin=.012)) if other.any() else None
             tangent=np.gradient(xy,axis=0)
             normal=np.c_[-tangent[:,1],tangent[:,0]]/np.maximum(np.linalg.norm(tangent,axis=1)[:,None],1e-6)
             chosen=None
@@ -157,8 +168,14 @@ def apply(data, real, side):
             mixed=np.zeros(len(s),bool);mixed_xy=xy.copy()
             for depth in (0.,.08,-.08,.16,-.16,.24,-.24,.32,-.32):
                 qxy=xy+normal*depth
-                clear=neighbours.query(qxy)[0]>=.44 if neighbours else np.ones(len(s),bool)
-                clear &= pillar_clear(qxy,height,data.get('pillars',[]),yaws,margin=.035)
+                # Chair width is not a radial exclusion zone: a folded
+                # back is 44 cm wide but only 18 cm deep. Use the actual
+                # oriented body when fitting adjacent physical rows.
+                clear=np.ones(len(s),bool)
+                if neighbours is not None:
+                    pair=neighbours.query(chair_rectangles(qxy,yaws,padded=level['name']=='C',margin=.012),predicate='intersects')
+                    clear[np.unique(pair[0])]=False
+                clear &= pillar_clear(qxy,height,data.get('pillars',[]),yaws,margin=.035,padded=level['name']=='C')
                 for margin in (.16,.10,.04):
                     ok=clear & shapely.contains_xy(tread.buffer(-margin),qxy[:,0],qxy[:,1])
                     fresh=ok & ~mixed

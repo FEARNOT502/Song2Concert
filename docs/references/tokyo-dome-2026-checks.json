@@ -1,18 +1,48 @@
 {
   "checkedOn": "2026-11-12",
-  "dataSha256": "913adefe933365071685cc9e3533de5b317b9dd3395671cd003debbcf964fd8a",
+  "dataSha256": "dbe848245c771a61d1e019caa729c5a6a0e65c12421b230f72cc910ff2130c16",
   "modelAudit": {
     "seats": {
       "A": 10384,
-      "B": 9491,
-      "F": 5997,
-      "C": 1800,
-      "D": 5240,
+      "B": 9492,
+      "F": 5904,
+      "C": 1768,
+      "D": 5210,
       "E": 8519,
       "G": 670
     },
-    "pdfBlocks": 233,
-    "pdfRows": 3536,
+    "exciteReview": {
+      "rearWallDistanceRange": [
+        0.005,
+        0.946
+      ],
+      "frontFenceDistanceRange": [
+        0.344,
+        0.655
+      ],
+      "rearToMainChairDistanceMedian": 1.038,
+      "rearToMainChairDistanceMin": 0.806,
+      "homeRowAngles": {
+        "G15": {
+          "yaw": -129,
+          "mainYaw": -130.0
+        },
+        "G14": {
+          "yaw": -129,
+          "mainYaw": -129.0
+        },
+        "G35": {
+          "yaw": 130,
+          "mainYaw": 130.0
+        },
+        "G36": {
+          "yaw": 129,
+          "mainYaw": 128.0
+        }
+      }
+    },
+    "pdfBlocks": 230,
+    "pdfRows": 3528,
     "intervalMismatches": [],
     "duplicateRows": [],
     "invalidRows": [],
@@ -28,13 +58,13 @@
     "flights": 13
   },
   "walker": {
-    "checks": 89,
+    "checks": 130,
     "failed": []
   },
-  "geometryRegressionTests": 5,
+  "geometryRegressionTests": 7,
   "appBuild": "passed",
-  "pdfSeatsVerified": 40073,
-  "unverifiedSeatRecords": 2028,
+  "pdfSeatsVerified": 39950,
+  "unverifiedSeatRecords": 1997,
   "limitations": [
     "C/S individual numbering and some special block assignments lack the same detailed current ledger",
     "Photographic structure dimensions and hidden service-stair positions are estimates",
@@ -44,5 +74,20 @@
     "pillarSeatIntersections": [],
     "planChanges": 0
   },
-  "mergedMainBase": "2f252210e9e0b5a4d00ba934170897ddba9ee43a"
+  "mergedMainBase": "2f252210e9e0b5a4d00ba934170897ddba9ee43a",
+  "sourceReliability": "Official G row ranges/start numbers cross-checked for 26 blocks; detailed last numbers and G total 670 remain fan-chart claims, not officially certified current capacity.",
+  "mainBeforeRevision2": "eebe18b83fabb8bd20e6f579507318372694936e",
+  "sharedRendererMerge": "Preserves Wembley own-wall/step materials and aisle/sector options; Dome keeps levelStruct G material.",
+  "fenceEndReview": {
+    "homeTop": [
+      1.52,
+      1.52
+    ],
+    "frontTop": 1.15,
+    "poleTop": [
+      3.56,
+      3.56
+    ],
+    "note": "Estimated top heights, not floor heights. Both returns rise toward stand; 1B endpoint checked against outer A03-side door hinge."
+  }
 }

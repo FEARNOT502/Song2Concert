@@ -94,6 +94,13 @@ try{
         segment(`${name}-vom-${i}-${offset}-out`,b,a,v.top??v.y,v.y);
       }
     }
+    for(const [i,v] of (D.infieldPortals||[]).entries())for(const offset of [-.64,.64]){
+      const dx=v.back[0]-v.front[0],dz=v.back[1]-v.front[1],len=Math.hypot(dx,dz);
+      const shift=p=>[p[0]-dz/len*offset,p[1]+dx/len*offset];
+      const a=shift(v.front),b=shift(v.back);
+      segment(`1F-portal-${i}-${offset}-in`,a,b,v.y,v.y);
+      segment(`1F-portal-${i}-${offset}-out`,b,a,v.y,v.y);
+    }
     const route=(name,points,y)=>{
       const a=points[0],g=W.ground(a[0],a[1]+114,y+.4);
       if(g===null){checks.push({name,error:'missing route floor'});return;}
@@ -107,6 +114,7 @@ try{
     };
     const c1=D.concourseRoutes.find(r=>r.id==='C1');
     route('C1-circuit',c1.walkLine,c1.y);
+    if(D.outfieldConcourse)route('C2-outfield-connected-hall',D.outfieldConcourse.path,D.outfieldConcourse.y);
     const sides=D.balconyRooms.sides.map(sd=>sd.back.slice(6,-6).map(([x,z])=>{
       const r=Math.hypot(x,z+60);return [x-x/r*1.1,z-(z+60)/r*1.1];
     }));
@@ -121,7 +129,22 @@ try{
   const failed=report.checks.filter(c=>c.error||c.distance>.2||c.heightError>.12);
   console.log(JSON.stringify({checks:report.checks.length,failed,errors},null,2));
   if(process.argv.includes('--screenshots')){
+    const portalView=await page.evaluate(async()=>{
+      const {TD_STANDS:D}=await import('./src/three/venues/td-data.js');
+      const v=D.infieldPortals[0],dx=v.back[0]-v.front[0],dz=v.back[1]-v.front[1],len=Math.hypot(dx,dz);
+      return {name:'first-floor-portal',eye:[v.front[0]-dz/len*.64,v.y+1.55,v.front[1]+114+dx/len*.64],
+        target:[v.back[0]-dz/len*.64,v.y+1.55,v.back[1]+114+dx/len*.64]};
+    });
     for(const v of [
+      {name:'reference-excite',eye:[-15,13,129],target:[40,2,84]},
+      {name:'excite-overview',eye:[15,22,90],target:[54,1.5,74]},
+      portalView,
+      {name:'excite-home',eye:[20,10,128],target:[40,1.5,109]},
+      {name:'excite-door',eye:[62,6,47],target:[72,2.5,50]},
+      {name:'deck-ends',eye:[55,19,32],target:[89,19,15]},
+      {name:'scoreboard-low',eye:[0,5.8,5],target:[0,8,-12]},
+      {name:'excite',eye:[45,7,76],target:[60,2,90]},
+      {name:'C2-ceiling',eye:[0,12.2,170],target:[35,13,145]},
       {name:'junction',eye:[82,12,58],target:[62,5,34]},
       {name:'balcony',eye:[42,17,130],target:[75,18,105]},
       {name:'balcony-columns',eye:[61,17,109],target:[85,18,118]},

@@ -30,7 +30,7 @@ from td_upper import D_END
 
 O = np.array([0.0, -60.0])       # the dome's centre: angles from it, 0 towards home
 BIN = 0.25                       # degrees
-D_CUT = D_END                    # retain the full D01/D51 chart blocks and the upstream end-parapet alignment
+D_CUT = 104.0                    # user photo review: remove the extra terminal D01/D51 block on both wings
 E_END = 84.3                     # where the 2nd floor's upper rows (E) stop
 WALL_BACK = 0.15                 # the wall behind a top row's back edge
 EASE = 3.0                       # degrees: a notch in the rows' back narrower than this is closed by the wall's line
@@ -101,7 +101,7 @@ def apply(data):
             dx, dz = x0 + (x1 - x0) * t - O[0], z0 + (z1 - z0) * t - O[1]; r_ = np.hypot(dx, dz); k_ = int(round((np.degrees(np.arctan2(dx, dz)) + 180.0) / BIN)) % nb
             if abs(TH[k_]) > 100.0 and not r_ >= rBox[k_]: rBox[k_] = r_
     aBox = float(np.nanmax(np.abs(TH[~np.isnan(rBox)])))
-    a_end = max(aC + 0.15, aBox + 0.5)          # (clear of the box's own end wall)
+    a_end = aC          # (clear of the box's own end wall)
     box_face = data['rooms'].get('thick', 0.5) / 2 + 0.2 + 0.05           # (the box wall's half thickness, this wall's, and a little)
     out = Polygon(data['outer'][0][0]).buffer(0)
     new_rows, walls, ends, decks = [], [], [], []

@@ -9,7 +9,7 @@ from standlib import Grid
 from td_stand1 import Finger
 from td_geometry import row_strip
 from td_lay2f import row_curves
-from td_seatfit import ordered_fit, pillar_clear
+from td_seatfit import ordered_fit, pillar_clear, chair_rectangles
 import td_chart
 
 
@@ -46,6 +46,17 @@ class DomeGeometryTest(unittest.TestCase):
         self.assertAlmostEqual(f.row_point(4, 2.5)[0, 1], 2.5)
         self.assertTrue(any(abs(x) < 1e-8 and abs(y-2) < 1e-8 for x, y in row.exterior.coords))
 
+    def test_review_crease_uses_each_blocks_inner_frame(self):
+        q0=np.array([72.23,-69.79]);q1=np.array([98.02,-58.20]);d=q1-q0
+        outer=np.array([np.sin(np.deg2rad(-54)),np.cos(np.deg2rad(-54))])
+        for angle in (-80,-88):
+            inner=np.array([np.sin(np.deg2rad(angle)),np.cos(np.deg2rad(angle))])
+            gradient=outer*(d@inner)/(d@outer);offset=q0@inner-q0@gradient
+            p=q0+np.linspace(-1,2,100)[:,None]*d
+            self.assertLess(np.max(abs(p@inner-(p@gradient+offset))),1e-10)
+            self.assertAlmostEqual(abs(gradient[0]*outer[1]-gradient[1]*outer[0]),0,places=10)
+            self.assertGreater(np.linalg.norm(gradient),1)
+
     def test_pdf_gaps_and_single_seat_rows_are_not_interpolated(self):
         rows = td_chart.load()['A01']['rows']
         self.assertNotIn('22', rows)
@@ -61,6 +72,12 @@ class DomeGeometryTest(unittest.TestCase):
         self.assertGreaterEqual(np.diff(chosen).min(),.44-1e-8)
         self.assertFalse(np.any((chosen>=2)&(chosen<3)))
         self.assertIsNone(ordered_fit(np.arange(0,2,.02),np.linspace(0,2,10)))
+
+    def test_folded_chair_clearance_uses_width_and_depth_separately(self):
+        import shapely
+        chairs=chair_rectangles(np.array([[0.,0.],[0.,.3],[.3,0.]]),np.zeros(3))
+        self.assertFalse(shapely.intersects(chairs[0],chairs[1]))
+        self.assertTrue(shapely.intersects(chairs[0],chairs[2]))
 
     def test_pillar_checks_the_chair_body_and_offset_shaft_at_its_height(self):
         shaft={'x':0,'z':0,'r':.4,'ax':0,'az':1,'y0':9.5,'y1':20,

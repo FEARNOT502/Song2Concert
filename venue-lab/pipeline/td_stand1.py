@@ -27,7 +27,7 @@ from standlib import disk, rings_field
 DA, DB = 0.74, 0.748          # the rows' pitch in A (1-26) and in B (27-)
 DF = 0.74                     # the outfield's (F), from its fence (td_build.py sets it)
 C1F = 10.6                    # the 1st-floor concourse
-HIN_A = lambda r: 1.0 + 0.17 * (r - 1)
+HIN_A = lambda r: 0.6 + 0.20 * (r - 1)
 HIN_B = lambda r: 5.5 + 0.255 * (r - 27)
 HW = 0.5 * (HIN_A(26) + HIN_B(27))        # the walkway between A and B
 KNOT = 1.5                    # a finger's height profile has a knot every KNOT metres
@@ -286,9 +286,12 @@ def fingers_of(A, B, frames):
             cw = np.array(w1.pa.centroid.coords[0])                    # (the pole's side: the wedge's)
             sp = float(np.sign((q1[0] - q0[0]) * (cw[1] - q0[1]) - (q1[1] - q0[1]) * (cw[0] - q0[0])))
             d = q1 - q0
-            alpha = float((d @ fg2.f) / (d @ fr))
+            # Each infield block keeps its own frame on the home side.
+            # Scaling against B02 for B03 makes a discontinuity at the crease.
+            base = fg2.f if fg.n == 1 else fg.f
+            alpha = float((d @ base) / (d @ fr))
             fr_s = alpha * fr
-            off = float(q0 @ fg2.f - q0 @ fr_s)
+            off = float(q0 @ base - q0 @ fr_s)
             fg.kinkR = (q0, q1, sp, fr_s, off)
             if fg.n == 1:
                 fg.f = fg2.f.copy(); fg.u = fg2.u.copy()
@@ -475,7 +478,7 @@ def seam_steps(res, pairs):
         r[key] = (int(m.sum()), float(d[m].mean()), float(np.percentile(d[m], 90)), float(d[m].max()))
     return r
 
-def fit_rake(G, res, Fh, wF=1.5, rmin=0.15, rmax=0.6, sec=(3, 12, 10.0), drop=(0, 1.0, 0.3), fmin=2.2, fmax=4.5,
+def fit_rake(G, res, Fh, wF=1.5, rmin=0.15, rmax=0.6, sec=(3, 12, 10.0), drop=(0, 1.0, 0.3), fmin=0.6, fmax=4.5,
              land=(0, 0.0), Fcls=None, dF=None, nF=19, Fpole=((2.2, 4.6), (0.10, 0.45), 0.3), step=2, verbose=True):
     """Every finger ONE straight slope (no landing, no change of rake along it), h = C1F - d - r (ub - u)
     (u from the front, ub the back): the rakes r and back drops d that make the steps across the aisles
@@ -549,7 +552,12 @@ def fit_rake(G, res, Fh, wF=1.5, rmin=0.15, rmax=0.6, sec=(3, 12, 10.0), drop=(0
         fg = F[n]; ws = float(np.interp(n, sec[:2], [0.0, sec[2]]))
         if ws > 0:                    # front: C1F - d - r ub = HIN_A(rf) - 0.085
             e = np.zeros(NC); e[rc(n)] = -ws * fg.ku[-1]; e[ec(n)] = -ws * (fg.ku[-1] - fg.uw); e[dc(n)] = -ws; reg.append(e); rr.append(ws * (max(HIN_A(fg.rf) - 0.085, fmin) - C1F))
-        e = np.zeros(NC); e[ec(n)] = 0.5 * fg.ku[-1]; reg.append(e); rr.append(0.0)      # (one rake unless the seams want two)
+        # The official 2023 scan has the A/B gangway near 5.5 m,
+        # not the 6.4–6.7 m produced by a nearly uniform bowl rake.
+        ww=8.0 if n>=6 else 2.0
+        e=np.zeros(NC);e[rc(n)]=-ww*(fg.ku[-1]-fg.uw);e[ec(n)]=-ww*(fg.ku[-1]-fg.uw);e[dc(n)]=-ww
+        reg.append(e);rr.append(ww*(HW-C1F))
+        e = np.zeros(NC); e[ec(n)] = 0.1 * fg.ku[-1]; reg.append(e); rr.append(0.0)      # (one rake unless the seams want two)
         if n <= drop[0]:
             e = np.zeros(NC); e[dc(n)] = drop[2]; reg.append(e); rr.append(0.0)
     for j in range(1, NK + 1):        # (one rise a row unless the seams want two)
@@ -966,10 +974,11 @@ def fit_straight(G, res, Fh, profs, free=range(1, 9), lam_F=1.0, over=(2.1, 1.0)
 # each side of the field (1B, 3B) and one behind home, 5 m wide, lit, with a stair
 # at each end up to the 1st floor's concourse (an open cut through its floor).
 GATE_PAIRS = (11, 14, 17, 20, 23)       # the aisle between B n and B n+1 on the 1B side
-GATE_SLAB, GATE_CLEAR, GATE_W, GATE_PAR = 0.25, 2.1, 1.8, 1.0
+GATE_SLAB, GATE_CLEAR, GATE_W, GATE_PAR = 0.25, 2.4, 2.55, 1.0
 STAIR_RISE, STAIR_RUN = 0.19, 0.27
+STAIR_CLEAR = 2.15  # service stairs are independent of the wider two-sided portal
 CORR_FRONT, CORR_W = 4.0, 5.0           # the corridor's front wall at most this far under the stand (m from its back edge), and its width
-CORR_HEAD, GATE_HEAD = 2.8, 1.95        # the ceiling over the floor: in the corridor, in a gate's tunnel
+CORR_HEAD, GATE_HEAD = 2.8, 2.20        # clear gate height, finished with a single planar soffit
 CORR_END = 6.0                          # the corridor runs on this far past its outermost gate
 RAIL_T = 0.25                           # the partitions beside a gate stand this thick
 WALL_IN = 0.05                          # the corridors' walls stand this far inside the outline the solids round them are cut to
@@ -1192,15 +1201,15 @@ def gate_corridors(G, sites, stand, c1, O, avoid=(), blocked=None, ring=None):
                         if not cr['poly'].contains(Point(*(q + ra * t))): break
                         tx = float(t)
                     S0 = q + ra * tx; t0 = float(S0 @ ra); s0 = float(S0 @ ua)
-                    trench = _tbox(ra, ua, t0 - 0.15, t0 + n_st * run + 0.25, s0 - GATE_W / 2, s0 + GATE_W / 2)
-                    if not cr['poly'].buffer(0.45).contains(_tbox(ra, ua, t0 - 0.4, t0 - 0.05, s0 - GATE_W / 2, s0 + GATE_W / 2)): why.append('corridor too narrow here'); continue
+                    trench = _tbox(ra, ua, t0 - 0.15, t0 + n_st * run + 0.25, s0 - STAIR_CLEAR / 2, s0 + STAIR_CLEAR / 2)
+                    if not cr['poly'].buffer(0.45).contains(_tbox(ra, ua, t0 - 0.4, t0 - 0.05, s0 - STAIR_CLEAR / 2, s0 + STAIR_CLEAR / 2)): why.append('corridor too narrow here'); continue
                     # the stair's run out through the concourse and 2 m of floor to step off onto, all the concourse's
-                    run_part = _tbox(ra, ua, t0, t0 + n_st * run + 2.0, s0 - GATE_W / 2 - 0.3, s0 + GATE_W / 2 + 0.3).difference(cr['poly'])
+                    run_part = _tbox(ra, ua, t0, t0 + n_st * run + 2.0, s0 - STAIR_CLEAR / 2 - 0.3, s0 + STAIR_CLEAR / 2 + 0.3).difference(cr['poly'])
                     mm = np.zeros(c1.shape, np.uint8)
                     for pp in _pieces(run_part):
                         gx2, gz2 = G.g(*np.array(pp.exterior.coords).T); cv2.fillPoly(mm, [np.c_[gx2, gz2].round().astype(np.int32)], 1)
                     if not mm.any() or float(c1[mm > 0].mean()) < 0.995: why.append('run leaves the concourse'); continue
-                    landing = _tbox(ra, ua, t0, t0 + n_st * run + 2.0, s0 - GATE_W / 2, s0 + GATE_W / 2)
+                    landing = _tbox(ra, ua, t0, t0 + n_st * run + 2.0, s0 - STAIR_CLEAR / 2, s0 + STAIR_CLEAR / 2)
                     if any(landing.distance(Point(px, pz)) < pr + 0.9 for px, pz, pr in avoid): why.append('column'); continue
                     if blocked is not None and not blocked.is_empty and landing.buffer(0.9).intersects(blocked): why.append('balcony stair'); continue
                     if any(trench.distance(o['trench']) < 2.0 for o in cr['stairs']): why.append('other stair'); continue
@@ -1221,7 +1230,7 @@ def gate_corridors(G, sites, stand, c1, O, avoid=(), blocked=None, ring=None):
             # a landing at the foot of the stair, 1.5 m back, taken into the corridor: where the corridor's wall runs
             # across the stair slantwise the floor, the ceiling and the walls then reach the first tread all across it
             s0 = float(S0 @ ua)
-            cr['poly'] = orient(unary_union([cr['poly'], _tbox(ra, ua, t0 - 1.5, t0 + 0.02, s0 - GATE_W / 2, s0 + GATE_W / 2)]).buffer(0), 1.0)
+            cr['poly'] = orient(unary_union([cr['poly'], _tbox(ra, ua, t0 - 1.5, t0 + 0.02, s0 - STAIR_CLEAR / 2, s0 + STAIR_CLEAR / 2)]).buffer(0), 1.0)
             cr['stairs'].append(dict(trench=trench, a=ra, u=ua, S0=S0, t0=t0, treads=treads, rails=rails))
     return corrs
 
@@ -1263,7 +1272,7 @@ def carve_gates(rows, sites, corrs, nxt):
         out.append({'r': -1, 'y': round(c['floor'] - 0.004, 3), 'y0': 0.0, 'polys': _polys_of(fl)})
         for st in c['stairs']:
             for t0, t1, h in st['treads']:
-                ps = _polys_of(_tbox(st['a'], st['u'], t0, t1, float(st['S0'] @ st['u']) - GATE_W / 2, float(st['S0'] @ st['u']) + GATE_W / 2))
+                ps = _polys_of(_tbox(st['a'], st['u'], t0, t1, float(st['S0'] @ st['u']) - STAIR_CLEAR / 2, float(st['S0'] @ st['u']) + STAIR_CLEAR / 2))
                 if ps: out.append({'r': -1, 'y': round(h, 3), 'y0': 0.0, 'polys': ps})
     return out
 

@@ -265,8 +265,6 @@ export function buildDome(ctx) {
       }
     }
   }
-  const scaleOf = new Map(TD_STANDS.levels.map((l) => [l.name, l.seatScale ?? 10]));
-  const boxAt = (name, x, z) => { const k = scaleOf.get(name) ?? 10; return boxOf.get(`${name}:${Math.round(x * k)}:${Math.round(z * k)}`); };
   // ── the main screen's line (built further on) ──
   // Along the curve of the outfield stand's back, over its back rows, where
   // the columns at the heads of its aisles stand: they carry it.
@@ -319,11 +317,10 @@ export function buildDome(ctx) {
   // (a column with nothing over it from the data, y1 99, goes on up to the ring)
   // (the columns that carry the screen stop behind its frame: nothing shows over it)
   // (and those set back take their number plates with them)
-  const movedFrom = [...MV.colMoved].map(([c, q]) => ({ c, q }));
   const TD = {
     ...TD_STANDS,
     pillars: TD_STANDS.pillars.map((p) => (isScr(p) || p.y1 >= 99 ? { ...p, ...(MV.colMoved.get(p) ?? {}), y1: underMV(p) ? MV.y1 + 0.3 : ringY(p.z + ZH) - 1.2 } : p)),
-    signs: TD_STANDS.signs.map((s) => { const m = movedFrom.find(({ c }) => Math.hypot(c.x - s.x, c.z - s.z) < 0.2); return m ? { ...s, x: m.q.x, z: m.q.z } : s; }),
+    signs: [], // User review: remove the black number plates fixed to columns.
   };
   const stands = buildStands(TD, {
     // (the lightsticks' blocks: the real ones, as each seat is labelled; where
@@ -342,9 +339,8 @@ export function buildDome(ctx) {
     sectorOver: { E: 'D' },
     // (the concrete a clean, neutral light grey, as the photographs show it: no warm cast of its own, little mottling)
     offset: OFF, stage: STAGE, seed: 400, concreteTone: 0.64, concreteWarm: 0.0, concreteEven: 0.8, roofY: (x, z) => ringY(z + ZH) + 0.3,
-    seatColors: Object.fromEntries(['A', 'B', 'F', 'K', 'G', 'C', 'D', 'E'].map((level) => [level, SEAT_BLUE])),
-    // F rows are already limited to their PDF blocks, including F11's
-    // six-row pocket. A broad angular mask used to hide named seats too.
+    seatColors: { ...Object.fromEntries(['A', 'B', 'F', 'K', 'D', 'E'].map((level) => [level, SEAT_BLUE])), C: 0x24262b, G: 0x222428 },
+    // Explicit photographed end/batter-eye exceptions are recorded in the data.
     crowd: !!q.crowd,
     // the lightsticks' floors as the building counts them, [floor, band from
     // the front]: the 1st floor (the field-level seats, A, B behind it, and
@@ -362,6 +358,7 @@ export function buildDome(ctx) {
       ceiling: std({ color: 0xd3d5d2, roughness: 0.92, emissive: 0x818684, emissiveIntensity: 0.45 }),
       stair: std({ color: 0xb1b4b2, roughness: 0.9, emissive: 0x626765, emissiveIntensity: 0.45 }),
       floor: std({ color: 0xa7adab, roughness: 0.72, emissive: 0x5e6663, emissiveIntensity: 0.4, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }),
+      levelStruct: { G: std({ color: 0x3b5144, roughness: 0.98 }) },
       levelRail: { C: new THREE.MeshBasicMaterial({ visible: false }) },
     },
   });
@@ -437,12 +434,12 @@ export function buildDome(ctx) {
     // the 2nd floor
     {
       const rim = TD_STANDS.rimS.flat(), y = TD_STANDS.rimY;
-      const g = wallStrip(along(rim, 0.17), rim.map(() => y + 0.85), { y0: y - 1.5, thick: 0.22, ease: 0 });
+      const g = wallStrip(along(rim, 0.17), rim.map(() => y + 0.60), { y0: y - 0.60, thick: 0.22, ease: 0 });
       if (g) { const m3 = new THREE.Mesh(g, paint); m3.receiveShadow = true; root.add(m3); }
       const face = along(rim, 0.0);
-      tube(face, y + 0.74, 0.024);
-      tube(face, y + 1.1, 0.024);
-      posts(face, y + 0.7, y + 1.1, 0.045, 2.4);
+      tube(face, y + 0.54, 0.024);
+      tube(face, y + 0.90, 0.024);
+      posts(face, y + 0.52, y + 0.90, 0.045, 2.4);
     }
     // the balcony
     {
@@ -595,6 +592,11 @@ export function buildDome(ctx) {
       parts.push(wallStrip(P, P.map((p) => ringY(p.z) + 0.5), { y0: w.y0, thick: 0.4, ease: 0 }));
       const R = w.ret.map(([x, z]) => ({ x, z: z + ZH }));
       parts.push(wallStrip(R, R.map((p) => ringY(p.z) + 0.5), { y0: w.retY0 ?? 13.6, thick: 0.4, ease: 0 }));
+    }
+    if (TD_STANDS.outfieldBackWall) {
+      const w = TD_STANDS.outfieldBackWall;
+      const P = w.pts.map(([x, z]) => ({ x, z: z + ZH }));
+      parts.push(wallStrip(P, P.map((p) => ringY(p.z) + 0.5), { y0: w.y0, thick: 0.35, ease: 0 }));
     }
     for (const e of TD_STANDS.upperEnds ?? []) {
       if (e.pts) { parts.push(wallStrip(e.pts.map(([x, z]) => ({ x, z: z + ZH })), e.y1, { y0: e.y0, thick: e.thick ?? 0.3, ease: 0 })); continue; }
@@ -753,6 +755,21 @@ export function buildDome(ctx) {
     // never over the outfield's height (td_stand1.fit_rake keeps the fronts under it)
     for (let i = 0; i < n; i++) ringH[i] = Math.max(ringH[i], Math.min(outH, ringTop[i]));
   }
+  // The rear of the excite seats joins the 1F front tread. A full-height
+  // field fence here created an artificial dark gap behind the last row.
+  for (let i = 0; i < ringPts.length; i++) {
+    const p = ringPts[i];
+    for (const rear of TD_STANDS.exciteRear ?? []) {
+      let distance = Infinity;
+      for (let j = 1; j < rear.pts.length; j++) {
+        const a = rear.pts[j - 1], b = rear.pts[j], dx = b[0] - a[0], dz = b[1] - a[1];
+        const t = ((p.x - a[0]) * dx + (p.z - ZH - a[1]) * dz) / (dx * dx + dz * dz);
+        if (t < 0 || t > 1) continue;
+        distance = Math.min(distance, Math.hypot(p.x - a[0] - dx * t, p.z - ZH - a[1] - dz * t));
+      }
+      if (distance < 0.55) ringH[i] = Math.min(ringH[i], rear.top);
+    }
+  }
   // (open at the mouth of the tunnel under A02: the wall stops either side of it, a swing gate between; and at each of
   // the excite seats' steps up to the stand)
   const tunnels = [...(TD_STANDS.tunnels ?? []), ...(TD_STANDS.exciteGates ?? [])];
@@ -841,9 +858,22 @@ export function buildDome(ctx) {
     }
     if (treads.length) root.add(new THREE.Mesh(mergeGeometries(treads), std({ color: 0xa8a297, roughness: 0.9 })));
   }
+  // Light stair finish beside the new home-side extension. Its treads
+  // use the same main-stand row frame as the black seats, without a fan.
+  {
+    const parts = [];
+    for (const finish of TD_STANDS.exciteHomeFinishes ?? []) for (const poly of finish.polys) {
+      const shape = new THREE.Shape(poly[0].map(([x, z]) => new THREE.Vector2(x, -z)));
+      for (const hole of poly.slice(1)) shape.holes.push(new THREE.Path(hole.map(([x, z]) => new THREE.Vector2(x, -z))));
+      const g = new THREE.ShapeGeometry(shape); g.rotateX(-Math.PI / 2); g.translate(0, finish.y, ZH);
+      parts.push(g.toNonIndexed());
+    }
+    if (parts.length) root.add(new THREE.Mesh(mergeGeometries(parts), std({ color: 0xb8bbb5, roughness: 0.95 })));
+  }
   // the padded fence round each excite stand, as the photographs show it: along its front (out by one diagonal to the
-  // deepest blocks, back in by another to the 1st floor's wall short of the pole) and square back to that wall at the
-  // home end; one height, about chest high to the front row, a pale cap along its top. Straight runs, each its own
+  // deepest blocks, back in by another to the 1st floor's wall short of the pole) and back to that wall at the
+  // home end. Both end returns rise to their own stand/tunnel junction; the
+  // front stays about chest high to its first row, with a pale cap along its top. Straight runs, each its own
   // slab, so the corners stay sharp. (No net over it: for a concert it is taken down.)
   {
     const pad = [], cap = [], T = 0.22;
@@ -853,8 +883,9 @@ export function buildDome(ctx) {
         const a = P[k], b = P[k + 1], l = Math.hypot(b.x - a.x, b.z - a.z) || 1, ux = (b.x - a.x) / l, uz = (b.z - a.z) / l;
         // (each run carried half the fence's thickness past its ends: the corners close)
         const run = [{ x: a.x - ux * T / 2, z: a.z - uz * T / 2 }, { x: b.x + ux * T / 2, z: b.z + uz * T / 2 }];
-        pad.push(wallStrip(run, [f.h, f.h], { thick: T, ease: 0 }));
-        cap.push(wallStrip(run, [f.h + 0.05, f.h + 0.05], { y0: f.h, thick: T + 0.05, ease: 0 }));
+        const ha = f.hs?.[k] ?? f.h, hb = f.hs?.[k + 1] ?? f.h;
+        pad.push(wallStrip(run, [ha, hb], { thick: T, ease: 0 }));
+        cap.push(wallStrip(run, [ha + 0.05, hb + 0.05], { y0: [ha, hb], thick: T + 0.05, ease: 0 }));
       }
     }
     if (pad.length) {
@@ -1068,6 +1099,22 @@ export function buildDome(ctx) {
       sign.position.set(o.x, y1 + 1.75, o.z); sign.rotation.y = Math.atan2(-(q.z - p.z), q.x - p.x);
       root.add(sign);
     }
+    // The batter eye is a dark, closed stepped face below the modern
+    // short centre display. Side returns close it against the rear wall.
+    {
+      const bottom = 4.65, shoulder = 7.5;
+      const front = Math.max(...(TD_STANDS.backscreen ?? []).flatMap((r) => r.polys.flatMap((p) => p[0].map((q) => q[1])))) + ZH + 0.2;
+      const outline = [[-24.5, y0], [-24.5, shoulder], [-19, shoulder], [-16, bottom],
+        [16, bottom], [19, shoulder], [24.5, shoulder], [24.5, y0]];
+      const shape = new THREE.Shape(outline.map(([x, y]) => new THREE.Vector2(x, y)));
+      const shell = new THREE.ExtrudeGeometry(shape, { depth: 0.25, bevelEnabled: false });
+      const positions = shell.attributes.position;
+      for (let i = 0; i < positions.count; i++) positions.setZ(i, positions.getZ(i) + front - (positions.getY(i) - bottom) * 1.25);
+      shell.computeVertexNormals();
+      const matte = std({ color: 0x14352b, roughness: 1, metalness: 0, side: THREE.DoubleSide });
+      root.add(new THREE.Mesh(shell, matte));
+    }
+
     // the backscreen: the outfield stand's rows between F09 and F12, the data's own outlines, in dark green
     {
       const parts = [];
