@@ -26,24 +26,35 @@ def _front2():
     m = G.empty(); q = tr(o['L2']['front']); gx_, gz_ = G.g(q[:, 0], q[:, 1])
     cv2.fillPoly(m, [np.c_[gx_, gz_].round().astype(np.int32)], 1); m = m > 0
     out = np.zeros(NB2); np.maximum.at(out, BIN2[m], RR[m])
-    k = 12; ext = np.r_[out[-k:], out, out[:k]]
-    return np.array([np.percentile(ext[i:i + 2 * k + 1], 20) for i in range(NB2)])
+    # (the front where it is, half a degree by half a degree, a degree's median:
+    # a smoother front than that cuts row 7 where the bowl turns, round the
+    # corners, and left seats of it in the walkway and gaps in the row)
+    k = 1; ext = np.r_[out[-k:], out, out[:k]]
+    return np.array([np.median(ext[i:i + 2 * k + 1]) for i in range(NB2)])
 R2F = _front2()
 WD2 = (W2ROW - 0.0) * D2 - 0.25 * D2          # (a seat of row 7 stands at 0.55 of its row: the cut a little before row 8's front)
-def front2_of(th):
-    f = (np.asarray(th) + np.pi) / (2 * np.pi) * NB2 - 0.5
-    i0 = np.floor(f).astype(int); w = f - i0
-    return R2F[i0 % NB2] * (1 - w) + R2F[(i0 + 1) % NB2] * w
+# (measured square from the front, not along the ray from the centre: round
+# the corners the rows are not circles about it, and a row's distance along
+# the ray is more than its distance from the front; that cut row 7 in two and
+# put half of it past the walkway. Moved on square to the rows too.)
+from scipy.ndimage import distance_transform_edt as _edt
+_F2 = G.empty(); _q2 = tr(o['L2']['front']); _gx2, _gz2 = G.g(_q2[:, 0], _q2[:, 1])
+cv2.fillPoly(_F2, [np.c_[_gx2, _gz2].round().astype(np.int32)], 1)
+DIST2 = (_edt(_F2 == 0) * G.res).astype(np.float32)          # from the front, outwards
+_gz, _gx = np.gradient(cv2.GaussianBlur(DIST2, (0, 0), 6))
+_n = np.maximum(np.hypot(_gx, _gz), 1e-6); GX2, GZ2 = (_gx / _n).astype(np.float32), (_gz / _n).astype(np.float32)
+THR2 = WD2 + 0.25 * D2                                      # between row 7's seats and row 8's
+def _at2(A, P):
+    i_ = np.clip(np.round((P[:, 0] - G.x0) / G.res).astype(int), 0, G.W - 1); j_ = np.clip(np.round((P[:, 1] - G.z0) / G.res).astype(int), 0, G.H - 1)
+    return A[j_, i_]
 def warp2(P):
-    P = np.asarray(P, float); th = np.arctan2(P[:, 0], P[:, 1]); r = np.hypot(P[:, 0], P[:, 1])
-    d = r - front2_of(th)
-    s = np.where(d >= WD2 + 0.25 * D2, (r + W2) / np.maximum(r, 1e-9), 1.0)
-    return P * s[:, None]
+    P = np.asarray(P, float); d = _at2(DIST2, P); g = np.c_[_at2(GX2, P), _at2(GZ2, P)]
+    return P + g * np.where(d >= THR2, W2, 0.0)[:, None]
 def warp2_mask(M):
-    d = RR - front2_of(TH)
-    s = np.where(d >= WD2 + 0.25 * D2 + W2, (RR - W2) / np.maximum(RR, 1e-9), 1.0)
-    out = cv2.remap(M.astype(np.uint8), *[a.astype(np.float32) for a in G.g(GX * s, GZ * s)], cv2.INTER_NEAREST) > 0
-    return out & ~((d >= WD2 + 0.25 * D2) & (d < WD2 + 0.25 * D2 + W2))
+    sx = GX - GX2 * W2; sz = GZ - GZ2 * W2
+    beyond = DIST2 >= THR2 + W2
+    src = cv2.remap(M.astype(np.uint8), *[a.astype(np.float32) for a in G.g(sx, sz)], cv2.INTER_NEAREST) > 0
+    return np.where(beyond, src, M & (DIST2 < THR2))
 def _dense(P, step=0.25):
     Q = np.r_[P, P[:1]]; out = []
     for a, b in zip(Q[:-1], Q[1:]):
@@ -328,11 +339,16 @@ print('L5 bays', [round(float(np.linalg.norm(b['bridge'][-1] - b['bridge'][0])),
 # there). The pitches give each level its official count once the
 # vomitories, tunnels and press box are cut (34,303, 16,532 and 39,165 seats).
 from wb_reseat import reseat
-PITCH = {'L1': 0.556, 'L2': 0.529, 'L5': 0.536}     # (round 41: with the rows the lettering hid and the front rows seated, back to the official counts)
+PITCH = {'L1': 0.557, 'L2': 0.536, 'L5': 0.536}     # (round 41: with the rows the lettering hid and the front rows seated, back to the official counts)
 PLAN = plan_bits(G)
 for name_, l_ in LV.items():
     # (Level 1's front band is before its row 1: no front row to fill there)
     print('reseat', name_, reseat(G, l_, PLAN[name_], PITCH[name_], front=name_ != 'L1'), round(time.time() - T0, 1))
+# (none on Level 2's walkway's back half: a seat the plan's lettering left there;
+# its front half is at row 7's height, and round the corners row 7 runs on to it)
+_w = (L2.row == W2ROW + 1)
+L2.seats, L2.row, L2.yaw = L2.seats[~_w], L2.row[~_w], L2.yaw[~_w]
+print('Level 2 walkway seats taken out', int(_w.sum()))
 
 # ── the four corner tunnels ──
 # At each corner of the pitch the Level 1 front is cut square across, and
@@ -550,7 +566,7 @@ print('voms', {k: len(v) for k, v in VOMS.items()})
 # On Level 1 in the north stand, behind the walkway either side of the middle
 # (Wembley's media guide: 186 places, a desk and a screen between every two):
 # the plan leaves it unseated. Desks on every other row, seats behind them.
-PRESS_Z = (14.0, 47.0); PRESS_ROWS = (31, 33, 35, 37, 39, 41)
+PRESS_Z = (14.0, 47.0); PRESS_ROWS = (31, 33, 35, 37, 39, 41, 43)     # (round 41: the back row a desk's too)
 def press_box(l):
     inreg = lambda P: (P[:, 0] > 40) & (np.abs(P[:, 1]) > PRESS_Z[0]) & (np.abs(P[:, 1]) < PRESS_Z[1])
     drop = inreg(l.seats) & (l.row >= PRESS_ROWS[0] - 1) & (l.row <= PRESS_ROWS[-1] + 1)
@@ -944,7 +960,9 @@ ends4 = cv2.dilate(CORNER5.astype(np.uint8), disk(0.8 / G.res)) > 0
 END4 = ends4 & cv2.dilate(M4.astype(np.uint8), disk(0.5 / G.res)) > 0
 if END4.any():
     hi = float(top5[cv2.dilate(END4.astype(np.uint8), disk(1.0 / G.res)) > 0].max())
-    L4_walls += seg_runs(cv2.GaussianBlur(M4.astype(np.float32), (5, 5), 0), 0.5, END4, Y4F, max(UNDER4, hi + 1.1))
+    # (a glass screen a rail's height over the balcony's treads, not a wall up
+    # to Level 5: that stood as a tall dark fin at each end of the balcony)
+    L4_rails += seg_runs(cv2.GaussianBlur(M4.astype(np.float32), (5, 5), 0), 0.5, END4, Y4S[0] - 0.02, Y4S[1] + 1.1)
 L4_rows = []
 for r_, (a_, b_) in enumerate(((-OVER5, ROW4 - OVER5), (ROW4 - OVER5, 99.0))):
     m_ = M4 & (D4 >= a_) & (D4 < b_)
@@ -1112,6 +1130,9 @@ def tunnel_rows(rows):
             if ov: out.append({**r, 'y0': th, 'polys': ov})
     return out
 levels = []
+# Level 2's front: a steel fence along it, 1.1 m over its front row's tread
+# (asked 2026-11-12: "a fence along Level 2's front"), the solid parapet under it
+FENCE2 = front_parapet(G, L2, ('tread', 1.1))
 NOTCH1d = dil(NOTCH1, 0.5)
 spec = {'L1': ((inside1, 0.0), (c1, C1)), 'L2': ((M3, Y3S[0]), (c2, C2)), 'L5': ((c5, C5),)}
 flushmode = {'L1': 'open', 'L2': 'open', 'L5': 'open'}
@@ -1133,7 +1154,7 @@ for name, l in LV.items():
     levels.append({'name': name, 'D': l.D, 'h0': float(l.h(0)), 'rise': 0, 'hs': [round(float(v), 3) for v in l.hs],
                    'rows': rows_, 'steps': steps_, 'holes': holes, 'voms': VOMS.get(name, []),
                    'seats': l.seats_out(scale=100), 'seatScale': 100, 'rails': rails, 'walls': walls + extra_walls.get(name, []),
-                   **({'fences': FENCES1} if name == 'L1' else {})})
+                   **({'fences': FENCES1} if name == 'L1' else {'fences': FENCE2} if name == 'L2' else {})})
     print(name, 'rows', len(levels[-1]['rows']), 'steps', len(levels[-1]['steps']), 'holes', len(holes), 'rails', len(rails), 'walls', len(walls), 'seats', len(l.seats))
 # Level 5's aisles at the north side's steps: where the corner blocks' rows
 # and the north side's meet a row apart in height, the step's face closed
@@ -1232,5 +1253,5 @@ json.dump(data, open('wb_stands.json', 'w'), separators=(',', ':'))
 import os; print('json KB', os.path.getsize('wb_stands.json') // 1024, round(time.time() - T0, 1))
 pickle.dump({'c1': c1, 'c2': c2, 'c5': c5, 'inside1': inside1, 'outer': outer,
              # (for wb_labels.py: the stand's seats back to the plan's frame)
-             'R2F': R2F, 'NB2': NB2, 'WD2': WD2, 'W2': W2, 'D2': D2, 'SHIFT5': SHIFT5, 'NB5': NB5,
+             'R2F': R2F, 'NB2': NB2, 'WD2': WD2, 'W2': W2, 'D2': D2, 'SHIFT5': SHIFT5, 'NB5': NB5, 'DIST2': DIST2, 'GX2': GX2, 'GZ2': GZ2, 'THR2': THR2,
              'bands': {n_: (l_.band.copy(), l_.D) for n_, l_ in LV.items()}, 'grid': (G.x0, G.z0, G.res, G.W, G.H)}, open('wb_masks.pkl', 'wb'))

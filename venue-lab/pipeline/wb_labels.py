@@ -45,25 +45,30 @@ def interp_bins(arr, nb, th):
     f = (np.asarray(th) + np.pi) / (2 * np.pi) * nb - 0.5
     i0 = np.floor(f).astype(int); w = f - i0
     return arr[i0 % nb] * (1 - w) + arr[(i0 + 1) % nb] * w
+x0g, z0g, resg, Wg, Hg = M['grid']
+def _atg(A, P):
+    i_ = np.clip(np.round((P[:, 0] - x0g) / resg).astype(int), 0, Wg - 1); j_ = np.clip(np.round((P[:, 1] - z0g) / resg).astype(int), 0, Hg - 1)
+    return A[j_, i_]
 def unwarp(name, P):
     """the model's seats back to where the plan draws them"""
     th = np.arctan2(P[:, 0], P[:, 1]); r = np.hypot(P[:, 0], P[:, 1])
     if name == 'L5':
         r0 = r + interp_bins(M['SHIFT5'], M['NB5'], th)
-    elif name == 'L2':
-        dd = r - interp_bins(M['R2F'], M['NB2'], th)
-        r0 = np.where(dd >= M['WD2'] + 0.25 * M['D2'] + M['W2'], r - M['W2'], r)
-    else: r0 = r
-    return P * (r0 / np.maximum(r, 1e-9))[:, None]
+        return P * (r0 / np.maximum(r, 1e-9))[:, None]
+    if name == 'L2':      # (Level 2's walkway: square from its front, wb_gen.py's warp2)
+        Q = P - np.c_[_atg(M['GX2'], P), _atg(M['GZ2'], P)] * M['W2']
+        return np.where((_atg(M['DIST2'], P) >= M['THR2'] + M['W2'])[:, None], Q, P)
+    return P
 def warp(name, P):
     """the plan's frame on to the model's (for the plan's numbers)"""
     th = np.arctan2(P[:, 0], P[:, 1]); r = np.hypot(P[:, 0], P[:, 1])
-    if name == 'L5': r1 = r - interp_bins(M['SHIFT5'], M['NB5'], th)
-    elif name == 'L2':
-        dd = r - interp_bins(M['R2F'], M['NB2'], th)
-        r1 = np.where(dd >= M['WD2'] + 0.25 * M['D2'], r + M['W2'], r)
-    else: r1 = r
-    return P * (r1 / np.maximum(r, 1e-9))[:, None]
+    if name == 'L5':
+        r1 = r - interp_bins(M['SHIFT5'], M['NB5'], th)
+        return P * (r1 / np.maximum(r, 1e-9))[:, None]
+    if name == 'L2':
+        Q = P + np.c_[_atg(M['GX2'], P), _atg(M['GZ2'], P)] * M['W2']
+        return np.where((_atg(M['DIST2'], P) >= M['THR2'])[:, None], Q, P)
+    return P
 def decode(L):
     a = np.frombuffer(base64.b64decode(L['seats']), '<i2').reshape(-1, 4).astype(float)
     return a[:, :2] / L.get('seatScale', 10), a[:, 2].astype(int)
@@ -170,7 +175,7 @@ for L in d['levels']:
         m = blk == k; bc = np.bincount(R[m]); b_first = int(np.nonzero(bc >= 3)[0][0]) if (bc >= 3).any() else int(R[m].min())
         first[NAMES[k]] = b_first
         if name == 'L1': rr = R[m]                     # (bands 1-44: rows 1-44, as the plan's back row)
-        elif name == 'L2': rr = np.where(R[m] >= 9, R[m] - 1, R[m] + 1)
+        elif name == 'L2': rr = np.where(R[m] >= 9, R[m] - 1, np.minimum(R[m] + 1, 7))     # (band 7, the walkway's front half, row 7 where it runs on to it)
         else:
             north = S[m, 0].mean() > 30 and b_first >= 5
             rr = R[m] - b_first + 1 if north else R[m] + 1
