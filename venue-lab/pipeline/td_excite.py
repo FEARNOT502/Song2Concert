@@ -184,13 +184,14 @@ def _side(sg, chart, FN, standY, mouth=None):
     # diagonally instead of producing a comb of independent rectangles.
     # One padded front, closed to the existing wall at both ends.
     fence=[at(spans[ORDER[0]][0],edge_at(spans[ORDER[0]][0]))[0],*front,nominal]
-    home_y=standY(at(spans['G15'][0])[0],-at(spans['G15'][0])[2]) or 2.2
+    # End padding joins the TOP above the main tread, not the tread itself.
+    home_y=max(FENCE_H+.25,(standY(at(spans['G15'][0])[0],-at(spans['G15'][0])[2]) or .6)+.90)
     pole_y=max((side[0][1] for side in (mouth or {}).get('sides',[]) if side),default=4.0)
     fence_heights=[round(home_y,3)]+[FENCE_H]*len(front)+[round(pole_y,3)]
     keep=[0]+[i for i in range(1,len(fence)) if np.linalg.norm(fence[i]-fence[i-1])>.015]
     fence=[fence[i] for i in keep];fence_heights=[fence_heights[i] for i in keep]
     return dict(X=X,rows=rows,seats=seats,finishes=finishes,fence=[list(np.round(p,3)) for p in fence],aisles=aisles,gates=gates,
-                fence_heights=fence_heights,attachment={'point':list(np.round(nominal,3)),'height':round(pole_y,3),'edge':'A03-side outer door hinge; not the two-leaf centre'},
+                fence_heights=fence_heights,attachment={'point':list(np.round(nominal,3)),'height':round(pole_y,3),'edge':'A03-side outer door hinge; not the two-leaf centre' if sg>0 else 'mirrored wall junction; 3B corner dimensions estimated'},
                 rear=[list(np.round(at(t)[0],3)) for t in np.linspace(spans['G15'][0],spans['G06'][1],180)],
                 cut=_polys(Polygon([at(t,min(0.,edge_at(t)))[0] for t in np.linspace(spans['G15'][0],spans['G06'][1],180)]+[at(t,.05)[0] for t in np.linspace(spans['G06'][1],spans['G15'][0],180)]).buffer(0)))
 

@@ -115,6 +115,7 @@ def verify(path):
         target=jamb*np.array([1 if i==0 else -1,1])
         assert np.linalg.norm(np.array(fence['pts'][-1])-target)<.003,'pole fence attached to wrong door edge'
         assert len(fence['pts'])==len(fence['hs'])
+        assert fence['hs'][0]>fence['hs'][1] and fence['hs'][-1]>fence['hs'][-2],'end padding slopes down toward stand'
         assert min(np.linalg.norm(np.diff(np.array(fence['pts']),axis=0),axis=1))>.015,'duplicate fence points'
     excite_review['homeRowAngles']=home_angles
     assert not data.get('signs'),'column number plates remain'
