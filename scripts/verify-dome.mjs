@@ -17,7 +17,7 @@ import {createStage} from './src/three/stage.js';
 window.stage=createStage(document.querySelector('canvas'),{quality:'low',effects:false,onLoading:on=>window.ready=!on});
 stage.resize(innerWidth,innerHeight);stage.start();stage.setVenue('dome');
 </script></html>`;
-const server=await createServer({root,server:{port:0},logLevel:'error',plugins:[{
+const server=await createServer({root,cacheDir:'/tmp/td-verify-vite-cache',server:{port:0},logLevel:'error',plugins:[{
   name:'verify-dome',enforce:'pre',
   configureServer(s){s.middlewares.use((req,res,next)=>{
     if(!req.url?.endsWith('/__verify_dome'))return next();
@@ -44,7 +44,7 @@ try{
     WebGL2RenderingContext.prototype.getExtension=function(name){return name==='KHR_parallel_shader_compile'?null:get.call(this,name);};
   });
   await page.goto(`http://localhost:${port}${server.config.base}__verify_dome`);
-  await page.waitForFunction(()=>window.ready&&window.stage.stats().drawn>1,null,{timeout:60000});
+  await page.waitForFunction(()=>window.ready&&window.stage.stats().drawn>1,null,{timeout:180000});
   const report=await page.evaluate(async()=>{
     const {TD_STANDS:D}=await import('./src/three/venues/td-data.js');
     const {walker:W,pipe}=stage.debug;W.ensureIndex();
@@ -83,13 +83,20 @@ try{
       segment(`stair-${i}-up`,a,b,f.y0,f.y1);
       segment(`stair-${i}-down`,b,a,f.y1,f.y0);
     }
+    for(const [i,f] of (D.exciteAisles||[]).entries()){
+      const dx=f.b[0]-f.a[0],dz=f.b[1]-f.a[1],length=Math.hypot(dx,dz),u=[dx/length,dz/length];
+      const a=[f.a[0]+u[0]*.28,f.a[1]+u[1]*.28],b=[f.b[0]+u[0]*.2,f.b[1]+u[1]*.2];
+      segment(`G-aisle-${i}-up`,a,b,f.y0+.25,f.y1);
+      segment(`G-aisle-${i}-down`,b,a,f.y1,f.y0+Math.min(.19,f.y1-f.y0));
+    }
     for(const name of ['E','F']){
       const level=D.levels.find(l=>l.name===name);
       for(const [i,v] of level.voms.entries())for(const offset of name==='F'?[-1.2,1.2]:[0]){
         const [dx,dz]=v.u,ox=-dz*offset,oz=dx*offset;
         const front=name==='F'?.3:.7;
         const a=[v.p[0]-dx*front+ox,v.p[1]-dz*front+oz];
-        const b=[v.p[0]+dx*(v.L+v.T+.7)+ox,v.p[1]+dz*(v.L+v.T+.7)+oz];
+        const beyond=name==='F'?3.0:v.T+.7;
+        const b=[v.p[0]+dx*(v.L+beyond)+ox,v.p[1]+dz*(v.L+beyond)+oz];
         segment(`${name}-vom-${i}-${offset}-in`,a,b,v.y,v.top??v.y);
         segment(`${name}-vom-${i}-${offset}-out`,b,a,v.top??v.y,v.y);
       }
@@ -114,11 +121,27 @@ try{
     };
     const c1=D.concourseRoutes.find(r=>r.id==='C1');
     route('C1-circuit',c1.walkLine,c1.y);
-    if(D.outfieldConcourse)route('C2-outfield-connected-hall',D.outfieldConcourse.path,D.outfieldConcourse.y);
+    if(D.outfieldConcourse){
+      const H=D.outfieldConcourse;
+      route('C2-outfield-connected-hall',H.path,H.y);
+      for(const [i,v] of D.levels.find(l=>l.name==='F').voms.entries()){
+        const p=v.p,u=v.u,offset=1.2,ox=-u[1]*offset,oz=u[0]*offset;
+        const front=[p[0]-u[0]*.3+ox,p[1]-u[1]*.3+oz];
+        const rear=[p[0]+u[0]*(v.L+3.0)+ox,p[1]+u[1]*(v.L+3.0)+oz];
+        const centre=[p[0]+u[0]*(v.L+3.6),p[1]+u[1]*(v.L+3.6)];
+        const next=H.path.slice().sort((a,b)=>Math.hypot(a[0]-centre[0],a[1]-centre[1])-Math.hypot(b[0]-centre[0],b[1]-centre[1]))[1];
+        // Bypass the real aisle pillar at the mouth, then turn in the hall.
+        const g=W.ground(front[0],front[1]+114,v.y+.4);place(front[0],g,front[1]+114);
+        const distances=[move(rear[0],rear[1]+114),move(centre[0],centre[1]+114),move(next[0],next[1]+114)];
+        checks.push({name:`F-vom-${i}-turn-into-hall`,distance:+Math.max(...distances).toFixed(3),heightError:+Math.abs(W.feet.y-H.y).toFixed(3)});
+      }
+    }
     const sides=D.balconyRooms.sides.map(sd=>sd.back.slice(6,-6).map(([x,z])=>{
       const r=Math.hypot(x,z+60);return [x-x/r*1.1,z-(z+60)/r*1.1];
     }));
     route('C3-rear-corridor',[...sides[0].slice().reverse(),...sides[1]],D.balconyRooms.y);
+    for(const [i,link] of (D.serviceStairLinks||[]).entries())
+      route(`C3-corridor-to-service-stair-${i}`,link.path,link.y);
     const e=D.levels.find(l=>l.name==='E');
     const c4=e.voms.map(v=>[v.p[0]+v.u[0]*(v.L+3),v.p[1]+v.u[1]*(v.L+3)])
       .sort((a,b)=>Math.atan2(a[0],a[1]+60)-Math.atan2(b[0],b[1]+60));

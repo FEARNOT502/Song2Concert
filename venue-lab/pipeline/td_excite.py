@@ -1,6 +1,6 @@
-"""Compact excite stands, rebuilt from real 2023/2026 photographs and PDF rows.
+"""Compact excite stands, rebuilt from real photographs and user annotations.
 
-The fence is one continuous photographic outline. Complete numbered rows fit
+The fence is one continuous photographic outline. Custom model rows fit
 inside it; rear rows attach to the 1F wall except the tapered pole blocks.
 Metric pitch/depth is a photographic estimate, not a surveyed dimension.
 See docs/references/tokyo-dome-review-2-sources.json.
@@ -16,14 +16,14 @@ MAP_1B = {
     'G15': [[32.37,-13.31],[30.03,-10.41],[35.98,-5.57],[38.43,-8.58]],
     'G03': [[67.80,-61.72],[65.63,-57.46],[69.70,-56.11],[71.75,-61.03]],
 }
-ORDER = ['G%02d' % k for k in range(15, 2, -1)]          # home to pole
+ORDER = ['G%02d' % k for k in range(15, 3, -1)]          # home to pole
 END_GAP = 0.0                    # along that wall, between the diagonal's end and the tunnel mouth's jamb
-PITCH = 1.00                     # common fore/aft row pitch; photographic estimate
+PITCH = 0.82                     # common fore/aft row pitch; photographic estimate
 Y0, RISE = 0.05, 0.10            # the first row's floor over the field, and a row's step
 SEAT_W = 0.82
-HOME_ACCESS = 2.4  # light side access beside the single-column home extension; photo estimate
+HOME_ACCESS = 0.0  # no artificial side strip beside the home extension
 FENCE_H = 1.15                   # over the field: a padded fence about 0.85 m over the first row's floor
-GATES = (('G14', 'G13'), ('G12', 'G11'), ('G10', 'G09'), ('G08', 'G07'), ('G06', 'G05'))   # steps up to the stand's aisle between these
+GATES = tuple(zip(ORDER[:-1],ORDER[1:]))   # steps up to the stand's aisle between these
 STAIR_W = 1.0
 
 def _u(v): v = np.asarray(v, float); return v / np.linalg.norm(v)
@@ -38,7 +38,7 @@ def _polys(g):
 
 # Real photographs (2023 expansion, 2026 field/row views) show a compact
 # attached stand. The seating chart is topological, not a metric floor plan.
-# Stations below come from complete PDF row capacities; the rear datum is the
+# Stations follow the actual main-block aisle positions; the rear datum is the
 # actual lower stand wall, shared by every row, stair and end return.
 def _side(sg, chart, FN, standY, mouth=None):
     name = (lambda n:n) if sg>0 else (lambda n:'G%02d'%(50-int(n[1:])))
@@ -60,9 +60,29 @@ def _side(sg, chart, FN, standY, mouth=None):
     direction=1 if (end-home)%wall.length<wall.length/2 else -1
     end-=direction*END_GAP
     aisle_after={a for a,b in GATES}
-    widths={n:max(map(len,chart[name(n)]))*SEAT_W+(HOME_ACCESS if n=='G15' else 0) for n in ORDER}
-    total=sum(widths.values())+len(GATES)*STAIR_W+.4
-    begin=end-direction*(total-.2)
+    # User's red G04..G15 cells align with the actual A blocks above.
+    # Derive their stations from generated A row positions, NOT PDF capacity.
+    block_bounds={}
+    for n in ORDER:
+        block='A%02d'%(int(n[1:]) if sg>0 else 50-int(n[1:]))
+        points,labels=standY.blockPoints[block]
+        first=min(r for r in labels)
+        selected=points[np.asarray(labels)<=first+4]
+        values=np.array([direction*((wall.project(Point(p))-home+wall.length/2)%wall.length-wall.length/2) for p in selected])
+        block_bounds[n]=(float(values.min())-.28,float(values.max())+.28)
+    begin=home+direction*block_bounds['G15'][0]
+    total=direction*((end-begin+wall.length/2)%wall.length-wall.length/2)
+    spans={n:(a-block_bounds['G15'][0],b-block_bounds['G15'][0]) for n,(a,b) in block_bounds.items()}
+    # Keep the aisle between neighboring A cells; no arbitrary side stair.
+    for a,b in zip(ORDER[:-1],ORDER[1:]):
+        boundary=(spans[a][1]+spans[b][0])/2
+        gap=.9 if a in aisle_after else .16
+        spans[a]=(spans[a][0],boundary-gap/2)
+        spans[b]=(boundary+gap/2,spans[b][1])
+    row_counts={4:3,5:5,6:6,7:6,8:6,9:5,10:4,11:4,12:4,13:4,14:4,15:4}
+    for n,(a,b) in spans.items():
+        count=max(1,int((b-a-.2)/SEAT_W))
+        chart[name(n)]=[list(range(1,count+1)) for _ in range(row_counts[int(n[1:])])]
     endpoint_delta=nominal-np.array(wall.interpolate(end%wall.length).coords[0])
     def at(t,depth=0):
         d=begin+direction*t
@@ -73,9 +93,6 @@ def _side(sg, chart, FN, standY, mouth=None):
         if inward@(-p)<0:inward=-inward
         p=p+endpoint_delta*np.clip((t-(total-1.7))/1.5,0,1)
         return p+inward*depth,along,inward
-    spans={};t=.2
-    for n in ORDER:
-        spans[n]=(t,t+widths[n]);t+=widths[n]+(STAIR_W if n in aisle_after else 0)
     # Follow the actual first A seat, not an assumed uniform apron. Some
     # first rows already approach the wall: retain their complete tread.
     from scipy.ndimage import maximum_filter1d
@@ -90,7 +107,7 @@ def _side(sg, chart, FN, standY, mouth=None):
     rear_profile=np.maximum(required,gaussian_filter1d(maximum_filter1d(np.array(required),size=21,mode='nearest'),5.,mode='nearest'))
     def rear_at(station):return float(np.interp(station,stations,rear_profile))
     def edge_at(station):return rear_at(station)-.40
-    tapered={'G05','G04','G03'}
+    tapered={'G04'}
     def raw_front(station,n):
         rear=.60 if n in tapered else rear_at(station)
         return rear+(len(chart[name(n)])-1)*PITCH+.60
@@ -103,15 +120,15 @@ def _side(sg, chart, FN, standY, mouth=None):
             diagonal=float(np.interp(station,[a,b],[raw_front(a,'G10'),raw_front(b,'G08')]))
             return max(raw_front(station,n),diagonal)
         if n in tapered:
-            a,b=spans['G06'][1],spans['G03'][1]
-            return max(.65+(len(chart[name(n)])-1)*PITCH,float(np.interp(station,[a,b],[raw_front(a,'G06'),raw_front(b,'G03')])))
+            a,b=spans['G06'][1],total
+            return max(.65+(len(chart[name(n)])-1)*PITCH,float(np.interp(station,[a,b],[raw_front(a,'G06'),.25])))
         return raw_front(station,n)
     def rear_row(station,n):
         return depth_at(station,n)-.60-(len(chart[name(n)])-1)*PITCH
-    rows=[];seats=[];footprints=[];front=[];aisles=[];gates=[];finishes=[]
+    rows=[];seats=[];footprints=[];front=[];aisles=[];gates=[];finishes=[];front_samples=[]
     for n in ORDER:
         lo,hi=spans[n];nums=chart[name(n)];nr=len(nums)
-        rear_attached=n not in ('G05','G04','G03')
+        rear_attached=n != 'G04'
         base_y=Y0
         back_y=base_y+RISE*(nr-1)
         def height_at(r):return base_y+(back_y-base_y)*r/(nr-1)
@@ -120,7 +137,7 @@ def _side(sg, chart, FN, standY, mouth=None):
         # not the smoothed padded wall's tangent. Intersect each wall-normal
         # sample with the same parallel row lines so seats AND treads agree.
         main_frame=None
-        if n in ('G15','G14'):
+        if True:
             mid=(lo+hi)/2;origin,al,inside=at(mid,rear_at(mid))
             ids=standY.seatTree.query_ball_point(origin,5.)
             axes=standY.seatAxes[ids]
@@ -133,24 +150,60 @@ def _side(sg, chart, FN, standY, mouth=None):
                 needed=max((at(v,rear_at(v))[0]-origin)@normal for v in probes)
                 origin=origin+normal*needed
                 main_frame=(origin,axis,normal)
+        # Continue each shared A aisle axis into the added stand. Fitting
+        # the midpoint of its two seat-block edges avoids independent fan
+        # normals that bent the lower aisle away from the upper stair.
+        def aisle_axis(neighbor):
+            here='A%02d'%(int(n[1:]) if sg>0 else 50-int(n[1:]))
+            other='A%02d'%(neighbor if sg>0 else 50-neighbor)
+            p,rr=standY.blockPoints[here];q,ss=standY.blockPoints[other]
+            rr=np.asarray(rr);ss=np.asarray(ss);shared=sorted(set(rr)&set(ss))[:7]
+            mid=[]
+            for r in shared:
+                a=p[rr==r];b=q[ss==r]
+                distances=np.linalg.norm(a[:,None,:]-b[None,:,:],axis=2)
+                ia,ib=np.unravel_index(distances.argmin(),distances.shape)
+                mid.append((a[ia]+b[ib])/2)
+            mid=np.array(mid);center=mid.mean(0)
+            _,_,vt=np.linalg.svd(mid-center);axis=vt[0]
+            return center,axis
+        left_axis=aisle_axis(int(n[1:])+1)
+        right_axis=aisle_axis(int(n[1:])-1)
+        def geom_at(t,depth):
+            original=at(t,depth)
+            if main_frame is None:return original
+            origin,axis,normal=main_frame
+            target=(original[0]-origin)@normal
+            ends=[]
+            for (center,direction),sign in ((left_axis,1),(right_axis,-1)):
+                center=center+axis*(STAIR_W/2*sign)
+                den=direction@normal
+                if abs(den)<.2:return original
+                ends.append(center+direction*((target-(center-origin)@normal)/den))
+            return ends[0]+(ends[1]-ends[0])*(t-lo)/(hi-lo),axis,normal
         def row_depth(station,r):
             if main_frame is None:return rear_row(station,n)+(nr-1-r)*PITCH
             origin,axis,normal=main_frame;p,al,inside=at(station)
             return float(((origin-p)@normal+(nr-1-r)*PITCH)/(inside@normal))
         def patch(lower,upper):
             ts=np.linspace(lo,hi,max(2,int((hi-lo)/.2)+1))
-            g=Polygon([at(v,lower(v))[0] for v in ts]+[at(v,upper(v))[0] for v in ts[::-1]]).buffer(0)
+            g=Polygon([geom_at(v,lower(v))[0] for v in ts]+[geom_at(v,upper(v))[0] for v in ts[::-1]]).buffer(0)
             return g
         cell=patch(rear_edge,lambda v:row_depth(v,0)+.60);footprints.append(cell)
+        for v in np.linspace(lo,hi,25):
+            q=geom_at(v,row_depth(v,0)+.60)[0]
+            station=direction*((wall.project(Point(q))-begin+wall.length/2)%wall.length-wall.length/2)
+            p0,_,inward=at(station)
+            front_samples.append((station,float((q-p0)@inward),n))
         front_lo=lo
         front.extend([at(front_lo,row_depth(front_lo,0)+.60)[0],at(hi,row_depth(hi,0)+.60)[0]])
         for r,ns in enumerate(nums):
-            ts=lo+SEAT_W*.5+np.arange(len(ns))*SEAT_W
+            ts=(lo+hi)/2+(np.arange(len(ns))-(len(ns)-1)/2)*SEAT_W
             for station,sn in zip(ts,ns):
-                q,al,inside=at(station,row_depth(station,r))
+                q,al,inside=geom_at(station,row_depth(station,r))
                 # Follow the same curved/diagonal row as its tread.
-                a=at(station-.025,row_depth(station-.025,r))[0]
-                b=at(station+.025,row_depth(station+.025,r))[0]
+                a=geom_at(station-.025,row_depth(station-.025,r))[0]
+                b=geom_at(station+.025,row_depth(station+.025,r))[0]
                 tangent=_u(b-a);facing=np.array([-tangent[1],tangent[0]])
                 if facing@inside<0:facing=-facing
                 seats.append((q[0],q[1],r,float(np.degrees(np.arctan2(facing[0],facing[1]))),name(n),height_at(r),sn))
@@ -158,27 +211,57 @@ def _side(sg, chart, FN, standY, mouth=None):
             upper=(lambda v:row_depth(v,0)+.60) if r==0 else (lambda v,r=r:row_depth(v,r-.5))
             band=patch(lower,upper)
             rows.append({'r':r,'y':round(height_at(r),3),'y0':0.,'polys':_polys(band)})
-            if n=='G15':
+            if n=='G15' and HOME_ACCESS>0:
                 access_start=lo+max(map(len,nums))*SEAT_W+.12
-                access=Polygon([at(v,lower(v))[0] for v in (access_start,hi)]+
-                               [at(v,upper(v))[0] for v in (hi,access_start)]).buffer(0)
+                access=Polygon([geom_at(v,lower(v))[0] for v in (access_start,hi)]+
+                               [geom_at(v,upper(v))[0] for v in (hi,access_start)]).buffer(0)
                 finishes.append({'y':round(height_at(r)+.012,3),'polys':_polys(band.intersection(access))})
         if n in aisle_after:
             nxt=ORDER[ORDER.index(n)+1];nl,nh=spans[nxt]
-            station=hi+STAIR_W/2;T,al,inside=at(station)
-            y1=standY(T,-inside)
+            station=(hi+nl)/2;T,al,inside=at(station)
+            center,axis=right_axis
+            T=center+axis*((T-center)@axis)
+            if axis@inside>0:axis=-axis
+            y1=standY(T,axis)
             # A real stepped aisle spans the whole excite stand. The old
             # high, flat bridge and short rear flight exaggerated its gap.
             y0=Y0
             if y1 is not None and 0<y1-y0:
-                run=(depth_at(hi,n)+depth_at(nl,nxt))/2-.25
-                foot=T+inside*run
-                aisles.append({'a':list(np.round(foot,3)),'b':list(np.round(T-inside*.25,3)),
+                front_point=geom_at(hi,row_depth(hi,0)+.60)[0]
+                normal=main_frame[2] if main_frame is not None else inside
+                run=float((front_point-T)@normal/((-axis)@normal))-.12
+                foot=T-axis*run
+                aisles.append({'a':list(np.round(foot,3)),'b':list(np.round(T+axis*.25,3)),
                                'w':STAIR_W,'y0':round(y0,3),'y1':round(y1,3)})
-                gates.append({'p':list(np.round(T,3)),'u':list(np.round(-inside,5)),'w':STAIR_W+.15})
+                gates.append({'p':list(np.round(T,3)),'u':list(np.round(axis,5)),'w':STAIR_W+.15})
             pp=Polygon([at(hi,0)[0],at(nl,0)[0],at(nl,depth_at(nl,nxt))[0],at(hi,depth_at(hi,n))[0]])
             footprints.append(pp)
+    # Continuous field-facing envelope. A row's local end angle must not
+    # create a notch at every aisle. The three photographed depth regions
+    # keep their diagonal transition, with a concave majorant within each.
+    # One front per photographed region, using actual aisle-warped tread
+    # edges. The G11->G08 bridge spans G10/G09, so the change from shallow
+    # home rows to six-row cells is a long diagonal, not one aisle's notch.
+    def majorant(samples):
+        hull=[]
+        for t,d,_ in sorted(samples):
+            while len(hull)>1:
+                a,b=hull[-2:]
+                if (b[1]-a[1])/(b[0]-a[0]) > (d-b[1])/(t-b[0]):break
+                hull.pop()
+            hull.append((t,d))
+        return hull
+    home=majorant([p for p in front_samples if p[2] in set(ORDER[:5])])
+    pole=majorant([p for p in front_samples if p[2] in set(ORDER[7:])])
+    bridge=majorant([(*home[-1],'join'),*[p for p in front_samples if p[2] in {'G10','G09'}],(*pole[0],'join')])
+    profile=home[:-1]+bridge+pole[1:]
+    ts=np.linspace(profile[0][0],profile[-1][0],160)
+    front=[at(t,float(np.interp(t,*zip(*profile))))[0] for t in ts]
     X=unary_union(footprints).buffer(0)
+    envelope=Polygon([at(t,edge_at(t))[0] for t in ts]+front[::-1]).buffer(0)
+    apron=envelope.difference(X)
+    if not apron.is_empty:rows.append({'r':0,'y':Y0,'y0':0.,'polys':_polys(apron)})
+    X=X.union(envelope)
     # A continuous padded envelope with separate home/pole returns.
     # The five-row transition and the two/three-row pole lots taper
     # diagonally instead of producing a comb of independent rectangles.
@@ -209,6 +292,14 @@ def apply(data, chart_path='td/td_rows_real.json'):
             ys = [Ar[int(i)][1] for i in tree.query(q) if Ar[int(i)][0].contains(q)]
             if ys: return min(ys)
         return None
+    import pickle
+    from pathlib import Path
+    side_points,side_labels=pickle.load(open(Path(__file__).with_name('td_seatlab.pkl'),'rb'))['AB']
+    side_points=np.asarray(side_points,float)
+    standY.blockPoints={}
+    for block in {q[0] for q in side_labels if q[0].startswith('A')}:
+        ids=[i for i,q in enumerate(side_labels) if q[0]==block]
+        standY.blockPoints[block]=(side_points[ids], [side_labels[i][1] for i in ids])
     from scipy.spatial import cKDTree
     sa=np.frombuffer(base64.b64decode(LA['seats']),'<i2').reshape(-1,4)
     standY.seatPoints=sa[:,:2]/LA.get('seatScale',10)
@@ -228,6 +319,7 @@ def apply(data, chart_path='td/td_rows_real.json'):
     field = FN.difference(unary_union([sd['X'] for sd in sides]).buffer(0.02))
     field = max(getattr(field, 'geoms', [field]), key=lambda g: g.area).simplify(0.02)
     data['field'] = [[[[round(float(x), 2), round(float(z), 2)] for x, z in list(field.exterior.coords)[:-1]]]]
+    data['exciteLayoutOverride']={'basis':'User red block / cyan fence annotations; G04 retained, G03 removed; metric pitch estimated from photographs','blocks':ORDER,'officialSeatNumbers':False}
     data['exciteFence'] = [{'pts': sd['fence'], 'h': FENCE_H,'hs':sd['fence_heights'],'attachment':sd['attachment']} for sd in sides]
     data['exciteAisles'] = [a for sd in sides for a in sd['aisles']]
     data['exciteGates'] = [g for sd in sides for g in sd['gates']]

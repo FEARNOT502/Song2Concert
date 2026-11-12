@@ -123,7 +123,7 @@ def apply(data, real, side):
             # Keep unverified C/S/press numbers as estimates, but do not
             # leave their chairs floating off a tapered end tread.
             want=intervals(spec) if spec is not None else got
-            if level['name']=='G' and got==want:
+            if level['name']=='G' and (got==want or data.get('exciteLayoutOverride')):
                 continue # G uses a fine height index, checked by height in verify_td_model.py
             supported=all(row_geoms[int(seats[i,2])].buffer(.025).covers(Point(seats[i,:2])) for i in idx)
             if got==want and supported and shaft_clear[idx].all():
@@ -211,12 +211,13 @@ def apply(data, real, side):
     for l in data['levels']:
         for b,r,n in decode(l['labels'],3):actual[(names[b],int(r))].append(int(n))
     errors=[]
-    for nm,b in real.items():
+    verified={nm:b for nm,b in real.items() if not (nm.startswith('G') and data.get('exciteLayoutOverride'))}
+    for nm,b in verified.items():
         for r,ivs in b['rows'].items():
             if sorted(actual[(nm,int(r))])!=intervals(ivs):errors.append((nm,r))
     if errors:raise ValueError(f'PDF row/seat mismatch: {errors}')
-    data['seatAudit']={'pdfBlocks':len(real),'pdfRows':sum(len(b['rows']) for b in real.values()),
+    data['seatAudit']={'pdfBlocks':len(verified),'pdfRows':sum(len(b['rows']) for b in verified.values()),
                        'intervalMismatches':0,'refittedRows':repairs,
-                       'unverified':['C/S individual numbering; press/Platinum block assignments']}
+                       'unverified':['C/S individual numbering; press/Platinum block assignments','G04–G15 / G35–G46 custom photographic layout, not official seat IDs']}
     print('complete PDF rows verified; refitted',len(repairs),'rows')
     return data

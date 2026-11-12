@@ -68,6 +68,12 @@ def finish(data):
  for c in data['pillars']:
   if c.get('vom') or c.get('aisle') or c['z']<-79:c.update(r=.4,rx=.3,rz=.4)
  room=data['rooms'];infield=geom([f for f in data['floors'] if abs(f['y']-10.6)<.02]).intersection(box(-150,-78,150,100))
+ # C's lowest closed underside is 13.8. Carry its finish all the way
+ # beneath C and its rear rooms, not only over the narrower C2 floor.
+ # Otherwise the gaps exposed overlapping 15.85m slab strips above it.
+ C=next(l for l in data['levels'] if l['name']=='C')
+ balcony=geom(C['rows']).union(unary_union([Polygon(sd['front']+sd['back'][::-1]).buffer(0) for sd in data['balconyRooms']['sides']]))
+ infield=infield.union(balcony).intersection(box(-150,-78,150,100)).buffer(.035).buffer(-.035).simplify(.025,preserve_topology=True)
  if not infield.is_empty:
   for key in ('ceils','soffits'):
    for f in room[key]:
@@ -125,6 +131,19 @@ def finish(data):
     if part.geom_type=='LineString' and part.length>.04:
      for a,b in zip(list(part.coords)[:-1],list(part.coords)[1:]):out.append([*a,*b,*w[4:]])
   room[key]=out
+ # The previous opening only cut room walls. The separate building outer
+ # shell still crossed every portal. Extend that shell around the new hall.
+ outer=unary_union([Polygon(p[0],p[1:]) for p in data['outer']])
+ envelope=outer.union(hall.buffer(.45,join_style=2))
+ for flight in data['flights']:
+  if flight['y0']!=16.2:continue
+  start=np.array([flight['x'],flight['z']]);axis=np.array([flight['dx'],flight['dz']])
+  run=LineString([start-axis*1.2,start+axis*(flight['L']+1.2)])
+  envelope=envelope.union(run.buffer(flight.get('w',1.6)/2+.55,cap_style=2))
+  landing=LineString([start+axis*flight['L'],start+axis*(flight['L']+1.2)]).buffer(flight.get('w',1.6)/2+.15,cap_style=2)
+  data['floors'].append({'y':24.,'y0':23.7,'polys':polys(landing)})
+ data['outer']=polys(envelope)
+
  data['outfieldConcourse']={'y':10.6,'ceiling':13.15,'polys':polys(hall),'path':[list(np.round(p,3)) for p in centres],'mouths':len(F['voms'])}
  rear=[]
  for q in centres:
@@ -133,7 +152,52 @@ def finish(data):
  for sg in (-1,1):
   e=max([p for rim in data['rimCS'] for p in rim if np.sign(p[0])==sg],key=lambda p:abs(np.degrees(np.arctan2(p[0],p[1]+60))))
   r=np.array(e)-O;r/=np.linalg.norm(r);ends.append(list(np.round(np.array(e)+r*4,3)))
- data['outfieldBackWall']={'pts':[ends[0],*rear,ends[1]],'y0':13.15}
+ # Continue the actual upper-wall endpoints, rather than a disconnected
+ # wall behind them. Its underside roofs the seats behind the F pillars.
+ upper=sorted(data['upperWall'],key=lambda w:w['pts'][-1][0])
+ left,right=[w['pts'][-1] for w in upper]
+ front=[left,*[list(np.round(q,3)) for q in centres],right]
+ back=[upper[0]['ret'][1],*rear,upper[1]['ret'][1]]
+ data['outfieldBackWall']={'pts':front,'y0':16.2,'back':back}
+ room['ceils'].append({'y':16.2,'polys':polys(Polygon(front+back[::-1]).buffer(0))})
+ # Finish rooms along the inner edge of the rear circulation band.
+ br=data['balconyRooms'];br['corridorWalls']=[];br['doors']=[]
+ for sd in br['sides']:
+  front_points=np.array(sd['front']);K=np.array(sd['back']);ang=np.array(sd['ang'])
+  inward=front_points-K;inward/=np.linalg.norm(inward,axis=1)[:,None]
+  edge=K+inward*2.35
+  for a,b in sd['suites']:
+   mask=(ang>=a-.001)&(ang<=b+.001)
+   line=LineString(edge[mask])
+   if line.length<1.5:continue
+   mid=line.length/2;door=[list(line.interpolate(mid+d).coords[0]) for d in (-.52,.52)]
+   opening=LineString(door).buffer(.025)
+   rest=line.difference(opening)
+   br['corridorWalls'].extend(list(g.coords) for g in getattr(rest,'geoms',[rest]) if g.geom_type=='LineString')
+   br['doors'].append({'a':door[0],'b':door[1],'y':br['y'],'h':2.15})
+ # Keep the service stair access opening through newly enclosed rooms.
+ for connection in data.get('serviceStairLinks',[]):
+  opening=LineString(connection['path']).buffer(1.15,cap_style=2)
+  cut=[]
+  for line in br['corridorWalls']:
+   g=LineString(line).difference(opening)
+   cut.extend(list(p.coords) for p in getattr(g,'geoms',[g]) if p.geom_type=='LineString' and p.length>.03)
+  br['corridorWalls']=cut
+ # The room renderer had its own uncut ceiling ribbon, independent of the
+ # correctly cut room.ceils. Give it the same stair headroom openings.
+ ceiling=unary_union([Polygon(sd['front']+sd['back'][::-1]).buffer(0) for sd in br['sides']])
+ ce={'y':br['ceil'],'polys':polys(ceiling)}
+ br['ceilingPolys']=carve_headroom(data,ce)
+ # The central service stair has a continuous inclined soffit in the app.
+ # Remove horizontal room-ceiling edges through that lined shaft.
+ for f in data['flights']:
+  if f['y0']!=16.2 or f['y1']!=24 or abs(f['x'])>=12:continue
+  a=np.array([f['x'],f['z']]);u=np.array([f['dx'],f['dz']])
+  shaft=LineString([a,a+u*f['L']]).buffer((f.get('w',1.6)+.4)/2,cap_style=2)
+  for ceiling in room['ceils']+room['soffits']:
+   if 16.3<ceiling['y']<26.2:ceiling['polys']=polys(geom([ceiling]).difference(shaft))
+
+
  data['reviewRevision']={'balconyEndDegrees':C_END,'upperEndDegrees':104.,'ceilingFinish':13.8,'outfieldMouthsConnected':len(F['voms']),'pillarSection':[.6,.8]}
  return data
 

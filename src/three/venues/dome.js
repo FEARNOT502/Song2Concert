@@ -434,7 +434,7 @@ export function buildDome(ctx) {
     // the 2nd floor
     {
       const rim = TD_STANDS.rimS.flat(), y = TD_STANDS.rimY;
-      const g = wallStrip(along(rim, 0.17), rim.map(() => y + 0.60), { y0: y - 0.60, thick: 0.22, ease: 0 });
+      const g = wallStrip(along(rim, 0.17), rim.map(() => y + 0.60), { y0: y - 0.06, thick: 0.22, ease: 0 });
       if (g) { const m3 = new THREE.Mesh(g, paint); m3.receiveShadow = true; root.add(m3); }
       const face = along(rim, 0.0);
       tube(face, y + 0.54, 0.024);
@@ -503,7 +503,7 @@ export function buildDome(ctx) {
         const F = sd.front, K = sd.back, n = F.length;
         const up = upward(F, K);
         geo.floor.push(ribbon(F, K, F.map(() => y + 0.015), K.map(() => y + 0.015), !up));
-        geo.ceil.push(ribbon(F, K, F.map(() => cy), K.map(() => cy), up));
+        if (!BR.ceilingPolys) geo.ceil.push(ribbon(F, K, F.map(() => cy), K.map(() => cy), up));
         // the back wall: wood behind the suites, white behind the lounge
         const iL = sd.ang.findIndex((a) => a >= sd.lounge[0] - 1e-6);
         const backOf = (i0, i1) => wallStrip(K.slice(i0, i1 + 1).map(([x, z]) => ({ x, z: z + ZH })), K.slice(i0, i1 + 1).map(() => cy + 0.02), { y0: y, thick: 0.1, ease: 0 });
@@ -538,6 +538,24 @@ export function buildDome(ctx) {
           const mx = (F[i][0] * 0.55 + K[i][0] * 0.45), mz = (F[i][1] * 0.55 + K[i][1] * 0.45);
           box(geo.lamp, 0.35, 0.02, 0.35, mx, cy - 0.02, mz, 0);
         }
+      }
+      for (const poly of BR.ceilingPolys ?? []) {
+        const sh = new THREE.Shape(poly[0].map(([x,z]) => new THREE.Vector2(x,-z)));
+        for (const hole of poly.slice(1)) sh.holes.push(new THREE.Path(hole.map(([x,z]) => new THREE.Vector2(x,-z))));
+        const g = new THREE.ShapeGeometry(sh); g.rotateX(-Math.PI/2); g.translate(0,cy,ZH); geo.ceil.push(g);
+      }
+      for (const line of BR.corridorWalls ?? []) {
+        geo.wood.push(wallStrip(line.map(([x,z])=>({x,z:z+ZH})),line.map(()=>cy),{y0:y,thick:.12,ease:0}));
+      }
+      for (const d of BR.doors ?? []) {
+        const dx=d.b[0]-d.a[0], dz=d.b[1]-d.a[1], width=Math.hypot(dx,dz), rot=Math.atan2(dx,dz);
+        for (const p of [d.a,d.b]) box(geo.frame,.09,d.h+.08,.12,p[0],y+d.h/2,p[1],rot);
+        box(geo.frame,.12,.10,width+.12,(d.a[0]+d.b[0])/2,y+d.h,(d.a[1]+d.b[1])/2,rot);
+        box(geo.wood,.12,cy-y-d.h,width,(d.a[0]+d.b[0])/2,(cy+y+d.h)/2,(d.a[1]+d.b[1])/2,rot);
+        // A visible hinged leaf, standing inward into the room, with handle.
+        const inward = rot + (d.a[0]>0 ? -.95 : .95), lx=Math.sin(inward),lz=Math.cos(inward);
+        box(geo.wood,.065,d.h-.07,width-.08,d.a[0]+lx*width/2,y+d.h/2,d.a[1]+lz*width/2,inward);
+        box(geo.frame,.13,.055,.20,d.a[0]+lx*(width-.2),y+1.02,d.a[1]+lz*(width-.2),inward);
       }
       // the walls across: between the suites (wood), the rooms' ends; a dark mullion where each meets the glazing
       for (const [x0, z0, x1, z1] of BR.walls) {
@@ -579,6 +597,29 @@ export function buildDome(ctx) {
         const m3 = new THREE.Mesh(g, lit(0xdcd8d0, 0x8a857c, 0.5, { side: THREE.DoubleSide })); m3.userData.noCollide = true; root.add(m3);
       }
     }
+  }
+  // Close the rear service stairwell around its real walking envelope.
+  // A lined side and sloping soffit conceal the cut ends of intersecting
+  // upper slabs; both landings remain open to their respective corridors.
+  {
+    const sides=[],caps=[];
+    const point=(f,t,s,y)=>[f.x+f.dx*t-f.dz*s,y,f.z+ZH+f.dz*t+f.dx*s];
+    const quad=(out,a,b,c,d)=>out.push(...a,...b,...c,...a,...c,...d);
+    for(const f of TD_STANDS.flights)if(f.y0===16.2&&f.y1===24&&Math.abs(f.x)<12){
+      const w=(f.w??1.6)/2+.18,ceil=3.2;
+      for(const sg of [-1,1]){
+        const a=point(f,0,sg*w,f.y0),b=point(f,f.L,sg*w,f.y0);
+        const c=point(f,f.L,sg*w,f.y1+ceil),d=point(f,0,sg*w,f.y0+ceil);
+        quad(sides,a,b,c,d);
+      }
+      quad(caps,point(f,0,-w,f.y0+ceil),point(f,f.L,-w,f.y1+ceil),point(f,f.L,w,f.y1+ceil),point(f,0,w,f.y0+ceil));
+    }
+    const mat=std({color:0xc9ceca,roughness:.92,emissive:0x7a827d,emissiveIntensity:.45,side:THREE.DoubleSide});
+    for(const positions of [sides,caps])if(positions.length){
+      const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geo.computeVertexNormals();
+      const mesh=new THREE.Mesh(geo,mat);root.add(mesh);
+    }
+    houseLit.push([mat,.45]);
   }
   // The wall behind the upper tier (td_ends.py, td_balcony.py): straight up to the ring from behind the 2nd floor's top
   // rows, one smooth line in plan from behind home out past each pole, over the balcony's back wall where it stands
@@ -760,14 +801,19 @@ export function buildDome(ctx) {
   for (let i = 0; i < ringPts.length; i++) {
     const p = ringPts[i];
     for (const rear of TD_STANDS.exciteRear ?? []) {
-      let distance = Infinity;
+      let distance = Infinity, along = 0;
       for (let j = 1; j < rear.pts.length; j++) {
         const a = rear.pts[j - 1], b = rear.pts[j], dx = b[0] - a[0], dz = b[1] - a[1];
         const t = ((p.x - a[0]) * dx + (p.z - ZH - a[1]) * dz) / (dx * dx + dz * dz);
         if (t < 0 || t > 1) continue;
-        distance = Math.min(distance, Math.hypot(p.x - a[0] - dx * t, p.z - ZH - a[1] - dz * t));
+        const d = Math.hypot(p.x-a[0]-dx*t,p.z-ZH-a[1]-dz*t);
+        if (d < distance) { distance=d; along=(j-1+t)/(rear.pts.length-1); }
       }
-      if (distance < 0.55) ringH[i] = Math.min(ringH[i], rear.top);
+      if (distance < .85) {
+        const fade=Math.min(1,along*12,(1-along)*12)*Math.max(0,Math.min(1,(.85-distance)/.3));
+        const w=fade*fade*(3-2*fade);
+        ringH[i] += (Math.min(ringH[i],rear.top)-ringH[i])*w;
+      }
     }
   }
   // (open at the mouth of the tunnel under A02: the wall stops either side of it, a swing gate between; and at each of
@@ -1099,34 +1145,63 @@ export function buildDome(ctx) {
       sign.position.set(o.x, y1 + 1.75, o.z); sign.rotation.y = Math.atan2(-(q.z - p.z), q.x - p.x);
       root.add(sign);
     }
-    // The batter eye is a dark, closed stepped face below the modern
-    // short centre display. Side returns close it against the rear wall.
+    // The batter eye follows the real stepped stand volume below the
+    // display. Its closed risers and treads are emitted below; no diagonal
+    // billboard is draped across neighboring seating blocks.
+
+    // Modern centre-field sight screen (2022 onward): the short LED
+    // replaces the old vertical green face. A narrow terraced plinth
+    // projects below it, with closed advertisement rooms on either side.
+    // These metric depths are photo estimates (modern-25, modern-11).
     {
-      const bottom = 4.65, shoulder = 7.5;
-      const front = Math.max(...(TD_STANDS.backscreen ?? []).flatMap((r) => r.polys.flatMap((p) => p[0].map((q) => q[1])))) + ZH + 0.2;
-      const outline = [[-24.5, y0], [-24.5, shoulder], [-19, shoulder], [-16, bottom],
-        [16, bottom], [19, shoulder], [24.5, shoulder], [24.5, y0]];
-      const shape = new THREE.Shape(outline.map(([x, y]) => new THREE.Vector2(x, y)));
-      const shell = new THREE.ExtrudeGeometry(shape, { depth: 0.25, bevelEnabled: false });
-      const positions = shell.attributes.position;
-      for (let i = 0; i < positions.count; i++) positions.setZ(i, positions.getZ(i) + front - (positions.getY(i) - bottom) * 1.25);
-      shell.computeVertexNormals();
-      const matte = std({ color: 0x14352b, roughness: 1, metalness: 0, side: THREE.DoubleSide });
-      root.add(new THREE.Mesh(shell, matte));
+      const green=std({color:0x18382a,roughness:1});
+      const faceZ=lower[Math.floor(lower.length/2)].z+2.1;
+      const base=7.45, top=yl-.12, depth=6.4;
+      const box=(w,h,d,x,y,z)=>{
+        const g=new THREE.BoxGeometry(w,h,d);g.translate(x,y,z);root.add(new THREE.Mesh(g,green));
+      };
+      box(20,Math.max(.3,top-base),depth,0,(base+top)/2,faceZ-depth/2);
+      // A room on each shoulder, recessed from the central plinth. The
+      // panel sits in a shallow framed recess rather than on a sloped wing.
+      const frameM=std({color:0x244738,roughness:.95});
+      const panelM=std({color:0x11271e,roughness:1});
+      for(const sg of [-1,1]){
+        const x=sg*16.15,w=11.8,lo=0,hi=y0-.25,z=faceZ-1.05;
+        box(w,hi-lo,4.8,x,(hi+lo)/2,z-2.4);
+        const surround=new THREE.Mesh(new THREE.BoxGeometry(8.8,2.7,.16),frameM);
+        surround.position.set(x,hi-2.15,z+.08);root.add(surround);
+        const panel=new THREE.Mesh(new THREE.BoxGeometry(8.15,2.1,.05),panelM);
+        panel.position.set(x,hi-2.15,z+.18);root.add(panel);
+      }
+      // Keep the lower risers as real solid steps, restrict them to the
+      // centre, and stop at the vertical face. No sheet covers F's wings.
+      const parts=[];
+      const clip=(ring,limit,keepLess)=>{
+        const out=[];
+        for(let i=0;i<ring.length;i++){
+          const a=ring[i],b=ring[(i+1)%ring.length],ain=keepLess?a[0]<=limit:a[0]>=limit,bin=keepLess?b[0]<=limit:b[0]>=limit;
+          if(ain)out.push(a);
+          if(ain!==bin){const t=(limit-a[0])/(b[0]-a[0]);out.push([limit,a[1]+(b[1]-a[1])*t]);}
+        }
+        return out;
+      };
+      for(const r of TD_STANDS.backscreen??[]){
+        if(r.y>base+.3)continue;
+        for(const poly of r.polys){
+          const ring=clip(clip(poly[0],10,true),-10,false);
+          if(ring.length<3)continue;
+          const shape=new THREE.Shape(ring.map(([x,z])=>new THREE.Vector2(x,-z)));
+          for(const hole of poly.slice(1)){
+            const h=clip(clip(hole,10,true),-10,false);
+            if(h.length>=3)shape.holes.push(new THREE.Path(h.map(([x,z])=>new THREE.Vector2(x,-z))));
+          }
+          const g=new THREE.ExtrudeGeometry(shape,{depth:Math.max(.05,r.y),bevelEnabled:false});
+          g.rotateX(-Math.PI/2);g.translate(0,0,ZH);parts.push(g.index?g.toNonIndexed():g);
+        }
+      }
+      if(parts.length)root.add(new THREE.Mesh(mergeGeometries(parts),green));
     }
 
-    // the backscreen: the outfield stand's rows between F09 and F12, the data's own outlines, in dark green
-    {
-      const parts = [];
-      for (const r of TD_STANDS.backscreen ?? []) for (const poly of r.polys) {
-        const shape = new THREE.Shape(poly[0].map(([x, z]) => new THREE.Vector2(x, -z)));
-        for (const h of poly.slice(1)) shape.holes.push(new THREE.Path(h.map(([x, z]) => new THREE.Vector2(x, -z))));
-        const g = new THREE.ExtrudeGeometry(shape, { depth: Math.max(0.05, r.y), bevelEnabled: false });
-        g.rotateX(-Math.PI / 2); g.translate(0, 0, ZH);
-        parts.push(g.index ? g.toNonIndexed() : g);
-      }
-      if (parts.length) root.add(new THREE.Mesh(mergeGeometries(parts), std({ color: 0x18382a, roughness: 0.95 })));
-    }
   }
 
   if (round) return domeRound();

@@ -252,8 +252,16 @@ def _stairs(data):
             f['z'] = 59.0
             lower = geom([p for p in data['floors'] if abs(p['y']-16.2)<.02])
             base = Point(f['x']-f['dx']*.7, f['z']-f['dz']*.7)
-            near = nearest_points(lower, base)[0]
-            link = LineString([(near.x, near.y-.6), (base.x,base.y)]).buffer(1.1, cap_style=2)
+            # The generic slab already extends behind K, so its nearest point
+            # can be the stair base itself. Start at the actual room's rear
+            # corridor and cross its back wall deliberately.
+            backs=unary_union([LineString(sd['back']) for sd in data['balconyRooms']['sides']])
+            near=nearest_points(backs,base)[0]
+            inward=np.array([0.,-60.])-np.array([near.x,near.y]);inward/=np.linalg.norm(inward)
+            entry=np.array([near.x,near.y])+inward*1.1
+            path=[list(np.round(entry,3)),[round(base.x,3),round(base.y,3)]]
+            data.setdefault('serviceStairLinks',[]).append({'y':16.2,'path':path})
+            link = LineString(path).buffer(1.1, cap_style=2)
             link = unary_union([link, base.buffer(1.1, cap_style=3)])
             data['floors'].append({'y':16.2, 'y0':15.9, 'polys':polys(link)})
             room['lit'].append({'y':16.2, 'polys':polys(link)})

@@ -1,0 +1,50 @@
+{
+  "method": "Actual photos and user annotations control shape; metric dimensions estimated. Upload URL dates do not establish capture dates.",
+  "viewed": [
+    "modern-3",
+    "modern-11",
+    "modern-25"
+  ],
+  "sources": [
+    {
+      "url": "https://nationalstadium-tours.com/wp-content/uploads/2026/10/td-lower-home-direction.webp",
+      "file": "modern-3.jpg",
+      "page": "https://nationalstadium-tours.com/?overview=87137"
+    },
+    {
+      "url": "https://nationalstadium-tours.com/wp-content/uploads/2026/10/td-upper-front-view.webp",
+      "file": "modern-11.jpg",
+      "page": "https://nationalstadium-tours.com/?overview=87137"
+    },
+    {
+      "url": "https://nationalstadium-tours.com/wp-content/uploads/2026/10/td-outfield-pole.webp",
+      "file": "modern-16.jpg",
+      "page": "https://nationalstadium-tours.com/?overview=87137"
+    },
+    {
+      "url": "https://nationalstadium-tours.com/wp-content/uploads/2026/10/outfield.webp",
+      "file": "modern-18.jpg",
+      "page": "https://nationalstadium-tours.com/?overview=87137"
+    },
+    {
+      "url": "https://nationalstadium-tours.com/wp-content/uploads/2026/10/td-bsc-window.webp",
+      "file": "modern-20.jpg",
+      "page": "https://nationalstadium-tours.com/?overview=87137"
+    },
+    {
+      "url": "https://nationalstadium-tours.com/wp-content/uploads/2026/10/td-bsc-field.webp",
+      "file": "modern-21.jpg",
+      "page": "https://nationalstadium-tours.com/?overview=87137"
+    },
+    {
+      "url": "https://nationalstadium-tours.com/wp-content/uploads/2026/10/td-bsc-outdoor-view.webp",
+      "file": "modern-23.jpg",
+      "page": "https://nationalstadium-tours.com/?overview=87137"
+    },
+    {
+      "url": "https://nationalstadium-tours.com/wp-content/uploads/2026/10/balcony.webp",
+      "file": "modern-25.jpg",
+      "page": "https://nationalstadium-tours.com/?overview=87137"
+    }
+  ]
+}
