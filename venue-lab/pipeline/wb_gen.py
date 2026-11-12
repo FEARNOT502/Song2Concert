@@ -331,7 +331,8 @@ from wb_reseat import reseat
 PITCH = {'L1': 0.551, 'L2': 0.5, 'L5': 0.515}
 PLAN = plan_bits(G)
 for name_, l_ in LV.items():
-    print('reseat', name_, reseat(G, l_, PLAN[name_], PITCH[name_]), round(time.time() - T0, 1))
+    # (Level 1's front band is before its row 1: no front row to fill there)
+    print('reseat', name_, reseat(G, l_, PLAN[name_], PITCH[name_], front=name_ != 'L1'), round(time.time() - T0, 1))
 
 # ── the four corner tunnels ──
 # At each corner of the pitch the Level 1 front is cut square across, and
@@ -1192,4 +1193,7 @@ data = {'levels': levels, 'floors': floors, 'flights': flights, 'outer': [poly_o
         'concourse': {'L1': C1, 'L2': C2, 'L5': C5}, 'rooms': encl, 'bays': bays_out, 'tunnels': tunnels_out, 'desks': DESKS, 'cutWalls': CUT_WALLS, 'cutWallTone': 0.85}
 json.dump(data, open('wb_stands.json', 'w'), separators=(',', ':'))
 import os; print('json KB', os.path.getsize('wb_stands.json') // 1024, round(time.time() - T0, 1))
-pickle.dump({'c1': c1, 'c2': c2, 'c5': c5, 'inside1': inside1, 'outer': outer}, open('wb_masks.pkl', 'wb'))
+pickle.dump({'c1': c1, 'c2': c2, 'c5': c5, 'inside1': inside1, 'outer': outer,
+             # (for wb_labels.py: the stand's seats back to the plan's frame)
+             'R2F': R2F, 'NB2': NB2, 'WD2': WD2, 'W2': W2, 'D2': D2, 'SHIFT5': SHIFT5, 'NB5': NB5,
+             'bands': {n_: (l_.band.copy(), l_.D) for n_, l_ in LV.items()}, 'grid': (G.x0, G.z0, G.res, G.W, G.H)}, open('wb_masks.pkl', 'wb'))

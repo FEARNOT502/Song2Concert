@@ -25,6 +25,9 @@ import { createArt } from './art.js';
 import { BeatFollower } from './beat.js';
 import { buildVenue } from './venues/index.js';
 import { getDomeSeatCatalog } from './venues/dome.js';
+import { getStadiumSeatCatalog } from './venues/stadium.js';
+// the rooms whose seats are named (block, row, seat), and each one's list of them
+const seatCatalog = (id, mode) => (id === 'dome' ? getDomeSeatCatalog() : id === 'stadium' ? getStadiumSeatCatalog(mode) : null);
 import { BASE, PARTS, rollOf, section } from './show.js';
 
 // How far a new venue's camera may widen on a portrait screen: at least ~56°
@@ -187,8 +190,8 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     cam.updateProjectionMatrix();
     venue = v; ctx = c;
     walker.setVenue(v.root, v.camera.pos, v.camera.target, v.seatNear);
-    if (pendingSeat && id === 'dome') {
-      const s = getDomeSeatCatalog().getSeat(pendingSeat.block, pendingSeat.row, pendingSeat.num) || pendingSeat;
+    if (pendingSeat && seatCatalog(id, venueMode)) {
+      const s = seatCatalog(id, venueMode).getSeat(pendingSeat.block, pendingSeat.row, pendingSeat.num) || pendingSeat;
       walker.sitAt(s, v.stageTarget);
     }
     const b = v.bloom || {};
@@ -464,10 +467,10 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     setCrowdLight: (mode) => { crowdLight = mode === 'flash' ? 'flash' : 'stick'; },
     setSeat(seat) {
       pendingSeat = seat || null;
-      if (venue && venueId === 'dome') {
+      if (venue && seatCatalog(venueId, venueMode)) {
         if (!seat) walker.sitAt(null);
         else {
-          const s = getDomeSeatCatalog().getSeat(seat.block, seat.row, seat.num) || seat;
+          const s = seatCatalog(venueId, venueMode).getSeat(seat.block, seat.row, seat.num) || seat;
           walker.sitAt(s, venue.stageTarget);
         }
       }

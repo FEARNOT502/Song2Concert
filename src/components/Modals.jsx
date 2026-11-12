@@ -5,7 +5,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { VENUES } from '../data.js';
 import { ROUND_VENUES, VENUE_MODES, modeOf } from '../useVenueModes.js';
 import { getDomeSeatCatalog } from '../three/venues/dome.js';
+import { getStadiumSeatCatalog } from '../three/venues/stadium.js';
 import DomeBlockMap from './DomeBlockMap.jsx';
+import StadiumBlockMap from './StadiumBlockMap.jsx';
 import { useReorder, moved } from './useReorder.js';
 
 const DOME_TIERS = [
@@ -17,8 +19,21 @@ const DOME_TIERS = [
   ['D', '2F LOWER (D)'],
   ['E', '2F UPPER (E)'],
 ];
+// Wembley's: by their prefixes (the boxes are B001-B142, Level 4's balcony L4)
+const STADIUM_TIERS = [
+  ['1', 'LEVEL 1 (101-144)'],
+  ['2', 'LEVEL 2 · CLUB WEMBLEY (201-252)'],
+  ['B', 'LEVEL 3 · BOXES'],
+  ['L4', 'LEVEL 4 · BOX BALCONY'],
+  ['5', 'LEVEL 5 (501-552)'],
+];
+// the rooms whose seats are named, and each one's list of them
+export const SEAT_ROOMS = ['dome', 'stadium'];
+const seatCatalog = (id, mode) => (id === 'dome' ? getDomeSeatCatalog() : id === 'stadium' ? getStadiumSeatCatalog(mode) : null);
+// a block's name as the picker writes it (a box by its number)
+const blockText = (b) => (/^B\d+$/.test(b) ? `BOX ${Number(b.slice(1))}` : b === 'L4' ? 'L4 BALCONY' : b);
 // a seat as the picker and the badges write it
-export const seatText = (s) => (s ? `${s.block} · ROW ${s.row} · SEAT ${s.num}` : 'FOH · ARENA');
+export const seatText = (s, room = null) => (s ? `${blockText(s.block)} · ROW ${s.row} · SEAT ${s.num}` : room === 'stadium' ? 'FOH · PITCH' : 'FOH · ARENA');
 
 // ───────────────────────────────────────── Modal shell
 export function Modal({ open, onClose, title, subtitle, children }) {
@@ -71,7 +86,12 @@ export function VenuePicker({ open, onClose, current, currentMode = 'general', m
   const [selRow, setSelRow] = useState(1);
   const [selNum, setSelNum] = useState(1);
 
-  const domeCat = useMemo(() => (sel === 'dome' ? getDomeSeatCatalog() : null), [sel]);
+  // (the layout the room is shown in: a round room's own, else general)
+  const selLayout = ROUND_VENUES.includes(sel) ? selMode : 'general';
+  const domeCat = useMemo(() => seatCatalog(sel, selLayout), [sel, selLayout]);
+  const sellable = useMemo(() => (domeCat ? new Set(domeCat.blocks) : null), [domeCat]);
+  // (a block the room, or its layout, does not sell: back to FOH)
+  useEffect(() => { if (selBlock !== 'FOH' && domeCat && !domeCat.byBlock.has(selBlock)) setSelBlock('FOH'); }, [domeCat, selBlock]);
   const domeRows = useMemo(() => (domeCat && selBlock !== 'FOH' ? domeCat.getRows(selBlock) : []), [domeCat, selBlock]);
   const domeNums = useMemo(() => (domeCat && selBlock !== 'FOH' ? domeCat.getNums(selBlock, selRow) : []), [domeCat, selBlock, selRow]);
 
@@ -114,7 +134,7 @@ export function VenuePicker({ open, onClose, current, currentMode = 'general', m
   const mode = round ? selMode : 'general';
   const choose = useCallback((id) => { setSel(id); setSelMode(id === current ? currentMode : modeOf(modes, id)); }, [current, currentMode, modes]);
   const enter = useCallback((id = sel, m = mode) => {
-    const seatObj = id === 'dome' && selBlock !== 'FOH' ? (domeCat?.getSeat(selBlock, selRow, selNum) || null) : null;
+    const seatObj = SEAT_ROOMS.includes(id) && selBlock !== 'FOH' ? (seatCatalog(id, m)?.getSeat(selBlock, selRow, selNum) || null) : null;
     onPick(id, ROUND_VENUES.includes(id) ? m : undefined, seatObj);
     onClose();
   }, [sel, mode, selBlock, selRow, selNum, domeCat, onPick, onClose]);
@@ -144,7 +164,7 @@ export function VenuePicker({ open, onClose, current, currentMode = 'general', m
   const listRef = useRef(null);
   useEffect(() => { listRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }, [sel, open]);
 
-  const sameSeat = v.id !== 'dome' || (
+  const sameSeat = !SEAT_ROOMS.includes(v.id) || (
     selBlock === 'FOH'
       ? !currentSeat
       : (currentSeat?.block === selBlock && Number(currentSeat?.row) === Number(selRow) && Number(currentSeat?.num) === Number(selNum))
@@ -210,6 +230,16 @@ export function VenuePicker({ open, onClose, current, currentMode = 'general', m
                   onPick={handleBlockChange}
                 />
               </SeatMap>
+            ) : v.id === 'stadium' && domeCat ? (
+              <SeatMap key={`${v.id}-${mode}`} alt={`${v.name}${mode === '360' ? ' 360' : ''} block map`}>
+                <StadiumBlockMap
+                  mode={mode}
+                  selected={selBlock === 'FOH' ? null : selBlock}
+                  seat={selBlock === 'FOH' ? null : domeCat.getSeat(selBlock, selRow, selNum)}
+                  sellable={sellable}
+                  onPick={handleBlockChange}
+                />
+              </SeatMap>
             ) : (
               <SeatMap key={`${v.id}-${mode}`} src={mapSrc(v.id, mode)} alt={`${v.name}${mode === '360' ? ' 360' : ''} 좌석배치도`} />
             )}
@@ -237,12 +267,12 @@ export function VenuePicker({ open, onClose, current, currentMode = 'general', m
               </div>
             )}
 
-            {sel === 'dome' && domeCat && (
+            {SEAT_ROOMS.includes(sel) && domeCat && (
               <div className="mt-4 border border-white/15 bg-white/[0.02] p-3">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-[9px] tracking-[0.28em] text-neutral-400 uppercase">SEAT · BLOCK / ROW / NO.</span>
                   <span className="text-[11px] text-[oklch(0.78_0.16_55)] tabular-nums">
-                    {seatText(selBlock === 'FOH' ? null : { block: selBlock, row: selRow, num: selNum })}
+                    {seatText(selBlock === 'FOH' ? null : { block: selBlock, row: selRow, num: selNum }, sel)}
                   </span>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
@@ -254,13 +284,13 @@ export function VenuePicker({ open, onClose, current, currentMode = 'general', m
                       onChange={(e) => handleBlockChange(e.target.value)}
                       className="bg-[#0a0a0a] border border-white/20 focus:border-[oklch(0.78_0.16_55)] text-white text-[12px] px-2 py-1.5 outline-none tabular-nums"
                     >
-                      <option value="FOH">FOH (ARENA)</option>
-                      {DOME_TIERS.map(([prefix, label]) => {
-                        const list = domeCat.blocks.filter((b) => b.startsWith(prefix));
+                      <option value="FOH">{sel === 'stadium' ? 'FOH (PITCH)' : 'FOH (ARENA)'}</option>
+                      {(sel === 'stadium' ? STADIUM_TIERS : DOME_TIERS).map(([prefix, label]) => {
+                        const list = domeCat.blocks.filter((b) => (prefix === 'L4' ? b === 'L4' : b.startsWith(prefix) && b !== 'L4'));
                         if (!list.length) return null;
                         return (
                           <optgroup key={prefix} label={label}>
-                            {list.map((b) => <option key={b} value={b}>{b}</option>)}
+                            {list.map((b) => <option key={b} value={b}>{blockText(b)}</option>)}
                           </optgroup>
                         );
                       })}

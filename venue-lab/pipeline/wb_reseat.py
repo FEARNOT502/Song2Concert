@@ -280,6 +280,29 @@ class Reseat:
         out = S[~drop]
         if add: out = np.r_[out, np.array(add)]
         return out, len(add), int(drop.sum())
+    def front_fill(s, S, pitch, tol=0.45):
+        """A tier's front row, seated as wide as the row behind it: the plan
+        draws its first row on the tier's front edge, where its line falls
+        outside the tread and the row was left empty (Level 2's and Level 5's
+        row 1 all round). Where a row has no tread in front of it (the front)
+        and the row behind is seated, it is seated too, a pitch apart."""
+        D = s.l.D; R_ = S[:, 2].astype(int)
+        trees = {r: cKDTree(S[R_ == r, :2]) for r in np.unique(R_)}
+        add = []
+        for row in s.rows:
+            r = row['r']; Q, g = row['Q'], row['g']
+            front = s.at(s.l.band, Q - g * (0.9 * D)) < 0
+            behind = trees[r + 1].query(Q + g * D)[0] < tol if (r + 1) in trees else np.zeros(len(Q), bool)
+            own = trees[r].query(Q)[0] < 0.7 * pitch if r in trees else np.zeros(len(Q), bool)
+            ok = row['okt'] & ~row['ais'] & front & behind & ~own
+            for a, b in _runs(ok):
+                L_ = (b - a - 1) * STEP - 0.3
+                if L_ < 0: continue
+                n = int(L_ / pitch + 1e-6) + 1; t0 = a * STEP + 0.15 + (L_ - (n - 1) * pitch) / 2
+                for k in range(n):
+                    i0 = min(int(round((t0 + k * pitch) / STEP)), len(Q) - 1)
+                    add.append((Q[i0, 0], Q[i0, 1], r, np.arctan2(-g[i0, 0], -g[i0, 1])))
+        return (np.r_[S, np.array(add)] if add else S), len(add)
     def place(s, pitch, end):
         out = []
         for row in s.rows:
@@ -314,7 +337,7 @@ class Reseat:
                         out.append((q[0], q[1], row['r'], np.arctan2(-g[0], -g[1])))
         return np.array(out)
 
-def reseat(G, l, bits, pitch, end=0.35):
+def reseat(G, l, bits, pitch, end=0.35, front=True):
     """Level l's seats laid out again along its rows (l.seats, l.row, l.yaw,
     l.seatmask). Returns (seats, aisles cleaned, aisles carried on)."""
     R = Reseat(G, l, bits)
@@ -325,6 +348,9 @@ def reseat(G, l, bits, pitch, end=0.35):
     for _ in range(2):
         S, na_, nd_ = R.fill_holes(S, pitch)
         print('  holes seated', na_, 'strays taken out', nd_)
+    if front:
+        S, nf_ = R.front_fill(S, pitch)
+        print('  front rows seated', nf_)
     l.seats, l.row, l.yaw = S[:, :2].copy(), S[:, 2].astype(int), S[:, 3].copy()
     l.seatmask = seat_mask(G, l.seats)
     return len(S), nc, ne

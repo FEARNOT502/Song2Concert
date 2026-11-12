@@ -85,7 +85,7 @@ function Scene({
   }, []);
 
   useEffect(() => { stageRef.current?.setVenue(venueId, venueMode); }, [venueId, venueMode]);
-  useEffect(() => { if (venueId === 'dome') stageRef.current?.setSeat(seat); }, [venueId, seat]);
+  useEffect(() => { if (venueId === 'dome' || venueId === 'stadium') stageRef.current?.setSeat(seat); }, [venueId, seat]);
   useEffect(() => { stageRef.current?.setArt({ coverId, coverSrc, title, artist }); }, [coverId, coverSrc, title, artist]);
   // Stopped, the house lights are up; playing, they go down for the show.
   useEffect(() => { stageRef.current?.setPlaying(playing); }, [playing]);
