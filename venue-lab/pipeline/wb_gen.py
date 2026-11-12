@@ -1162,6 +1162,43 @@ def aisle_walls(l, aisles):
         out = []
 for lv in levels:
     if lv['name'] == 'L5': lv['walls'] += list(aisle_walls(L5, AISLES5))
+# ── Level 1's back wall ──
+# Behind Level 1's last row is a wall (the seat-view sites: "a back row wall
+# behind", block 134 row 44), up to Level 2's underside over it, or where
+# Level 2 does not reach over it up to its concourse's floor (asked
+# 2026-11-12: behind the last row there was nothing, the space under Level 2
+# open to the dark). Per half degree round the bowl, on the line of Level 1's
+# back, from its last tread there to what stands over it.
+NBW = 720
+BINW = ((TH + np.pi) / (2 * np.pi) * NBW).astype(int) % NBW
+on1 = (L1.R > 0) & (L1.band >= 0)
+R1b = np.zeros(NBW); np.maximum.at(R1b, BINW[on1], RR[on1])
+bot2 = np.array([L2.bot(r) for r in range(L2.nrows)])
+def _cell(x, z):
+    i_, j_ = [int(round(float(c))) for c in G.g(x, z)]
+    return min(max(j_, 0), G.H - 1), min(max(i_, 0), G.W - 1)
+wall_pts = []
+for k in range(NBW):
+    if R1b[k] < 30: wall_pts.append(None); continue
+    th = (k + 0.5) / NBW * 2 * np.pi - np.pi; sv = np.array([np.sin(th), np.cos(th)])
+    p_in = sv * (R1b[k] - 0.3); p = sv * (R1b[k] + 0.05); p_out = sv * (R1b[k] + 0.4)
+    b1 = L1.band[_cell(*p_in)]
+    if b1 < 30: wall_pts.append(None); continue          # (only behind the back section's rows: not at a tunnel's cut)
+    y0 = float(L1.h(b1)) - 0.05
+    b2 = L2.band[_cell(*p_out)]
+    if b2 >= 0: y1 = float(bot2[b2])
+    elif c2[_cell(*p_out)]: y1 = C2 - 0.35
+    else: y1 = y0 + 2.6
+    wall_pts.append((p, y0, max(y1, y0 + 0.5)))
+BACK1 = []
+for k in range(NBW):
+    a_, b_ = wall_pts[k], wall_pts[(k + 1) % NBW]
+    if a_ is None or b_ is None or np.linalg.norm(a_[0] - b_[0]) > 2.0: continue
+    BACK1.append([round(float(a_[0][0]), 2), round(float(a_[0][1]), 2), round(float(b_[0][0]), 2), round(float(b_[0][1]), 2),
+                  round(min(a_[1], b_[1]), 2), round(max(a_[2], b_[2]), 2)])
+for lv in levels:
+    if lv['name'] == 'L1': lv['walls'] += BACK1
+print('Level 1 back wall', len(BACK1), 'pieces')
 import base64 as _b64
 levels.append({'name': 'L3', 'D': ROW3, 'h0': Y3S[0], 'rise': 0, 'hs': Y3S, 'rows': L3_rows, 'steps': [], 'holes': [], 'voms': [],
                'seats': _b64.b64encode(np.c_[np.round(S3 * 100), R3, np.round(np.degrees(Y3yaw))].astype('<i2').tobytes()).decode('ascii'),

@@ -185,21 +185,30 @@ export function buildStadium(ctx) {
   // the precast concrete a pale warm grey, the aisles' steps the same a shade
   // darker and warmer (worn, their nosings), the boxes' glass dark and the
   // balustrades in front of them glass. (round 41: the concrete was a dark grey)
-  const aisleConc = withRepeat(concreteTex({ key: 'wbaisle', tone: 0.5, warm: 0.05, seed: 37 }), 1 / 2, 1 / 2);
+  const aisleConc = withRepeat(concreteTex({ key: 'wbaisle', tone: 0.42, warm: 0.05, seed: 37 }), 1 / 2, 1 / 2);
   const wallConc = withRepeat(concreteTex({ key: 'wbwall', tone: 0.56, warm: 0.03, seed: 43 }), 1 / 3, 1 / 3);
+  const floorConc = withRepeat(concreteTex({ key: 'wbtread', tone: 0.44, warm: 0.03, seed: 47 }), 1 / 3, 1 / 3);
+  // (matt: precast concrete has no sheen; without the texture's roughness map,
+  // which took it down to 0.8, and with little of the sky's reflection, the
+  // treads no longer glare where the show's light falls on them)
+  const matt = (set, color) => std({ ...set, roughnessMap: null, color, roughness: 1, metalness: 0, envMapIntensity: 0.25 });
   const boxGlass = std({ color: 0x10141a, roughness: 0.12, metalness: 0.65, side: THREE.DoubleSide });
   const balGlass = new THREE.MeshPhysicalMaterial({ color: 0xa8bcc8, roughness: 0.08, metalness: 0, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false });
   const stands = buildStands(WB_STANDS, {
     // (the lightsticks' blocks by the stands' own aisles, not the seats'
     // labelled blocks: Level 1's real blocks meet between two seats)
-    byAisle: true, aisleFirst: true,
+    byAisle: true, aisleFirst: ['L1', 'L2', 'L5'],     // (the boxes' balconies, with no aisle, box by box)
     // (one wedge across every level, cut where Level 1's aisles run, drawn on
     // straight through the tiers over it: a seat goes by the wedge it is in,
     // whatever its level, its own level's blocks not kept whole)
     sectors: ['L1'],
-    sectorEven: 1.35, sectorFacing: 4, sectorWhole: 0, sectorSplitEnds: true, round,
-    // (a thin wedge, a corner's or one at an end of the house beside the stage, kept its own: not run in with the next)
-    sectorMin: 0.08,
+    // (the lines: Level 1's aisles' middle lines, straight, as wb_labels.py
+    // fits them (WB_STANDS.sectorLines); every seat of every level, the
+    // boxes' balconies and the Royal Box too, by the wedge between two of
+    // them it is in, its own level's blocks not kept whole)
+    sectorWhole: 0, sectorSplitEnds: true, sectorSplitWide: 1.6, round,
+    // (a thin wedge, the corner tunnel's between its walls or beside one, run in with the thinner beside it)
+    sectorMin: 0.4,
     offset: OFF, stage: STAGE, seatColor: 0x9a1418, concreteTone: 0.58, concreteWarm: 0.03, seed: 600, roofY: ROOF,
     // Club Wembley's padded seats (Level 2) a deeper red, the boxes' balcony
     // seats (Levels 3 and 4) claret, the Royal Box (Level 2's middle on the
@@ -207,8 +216,9 @@ export function buildStadium(ctx) {
     seatColors: { L2: 0x8a1018, L3: 0x5e0d15, L4: 0x5e0d15 },
     seatColorAt: (name, x, z) => (name === 'L2' && x > 70 && Math.abs(z) < 11.5 ? 0x4a0a10 : null),
     materials: {
-      step: std({ ...aisleConc, color: 0xffffff, roughness: 0.92 }),
-      wall: std({ ...wallConc, color: 0xffffff, roughness: 0.92, side: THREE.DoubleSide }),
+      struct: matt(floorConc, 0xffffff),
+      step: matt(aisleConc, 0xffffff),
+      wall: Object.assign(matt(wallConc, 0x9c9890), { side: THREE.DoubleSide }),   // (the walls stand in the tiers' shade: Level 1's back wall under Level 2)
       levelWall: { L3: boxGlass, L4: boxGlass },
       levelRail: { L3: balGlass, L4: balGlass },
       partition: balGlass,
@@ -243,8 +253,8 @@ export function buildStadium(ctx) {
   // back, under a light canopy.
   const housingMat = std({ color: 0x2a2c30, roughness: 0.7, metalness: 0.3 });
   const cladMat = std({ color: 0x74777c, roughness: 0.75, metalness: 0.2 });
-  const soffitMat = std({ ...wallConc, color: 0xffffff, roughness: 0.92 });   // the notch's sides: the stand's own concrete
-  const panelMat = std({ ...wallConc, color: 0xe4e2de, roughness: 0.9 });       // the panelled wall set back in the notch, beside the board
+  const soffitMat = matt(wallConc, 0xffffff);   // the notch's sides: the stand's own concrete
+  const panelMat = matt(wallConc, 0xe4e2de);       // the panelled wall set back in the notch, beside the board
   const glassMat = new THREE.MeshPhysicalMaterial({ color: 0x9fb2bf, roughness: 0.08, metalness: 0, transmission: 0.0, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false });
   const steelDark = std({ color: 0x1a1b1e, roughness: 0.5, metalness: 0.5 });
   const L5h0 = WB_STANDS.levels.find((l) => l.name === 'L5').h0;
