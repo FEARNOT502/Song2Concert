@@ -1,64 +1,104 @@
-# Tokyo Dome: the outfield stand's seats (F01-F20) laid from the chart (td/td_rows_real.json).
-#
-# The stand's rows are the lines at their distance from the fence (td_build.py: every F_D metres, the poles' blocks
-# straight, td_build.py's _dF2), traced round the outfield as one smooth curve each (td_lay2f.row_curves). In each
-# row, each block's part of it is where the curve runs inside the map's outline of the block (pulled in a little off
-# its aisles); the chart's seats are laid along it from its pole-side end, seat s at (s - s0 + 0.5) seat widths (s0 the
-# block's lowest number), the width that part's length over the block's widest span of numbers in that row or any in
-# front of it (so the short back rows, which the chart starts and ends short of the aisles, stand as it draws them),
-# within PITCH. F10 has no chart (the backscreen); F09 and F12 are kept out of the backscreen's sector (dome.js hides
-# what stands in it); F11's rows 5-10 stand in it, hidden like the rest of it.
-import numpy as np, shapely
+# Tokyo Dome outfield: complete PDF rows on continuous row curves.
+# The illustrated map's individual F boxes are not all at the same scale.
+# Allocate their aisle spans together from the row capacities, rather than
+# clip each box independently and silently lose its final seats.
+import numpy as np
 import td_lay2f as L2
 
-PITCH = (0.44, 0.55)
-BSC = 9.7                 # the backscreen's half angle about home (dome.js)
+PITCH = (0.42, 0.55)
+BSC = 9.7
+AISLE = 0.95
 
 
 def lay(G, dist, ok, named, real, D, nrows, O, first=0.55, inset=0.18):
-    """-> seats (n, 2), row index (n,), yaw (n,), labels [(block, row, seat)], report {block: (chart, laid)}"""
     O = np.asarray(O, float)
     dcs = [(r + first) * D for r in range(nrows)]
-    curves = L2.row_curves(dist, None, G, O, dcs, th_lo=95.0, th_hi=265.0, dth=0.02)
-    S, R, Y, LB, rep = [], [], [], [], {}
-    polys = {nm: p.buffer(-inset) for nm, p in named}
-    for nm, P in sorted(polys.items()):
-        if nm not in real or P.is_empty: continue
-        rows = {int(r): ivs for r, ivs in real[nm]['rows'].items()}
-        s_min = min(lo for ivs in rows.values() for lo, _ in ivs)
-        right = P.centroid.x > 0 or nm == 'F11'
-        e = rep.setdefault(nm, [sum(b - a + 1 for ivs in rows.values() for a, b in ivs), 0])
-        for r_num, ivs in sorted(rows.items()):
-            ri = r_num - 1
-            if ri >= nrows: continue
-            ths, x, z, s, good = curves[dcs[ri]]
-            gi, gj = G.g(np.nan_to_num(x), np.nan_to_num(z))
-            gi = np.clip(np.round(gi).astype(int), 0, G.W - 1); gj = np.clip(np.round(gj).astype(int), 0, G.H - 1)
-            inb = good & shapely.contains_xy(P, np.nan_to_num(x), np.nan_to_num(z)) & ok[gj, gi]
-            # (from home: the backscreen's sector, either side of centre field)
-            phi = np.degrees(np.abs(np.arctan2(np.nan_to_num(x), -np.nan_to_num(z))))
-            if nm != 'F11': inb &= phi >= BSC + 0.3
-            idx = np.nonzero(inb)[0]
-            if not len(idx): continue
-            run = max(np.split(idx, np.nonzero(np.diff(idx) > 1)[0] + 1), key=len)
-            sa, sb = s[run[0]], s[run[-1]]; Lr = sb - sa
-            # (numbers from the pole: on the 1B side (x > 0) the pole is at the smaller angle round O)
-            s_pole, sgn = (sa, 1.0) if right else (sb, -1.0)
-            nums = [sn for lo, hi in ivs for sn in range(lo, hi + 1)]
-            ids = np.array([sn - s_min for sn in nums], float)
-            cap = max(hi - s_min + 1 for rk, iv in rows.items() if rk <= r_num for _, hi in iv)
-            p = float(np.clip(Lr / cap, *PITCH))
-            off = (Lr - cap * p) / 2 if Lr / cap > PITCH[1] else 0.0
-            d = off + (ids + 0.5) * p
-            fit = d + 0.5 * p <= Lr + 0.05
-            ss = s_pole + sgn * d[fit]
-            th_s = np.interp(ss, s, ths)
-            xs, zs = np.interp(th_s, ths, x), np.interp(th_s, ths, z)
-            x2, z2 = np.interp(th_s + 0.05, ths, x), np.interp(th_s + 0.05, ths, z)
-            tx, tz = x2 - xs, z2 - zs; nx, nz = tz, -tx
-            inward = (nx * (O[0] - xs) + nz * (O[1] - zs)) > 0
-            nx = np.where(inward, nx, -nx); nz = np.where(inward, nz, -nz)
-            S.append(np.c_[xs, zs]); R.append(np.full(len(xs), ri)); Y.append(np.arctan2(nx, nz))
-            LB += [(nm, r_num, sn) for sn, f in zip(nums, fit) if f]
-            e[1] += int(fit.sum())
-    return np.vstack(S), np.concatenate(R), np.concatenate(Y), LB, rep
+    curves = L2.row_curves(dist, None, G, O, dcs, th_lo=95, th_hi=265, dth=0.02)
+    S, R, Y, labels, report = [], [], [], [], {}
+    rows = {nm:{int(r):ivs for r,ivs in b['rows'].items()} for nm,b in real.items() if nm.startswith('F')}
+    starts = {nm:min(a for ivs in rr.values() for a,b in ivs) for nm,rr in rows.items()}
+    capacities = {nm:max(b-starts[nm]+1 for ivs in rr.values() for a,b in ivs) for nm,rr in rows.items()}
+    for nm, rr in rows.items():
+        report[nm] = [sum(b-a+1 for ivs in rr.values() for a,b in ivs), 0]
+
+    # Anchor the two OUTER side boundaries on the last complete front row.
+    # Project the pole boundary behind it; the inner aisles are allocated
+    # smoothly by capacity below. A missing corner of the rear mask must
+    # not shift every aisle when F01/F20 ends.
+    reference=curves[dcs[13]]
+    ths,x,z,arc,good=reference
+    gi,gj=G.g(np.nan_to_num(x),np.nan_to_num(z))
+    gi=np.clip(np.round(gi).astype(int),0,G.W-1);gj=np.clip(np.round(gj).astype(int),0,G.H-1)
+    phi=np.degrees(np.abs(np.arctan2(np.nan_to_num(x),-np.nan_to_num(z))))
+    windows=[]
+    for side,names in [(1,[f'F{k:02d}' for k in range(20,11,-1)]),(-1,[f'F{k:02d}' for k in range(1,10)])]:
+        idx=np.flatnonzero(good & (ok[gj,gi]>0) & (x*side>0) & (phi>=BSC+.1))
+        pole,home=(arc[idx[0]],arc[idx[-1]]) if side>0 else (arc[idx[-1]],arc[idx[0]])
+        direction=np.sign(home-pole);length=abs(home-pole)
+        pitch=min(PITCH[1],(length-AISLE*(len(names)-1))/sum(capacities[n] for n in names))
+        edges=[]
+        for s in (pole,home):
+            th=float(np.interp(s,arc,ths));point,normal=L2._normal(reference,th,O)
+            edges.append((th,point,normal))
+        windows.append((side,names,edges))
+
+    def emit(nm, ri, curve, sa, sb):
+        if ri+1 not in rows[nm]:
+            return
+        ths,x,z,arc,good = curve
+        cap = max(b-starts[nm]+1 for r,ivs in rows[nm].items() if r <= ri+1 for a,b in ivs); length = abs(sb-sa)
+        pitch = min(PITCH[1], length/cap)
+        if pitch < PITCH[0]-0.02:
+            raise ValueError(f'{nm} row {ri+1}: {pitch:.3f} m available per PDF seat')
+        nums = [s for a,b in rows[nm][ri+1] for s in range(a,b+1)]
+        ids = np.array(nums)-starts[nm]
+        offset = max(0, (length-cap*pitch)/2)
+        ss = sa+np.sign(sb-sa)*(offset+(ids+0.5)*pitch)
+        angle = np.interp(ss, arc, ths)
+        xs,zs = np.interp(angle,ths,x),np.interp(angle,ths,z)
+        x2,z2 = np.interp(angle+0.05,ths,x),np.interp(angle+0.05,ths,z)
+        nx,nz = z2-zs,-(x2-xs)
+        outward = nx*(O[0]-xs)+nz*(O[1]-zs)<0
+        nx=np.where(outward,-nx,nx);nz=np.where(outward,-nz,nz)
+        S.extend(zip(xs,zs));R.extend([ri]*len(nums));Y.extend(np.arctan2(nx,nz))
+        labels.extend((nm,ri+1,int(s)) for s in nums);report[nm][1]+=len(nums)
+
+    for ri,dc in enumerate(dcs):
+        curve=curves[dc];ths,x,z,arc,good=curve
+        gi,gj=G.g(np.nan_to_num(x),np.nan_to_num(z))
+        gi=np.clip(np.round(gi).astype(int),0,G.W-1);gj=np.clip(np.round(gj).astype(int),0,G.H-1)
+        phi=np.degrees(np.abs(np.arctan2(np.nan_to_num(x),-np.nan_to_num(z))))
+        inside=good & ok[gj,gi]
+        for side,names,edges in windows:
+            ss=[]
+            for th0,point,normal in edges:
+                th=L2._cross(curve,point,normal if ri>=13 else -normal)
+                ss.append(float(np.interp(th0 if th is None else th,ths,arc)))
+            pole,home=ss
+            valid=np.flatnonzero(inside & (x*side>0) & (phi>=BSC+.1))
+            if ri<=13:
+                pole=arc[valid[0] if side>0 else valid[-1]]
+            home=arc[valid[-1] if side>0 else valid[0]]
+            direction=np.sign(home-pole);length=abs(home-pole)
+            # Smooth block envelopes between the front and row 14, then
+            # keep the rear aisles continuous. Missing rear seat numbers
+            # create notches, not a new allocation of the whole stand.
+            weights=[]
+            for nm in names:
+                front=max(b-starts[nm]+1 for a,b in rows[nm][min(rows[nm])])
+                weights.append(float(np.interp(ri,[0,13],[front,capacities[nm]])))
+            pitch=min(PITCH[1],(length-AISLE*(len(names)-1))/sum(weights))
+            widths=np.array(weights)*pitch
+            gap=(length-sum(widths))/(len(names)-1)
+            cursor=pole
+            for nm,width in zip(names,widths):
+                emit(nm,ri,curve,cursor,cursor+direction*width)
+                cursor+=direction*(width+gap)
+        # The right-side Back Screen Club pocket has its own six PDF rows.
+        if 'F11' in rows and ri+1 in rows['F11']:
+            idx=np.flatnonzero(inside & (np.nan_to_num(x)>0.3) & (phi<BSC-0.2))
+            if not len(idx):
+                raise ValueError('No room for the F11 PDF pocket')
+            run=max(np.split(idx,np.flatnonzero(np.diff(idx)>1)+1),key=len)
+            emit('F11',ri,curve,arc[run[-1]],arc[run[0]])
+    return np.asarray(S),np.asarray(R,int),np.asarray(Y),labels,report

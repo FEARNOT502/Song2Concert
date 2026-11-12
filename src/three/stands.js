@@ -14,7 +14,7 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { DEG, TEX, V3, concreteTex, glowMat, prng, std, withRepeat } from './core.js';
+import { DEG, TEX, V3, concreteTex, glowMat, lerp, prng, std, withRepeat } from './core.js';
 import { mats } from './rig.js';
 
 // A stadium seat, folded up: the shell's back and its seat pan as thin plates
@@ -274,7 +274,7 @@ export function roomMaterials(materials) {
   return {
     inMat: materials.interior ?? std({ color: 0x8f8a80, roughness: 0.92, emissive: 0x8a8376, emissiveIntensity: 0.6 }),
     ceilMat: materials.ceiling ?? std({ color: 0xd8d4cc, roughness: 0.9, emissive: 0x8a857c, emissiveIntensity: 0.55 }),
-    floorLit: std({ color: 0x86817a, roughness: 0.7, emissive: 0x5b564e, emissiveIntensity: 0.5, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }),
+    floorLit: materials.floor ?? std({ color: 0x86817a, roughness: 0.7, emissive: 0x5b564e, emissiveIntensity: 0.5, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }),
     // the sides of a tunnel mouth: lit from the concourse behind, less so out in the bowl
     mouthMat: std({ color: 0xa9a297, roughness: 0.9, emissive: 0x5a554c, emissiveIntensity: 0.4, side: THREE.DoubleSide }),
     mouthFloor: std({ color: 0x77726b, roughness: 0.75, emissive: 0x3e3a35, emissiveIntensity: 0.45 }),
@@ -544,12 +544,15 @@ export function signSheet(list, ox, oz, bg = '#15181f', fg = '#f2f2ee') {
 export function pillars(list, ox, oz, mat) {
   const groups = new Map();
   for (const p of list) {
-    const g = new THREE.BoxGeometry(2 * (p.rx ?? p.r), p.y1 - p.y0, 2 * (p.rz ?? p.r));
-    g.rotateY(Math.atan2(p.ax ?? 0, p.az ?? 1));
-    g.translate(p.x + ox, (p.y0 + p.y1) / 2, p.z + oz);
     const k = p.color ?? null;
     if (!groups.has(k)) groups.set(k, []);
-    groups.get(k).push(g.toNonIndexed());
+    for (const section of p.sections ?? [p]) {
+      const g = new THREE.BoxGeometry(2 * (section.rx ?? p.rx ?? p.r), section.y1 - section.y0, 2 * (section.rz ?? p.rz ?? p.r));
+      g.rotateY(Math.atan2(p.ax ?? 0, p.az ?? 1));
+      const offset = section.offsetAlong ?? 0;
+      g.translate(p.x + (p.ax ?? 0) * offset + ox, (section.y0 + section.y1) / 2, p.z + (p.az ?? 1) * offset + oz);
+      groups.get(k).push(g.toNonIndexed());
+    }
   }
   const out = new THREE.Group();
   for (const [k, parts] of groups) {
@@ -648,7 +651,7 @@ export function cutWalls(list, ox, oz, mat, coping = 0) {
 // framed (a post each side, a lintel over it, as deep as the walls are thick),
 // a tunnel on under the rows above to the concourse, ceiled and lit from
 // within, and the section's name over the mouth.
-export function vomParts(v, ox, oz) {
+export function vomParts(v, ox, oz, stepped = false) {
   const [ux, uz] = v.u, vx = -uz, vz = ux;
   const yaw = Math.atan2(ux, uz);
   const at = (t, s) => [v.p[0] + ox + ux * t + vx * s, v.p[1] + oz + uz * t + vz * s];
@@ -722,6 +725,10 @@ export function vomParts(v, ox, oz) {
   }
   // (over a floor of the data's own at v.y, where there is one, clear of it)
   floor.push(box(t0f, v.L + v.T, -hw, hw, v.y - 0.12, v.y + (v.wall ? 0.02 : 0.005)));
+  if (stepped && v.wall?.open && v.top > v.y + 0.1) {
+    const n=Math.ceil((v.top-v.y)/0.18),run=v.L/n;
+    for (let i=0;i<n;i++) floor.push(box(i*run,(i+1)*run+(i===n-1?.05:.015),-hw+T,hw-T,v.y-0.12,v.y+(v.top-v.y)*(i+1)/n));
+  }
   // (v.bridge) a plate under the mouth's edge, out over the treads' end (a traced pit can stand a hand's breadth off the
   // last tread, a crack to walk into): just under the floor's first step
   if (v.bridge) {
@@ -1159,7 +1166,7 @@ export function buildRooms(R, { ox, oz, shapeOf, structMat, wallMat, lit: M }) {
 // by doors when it leads to rooms not drawn here.
 export function buildTunnels(data, ox, oz) {
   const g = new THREE.Group();
-  const tunnelGeo = { wall: [], floor: [], lamp: [] };
+  const tunnelGeo = { wall: [], floor: [], lamp: [], metal: [] }, wire = [];
   const h1 = data.levels[0].h0;
   for (const t of data.tunnels || []) {
     const [ux, uz] = t.u, vx = -uz, vz = ux, yaw = Math.atan2(ux, uz);
@@ -1202,9 +1209,42 @@ export function buildTunnels(data, ox, oz) {
     box(tunnelGeo.floor, -0.4, t.L + (t.closed ? 0 : 12), -hw - 0.3, hw + 0.3, -0.02, 0.04);
     if (t.closed) box(tunnelGeo.wall, t.L - 0.3, t.L, -hw, hw, 0, t.h);      // its doors, shut
     for (let a = (t.covered ? 1.0 : Math.max(t.deck2?.[0] ?? t.deck, t.deck2?.[1] ?? t.deck) + 1.5); a < t.L; a += 6) box(tunnelGeo.lamp, a, a + 1.4, -0.12, 0.12, t.h - 0.08, t.h - 0.02);
+    if (t.upperFence) {
+      const { height = 1.05, postPitch = 1.4, meshPitch = 0.12 } = t.upperFence;
+      const point = ([a, y, b]) => { const [x,z] = at(a,b); return V3(x,y,z); };
+      const pipe = (a,b,r = 0.022) => {
+        const pa=point(a),pb=point(b),d=pb.clone().sub(pa),len=d.length();
+        if (len<0.001) return;
+        const m=new THREE.CylinderGeometry(r,r,len,6);
+        m.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(V3(0,1,0),d.normalize()));
+        m.translate(...pa.add(pb).multiplyScalar(0.5).toArray()); tunnelGeo.metal.push(m.toNonIndexed());
+      };
+      const grid = (path) => {
+        let distance = 0, nextPost = 0, nextWire = 0;
+        for (let k=1;k<path.length;k++) {
+          const a=path[k-1],b=path[k],len=Math.hypot(b[0]-a[0],b[2]-a[2]);
+          const atDistance = (d,h=0) => { const f=Math.min(1,Math.max(0,(d-distance)/len));return [lerp(a[0],b[0],f),lerp(a[1],b[1],f)+h,lerp(a[2],b[2],f)]; };
+          pipe(a,b,0.018); pipe([a[0],a[1]+height,a[2]],[b[0],b[1]+height,b[2]]);
+          for (;nextPost<=distance+len;nextPost+=postPitch) pipe(atDistance(nextPost),atDistance(nextPost,height),0.026);
+          for (;nextWire<=distance+len;nextWire+=meshPitch) wire.push(...point(atDistance(nextWire)).toArray(),...point(atDistance(nextWire,height)).toArray());
+          for (let h=meshPitch;h<height;h+=meshPitch) wire.push(...point([a[0],a[1]+h,a[2]]).toArray(),...point([b[0],b[1]+h,b[2]]).toArray());
+          distance+=len;
+        }
+        const last=path[path.length-1];pipe(last,[last[0],last[1]+height,last[2]],0.026);
+      };
+      const paths=t.sides.map((profile,i) => profile.map(([a,y]) => [a,y,(i===0?-1:1)*(hw+0.02)]));
+      paths.forEach(grid);
+      if (!t.upperFence.openFront) grid([paths[0][0],paths[1][0]]);
+      grid([paths[0][paths[0].length-1],paths[1][paths[1].length-1]]);
+    }
   }
-  if (tunnelGeo.wall.length) g.add(new THREE.Mesh(mergeGeometries(tunnelGeo.wall), std({ color: 0x4c4a47, roughness: 0.92 })));
-  if (tunnelGeo.floor.length) g.add(new THREE.Mesh(mergeGeometries(tunnelGeo.floor), std({ color: 0x2c2c2e, roughness: 0.95 })));
+  if (tunnelGeo.wall.length) g.add(new THREE.Mesh(mergeGeometries(tunnelGeo.wall), std({ color: data.tunnelFinish?.wall ?? 0x4c4a47, roughness: 0.92 })));
+  if (tunnelGeo.floor.length) g.add(new THREE.Mesh(mergeGeometries(tunnelGeo.floor), std({ color: data.tunnelFinish?.floor ?? 0x2c2c2e, roughness: 0.95 })));
+  if (tunnelGeo.metal.length) g.add(new THREE.Mesh(mergeGeometries(tunnelGeo.metal), std({ color: 0xb8bbba, roughness: 0.35, metalness: 0.75 })));
+  if (wire.length) {
+    const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(wire,3));
+    const mesh=new THREE.LineSegments(geo,new THREE.LineBasicMaterial({color:0x929b9d}));mesh.userData.noCollide=true;g.add(mesh);
+  }
   if (tunnelGeo.lamp.length) g.add(new THREE.Mesh(mergeGeometries(tunnelGeo.lamp), new THREE.MeshBasicMaterial({ color: 0xfff2dc })));
   return g;
 }
@@ -1395,7 +1435,7 @@ export function buildStands(data, {
     }
     for (const l of L.name === 'B' ? data.gateLamps || [] : []) voms.lamps.push([l.x + ox, l.y, l.z + oz, l.yaw]);
     for (const v of L.voms || []) {
-      const p = vomParts(v, ox, oz);
+      const p = vomParts(v, ox, oz, !!data.structureRevision);
       voms.pit.push(...p.pit); voms.cap.push(...p.cap); voms.tunnel.push(...p.tunnel);
       voms.floor.push(...p.floor); voms.ceil.push(...p.ceil); voms.lamps.push(...p.lamps); voms.signs.push(...p.signs);
     }
@@ -1482,7 +1522,7 @@ export function buildStands(data, {
     const { x, z, dx, dz, n, L, y0, y1 } = f;
     const run = L / n, w = f.w ?? 1.6;
     for (let i = 0; i < n; i++) {
-      const b = new THREE.BoxGeometry(w, y0 + (y1 - y0) * (i + 1) / n - y0 + 0.01, run + 0.02);
+      const b = new THREE.BoxGeometry(w, y0 + (y1 - y0) * (i + 1) / n - y0 + 0.01, run + (i === n - 1 && data.structureRevision ? 0.08 : 0.02));
       b.rotateY(Math.atan2(dx, dz));
       const cx = x + dx * run * (i + 0.5), cz = z + dz * run * (i + 0.5);
       b.translate(cx + ox, (y0 + (y0 + (y1 - y0) * (i + 1) / n)) / 2, cz + oz);
@@ -1490,7 +1530,11 @@ export function buildStands(data, {
     }
     for (const s of [-1, 1]) {
       const px = -dz * s * (w / 2 + 0.02), pz = dx * s * (w / 2 + 0.02);
-      if (!f.open) { panel('rail', x + px, z + pz, x + dx * L + px, z + dz * L + pz, y0, y1 + 1.0); continue; }
+      if (!f.open) {
+        if (data.structureRevision) panel4('rail', x+px, z+pz, x+dx*L+px, z+dz*L+pz, y0, y0+1, y1, y1+1);
+        else panel('rail', x+px, z+pz, x+dx*L+px, z+dz*L+pz, y0, y1+1);
+        continue;
+      }
       // out in the open (not in a concourse): a handrail up the slope
       const len = Math.hypot(L, y1 - y0), g = new THREE.BoxGeometry(0.05, 0.05, len);
       g.rotateX(-Math.atan2(y1 - y0, L)); g.rotateY(Math.atan2(dx, dz));

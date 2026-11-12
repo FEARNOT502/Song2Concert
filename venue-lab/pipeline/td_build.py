@@ -2,6 +2,7 @@ import sys, re, json, time, pickle, numpy as np, cv2
 sys.path.insert(0,'.')
 from standlib import Grid, disk, contours, STRAIGHT, sample, seat_mask
 from standgen import Level, poly_out, mask_polys, edge_walls, enclose, grow_under, redepth, trim_tunnels, front_parapet, relay_columns
+from td_geometry import distance
 T0=time.time()
 st=pickle.load(open('td_stage1.pkl','rb'))
 # The 2nd floor's seats (D, E): td_gen.py lays them from the chart (td_lay2f.py), each with its block, row and number
@@ -117,7 +118,7 @@ _riseF=(C1F-H_F)/(_nF-1)
 _F.hs=np.array([min(C1F,H_F+_riseF*b) for b in range(_nF)]); _F.h0=H_F
 # its rows counted from the fence (the distance from the field), so its
 # front row is level all along it
-_dFence=(cv2.distanceTransform((~field).astype(np.uint8),cv2.DIST_L2,5)*G.res).astype(np.float32)
+_dFence=distance(~field,G.res)
 _F.set_depth(_dFence); _F.nrows=_nF
 _F.band=np.where(_F.R>0,np.clip(np.floor(_F.d/F_D).astype(int),0,_nF-1),-1)
 _ff=(_F.R>0)&(cv2.dilate(field.astype(np.uint8),disk(2.0/G.res))>0)
@@ -455,9 +456,20 @@ _p1b=_P1[int(np.argmax(-(_P1@_f2)+_sg2*(_P1@_u2)))]                             
 _db=_Q1-_p1b; _frA=np.array([-_db[1],_db[0]],float); _frA=_frA/np.linalg.norm(_frA)
 T1.KINKR.update({1:(tuple(_frA),tuple(_Q0),tuple(_Q1)),2:(tuple(_frA),tuple(_Q0),tuple(_Q1))})
 print('the outfield\'s rows run on into A01, A02, B02 behind the line',np.round(_Q0,1),np.round(_Q1,1))
-S1=T1.build(G,_A_ch,_B_ch,_F_ch,_frames,hull1>0,field|EX)
+import td_chart
+REAL=td_chart.load()
+S1=T1.build(G,_A_ch,_B_ch,_F_ch,_frames,hull1>0,field|EX,real=REAL)
+# The illustrated sales plan clips the left outfield rear irregularly by
+# up to two metres. Its two physical wings share the same structural rake.
+# Preserve the infield crease, but use one mirrored outfield envelope.
+_mx=(-np.arange(G.W))%G.W
+S1['zoneF'] |= S1['zoneF'][:,_mx] & ~S1['zoneAB'] & ~(field|EX)
+_dFence=np.where(_Xg<0,_dFence[:,_mx],_dFence)
 _FhF=np.where(S1['zoneF'],np.minimum(C1F,H_F+_riseF*np.floor(_dFence/F_D)),np.nan).astype(np.float32)
 _Fcls=T1.outfield_classes(G,S1,_F_ch,k=4)
+_Fplan=T1.outfield_classes(G,S1,_F_ch,k=4,full=True)
+_Fcls=np.where(_Xg<0,_Fcls[:,_mx],_Fcls)
+_Fplan=np.where(_Xg<0,_Fplan[:,_mx],_Fplan)
 _dF2=_dFence.copy()
 for _sg in (-1, 1):
     _m1=(_Fcls==1)&S1['zoneF']&(np.sign(_Xg)==_sg); _m2=(_Fcls==2)&S1['zoneF']&(np.sign(_Xg)==_sg)
@@ -467,14 +479,36 @@ for _sg in (-1, 1):
     _bd=_m1&(cv2.dilate(_m2.astype(np.uint8),np.ones((5,5),np.uint8))>0)
     _j=np.argmin(np.where(_bd,_dFence,1e9)); _p0=np.array([_Xg.flat[_j],_Zg.flat[_j]]); _d0=float(_dFence.flat[_j])
     _dr1=(_Xg[_m1]-_p0[0])*_n1[0]+(_Zg[_m1]-_p0[1])*_n1[1]+_d0
-    _dr1=_dr1-float(_dr1.min())+0.05
-    _dF2[_m1]=_dr1
-    _dr2=(_Xg[_m2]-_p0[0])*_n1[0]+(_Zg[_m2]-_p0[1])*_n1[1]+_d0
-    _dF2[_m2]=np.maximum(_dFence[_m2],_dr2)
+    # Use ONE phase on both sides of F01/F02 (F20/F19). Re-zeroing
+    # only the pole block moved every tread at this seam by a different
+    # fraction of a row; the fitted rakes then tried to compensate for it.
+    _baseplane=(_Xg-_p0[0])*_n1[0]+(_Zg-_p0[1])*_n1[1]+_d0
+    _front=_m1&(_dFence<max(.35,float(_dFence[_m1].min())+.25))
+    # A straight row must clear the *whole* curved fence segment. An
+    # anchor at its nearest corner let the other half cut into the field.
+    _phase=0.05-float(_baseplane[_front].max())
+    _plane=_baseplane+_phase
+    _p1=(_Fplan==1)&(np.sign(_Xg)==_sg)
+    _p2=(_Fplan==2)&(np.sign(_Xg)==_sg)
+    from scipy.ndimage import distance_transform_edt
+    _da=distance_transform_edt(~_p1)*G.res
+    _db=distance_transform_edt(~((_Fplan>=3)&(np.sign(_Xg)==_sg)))*G.res
+    _t=_da/np.maximum(_da+_db,0.001)
+    _t=_t*_t*(3-2*_t)
+    _dF2[_p1]=_plane[_p1]
+    _dF2[_p2]=((_plane*(1-_t)+_dFence*_t))[_p2]
+_dF2=np.where(_Xg<0,_dF2[:,_mx],_dF2)
+# The sales-map outline is shallower than 21 physical treads in parts of
+# the outfield. Build the full depth from the row ledger, then carve its
+# actual mouths; do not force the final row onto the preceding tread.
+_Fnear=cv2.dilate(S1['zoneF'].astype(np.uint8),disk(2.8/G.res))>0
+S1['zoneF'] |= _Fnear & (_dF2>=0) & (_dF2<=_nF*F_D) & ~S1['zoneAB'] & ~field & (_Zg<-60)
+_Fcls=np.where(S1['zoneF'],_Fplan,0)
 print('outfield pole blocks: F20/F01 straight rows matching A01/A49, F19/F02 diagonal transition, max diff %.1f m'%float(np.nanmax(np.where(S1['zoneF'],np.abs(_dF2-_dFence),0))))
 _FhF=np.where(S1['zoneF'],np.minimum(C1F,H_F+_riseF*np.floor(_dF2/F_D)),np.nan).astype(np.float32)
 _profs,_Fcl=T1.fit_rake(G,S1,_FhF,Fcls=_Fcls,dF=_dF2,nF=_nF,land=(4,3.5),wF=3.0)
 T1.apply_profiles(S1,_profs)
+del _Fplan,_Fnear,_baseplane,_plane,_da,_db,_t,_front,_p1,_p2
 # no excite seat with its footprint on the stand's treads behind it (they stood in the A blocks'
 # front rows, up to 1 m under them, where the strip runs in under the stand)
 _kx=sample(G,dil(S1['zoneAB']|S1['zoneF'],0.25).astype(np.uint8),Gx.seats)==0
@@ -531,10 +565,10 @@ if len(_bxS):
     _S1seats=np.vstack([_S1seats,_bxS]); _S1row=np.r_[_S1row,_bxR]; _S1yaw=np.r_[_S1yaw,_bxY]; _S1tab=np.r_[_S1tab,np.zeros(len(_bxS),int)]; _S1lab=list(_S1lab)+list(_bxL)
 # no seat over a pit (or, below, a stair's cut)
 _gz=unary_union([s_['pit'] for s_ in _sites]).buffer(0.25)
+SEATLAB['AB']=(_S1seats.copy(),list(_S1lab))
 _kg=~shapely.contains_xy(_gz,_S1seats[:,0],_S1seats[:,1])
 print('seats over the gates dropped',int((~_kg).sum()),sorted(set(_S1lab[i_][0] for i_ in np.nonzero(~_kg)[0])))
 _S1seats,_S1row,_S1yaw,_S1tab=_S1seats[_kg],_S1row[_kg],_S1yaw[_kg],_S1tab[_kg]; _S1lab=[q for q,k_ in zip(_S1lab,_kg) if k_]
-SEATLAB['AB']=(_S1seats.copy(),list(_S1lab))
 _tabs=[]
 _S1kind=np.array([S1['meta'][i][1] for i in _S1row])
 _dFE=(cv2.distanceTransform((~(field|EX)).astype(np.uint8),cv2.DIST_L2,5)*G.res).astype(np.float32)
@@ -554,7 +588,7 @@ B=_shell('B',0.748,_lv['B'],'B',lambda: T1.rows_out(G,S1,_lv['B'],sites=_sites,c
 # the outfield: rows from the fence as before, on the cells of the F blocks' outlines
 F=LV['F']
 F.R=S1['zoneF'].astype(np.uint8)
-F.d=np.where(S1['zoneF'],_dF2,F.d).astype(F.d.dtype)
+F.d=np.where(S1['zoneF'],np.maximum(_dF2,.001),F.d).astype(F.d.dtype)
 F.band=np.where(F.R>0,np.clip(np.floor(F.d/F.D).astype(int),0,F.nrows-1),-1)
 _kf=sample(G,F.R,F.seats)>0
 F.seats,F.row,F.yaw=F.seats[_kf],F.row[_kf],F.yaw[_kf]
@@ -572,7 +606,7 @@ for _o in _labc:
     _kF=next((v_ for v_ in _o['nums'][:2] if 1<=v_<=20),None)
     if _kF is not None: _Fnamed.setdefault('F%02d'%_kF,T1._outline([T1._toR(_o['poly'])]))
 import td_layF
-F.seats,F.row,F.yaw,_Flab,_Frep=td_layF.lay(G,np.where(S1['zoneF'],_dF2,_dFence).astype(np.float32),(F.R>0),sorted(_Fnamed.items()),REAL,F_D,F_ROWS,O,inset=-0.25)
+F.seats,F.row,F.yaw,_Flab,_Frep=td_layF.lay(G,_dF2.astype(np.float32),(F.R>0),sorted(_Fnamed.items()),REAL,F_D,F_ROWS,O,inset=-0.25)
 print('outfield seats by the chart:',sum(v_[1] for v_ in _Frep.values()),'of',sum(v_[0] for v_ in _Frep.values()),{k_:tuple(v_) for k_,v_ in sorted(_Frep.items()) if v_[0]!=v_[1]})
 SEATLAB['F']=(F.seats.copy(),list(_Flab))
 F.raw=F.seats.copy()
@@ -722,9 +756,9 @@ for th in (20,68):
         f=find_flight(lo,up,y0,y1,p) if p else None
         if p and not f:          # (no room to run along the concourse here: any way that fits, so the floors stay joined)
             f=find_flight(lo,up,y0,y1,p,any_dir=True); print('  (any direction)')
-        if p and not f and y0==CBAL and th==68:
-            # (the place the balcony's stair has always had, along the concourse at the pole end of the balcony)
-            f=dict(x=95.9,z=-59.7,dx=0.0,dz=1.0,n=int(np.ceil((y1-y0)/RISE)),L=int(np.ceil((y1-y0)/RISE))*RUN,y0=y0,y1=y1); print('  (kept at the end of the balcony) fits',_fits_flight(f,lo,up))
+        # Never emit a flight whose upper landing is outside its concourse.
+        # The valid central flight already joins C3/C4; an unsupported flight
+        # near the pole used to end in mid-air beyond the upper floor's end.
         print('flight',th,y0,y1,f and {k:round(v,1) for k,v in f.items()})
         if not f: continue
         # (behind home one flight, on the centre line, if there it fits: not a pair crowding the middle)
@@ -1153,17 +1187,26 @@ for _k in (2,):
     _pts=[np.array(q_.coords[0]) for q_ in getattr(_xi,'geoms',[_xi]) if not q_.is_empty]
     if _pts:
         _q=min(_pts,key=lambda q_: np.hypot(*(q_-_p))); _p=_q+_u*0.08; _L=float((_end-_p)@_u)
-    # an open cut through its front rows (to `deck`, 2.8 m in), then on under the rows
-    _dk=2.8
-    _hy=lambda a_: float(_fg.height(_fg.coord((_p+_u*a_)[None,:])[0]))
-    _dY=_hy(_dk); _h=round(min(_dY,_hy(0.3))-0.55,2)
-    _sd=[[round(float(a_),2),round(_hy(max(a_,0.05))+0.02,2)] for a_ in np.linspace(0.2,_dk,8)]
+    # The 2026 PDF starts A02 at row 20. Its front defines the oblique
+    # rear lip of the open lightwell seen in the A02/41-row photographs;
+    # the old arbitrary 2.8 m cut ended halfway down this space.
+    from scipy.optimize import brentq
+    _first=min(int(r) for r in REAL['A02']['rows'])
+    _front_c=_fg.row_span('A',_first)[1]
+    _decks=[float(brentq(lambda a_:float(_fg.coord(_p+_u*a_+_vv*b_))-_front_c,-3,_L)) for b_ in (-_w/2,_w/2)]
+    _dk=float(np.mean(_decks))
+    _hy=lambda a_,b_=0.: float(_fg.height(_fg.coord((_p+_u*a_+_vv*b_)[None,:])[0]))
+    _dY=_hy(_dk); _h=round(min(_hy(a_,b_) for a_,b_ in zip(_decks,(-_w/2,_w/2)))-0.5,2)
+    _sd=[[[round(float(a_),2),round(_hy(max(a_,0.05),b_)+0.08,2)] for a_ in np.linspace(.2,d_,14)] for d_,b_ in zip(_decks,(-_w/2,_w/2))]
     _tunnels.append({'p':[round(float(_p[0]),2),round(float(_p[1]),2)],'u':[round(float(_u[0]),4),round(float(_u[1]),4)],'w':round(_w,2),'h':_h,'L':round(_L,2),
-                     'deck':_dk,'deckY':round(_dY,2),'sides':[_sd,_sd],'closed':True,'gate':True})
+                     'deck':round(_dk,2),'deck2':[round(a_,2) for a_ in _decks],'deckY':round(_dY,2),'sides':_sd,'closed':True,'gate':True,
+                     'upperFence':{'height':.6,'postPitch':1.4,'meshPitch':.12,'openFront':True},
+                     'source':'A02/41-row and A03/46-row home-facing photographs; 2026 A02 first-row ledger; estimated clear width/height'})
     _hw=_w/2+0.12
     _rect=lambda a0_,a1_: Polygon([_p+_u*a0_-_vv*_hw,_p+_u*a1_-_vv*_hw,_p+_u*a1_+_vv*_hw,_p+_u*a0_+_vv*_hw])
-    _feet.append((_rect(-0.4,_dk),None))          # the cut: no tread
-    _feet.append((_rect(_dk,_L),_h+0.12))         # under the rows: the treads on its roof
+    _corner=lambda a_,b_:_p+_u*a_+_vv*b_
+    _feet.append((Polygon([_corner(-.4,-_hw),_corner(_decks[0],-_hw),_corner(_decks[1],_hw),_corner(-.4,_hw)]),None))
+    _feet.append((Polygon([_corner(_decks[0],-_hw),_corner(_L,-_hw),_corner(_L,_hw),_corner(_decks[1],_hw)]),_h+.12))
 print('tunnel under A02 (width, length, roof, deck)',[(t_['w'],t_['L'],t_['h'],t_['deck']) for t_ in _tunnels])
 # clip 1st-floor concrete row polygons against the smoothed fence lines so zero concrete protrudes outside any fence
 _fw_arr=np.array(poly_out(fw[0])[0],float)
@@ -1376,6 +1419,12 @@ _lvF['steps']=_stB
 BSC_DEG=9.7
 _wr=[(0.0,0.0)]+[(np.sin(np.radians(a_))*220,-np.cos(np.radians(a_))*220) for a_ in (-BSC_DEG,0.0,BSC_DEG)]
 _wedge=Polygon(_wr).buffer(0)
+# F11 is a real six-row seating pocket on the right of the backscreen,
+# not part of its dark green finish (the detailed right-field PDF).
+_f11=np.array([p for p,lb in zip(SEATLAB['F'][0],SEATLAB['F'][1]) if lb[0]=='F11'])
+if len(_f11):
+    from shapely.geometry import MultiPoint
+    _wedge=_wedge.difference(MultiPoint(_f11).convex_hull.buffer(.4,join_style=2))
 _bsc=[]; _rowsF=[]
 for _r2 in _lvF['rows']:
     g_=T1._geom_of(_r2['polys'])
@@ -1493,6 +1542,10 @@ _lvG['rows'].append({'r':0,'y':round(float(Gx.hs[0])-0.08,3),'polys':T1._polys_o
 data={'suites':{'line':suite_line,'y':H_C-0.4,'h':3.6,'depth':3.4},'levels':levels,'floors':floors,'flights':flights+aisle_flights,'outer':[poly_out(p) for p in ow],'field':[poly_out(p) for p in fw],'fence':[poly_out(p) for p in fnw],'rim':rim,'rimY':H_D,'rimC':rimC,'rimS':rimS,'rimCS':rimCS,'upperWalls':_upW,'rimCY':H_C,'rooms':encl,'signs':SIGNS,'pillars':PILLARS,'tunnels':_tunnels,'exciteGates':_egates,'exciteAisles':_gAis,'exciteOpen':_gOpen,'exciteFront':_xFront,'backscreen':_bsc,'cWalls':_cWalls}
 # What follows the raster build works on the finished outlines (td_post.py: the excite seats as the map and the photographs
 # show them, the upper tiers' outfield ends): kept apart so it can be run again on its own (python3 td_post.py)
+data['accessFlights']=[{'x':float(s['S0'][0]),'z':float(s['S0'][1]),'dx':float(s['a'][0]),'dz':float(s['a'][1]),
+                       'n':len(s['treads']),'L':float(s['treads'][-1][1]-s['t0']),
+                       'y0':float(c['floor']),'y1':float(C1F),'w':float(T1.GATE_W),'embedded':True}
+                      for c in _corrs for s in c['stairs']]
 pickle.dump(data,open('td_pre.pkl','wb'))
 # each seat's block, row and number as it was laid, by its position (td_labels.py)
 pickle.dump(SEATLAB,open('td_seatlab.pkl','wb'))

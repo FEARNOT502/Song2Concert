@@ -197,6 +197,11 @@ def _head_columns(data):
     lines = _aisle_lines()
     r15 = [(r, unary_union([Polygon(q[0], q[1:]).buffer(0) for q in r['polys']])) for r in F['rows'] if r['r'] % 22 == 14]
     cols = [c for c in data['pillars'] if c.get('aisle') and 'color' in c]
+    import pickle, os
+    source, labels = pickle.load(open(os.path.join(os.path.dirname(__file__),'td_seatlab.pkl'),'rb'))['F']
+    rear={}
+    for p,(b,r,n) in zip(source,labels):
+        if r>=15:rear.setdefault((b,r),[]).append(np.asarray(p,float))
     for c in cols: c['rx'], c['rz'] = OUT_RX, OUT_RZ
     moved = []
     for c in cols:
@@ -224,6 +229,19 @@ def _head_columns(data):
         c['_q2'] = q
     for c in cols:
         q = c.pop('_q2'); c.pop('_q'); c.pop('_ok'); names = c.pop('_names')
+        direction=next(ln[2] for ln in lines if ln[0]==names)
+        across=np.array([-direction[1],direction[0]])
+        intervals=[]
+        for rr in range(15,22):
+            a=np.asarray(rear.get((names[0],rr),[]));b=np.asarray(rear.get((names[1],rr),[]))
+            if not len(a) or not len(b):continue
+            i,j=np.unravel_index(np.argmin(np.sum((a[:,None]-b[None,:])**2,axis=2)),(len(a),len(b)))
+            lo,hi=sorted([float((a[i]-q)@across),float((b[j]-q)@across)])
+            intervals.append((lo+c['rx']+.25,hi-c['rx']-.25))
+        if intervals:
+            low=max(a for a,b in intervals);high=min(b for a,b in intervals)
+            shift=float(np.clip(0.,low,high)) if low<=high else (low+high)/2
+            q=q+across*shift
         moved.append(('|'.join(names), round(float(np.hypot(q[0] - c['x'], q[1] - c['z'])), 2)))
         c['x'], c['z'] = round(float(q[0]), 2), round(float(q[1]), 2); c['color'] = OUT_GREY
         # (its foot on the lowest tread under it: no gap under it where it stands across two rows)
@@ -310,7 +328,7 @@ def _aisle_lines():
     P = np.asarray(P, float)
     ends = {}
     for (b, r, s), q in zip(LB, P):
-        if r > 14: continue
+        if r < 9 or r > 14: continue
         e = ends.setdefault(b, {}).setdefault(r, [None, None])
         if e[0] is None or s < e[0][0]: e[0] = (s, q)
         if e[1] is None or s > e[1][0]: e[1] = (s, q)
@@ -342,6 +360,11 @@ def _outfield_voms(data):
     F['voms'] = []
     done = []
     plan = []
+    import pickle, os
+    full, source_labels = pickle.load(open(os.path.join(os.path.dirname(__file__),'td_seatlab.pkl'),'rb'))['F']
+    source_rows = {}
+    for point,(block,row,number) in zip(full,source_labels):
+        source_rows.setdefault((block,row),[]).append(np.asarray(point,float))
     for c in data['pillars']:
         if 'color' not in c or c.get('aisle'): continue
         pc = np.array([c['x'], c['z']])
@@ -353,6 +376,20 @@ def _outfield_voms(data):
         if dist((names, m, u)) > 3.0: print('tidy: no aisle for the outfield column at', c['x'], c['z']); continue
         # (the pit square to the rows, as its column is: _square_columns)
         u = np.array([c['ax'], c['az']], float); u /= np.linalg.norm(u)
+        # PDF notches on the two sides are often unequal. Centre the mouth
+        # in their actual rear-row clearance, not in the full front rows.
+        across=np.array([-u[1],u[0]])
+        bounds=[]
+        for rr in range(15,22):
+            a=np.asarray(source_rows.get((names[0],rr),[]));b=np.asarray(source_rows.get((names[1],rr),[]))
+            if not len(a) or not len(b):continue
+            ii,jj=np.unravel_index(np.argmin(np.sum((a[:,None]-b[None,:])**2,axis=2)),(len(a),len(b)))
+            lo,hi=sorted([float((a[ii]-m)@across),float((b[jj]-m)@across)])
+            bounds.append((lo+hw+SEAT_CLEAR,hi-hw-SEAT_CLEAR))
+        if bounds:
+            low=max(b[0] for b in bounds);high=min(b[1] for b in bounds)
+            shift=float(np.clip(0.,low,high)) if low<=high else (low+high)/2
+            m=m+across*shift
         plan.append([c, names, m, u])
     # (each pit and its mirror image across the house made one another's exact mirror: the two averaged)
     for e in plan:

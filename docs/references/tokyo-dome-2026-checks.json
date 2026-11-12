@@ -1,0 +1,47 @@
+{
+  "checkedOn": "2026-11-12",
+  "dataSha256": "d7ab6c89e5432b14417900ecbdf64fe5cb50db73222dcc95ccdc0ae28d86456d",
+  "modelAudit": {
+    "seats": {
+      "A": 10384,
+      "B": 9491,
+      "F": 5997,
+      "C": 1800,
+      "D": 5240,
+      "E": 8519,
+      "G": 670
+    },
+    "pdfBlocks": 233,
+    "pdfRows": 3536,
+    "intervalMismatches": [],
+    "duplicateRows": [],
+    "invalidRows": [],
+    "unsupportedSeats": [],
+    "overlappingSeats": [],
+    "pillarSeatIntersections": [],
+    "concourses": [
+      "C1",
+      "C2",
+      "C3",
+      "C4"
+    ],
+    "flights": 13
+  },
+  "walker": {
+    "checks": 89,
+    "failed": []
+  },
+  "geometryRegressionTests": 5,
+  "appBuild": "passed",
+  "pdfSeatsVerified": 40073,
+  "unverifiedSeatRecords": 2028,
+  "limitations": [
+    "C/S individual numbering and some special block assignments lack the same detailed current ledger",
+    "Photographic structure dimensions and hidden service-stair positions are estimates",
+    "Software WebGL functional review; real GPU performance not measured"
+  ],
+  "runtimePillarAudit": {
+    "pillarSeatIntersections": [],
+    "planChanges": 0
+  }
+}

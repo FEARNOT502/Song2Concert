@@ -3,6 +3,7 @@ import sys, json, re, time, pickle, numpy as np, cv2
 sys.path.insert(0,'.')
 from standlib import Grid, disk, contours, sample, front_from, depth
 from standgen import Level, poly_out, mask_polys, edge_walls
+from td_geometry import distance
 T0=time.time()
 lab=json.load(open('td/td_labeled.json'))
 Hm=np.array([579.2,441.7]); s=2.996
@@ -69,7 +70,7 @@ inv=(1-hull1).astype(np.uint8)
 n,labm,st,_=cv2.connectedComponentsWithStats(inv,connectivity=4)
 gxo,gzo=G.g(np.array([O[0]]),np.array([O[1]])); field=(labm==labm[int(gzo[0]),int(gxo[0])])
 solid1=(~field).astype(np.uint8)            # the 1st floor and everything outside it
-dOut=cv2.distanceTransform((1-hull1).astype(np.uint8),cv2.DIST_L2,5)*G.res
+dOut=distance(1-hull1,G.res)
 dOut[field]=-1
 # The building above the 1st floor does not follow the ins and outs of its
 # blocks' backs: the balcony, the 2nd floor and the outer wall run straight
@@ -77,12 +78,12 @@ dOut[field]=-1
 cs_,_=cv2.findContours(hull1.astype(np.uint8),cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_NONE)
 hullC=np.zeros_like(hull1); cv2.fillPoly(hullC,[cv2.convexHull(np.vstack(cs_))],1)
 dOut1=dOut
-dOut=cv2.distanceTransform((1-hullC).astype(np.uint8),cv2.DIST_L2,5)*G.res
+dOut=distance(1-hullC,G.res)
 # The balcony and the 2nd floor stand out over the 1st floor's back rows
 # (the building's section: the upper stand's front 12 m in from the lower
 # stand's back, the balcony's 9 m), so the distance is signed, negative in
 # from the hull; never out over the field, nor within 6 m of it
-dIn=cv2.distanceTransform(hullC.astype(np.uint8),cv2.DIST_L2,5)*G.res
+dIn=distance(hullC,G.res)
 dOut=np.where(hullC>0,-dIn,dOut)
 dFld=cv2.distanceTransform((~field).astype(np.uint8),cv2.DIST_L2,5)*G.res
 dOut[dFld<6.0]=-999

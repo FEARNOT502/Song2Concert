@@ -3,6 +3,11 @@
 The single-page prototype published as the Song2Concert venue-lab artifact.
 Every venue is built here first, then ported into the app's `src/three`.
 
+Tokyo Dome's current remodel targets the app renderer in `src/three/venues/dome.js`.
+Its generated data is shared with this lab, but the lab renderer is an older
+prototype. See the [Dome generation and verification notes](../docs/TOKYO_DOME_REMODEL_NOTES.ko.md)
+before regenerating or copying renderer files.
+
 ## Build and view
 
 ```sh

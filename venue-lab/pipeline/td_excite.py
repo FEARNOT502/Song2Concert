@@ -167,29 +167,43 @@ def _side(sg, chart, FN, standY, mouth=None):
     # the home-side end (its numbers rise away from home; a short row is the field end's, cut by the fence's
     # diagonal), a seat the block's widest row's share of the room (SEAT_W at most); where the fence, the wall or the
     # steps up to the stand take the row's room, its seats close up (to SEAT_MIN) on what is left of it
+    rows = []
     for n in ORDER:
         if n not in cells: continue
         b = B[n]; cell = cells[n]; al, nb, o = b['al'], b['nb'], b['c0']; p0, d0, p1, d1 = b['lines']
         nmax = max(b['rows'])
+        safe = cell.buffer(-0.2).difference(fenceL.buffer(FENCE_CLEAR)).difference(wallE.buffer(WALL_CLEAR)).difference(st.buffer(0.12))
+        def available(d):
+            ln = LineString([o + nb*d - al*30, o + nb*d + al*30])
+            cut = safe.intersection(ln)
+            runs = []
+            for part in getattr(cut, 'geoms', [cut]):
+                if part.geom_type == 'LineString' and part.length > 0.01:
+                    ts = [(np.array(q)-o)@al for q in part.coords]
+                    runs.append((float(min(ts)), float(max(ts))))
+            return max(runs, key=lambda q:q[1]-q[0]) if runs else None
+        # Fit the actual complete row, rather than truncate its final seat.
+        # The narrow diagonal end blocks also have two real one-seat rows.
+        candidates = sorted(np.arange(-0.2, 2.01, 0.05), key=lambda q:abs(q))
+        shift = next((v for v in candidates if all(
+            (lambda span: span is not None and span[1]-span[0]+1e-5 >= (len(nums)-1)*SEAT_MIN)(available(ROW0+r*PITCH+v))
+            for r, nums in enumerate(b['nums']))), None)
+        if shift is None:
+            raise ValueError('Excite block cannot contain its PDF rows: '+name(n))
+        start = ROW0 + float(shift)
         for r in range(len(b['rows'])):
-            d = ROW0 + r * PITCH
-            ta = float((_x(o + nb * d, al, p0, d0) - o) @ al); tb = float((_x(o + nb * d, al, p1, d1) - o) @ al)
-            w = min(SEAT_W, (abs(tb - ta) - 1.0) / nmax); mid = (ta + tb) / 2
-            lo, hi = min(ta, tb), max(ta, tb)
-            ok = [t for t in np.arange(lo, hi, 0.05) if (lambda pt: cell.buffer(-0.2).contains(pt) and fenceL.distance(pt) >= FENCE_CLEAR
-                  and wallE.distance(pt) >= WALL_CLEAR and st.distance(pt) > 0.25)(Point(*(o + nb * d + al * t)))]
-            if not ok: continue
-            t0 = max(mid - (nmax - 1) / 2 * w, ok[0] + 0.0); t1 = ok[-1]
-            nn = len(b['nums'][r]); ww = w if (t1 - t0) >= (nn - 1) * w - 1e-6 else max(SEAT_MIN, (t1 - t0) / max(nn - 1, 1))
+            d = start + r * PITCH
+            t0, t1 = available(d)
+            nn = len(b['nums'][r]); ww = min(SEAT_W, (t1-t0)/max(nn-1, 1))
+            mid = (t0+t1)/2; t0 = mid-(nn-1)*ww/2
             for k, sn in enumerate(b['nums'][r]):
                 t = t0 + k * ww
-                if t > t1 + 0.02: break
                 q = o + nb * d + al * t
                 seats.append((q[0], q[1], r, float(np.degrees(np.arctan2(-nb[0], -nb[1]))), name(n), b['ys'][r], sn))
-    # (no block of one seat: what the diagonal leaves of G03)
-    cnt = {}
-    for s in seats: cnt[s[4]] = cnt.get(s[4], 0) + 1
-    seats = [s for s in seats if cnt[s[4]] > 1]
+            lo = -30.0 if r == 0 else start+(r-1)*PITCH+STEP_BACK
+            hi = start+r*PITCH+STEP_BACK if r < len(b['rows'])-1 else 30.0
+            band = Polygon([o-al*30+nb*lo,o+al*30+nb*lo,o+al*30+nb*hi,o-al*30+nb*hi])
+            rows.append({'r':r,'y':round(b['ys'][r],3),'y0':0.0,'polys':_polys(cell.intersection(band))})
     return dict(X=X, rows=rows, seats=seats, fence=[[round(float(x), 2) for x in p] for p in fence], aisles=aisles, gates=gates)
 
 def apply(data, chart_path='td/td_rows_real.json'):
