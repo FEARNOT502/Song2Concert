@@ -491,12 +491,16 @@ T1.ROT.update({1:8.0,2:8.0,3:4.0})
 # A01, A02 and B02 run parallel to the concourse wall and outfield rows behind them; on its other side each block's own
 _f2=np.asarray(_frames[2][0],float); _u2=np.array([-_f2[1],_f2[0]]); _P1=np.array(_A_ch[1].exterior.coords); _P2=np.array(_A_ch[2].exterior.coords); _PB2=np.array(_B_ch[2].exterior.coords)
 _sg2=np.sign((np.array(_A_ch[1].centroid.coords[0])-np.array(_A_ch[2].centroid.coords[0]))@_u2)      # (towards the pole)
-_Q0=np.array([75.5,-66.0])
-_Q1=_PB2[int(np.argmax(-(_PB2@_f2)-_sg2*(_PB2@_u2)))]                                               # (B02's back corner away from the pole)
+_oldQ1=_PB2[int(np.argmax(-(_PB2@_f2)-_sg2*(_PB2@_u2)))]
+# The user's annotated PDF: A01/16 pole end -> B02/27 pole end ->
+# B02/35 home end -> B03/45. These are plan estimates fitted to those
+# numbered anchors, not the old A02-front/B02-back diagonal.
+_Q0=np.array([72.23,-69.79])
+_Q1=np.array([98.02,-58.20])
 _p1b=_P1[int(np.argmax(-(_P1@_f2)+_sg2*(_P1@_u2)))]                                                 # (A01's pole-side back corner)
-_db=_Q1-_p1b; _frA=np.array([-_db[1],_db[0]],float); _frA=_frA/np.linalg.norm(_frA)
-T1.KINKR.update({1:(tuple(_frA),tuple(_Q0),tuple(_Q1)),2:(tuple(_frA),tuple(_Q0),tuple(_Q1))})
-print('the outfield\'s rows run on into A01, A02, B02 behind the line',np.round(_Q0,1),np.round(_Q1,1))
+_db=_oldQ1-_p1b; _frA=np.array([-_db[1],_db[0]],float); _frA=_frA/np.linalg.norm(_frA)
+T1.KINKR.update({n:(tuple(_frA),tuple(_Q0),tuple(_Q1)) for n in (1,2,3)})
+print('outfield-facing side of A01/A02/B02/B03 crease',np.round(_Q0,1),np.round(_Q1,1))
 import td_chart
 REAL=td_chart.load()
 S1=T1.build(G,_A_ch,_B_ch,_F_ch,_frames,hull1>0,field|EX,real=REAL)
@@ -1585,8 +1589,14 @@ data={'suites':{'line':suite_line,'y':H_C-0.4,'h':3.6,'depth':3.4},'levels':leve
 # show them, the upper tiers' outfield ends): kept apart so it can be run again on its own (python3 td_post.py)
 data['accessFlights']=[{'x':float(s['S0'][0]),'z':float(s['S0'][1]),'dx':float(s['a'][0]),'dz':float(s['a'][1]),
                        'n':len(s['treads']),'L':float(s['treads'][-1][1]-s['t0']),
-                       'y0':float(c['floor']),'y1':float(C1F),'w':float(T1.GATE_W),'embedded':True}
+                       'y0':float(c['floor']),'y1':float(C1F),'w':float(T1.STAIR_CLEAR),'embedded':True}
                       for c in _corrs for s in c['stairs']]
+data['infieldPortals']=[{'front':[round(float(v),3) for v in s['a']*(s['t_end']-.5)+s['u']*s['s_c']],
+                         'back':[round(float(v),3) for v in s['a']*(s['t_in']+.5)+s['u']*s['s_c']],
+                         'entry':[round(float(v),3) for v in s['a']*s['t_end']+s['u']*s['s_c']],
+                         'y':round(float(_site_corr[i]['floor']),3),'head':T1.GATE_HEAD,
+                         'width':T1.GATE_W-.6,'outerWidth':T1.GATE_W}
+                        for i,s in enumerate(_sites) if not s.get('out') and s['tunnel'] is not None]
 pickle.dump(data,open('td_pre.pkl','wb'))
 # each seat's block, row and number as it was laid, by its position (td_labels.py)
 pickle.dump(SEATLAB,open('td_seatlab.pkl','wb'))

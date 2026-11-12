@@ -18,7 +18,9 @@ HERE=Path(__file__).resolve().parent
 
 def verify(path):
     data=json.loads(Path(path).read_text())
-    real=json.loads((HERE/'td/td_rows_real.json').read_text())
+    from td_overrides import effective, OVERRIDES
+    real=effective(json.loads((HERE/'td/td_rows_real.json').read_text()))
+    assert {v['block'] for v in data.get('seatOverrides',[])}==set(OVERRIDES)
     names=data['blockNames'];actual=defaultdict(list);invalid=[];unsupported=[];near=[];shaft_hits=[]
     totals={}
     for level in data['levels']:
@@ -30,8 +32,10 @@ def verify(path):
         heights=hs[s[:,2]] if len(hs) else level['h0']+level['rise']*s[:,2]
         xy=s[:,:2]/level.get('seatScale',10)
         yaw=np.deg2rad(s[:,3]);back=np.c_[np.sin(yaw),np.cos(yaw)];across=np.c_[np.cos(yaw),-np.sin(yaw)]
-        centre=xy-back*.19
-        chairs=shapely.polygons(np.stack([centre+across*a+back*b for a,b in [(-.22,-.09),(.22,-.09),(.22,.09),(-.22,.09)]],axis=1))
+        padded=level['name'] in ('G','C')
+        centre=xy-back*(.055 if padded else .19)
+        hw,hd=(.325,.245) if padded else (.22,.09)
+        chairs=shapely.polygons(np.stack([centre+across*a+back*b for a,b in [(-hw,-hd),(hw,-hd),(hw,hd),(-hw,hd)]],axis=1))
         for j,c in enumerate(data.get('pillars',[])):
             axis=np.array([c.get('ax',0),c.get('az',1)],float);axis/=np.linalg.norm(axis)
             side=np.array([-axis[1],axis[0]])
@@ -39,7 +43,7 @@ def verify(path):
                 p=np.array([c['x'],c['z']])+axis*section.get('offsetAlong',0)
                 rx=section.get('rx',c.get('rx',c['r']));rz=section.get('rz',c.get('rz',c['r']))
                 shaft=Polygon([p+side*a+axis*b for a,b in [(-rx,-rz),(rx,-rz),(rx,rz),(-rx,rz)]])
-                active=(heights+.86>section['y0'])&(heights+.4<section['y1'])
+                active=(heights+(1.03 if padded else .86)>section['y0'])&(heights+.4<section['y1'])
                 hits=np.flatnonzero(active & shapely.intersects(chairs,shaft))
                 shaft_hits.extend((level['name'],names[labels[i,0]],int(labels[i,1]),int(labels[i,2]),j) for i in hits)
         for b,r,n in labels:actual[(names[b],int(r))].append(int(n))
@@ -69,8 +73,54 @@ def verify(path):
         for row,ivs in b['rows'].items():
             want=[n for a,z in ivs for n in range(a,z+1)]
             if sorted(actual[(block,int(row))])!=want:mismatches.append((block,row))
+    # User review regressions: a common front and attached rear rows.
+    from shapely.geometry import Point,LineString
+    G=next(l for l in data['levels'] if l['name']=='G')
+    gs=np.frombuffer(base64.b64decode(G['seats']),'<i2').reshape(-1,4)
+    gl=np.frombuffer(base64.b64decode(G['labels']),'<i2').reshape(-1,3)
+    wall=Polygon(data['fence'][0][0]).exterior
+    fences=[LineString(f['pts']) for f in data['exciteFence']]
+    rear_distances=[];front_distances=[];main_distances=[]
+    A=next(l for l in data['levels'] if l['name']=='A')
+    aa=np.frombuffer(base64.b64decode(A['seats']),'<i2').reshape(-1,4)
+    main_tree=cKDTree(aa[:,:2]/A['seatScale'])
+    tapered={'G03','G04','G05','G45','G46','G47'}
+    for name in {names[b] for b,r,n in gl}:
+        idx=np.flatnonzero(gl[:,0]==names.index(name));last=gl[idx,1].max()
+        for i in idx:
+            q=Point(gs[i,:2]/G['seatScale'])
+            if gl[i,1]==last and name not in tapered:
+                rear_distances.append(wall.distance(q));main_distances.append(float(main_tree.query(gs[i,:2]/G['seatScale'])[0]))
+            if gl[i,1]==1:front_distances.append(min(f.distance(q) for f in fences))
+    excite_review={'rearWallDistanceRange':[round(min(rear_distances),3),round(max(rear_distances),3)],
+                   'frontFenceDistanceRange':[round(min(front_distances),3),round(max(front_distances),3)],
+                   'rearToMainChairDistanceMedian':round(float(np.median(main_distances)),3),
+                   'rearToMainChairDistanceMin':round(min(main_distances),3)}
+    assert min(main_distances)>.55 and np.median(main_distances)<1.3,'excite rear rows collide with or detach from main stand'
+    assert .2<min(front_distances) and max(front_distances)<.85,'excite front rows detached from continuous fence'
+    # The home-side rows must follow the actual A rows, not the wall's
+    # smoothed outline; assert orientation for both asymmetrical extensions.
+    home_angles={}
+    for name in ('G15','G14','G35','G36'):
+        idx=np.flatnonzero(gl[:,0]==names.index(name))
+        _,nearest=main_tree.query(gs[idx,:2]/G['seatScale'])
+        expected=float(np.median(aa[nearest,3]));error=np.abs((gs[idx,3]-expected+180)%360-180)
+        assert np.max(error)<=2.5,(name,'home rows differ from main stand',error.max())
+        assert np.ptp(gs[idx,3])<=1,(name,'home rows are not parallel')
+        home_angles[name]={'yaw':int(np.median(gs[idx,3])),'mainYaw':expected}
+    tunnel=next(t for t in data['tunnels'] if t.get('gate'))
+    p=np.array(tunnel['p']);u=np.array(tunnel['u']);side=np.array([-u[1],u[0]])
+    jamb=max((p+side*tunnel['w']/2,p-side*tunnel['w']/2),key=lambda v:v[1])
+    for i,fence in enumerate(data['exciteFence']):
+        target=jamb*np.array([1 if i==0 else -1,1])
+        assert np.linalg.norm(np.array(fence['pts'][-1])-target)<.003,'pole fence attached to wrong door edge'
+        assert len(fence['pts'])==len(fence['hs'])
+        assert min(np.linalg.norm(np.diff(np.array(fence['pts']),axis=0),axis=1))>.015,'duplicate fence points'
+    excite_review['homeRowAngles']=home_angles
+    assert not data.get('signs'),'column number plates remain'
+    assert not any(abs(w[4]-13.3)<.02 and abs(w[5]-17.3)<.02 for w in data['rooms']['thinWalls']),'legacy jagged balcony end caps remain'
     duplicates=[(block,row) for (block,row),nums in actual.items() if len(nums)!=len(set(nums))]
-    result={'seats':totals,'pdfBlocks':len(real),'pdfRows':sum(len(b['rows']) for b in real.values()),
+    result={'seats':totals,'exciteReview':excite_review,'pdfBlocks':len(real),'pdfRows':sum(len(b['rows']) for b in real.values()),
             'intervalMismatches':mismatches,'duplicateRows':duplicates,'invalidRows':invalid,
             'unsupportedSeats':unsupported,'overlappingSeats':near,'pillarSeatIntersections':shaft_hits,
             'concourses':[r['id'] for r in data.get('concourseRoutes',[])],

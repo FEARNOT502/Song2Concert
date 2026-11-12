@@ -319,7 +319,11 @@ def apply(data):
             off = 0.17 / np.mean(RR); ae = aD + np.degrees(off)
             P = _xy(np.full(len(RR), ae * sg), RR)
             ends = [e for e in ends if not ('b' in e and np.sign(e['b'][0]) == sg and abs(e['y0'] - 13.6) >= 0.5)]
-            pass   # (D's end wall down to the balcony's front band: taken away at the user's request)
+            # Close the exposed end, with a shallow fascia rather than a
+            # hanging wall down through the balcony's front railing.
+            ends.append({'pts': [[round(float(x),4),round(float(z),4)] for x,z in P[[0,-1]]],
+                         'y0': [_R2(max(y0s[0],yb)),_R2(max(y0s[-1],yb))],
+                         'y1': [_R2(y1s[0]-.25),_R2(y1s[-1]-.25)], 'thick':.25})
             yEndTop = y1s[-1]
         else:
             yEndTop = None

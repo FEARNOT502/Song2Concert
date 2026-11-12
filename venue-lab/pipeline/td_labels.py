@@ -6,7 +6,8 @@ PJ = lambda *a: os.path.join(HERE, *a)
 import td_upper as U
 
 d = json.load(open(PJ('td_stands.json')))
-real = json.load(open(PJ('td', 'td_rows_real.json')))
+from td_overrides import effective, OVERRIDES
+real = effective(json.load(open(PJ('td', 'td_rows_real.json'))))
 lab = json.load(open(PJ('td', 'td_labeled.json')))
 vec = json.load(open(PJ('td', 'td_vec.json')))
 Hm = np.array([579.2, 441.7]); s_map = 2.996; O = np.array([0.0, -60.0])
@@ -348,6 +349,9 @@ for l in d['levels']:
 print('labels from the lay (matched / seats / furthest m):', STATS, ' duplicate names:', _dups)
 
 d['blockNames'] = block_names
+import td_review
+d=td_review.labelled(d)
+d['seatOverrides']=[{'block':k,'reason':v} for k,v in OVERRIDES.items()]
 import td_seatfit
 d=td_seatfit.apply(d,real,SIDE)
 s_json = json.dumps(d, separators=(',', ':'))

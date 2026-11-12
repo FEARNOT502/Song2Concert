@@ -35,6 +35,25 @@ export function stadiumSeatGeometry() {
   return g;
 }
 
+// Close-view upholstered seats used by the balcony and field-side rows.
+// One merged geometry is instanced; arms, closed cushion and supporting legs
+// give the real compact silhouette without adding per-seat draw calls.
+function paddedSeatGeometry() {
+  const parts = [];
+  const box = (w, h, d, x, y, z, tilt = 0) => {
+    const g = new THREE.BoxGeometry(w, h, d); g.rotateX(tilt); g.translate(x, y, z);
+    parts.push(g.toNonIndexed());
+  };
+  box(0.54, 0.59, 0.105, 0, 0.72, -0.22, -0.11);
+  box(0.51, 0.11, 0.38, 0, 0.46, -0.02);
+  for (const x of [-0.29, 0.29]) {
+    box(0.065, 0.09, 0.39, x, 0.65, -0.015);
+    box(0.035, 0.38, 0.035, x, 0.25, -0.16);
+    box(0.07, 0.025, 0.25, x, 0.015, -0.12);
+  }
+  return mergeGeometries(parts);
+}
+
 // seats come packed: little-endian int16 quads (x, z in dm or the level's
 // 1/seatScale m, row, yaw°), base64
 export function decodeSeats(b64) {
@@ -1240,7 +1259,7 @@ export function buildTunnels(data, ox, oz) {
   }
   if (tunnelGeo.wall.length) g.add(new THREE.Mesh(mergeGeometries(tunnelGeo.wall), std({ color: data.tunnelFinish?.wall ?? 0x4c4a47, roughness: 0.92 })));
   if (tunnelGeo.floor.length) g.add(new THREE.Mesh(mergeGeometries(tunnelGeo.floor), std({ color: data.tunnelFinish?.floor ?? 0x2c2c2e, roughness: 0.95 })));
-  if (tunnelGeo.metal.length) g.add(new THREE.Mesh(mergeGeometries(tunnelGeo.metal), std({ color: 0xb8bbba, roughness: 0.35, metalness: 0.75 })));
+  if (tunnelGeo.metal.length) g.add(new THREE.Mesh(mergeGeometries(tunnelGeo.metal), std({ color: 0x959a99, roughness: 0.96, metalness: 0.04, envMapIntensity: 0.08 })));
   if (wire.length) {
     const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(wire,3));
     const mesh=new THREE.LineSegments(geo,new THREE.LineBasicMaterial({color:0x929b9d}));mesh.userData.noCollide=true;g.add(mesh);
@@ -1471,7 +1490,7 @@ export function buildStands(data, {
       g.add(new THREE.Mesh(mergeGeometries(pp), materials.partition ?? std({ color: 0x1a1b1f, roughness: 0.6, metalness: 0.3 })));
     }
     for (const [x0, z0, x1, z1, y0, y1] of smoothRuns(L.walls)) panel('wall', x0, z0, x1, z1, y0, y1);
-    const mesh = new THREE.Mesh(mergeGeometries(levelGeo), structMat);
+    const mesh = new THREE.Mesh(mergeGeometries(levelGeo), materials.levelStruct?.[L.name] ?? structMat);
     mesh.receiveShadow = true;
     g.add(mesh);
     // the seats, and the crowd in the sold ones
@@ -1508,8 +1527,8 @@ export function buildStands(data, {
         people.push({ x: x - Math.sin(yaw) * 0.12, y, z: z - Math.cos(yaw) * 0.12, turn: Math.atan2(stage.x - x, stage.z - z), seat: true, lvRaw, block: blocks.block[i / 4] });
       }
     }
-    seatSpots.push({ spots, col });
-    for (const [c, sp] of odd) seatSpots.push({ spots: sp, col: c });
+    seatSpots.push({ spots, col, padded: L.name === 'G' || L.name === 'C' });
+    for (const [c, sp] of odd) seatSpots.push({ spots: sp, col: c, padded: L.name === 'G' || L.name === 'C' });
   }
   // concourses
   for (const f of data.floors) for (const polys of f.polys) {
@@ -2030,10 +2049,10 @@ export function buildStands(data, {
     g.add(seatMesh(allSpots.map((sp) => ({ x: sp.x, y: sp.y, z: sp.z, turn: sp.yaw }))));
     return { group: g, people, aisleLights, update, topAt, seatNear, seats: allSpots };
   }
-  const seatGeo = stadiumSeatGeometry();
+  const seatGeo = stadiumSeatGeometry(), paddedGeo = paddedSeatGeometry();
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion();
-  for (const { spots, col } of seatSpots) {
-    const inst = new THREE.InstancedMesh(seatGeo, std({ color: col, roughness: 0.55, side: THREE.DoubleSide }), spots.length);
+  for (const { spots, col, padded } of seatSpots) {
+    const inst = new THREE.InstancedMesh(padded ? paddedGeo : seatGeo, std({ color: col, roughness: padded ? 0.94 : 0.65, metalness: 0, side: THREE.DoubleSide }), spots.length);
     spots.forEach((s, i) => { q.setFromAxisAngle(V3(0, 1, 0), s.yaw); m4.compose(V3(s.x, s.y, s.z), q, V3(1, 1, 1)); inst.setMatrixAt(i, m4); });
     inst.receiveShadow = true;
     g.add(inst);
