@@ -197,7 +197,9 @@ export function buildStadium(ctx) {
     // straight through the tiers over it: a seat goes by the wedge it is in,
     // whatever its level, its own level's blocks not kept whole)
     sectors: ['L1'],
-    sectorEven: 1.6, sectorFacing: 4, sectorWhole: 0, sectorSplitEnds: true, round,
+    sectorEven: 1.35, sectorFacing: 4, sectorWhole: 0, sectorSplitEnds: true, round,
+    // (a thin wedge, a corner's or one at an end of the house beside the stage, kept its own: not run in with the next)
+    sectorMin: 0.08,
     offset: OFF, stage: STAGE, seatColor: 0x9a1418, concreteTone: 0.58, concreteWarm: 0.03, seed: 600, roofY: ROOF,
     // Club Wembley's padded seats (Level 2) a deeper red, the boxes' balcony
     // seats (Levels 3 and 4) claret, the Royal Box (Level 2's middle on the
