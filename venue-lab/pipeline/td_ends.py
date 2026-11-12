@@ -26,10 +26,11 @@ import numpy as np
 from scipy.ndimage import gaussian_filter1d, minimum_filter1d, maximum_filter1d
 from shapely.geometry import Polygon
 from shapely.ops import unary_union
+from td_upper import D_END
 
 O = np.array([0.0, -60.0])       # the dome's centre: angles from it, 0 towards home
 BIN = 0.25                       # degrees
-D_CUT = 110.5                    # retain the complete 15-seat D01/D51 PDF rows (last centres ~110 deg), plus their end cap; the old 106.5 cut removed 10 seats each side
+D_CUT = D_END                    # retain the full D01/D51 chart blocks and the upstream end-parapet alignment
 E_END = 84.3                     # where the 2nd floor's upper rows (E) stop
 WALL_BACK = 0.15                 # the wall behind a top row's back edge
 EASE = 3.0                       # degrees: a notch in the rows' back narrower than this is closed by the wall's line

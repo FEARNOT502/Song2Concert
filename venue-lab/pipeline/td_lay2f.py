@@ -159,8 +159,7 @@ def balance(L, real, b_nums, secs, curves, dcs, r_base, O, target=0.45, iters=30
         idx = {k: i for i, k in enumerate(b_nums)}
         for k in b_nums[:-1]:
             j = k + 1
-            # (the end blocks' aisles stay where the map has them: D01/D51 and E06/E46 have one short row and room
-            # to spare, and D01 is cut at td_ends.D_CUT just past it)
+            # The aisles beside the single-row end blocks stay where the map has them.
             if k == b_nums[0] or j == b_nums[-1]: continue
             dm = rate * (slack[k] - slack[j]) / 2
             dd = np.degrees(dm / r0)
@@ -193,7 +192,7 @@ def lay_tier(L, real, b_nums, secs, curves, dcs, r_base, O):
             if k == 26: s_home, sgn = (sb, -1.0)       # (behind home: numbered from the 1B side, +x)
             p = float(np.clip(Lr / cap, *lim))
             off = (Lr - cap * p) / 2 if (Lr / cap > lim[1] or Lr / cap < lim[0]) else 0.0
-            if k in (b_nums[0], b_nums[-1]) and off > 0: off = 0.0       # (the end blocks from their home aisle: D01's far end is cut)
+            if k in (b_nums[0], b_nums[-1]) and off > 0: off = 0.0       # number the end blocks from the home-side aisle
             ss = s_home + sgn * (off + (ids + 0.5) * p)
             ths, x, z, s, good = cv
             th_s = np.interp(ss, s, ths)

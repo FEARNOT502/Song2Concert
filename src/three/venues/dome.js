@@ -933,9 +933,13 @@ export function buildDome(ctx) {
   // Nothing hangs from the membrane (as the photographs show it: no light
   // gondolas, no loudspeakers on it); the house light comes from round the
   // ring, over the top of the stands, aimed down and in at the field.
+  // Leave space for the backs of the flood banks and catwalk where the
+  // upper-tier wall runs inside the compression ring.
+  const floodRing = Math.min(0.988, ...TD_STANDS.upperWall.flatMap(({ pts, ret }) =>
+    [...pts, ...ret].map(([x, z]) => norm(x, z + ZH) - 0.012)));
   const LIGHTS = [];
   for (let i = 0; i < 14; i++) {
-    const { x, z } = edge((i + 0.5) / 14 * Math.PI * 2, 0.97);
+    const { x, z } = edge((i + 0.5) / 14 * Math.PI * 2, floodRing - 0.018);
     LIGHTS.push(V3(x, ringY(z) - 1.5, z));
   }
   // The house lights are the floods round its edge (the membrane's own small
@@ -950,10 +954,10 @@ export function buildDome(ctx) {
   const floodM = new THREE.MeshBasicMaterial({ color: 0x000000, toneMapped: false, side: THREE.DoubleSide });
   const floodGlow = [];
   {
-    const RHO = 0.988, NB = 64, ROWS = 2, COLS = 6, PITCH = 1.05, TILT = 0.3, body = [], faces = [];
+    const NB = 64, ROWS = 2, COLS = 6, PITCH = 1.05, TILT = 0.3, body = [], faces = [];
     // (even spacing along the ring: arc length round it, sampled)
-    const NS = 2400, S = [0], P = [edge(0, RHO)];
-    for (let i = 1; i <= NS; i++) { const p = edge(i / NS * Math.PI * 2, RHO); S.push(S[i - 1] + Math.hypot(p.x - P[i - 1].x, p.z - P[i - 1].z)); P.push(p); }
+    const NS = 2400, S = [0], P = [edge(0, floodRing)];
+    for (let i = 1; i <= NS; i++) { const p = edge(i / NS * Math.PI * 2, floodRing); S.push(S[i - 1] + Math.hypot(p.x - P[i - 1].x, p.z - P[i - 1].z)); P.push(p); }
     const L = S[NS];
     const atS = (s) => { s = ((s % L) + L) % L; let i = 1; while (S[i] < s) i++; const f = (s - S[i - 1]) / (S[i] - S[i - 1]); return { x: lerp(P[i - 1].x, P[i].x, f), z: lerp(P[i - 1].z, P[i].z, f) }; };
     const frame = (s) => {

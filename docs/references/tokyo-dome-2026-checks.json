@@ -1,6 +1,6 @@
 {
   "checkedOn": "2026-11-12",
-  "dataSha256": "d7ab6c89e5432b14417900ecbdf64fe5cb50db73222dcc95ccdc0ae28d86456d",
+  "dataSha256": "913adefe933365071685cc9e3533de5b317b9dd3395671cd003debbcf964fd8a",
   "modelAudit": {
     "seats": {
       "A": 10384,
@@ -43,5 +43,6 @@
   "runtimePillarAudit": {
     "pillarSeatIntersections": [],
     "planChanges": 0
-  }
+  },
+  "mergedMainBase": "2f252210e9e0b5a4d00ba934170897ddba9ee43a"
 }

@@ -6,6 +6,8 @@
 # seats 301-313. A row the chart ends early with an "x" is its seats as far
 # as the chart numbers them. Sky terrace boxes in D rows 8-9 are left out of
 # the seats (their own runs where the chart gives them).
+# The end blocks were checked against pages 3 and 6 of
+# https://kurumicat.com/wp-content/uploads/2f-01-51.pdf
 D01 1:501-515
 D02 1:481-492
 D03 1-2:461-474 3:461-462

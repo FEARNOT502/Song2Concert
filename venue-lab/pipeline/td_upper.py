@@ -5,7 +5,7 @@
 # degrees from the dome's centre (0 towards home). The 2nd floor's D blocks
 # run on past D04 (89.7-93.7 degrees) through D03, D02 and D01 to 112 degrees,
 # each with fewer rows than the last (D04 5, D03 3), and the E blocks past E09
-# (66-70 degrees) through E08, E07 and E06 to 84 degrees (8, 5 and 3 rows).
+# (66-70 degrees) through E08, E07 and E06 to 84 degrees (8, 5 and 1 seating rows).
 # The 3B side is the same, mirrored: D49, D50, D51; E44, E45, E46.
 #
 # Behind the poles the 1st floor's stand is the outfield's, 13.5 m deep with
