@@ -10,7 +10,7 @@
 # stages again on that pickle, writes td_stands.json and relabels the seats (td_labels.py): seconds,
 # where td_build.py takes five minutes.
 import json, pickle, importlib
-STAGES = ('td_excite', 'td_ends', 'td_tidy', 'td_steps', 'td_balcony')
+STAGES = ('td_excite', 'td_ends', 'td_tidy', 'td_steps', 'td_balcony', 'td_structure')
 def apply(data):
     for name in STAGES:
         try: m = importlib.import_module(name)

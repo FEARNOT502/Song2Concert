@@ -94,6 +94,7 @@ class Finger:
     fit_profiles gives."""
     def __init__(s, key, n, f, sA, pa, pb):
         s.key = key; s.n = n; s.f = np.array(f, float); s.sA = float(sA); s.pa = pa; s.pb = pb
+        s.db = DB
         PA = np.array(pa.exterior.coords)
         s.cfront = float((PA @ s.f).max())
         s.sBf = s.sA if (pb is None or n == 1) else float((np.array(pb.exterior.coords) @ s.f).max())
@@ -191,11 +192,11 @@ class Finger:
             return ('A', int(np.clip(26 - np.floor((min(c, s.cfront) - s.sA) / DA), s.rf, 26)))
         if c >= s.sBf: return ('W', 26)
         if c < s.cback: return ('K', 99)
-        return ('B', int(27 + np.floor((s.sBf - c) / DB)))
+        return ('B', int(27 + np.floor((s.sBf - c) / s.db)))
     def row_centre(s, kind, r):
         if kind == 'A': return s.sA + (26 - r + 0.5) * DA
         if kind == 'W': return 0.5 * (s.sA + s.sBf)
-        if kind == 'B': return s.sBf - (r - 27 + 0.5) * DB
+        if kind == 'B': return s.sBf - (r - 27 + 0.5) * s.db
         return s.cback - 0.3
     def row_span(s, kind, r):
         """The row's strip along the axis (from, to): the front row on to the
@@ -204,7 +205,7 @@ class Finger:
             c = s.row_centre(kind, r)
             return c - DA / 2, (1e3 if r == s.rf else c + DA / 2)
         if kind == 'W': return s.sBf, s.sA
-        if kind == 'B': c = s.row_centre(kind, r); return c - DB / 2, c + DB / 2
+        if kind == 'B': c = s.row_centre(kind, r); return c - s.db / 2, c + s.db / 2
         return -1e3, s.cback
 
 def row_coord(fg, p):
@@ -349,7 +350,7 @@ def warp_rows(G, F, finger_of, zoneF, blocked, w_pos=4.0, w_dir=60.0, w_dirF=30.
     for k in keys: F[k].w = None if F[k].kinkR is not None else x[idx[k]]
     return x
 
-def build(G, A, B, Fpolys, frames, hull, blocked, near_far=6.0, gap_near=1.6, close=1.0):
+def build(G, A, B, Fpolys, frames, hull, blocked, near_far=6.0, gap_near=1.6, close=1.0, real=None):
     """The 1st floor's A and B stands, finger by finger. The stands may take the
     cells inside `hull` (the 1st floor's hull) and the blocks' outlines closed
     by `close` metres (the gaps between blocks, the blocks the hull was drawn
@@ -402,6 +403,19 @@ def build(G, A, B, Fpolys, frames, hull, blocked, near_far=6.0, gap_near=1.6, cl
         d = float(row_coord(F[a_], np.c_[X[ma], Z[ma]]).mean() - row_coord(F[b_], np.c_[X[mb], Z[mb]]).mean())
         fa = F[a_]; fa.set_walkway(fa.sA + d * DA, fa.sA + d * DA)
     warp_rows(G, F, finger_of, zoneF, blocked)
+    if real is not None:
+        for k, fg in F.items():
+            if fg.n == 1 or fg.pb is None:
+                continue
+            rows = real.get(f'B{k:02d}', {}).get('rows', {})
+            if not rows:
+                continue
+            c = fg.coord_xz(X[zoneAB & (finger_of == k)], Z[zoneAB & (finger_of == k)])
+            last = max(map(int, rows))
+            # The sales map's tapered tips are not an extra missing row.
+            # Fit the chart's final row into the existing rear envelope.
+            depth = (fg.sBf-float(c.min())) / (last-27+0.8)
+            fg.db = min(DB, depth)
     band = np.full(shape, -1, np.int64)
     hs, meta = [], []
     for k, fg in F.items():
@@ -569,7 +583,7 @@ def fit_rake(G, res, Fh, wF=1.5, rmin=0.15, rmax=0.6, sec=(3, 12, 10.0), drop=(0
     return profs, fcl
 
 
-def outfield_classes(G, res, Fpolys, k=3):
+def outfield_classes(G, res, Fpolys, k=3, full=False):
     """A raster over the outfield stand's cells: 1..k for its k blocks nearest each pole (by the angle of
     the block's middle from home: the poles at 45 degrees, centre field at 0), 0 the others."""
     zf = res['zoneF']
@@ -581,7 +595,7 @@ def outfield_classes(G, res, Fpolys, k=3):
         for j, c in enumerate(side_[:k]): cls[c[0]] = j + 1
     lab, _ = label_nearest(G, Fpolys, zf.shape)
     out = np.zeros(zf.shape, np.int8)
-    for i, j in cls.items(): out[(lab == i + 1) & zf] = j
+    for i, j in cls.items(): out[(lab == i + 1) & (True if full else zf)] = j
     return out
 
 # The 3B side's B31-B33 (behind row 35) and B35-B39 (behind row 38/39): rows the fan chart leaves out (the 1B side's
@@ -589,7 +603,7 @@ def outfield_classes(G, res, Fpolys, k=3):
 # seats stand in them (td_boxes.py), the rest of the treads bare.
 TABLE = {31: 36, 32: 36, 33: 36, 35: 40, 36: 39, 37: 39, 38: 40, 39: 40}
 # rows the official map gives a block past the fan chart's last one (seated as the outline lets)
-EXTRA = {'B22': 46, 'B28': 46}
+EXTRA = {}  # the 2026 detailed PDFs end B22/B28 at row 40; no invented rows
 
 def real_block(fg, kind):
     """The chart's name of a finger's block: A01 / A49 (the wedges at the poles: their rows on past the walkway are A's too) or A/B + key."""
@@ -665,12 +679,35 @@ def lay_real(G, res, real, plim=(0.44, 0.55), pitch=0.5, inset=-0.25, avoid=None
             if runs:
                 s0 = runs[0][0]
                 nums = [s for a, b in runs for s in range(a, b + 1)]
-                p = float(np.clip(L / (runs[-1][1] - s0 + 1), *plim))
+                # Equal *arc* length, including the deliberate diagonal
+                # crease. Lateral-coordinate spacing shortened kinked rows.
+                tt = us[run]
+                cp = fg.row_point(tt, cc)
+                arc = np.r_[0., np.cumsum(np.linalg.norm(np.diff(cp, axis=0), axis=1))]
+                length = float(arc[-1]); cap = runs[-1][1]-s0+1
+                p = float(np.clip(length/max(1, cap-1), *plim))
+                start = (length-(cap-1)*p)/2
+                if nm in ('B03','B47') and rr>=44:
+                    # Its neighbour towards the pole ends at row 41. The
+                    # PDF's wider rear rows extend into that vacant wedge,
+                    # keeping the home-side aisle clear of B04/B46.
+                    start=.1
                 e = rep.setdefault(nm, [0, 0]); e[0] += len(nums)
+                row_seats=[]
                 for s in nums:
-                    d = (s - s0 + 0.5) * p
-                    if d + 0.5 * p > L + 0.05: continue
-                    put(t_hi - d if home_hi else t_lo + d, 0, s); e[1] += 1
+                    d = start+(s-s0)*p
+                    d = length-d if home_hi else d
+                    # A tight map outline may spill into the drawn aisle;
+                    # keep every PDF seat and report its actual clearance.
+                    t = float(np.interp(d, arc, tt))
+                    if d < 0: t = tt[0]+d/max(1e-6,(arc[1]-arc[0])/(tt[1]-tt[0]))
+                    if d > length: t = tt[-1]+(d-length)/max(1e-6,(arc[-1]-arc[-2])/(tt[-1]-tt[-2]))
+                    put(t, 0, s); row_seats.append(t); e[1] += 1
+                if (nm in ('B03','B47') and rr>=44) or (nm in ('B02','B48') and rr>=40):
+                    a,b=min(row_seats)-.28,max(row_seats)+.28
+                    res.setdefault('seat_envelopes',{})[i]=Polygon(np.vstack([
+                        fg.row_point(np.arange(a,b+.051,.05),c0),
+                        fg.row_point(np.arange(a,b+.051,.05)[::-1],c1)] )).buffer(0)
                 continue
             if not (nm in EXTRA and rr <= EXTRA[nm] and blk and rr > max(int(q) for q in blk['rows'])): continue
             # (numbered on from the row in front's first number, as the chart's rows before it are)
@@ -1356,6 +1393,7 @@ def rows_out(G, res, lv, extend=0.3, eps=0.03, sites=None, corrs=()):
     its block between two exact lines (square to the block's axis), cut to the
     block's cells, reaching `extend` under the next row up so the treads meet
     with no crack. `lv` the level's split (split_levels)."""
+    from td_geometry import domain, row_strip
     meta = res['meta']; F = res['fingers']; band_g = res['band']; finger_of = res['finger_of']
     by = {}
     for j, i in enumerate(lv['ids']): by.setdefault(meta[i][0], []).append((j, i))
@@ -1363,25 +1401,15 @@ def rows_out(G, res, lv, extend=0.3, eps=0.03, sites=None, corrs=()):
     for k, rows in by.items():
         fg = F[k]; sl = fg.sl
         band_c = band_g[sl]
-        sd = sdf((finger_of[sl] == k) & (band_c >= 0), G.res)
-        gy, gx = np.mgrid[sl[0], sl[1]]; X, Z = G.m(gx, gy)
-        c = fg.coord_xz(X, Z)
+        footprint = domain((finger_of[sl] == k) & (band_c >= 0), G, sl[1].start, sl[0].start)
         for j, i in rows:
             _, kind, r, c0, c1, h = meta[i]
             m = band_c == i
             if not m.any(): continue
-            lo = c - (c0 - extend) if c0 > -1e2 else np.full(c.shape, 1e3, np.float32)
-            hi = (c1 - c) if c1 < 1e2 else np.full(c.shape, 1e3, np.float32)
-            f = np.minimum(np.minimum(lo, hi), sd).astype(np.float32)
-            ys, xs = np.nonzero(m); pad = 8
-            by0, by1 = max(0, ys.min() - pad), min(m.shape[0], ys.max() + pad + 1)
-            bx0, bx1 = max(0, xs.min() - pad), min(m.shape[1], xs.max() + pad + 1)
-            fs = f[by0:by1, bx0:bx1]
-            gx0, gy0 = sl[1].start + bx0, sl[0].start + by0
-            polys = []
-            for o, hh in rings_field(fs, eps / G.res, 0.2 / G.res ** 2):
-                ring = lambda q: [[round(float(a), 2), round(float(b), 2)] for a, b in np.c_[G.m(q[:, 0] + gx0, q[:, 1] + gy0)]]
-                polys.append([ring(o)] + [ring(hq) for hq in hh])
+            # The grid clips the block's outside only. The nose and the back
+            # of every tread are analytic curves, including the pole crease.
+            own=footprint.union(res.get('seat_envelopes',{}).get(i,Polygon()))
+            polys = _polys_of(row_strip(fg, c0, c1, own, overlap=extend))
             out[j] = {'r': j, 'y': round(float(h), 3), 'y0': 0.0, 'polys': polys}
         # (the rows of a finger run from the front to the back: the next row up is the one this row reaches under)
         for (a, _), (b, _) in zip(rows[:-1], rows[1:]):

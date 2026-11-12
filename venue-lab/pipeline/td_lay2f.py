@@ -33,8 +33,10 @@ def row_curves(dfield, TH, G, O, dcs, th_lo=-118.0, th_hi=118.0, dth=0.02):
     t = np.radians(ths)[:, None]
     xs = O[0] + rs[None, :] * np.sin(t); zs = O[1] + rs[None, :] * np.cos(t)
     gi, gj = G.g(xs, zs)
-    gi = np.clip(np.round(gi).astype(int), 0, G.W - 1); gj = np.clip(np.round(gj).astype(int), 0, G.H - 1)
-    V = dfield[gj, gi].astype(np.float32)
+    from scipy.ndimage import map_coordinates
+    # Nearest-cell sampling makes a smooth curve jog by 10 cm at cell
+    # boundaries. Bilinear sampling retains the continuous distance field.
+    V = map_coordinates(dfield, [gj, gi], order=1, mode='nearest').astype(np.float32)
     out = {}
     for dc in dcs:
         hit = V >= dc

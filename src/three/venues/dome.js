@@ -22,9 +22,6 @@ let _domeCatalog = null;
 export function getDomeSeatCatalog() {
   if (_domeCatalog) return _domeCatalog;
   const ZH = 114;
-  const BSC = 9.7;
-  const inBackscreen = (x, z) => Math.abs(Math.atan2(x, -z)) / DEG < BSC;
-  const seatKeep = (name, x, z) => !(name === 'F' && inBackscreen(x, z));
   const bNames = TD_STANDS.blockNames || [];
   const byBlock = new Map();
   for (const L of TD_STANDS.levels) {
@@ -33,7 +30,6 @@ export function getDomeSeatCatalog() {
     if (!LB) continue;
     for (let i = 0; i < S.length; i += 4) {
       const rx = S[i] / sk, rz = S[i + 1] / sk, rIdx = S[i + 2], yaw = S[i + 3] * DEG;
-      if (!seatKeep(L.name, rx, rz)) continue;
       const x = rx, z = rz + ZH;
       const y = L.hs ? L.hs[Math.min(rIdx, L.hs.length - 1)] : L.h0 + L.rise * rIdx;
       const lk = (i >> 2) * 3;
@@ -240,21 +236,20 @@ export function buildDome(ctx) {
   // The balcony (C) over the back of the 1st floor, pole to pole round home.
   // The 2nd floor: D (rows 1–10) and E (11 up to 33, deepest behind home)
   // with the walkway between, the passages from its concourse opening onto
-  // it; its front stands out 12 m over the 1st floor. Blue seats, the
-  // balcony's (season seats) grey. Sold out as a concert sells it: every
+  // it; its front stands out 12 m over the 1st floor. The current concert
+  // model uses blue seating throughout, including the balcony and boxes.
+  // Sold out as a concert sells it: every
   // seat that can see the face of the wall, the restricted-view ones beside
   // the stage and the outfield's ends past the poles included; the outfield
   // behind the set not.
   // ── the box seats, as the data names them (td_labels.py's boxRows, each seat by its label) ──
-  // The Sky Terrace (the 2022 renewal): rows 8 and 9 of D14-D18 and D32-D38, two boxes of four a row, grey seats
+  // The Sky Terrace (the 2022 renewal): rows 8 and 9 of D14-D18 and D32-D38, two boxes of four a row, blue seats
   // behind a long light-wood counter at table height with cup holes, on a wooden front down to the tread, light-wood
   // half-height partitions between the boxes. On the 3B side's 1st floor behind B31-B39, in the rows the chart leaves
-  // out (td_boxes.py): THE 3rd PLATINUM BOX, white leather sofas with black tables and partitions (Travel Watch 2023's
-  // photograph; Kotobuki: white leather, dark-toned tables and partitions); the press seats, blue seats at plain dark
+  // out (td_boxes.py): THE 3rd PLATINUM BOX, blue seats with black tables and partitions in this latest-seat specification;
+  // the structural arrangement follows the older supplier photographs. The press seats, blue seats at plain dark
   // desks (no photograph found: the user's account), no partitions.
-  const BSC = 9.7;
-  const inBackscreen = (x, z) => Math.abs(Math.atan2(x, -z)) / DEG < BSC;
-  const BOX_COLOR = { terrace: 0x6a6b6e, platinum: 0xeceae4, press: 0x2646b8 };
+  const SEAT_BLUE = 0x214797;
   // (their counters and partitions: light wood for the Sky Terrace, black for the Platinum Box, dark for the press desks)
   const BOX_WOOD = { terrace: 0xc9a06a, platinum: 0x1c1c1e, press: 0x2b2d31 };
   const boxOf = new Map();          // `${level}:${x * scale}:${z * scale}` -> its box row
@@ -347,11 +342,9 @@ export function buildDome(ctx) {
     sectorOver: { E: 'D' },
     // (the concrete a clean, neutral light grey, as the photographs show it: no warm cast of its own, little mottling)
     offset: OFF, stage: STAGE, seed: 400, concreteTone: 0.64, concreteWarm: 0.0, concreteEven: 0.8, roofY: (x, z) => ringY(z + ZH) + 0.3,
-    seatColors: { A: 0x1a2f6a, B: 0x1a2f6a, F: 0x1a2f6a, K: 0x1a2f6a, G: 0x1a2f6a, C: 0x5a5d63, D: 0x1a2f6a, E: 0x1a2f6a },
-    seatColorAt: (name, x, z) => { const b = boxAt(name, x, z); return b ? BOX_COLOR[b.kind] ?? 0x6a6b6e : null; },
-    // the backscreen: the outfield stand's middle, between F09 and F12, has
-    // no seats (its steps are painted dark, below)
-    seatKeep: (name, x, z) => !(name === 'F' && inBackscreen(x, z)),
+    seatColors: Object.fromEntries(['A', 'B', 'F', 'K', 'G', 'C', 'D', 'E'].map((level) => [level, SEAT_BLUE])),
+    // F rows are already limited to their PDF blocks, including F11's
+    // six-row pocket. A broad angular mask used to hide named seats too.
     crowd: !!q.crowd,
     // the lightsticks' floors as the building counts them, [floor, band from
     // the front]: the 1st floor (the field-level seats, A, B behind it, and
@@ -362,7 +355,15 @@ export function buildDome(ctx) {
     // the side walls where a stand drops away: the stands' own concrete,
     // not dark steel
     // (the balcony's own front rail from the data is not drawn: its glass front is, below, along rimCS)
-    materials: { rail: std({ color: 0xaaa499, roughness: 0.92, side: THREE.DoubleSide }), wall: std({ color: 0xb4aea3, roughness: 0.88, side: THREE.DoubleSide }), levelRail: { C: new THREE.MeshBasicMaterial({ visible: false }) } },
+    materials: {
+      rail: std({ color: 0xb7b9b8, roughness: 0.88, side: THREE.DoubleSide }),
+      wall: std({ color: 0xc3c5c4, roughness: 0.9, side: THREE.DoubleSide }),
+      interior: std({ color: 0xc4c7c5, roughness: 0.9, emissive: 0x787d7c, emissiveIntensity: 0.5 }),
+      ceiling: std({ color: 0xd3d5d2, roughness: 0.92, emissive: 0x818684, emissiveIntensity: 0.45 }),
+      stair: std({ color: 0xb1b4b2, roughness: 0.9, emissive: 0x626765, emissiveIntensity: 0.45 }),
+      floor: std({ color: 0xa7adab, roughness: 0.72, emissive: 0x5e6663, emissiveIntensity: 0.4, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }),
+      levelRail: { C: new THREE.MeshBasicMaterial({ visible: false }) },
+    },
   });
   root.add(stands.group);
   // The outfield's columns (td_tidy.py): plain grey, as the 1st floor's, at the head of every aisle and in the front
@@ -509,8 +510,15 @@ export function buildDome(ctx) {
         // the back wall: wood behind the suites, white behind the lounge
         const iL = sd.ang.findIndex((a) => a >= sd.lounge[0] - 1e-6);
         const backOf = (i0, i1) => wallStrip(K.slice(i0, i1 + 1).map(([x, z]) => ({ x, z: z + ZH })), K.slice(i0, i1 + 1).map(() => cy + 0.02), { y0: y, thick: 0.1, ease: 0 });
-        if (iL > 0) geo.wood.push(backOf(0, iL));
-        geo.white.push(backOf(Math.max(0, iL), n - 1));
+        if (sd.backSegments) {
+          for (const line of sd.backSegments) {
+            const g = wallStrip(line.map(([x,z]) => ({x,z:z+ZH})), line.map(() => cy+.02), {y0:y,thick:.1,ease:0});
+            (angOf(line[Math.floor(line.length/2)]) < sd.lounge[0] ? geo.wood : geo.white).push(g);
+          }
+        } else {
+          if (iL > 0) geo.wood.push(backOf(0, iL));
+          geo.white.push(backOf(Math.max(0, iL), n - 1));
+        }
         // the glazing: panes from the top tread to the frame band; the band; the header over it up to the underside
         const G = sd.glass, Hd = sd.header;
         const line = (pts, off) => pts.map(([x, z]) => { const dx = x, dz = z + 60, l = Math.hypot(dx, dz) || 1; return { x: x + dx / l * off, z: z + dz / l * off + ZH }; });

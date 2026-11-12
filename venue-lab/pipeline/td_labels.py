@@ -4,7 +4,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 PJ = lambda *a: os.path.join(HERE, *a)
 import td_upper as U
-from td_seat_gaps import fill_seat_gaps
 
 d = json.load(open(PJ('td_stands.json')))
 real = json.load(open(PJ('td', 'td_rows_real.json')))
@@ -339,9 +338,6 @@ _box += [dict(level='B', **q) for q in _LB.pop('boxRows', d.get('boxRows', [])) 
 d['boxRows'] = _box
 _LB.pop('tables', None)
 
-d['blockNames'] = block_names
-fill_seat_gaps(d)
-
 # every seat's name once, numbers along each row in order
 _seen = {}; _dups = 0
 for l in d['levels']:
@@ -351,12 +347,16 @@ for l in d['levels']:
         _seen[q] = 1
 print('labels from the lay (matched / seats / furthest m):', STATS, ' duplicate names:', _dups)
 
+d['blockNames'] = block_names
+import td_seatfit
+d=td_seatfit.apply(d,real,SIDE)
 s_json = json.dumps(d, separators=(',', ':'))
 open(PJ('td_stands.json'), 'w').write(s_json)
 chunks = [repr(s_json[i:i+4000]) for i in range(0, len(s_json), 4000)]
 out = 'export const TD_STANDS = JSON.parse([\n  ' + ',\n  '.join(chunks) + '\n].join(\'\'));\n'
-for js in (PJ('..', 'src', 'j0-td-data.js'), PJ('..', '..', 'src', 'three', 'venues', 'td-data.js')):
-    open(js, 'w').write(out)
+for js in (PJ('..', 'src', 'j0-td-data.js'), os.environ.get('TD_APP_DATA', PJ('..', '..', 'src', 'three', 'venues', 'td-data.js'))):
+    os.makedirs(os.path.dirname(js), exist_ok=True)
+    open(js, 'w').write(out if js.endswith('td-data.js') and not js.endswith('j0-td-data.js') else out.replace('export const ', 'const ', 1))
 
 print('Total blockNames:', len(block_names))
 for l in d['levels']:

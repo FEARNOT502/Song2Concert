@@ -30,7 +30,7 @@ from td_upper import D_END
 
 O = np.array([0.0, -60.0])       # the dome's centre: angles from it, 0 towards home
 BIN = 0.25                       # degrees
-D_CUT = D_END                    # retain the full one-row blocks D01 and D51 from the seating chart
+D_CUT = D_END                    # retain the full D01/D51 chart blocks and the upstream end-parapet alignment
 E_END = 84.3                     # where the 2nd floor's upper rows (E) stop
 WALL_BACK = 0.15                 # the wall behind a top row's back edge
 EASE = 3.0                       # degrees: a notch in the rows' back narrower than this is closed by the wall's line

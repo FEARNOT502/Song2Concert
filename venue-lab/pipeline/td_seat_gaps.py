@@ -1,4 +1,6 @@
 """Fill the exposed seating treads beside both foul poles in the Tokyo Dome model."""
+# Legacy heuristic for older lab builds. The current td_labels.py uses
+# td_seatfit's complete PDF intervals instead of extrapolating seat numbers.
 import base64
 from collections import defaultdict
 

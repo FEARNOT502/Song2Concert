@@ -20,6 +20,7 @@
 #   python td_rows_real.py            (from inside pipeline/)
 
 import io, json, os, re, sys, urllib.request
+import fitz
 from collections import defaultdict
 from pypdf import PdfReader
 from pypdf.generic import ContentStream
@@ -35,15 +36,22 @@ NAME = re.compile(r'^([A-G])\s?(\d{1,2})$')
 # A37 row 3 reads 221-250 on the chart, every other row of A37 starting at 241
 # (the official map's first seat for A37 too)
 FIXES = [('A37', 3, [[241, 250]]), ('A06', 4, [[381, 384]]),
-         ('A08', 7, [[341, 349]]), ('A08', 8, [[341, 349]]), ('A08', 9, [[341, 349]])]
+         ('A08', 7, [[341, 349]]), ('A08', 8, [[341, 349]]), ('A08', 9, [[341, 349]]),
+         # Narrow/merged cells confirmed from the source page images.
+         ('A01', 18, [[481, 484]]), ('A49', 18, [[481, 484]]),
+         ('F02', 21, [[527, 534]]),
+         ('G06', 1, [[91, 94]]), ('G44', 1, [[91, 94]])]
 
 
 def fetch(name):
+    if os.environ.get('TD_PDF_DIR'):
+        with open(os.path.join(os.environ['TD_PDF_DIR'], name), 'rb') as f:
+            return f.read()
     req = urllib.request.Request(BASE + name, headers={'User-Agent': 'Mozilla/5.0 (seat-map reader)'})
     return urllib.request.urlopen(req, timeout=90).read()
 
 
-def page_items(page):
+def page_items(page, text_page=None):
     """The page's text items (x, y, text) and filled rectangles (x0, y0, x1, y1)."""
     texts = []
 
@@ -53,6 +61,13 @@ def page_items(page):
             size = abs(fs * tm[3] * cm[3]) or abs(fs)
             texts.append((tm[4] * cm[0] + tm[5] * cm[2] + cm[4], tm[4] * cm[1] + tm[5] * cm[3] + cm[5], t, size))
     page.extract_text(visitor_text=vis)
+    if text_page is not None:
+        # pypdf 6/7's visitor can report (0,0) for Excel's repeated text
+        # matrices. MuPDF resolves each span's actual baseline reliably.
+        texts = [(sp['origin'][0], text_page.rect.height-sp['origin'][1],
+                  sp['text'].strip(), sp['size'])
+                 for b in text_page.get_text('dict')['blocks'] if b.get('type') == 0
+                 for ln in b['lines'] for sp in ln['spans'] if sp['text'].strip()]
     rects, fill, pend, ctm, stack = [], None, [], [1, 0, 0, 1, 0, 0], []
     for ops, op in ContentStream(page.get_contents(), page.pdf).operations:
         if op == b'q': stack.append(ctm[:])
@@ -214,9 +229,11 @@ def read_2f(path):
 def main():
     report, allb = [], {}
     for f, how in FILES:
-        r = PdfReader(io.BytesIO(fetch(f)))
+        raw = fetch(f)
+        r = PdfReader(io.BytesIO(raw))
+        text_doc = fitz.open(stream=raw, filetype='pdf')
         for pi, page in enumerate(r.pages):
-            texts, rects = page_items(page)
+            texts, rects = page_items(page, text_doc[pi])
             got = blocks_of(texts, rects, how, report, f)
             for nm, rows in got.items():
                 if nm in allb:
@@ -225,7 +242,7 @@ def main():
             print(f, 'page', pi, len(got), 'blocks', file=sys.stderr)
     # the chart's own slips, set right (each checked against its neighbours)
     for nm, row, runs in FIXES:
-        if nm in allb and str(row) in allb[nm]['rows']:
+        if nm in allb:
             allb[nm]['rows'][str(row)] = runs
     for nm, b in read_2f('td/td_rows_2f.txt').items():
         allb[nm] = b
