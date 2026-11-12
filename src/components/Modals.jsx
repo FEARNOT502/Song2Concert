@@ -32,6 +32,8 @@ export const SEAT_ROOMS = ['dome', 'stadium'];
 const seatCatalog = (id, mode) => (id === 'dome' ? getDomeSeatCatalog() : id === 'stadium' ? getStadiumSeatCatalog(mode) : null);
 // a block's name as the picker writes it (a box by its number)
 const blockText = (b) => (/^B\d+$/.test(b) ? `BOX ${Number(b.slice(1))}` : b === 'L4' ? 'L4 BALCONY' : b);
+// (Wembley's Royal Box: Level 2's two middle blocks on the north side)
+const blockOption = (room, b) => (room === 'stadium' && (b === '201' || b === '252') ? `${b} · ROYAL BOX` : blockText(b));
 // a seat as the picker and the badges write it
 export const seatText = (s, room = null) => (s ? `${blockText(s.block)} · ROW ${s.row} · SEAT ${s.num}` : room === 'stadium' ? 'FOH · PITCH' : 'FOH · ARENA');
 
@@ -290,7 +292,7 @@ export function VenuePicker({ open, onClose, current, currentMode = 'general', m
                         if (!list.length) return null;
                         return (
                           <optgroup key={prefix} label={label}>
-                            {list.map((b) => <option key={b} value={b}>{blockText(b)}</option>)}
+                            {list.map((b) => <option key={b} value={b}>{blockOption(sel, b)}</option>)}
                           </optgroup>
                         );
                       })}

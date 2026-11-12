@@ -328,7 +328,7 @@ print('L5 bays', [round(float(np.linalg.norm(b['bridge'][-1] - b['bridge'][0])),
 # there). The pitches give each level its official count once the
 # vomitories, tunnels and press box are cut (34,303, 16,532 and 39,165 seats).
 from wb_reseat import reseat
-PITCH = {'L1': 0.551, 'L2': 0.5, 'L5': 0.515}
+PITCH = {'L1': 0.556, 'L2': 0.529, 'L5': 0.536}     # (round 41: with the rows the lettering hid and the front rows seated, back to the official counts)
 PLAN = plan_bits(G)
 for name_, l_ in LV.items():
     # (Level 1's front band is before its row 1: no front row to fill there)

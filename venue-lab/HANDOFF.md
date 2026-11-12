@@ -2,6 +2,44 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 41: Wembley relabelled seat by seat, Level 2 split by a walkway, the boxes' balcony, the screens' flanks
+- **Asked** (user, 2026-11-12): make the blocks and seats match the real ones (rows per block, seats per row), fix the
+  screens and their sides, add the special seats, then label every seat and give Wembley a seating plan to pick a seat
+  on and go in, as the dome has. Along the way: Level 2 split by a walkway like Level 1; its vomitories to a concourse
+  of their own, the doors at the top of its aisles closed and made the boxes' balcony; empty rows and seats in aisles
+  fixed; concrete and aisles in the photographs' colours; lightsticks cut along Level 1's aisles through every level.
+- **Source.** seatingplan.net's detailed plan (the same 5949 x 4936 one wb_plan.py reads; not committed:
+  `pipeline/wb/ref/`, from https://cookie-free.seatingplan.net/images/wembley-stadium-seating-plan-detailed-rows-seat-numbers.webp).
+  `wb_nums.py` reads every number on it (block numbers all 148 read; seat and row numbers are 9 px and only partly read).
+- **Seats.** `wb_reseat.py`: `vote` opens an aisle a row's printed row numbers hid (rows either side have it);
+  `fill_holes` seats a hole of 1.2-7 m a row has where rows up to three away are seated across it (block numbers and the
+  watermark hid the line; `wb_plan.png` now carries their boxes, bits 9-11); `front_fill` seats Level 2's and Level 5's
+  row 1 (the plan draws it on the tier's edge). Pitches back to the official counts: L1 34,389 (34,303), L2 16,528
+  (16,532), L5 39,231 (39,165).
+- **Level 2** (`wb_gen.py`): a 1.8 m walkway between rows 7 and 8 (`warp2`: everything from row 8 out moved out along
+  its ray), rows 8-16 a step (0.2 m) higher; vomitories off the walkway (`VOM_ROW` 8) down to a concourse under the
+  upper rows (19.96 m), the stairs to Levels 1 and 5 from there. No doors at the back.
+- **Level 3** (new level): the boxes' balcony behind Level 2's last row, two rows (1,988 seats, 142 boxes, glass
+  partitions every 4.8 m), the boxes' glass up to Level 5's underside. Not under the end screens. Level 5 0.5 m higher
+  (room for the glass); its front still 3 m over Level 2's last row (`OVER5` from the glass line). Level 4 0.5 m higher.
+- **Screens' flanks** (`k-stadium.js` / app `stadium.js`, geograph 2952295 zoomed): the flanking blocks end on their own
+  pale side faces, a diagonal up to the board's top corner; under it a pale panelled wall set back, a railed ledge at the
+  board's foot; no fascia, glass or dark housing across the notch. Board foot on Level 2's last row.
+- **Finishes:** concrete 0.58 warm grey, aisles' steps their own darker warm concrete (`materials.step`), boxes' glass
+  (`materials.levelWall`). Club Wembley's seats deeper red, boxes' claret, the Royal Box (201/252) darker.
+- **Labels** (`wb_labels.py`, after wb_gen): blocks off the plan's block regions (`wb_blockpx.py`); Level 1 seat by
+  seat (its blocks meet between two seats, the stairs are inside them) and below its walkway by the seats straight up the
+  rake; Levels 2 and 5 by columns of runs between aisles. Rows: L1 band, L2 band+1 / band-1 past the walkway, L5 band+1
+  (the north side from 1 at its own front). Seat numbers clockwise per row, from 1 at 101/112/123/134,
+  202/214/227/240, 501/514/527/540 (where the plan prints seat 1). Boxes `B001`-`B142`, Level 4 `L4`.
+- **App:** `getStadiumSeatCatalog(mode)` (general: sold seats only), `StadiumBlockMap.jsx` (`wb-blocks.js` from
+  `wb_blockmap.py`; tabs Level 1 / 2 / Boxes / 5), the picker and entry generalised (`SEAT_ROOMS`). Lightsticks:
+  `aisleFirst` (Level 1's aisle blocks, not the labels), `sectorWhole: 0`, `sectorFacing: 4`, `sectorSplitEnds` (the
+  wedge round the back of the stage parted). `venue-lab/appzones.mjs` dumps the sitters' blocks for a plan of them.
+- **Not done / to check:** seat numbers inside a row are the model's count, not the plan's own numbers row by row
+  (only partly readable); Level 1's real rows 29-30 exist only in some blocks (labelled as bands); the TV gantry and
+  press box are as before.
+
 ## Round 40: Wembley's tiers stacked as built; the end screens right behind Level 2's last row
 - **What was asked** (user, three photos of the end screens): the board should sit right behind the 2xx blocks' last row; the
   model had a walkway between them. Fix the whole bowl's section, not only the ends. Board at its real size.

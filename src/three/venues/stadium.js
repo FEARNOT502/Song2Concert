@@ -199,6 +199,11 @@ export function buildStadium(ctx) {
     sectors: ['L1'],
     sectorEven: 1.6, sectorFacing: 4, sectorWhole: 0, sectorSplitEnds: true, round,
     offset: OFF, stage: STAGE, seatColor: 0x9a1418, concreteTone: 0.58, concreteWarm: 0.03, seed: 600, roofY: ROOF,
+    // Club Wembley's padded seats (Level 2) a deeper red, the boxes' balcony
+    // seats (Levels 3 and 4) claret, the Royal Box (Level 2's middle on the
+    // north side, blocks 252 and 201: data x over 70, |z| under 11.5) darker
+    seatColors: { L2: 0x8a1018, L3: 0x5e0d15, L4: 0x5e0d15 },
+    seatColorAt: (name, x, z) => (name === 'L2' && x > 70 && Math.abs(z) < 11.5 ? 0x4a0a10 : null),
     materials: {
       step: std({ ...aisleConc, color: 0xffffff, roughness: 0.92 }),
       wall: std({ ...wallConc, color: 0xffffff, roughness: 0.92, side: THREE.DoubleSide }),
