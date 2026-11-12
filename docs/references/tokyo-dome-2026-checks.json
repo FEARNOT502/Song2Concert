@@ -75,5 +75,7 @@
     "planChanges": 0
   },
   "mergedMainBase": "2f252210e9e0b5a4d00ba934170897ddba9ee43a",
-  "sourceReliability": "Official G row ranges/start numbers cross-checked for 26 blocks; detailed last numbers and G total 670 remain fan-chart claims, not officially certified current capacity."
+  "sourceReliability": "Official G row ranges/start numbers cross-checked for 26 blocks; detailed last numbers and G total 670 remain fan-chart claims, not officially certified current capacity.",
+  "mainBeforeRevision2": "eebe18b83fabb8bd20e6f579507318372694936e",
+  "sharedRendererMerge": "Preserves Wembley own-wall/step materials and aisle/sector options; Dome keeps levelStruct G material."
 }
