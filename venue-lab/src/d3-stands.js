@@ -751,13 +751,13 @@ function buildTunnels(data, ox, oz) {
 
 function buildStands(data, {
   offset = V3(0, 0, 0), stage = V3(0, 2, 0), seatColors = {}, seatColor = 0x22262e,
-  concreteTone = 0.22, sold = () => true, occupancy = 0.97, seed = 5, roofY = 36, crowd = true,
+  concreteTone = 0.22, concreteWarm = 0, sold = () => true, occupancy = 0.97, seed = 5, roofY = 36, crowd = true,
   materials = {}, seatMesh = null, seatColorAt = null,
 }) {
   const g = new THREE.Group();
   const ox = offset.x, oz = offset.z;
   const rnd = prng(seed);
-  const conc = withRepeat(concreteTex({ key: `standconc${concreteTone}`, tone: concreteTone }), 1 / 3, 1 / 3);
+  const conc = withRepeat(concreteTex({ key: `standconc${concreteTone}w${concreteWarm}`, tone: concreteTone, warm: concreteWarm }), 1 / 3, 1 / 3);
   // a venue can dress it in its own materials (a hall's carpet and timber)
   const structMat = materials.struct ?? std({ ...conc, color: 0xffffff, roughness: 0.95 });
   const floorMat = materials.floor ?? std({ color: 0x3a3b3e, roughness: 0.9 });
@@ -877,11 +877,11 @@ function buildStands(data, {
   const solid = [], floors = [], stairs = [], mouthFloors = [];
   const voms = { pit: [], cap: [], tunnel: [], floor: [], ceil: [], lamps: [], signs: [] };
   for (const L of data.levels) {
-    const levelGeo = [];
+    const levelGeo = [], stepGeo = materials.step ? [] : levelGeo;     // (a venue's aisles in their own finish: materials.step)
     for (const row of L.rows) for (const polys of row.polys) prism(polys, row.y0, row.y, levelGeo);
     // the half steps up the aisles
     for (const st of L.steps) {
-      prism(st.polys, st.y0, st.y, levelGeo);
+      prism(st.polys, st.y0, st.y, stepGeo);
       const c = st.polys[0].reduce((a, [x, z]) => [a[0] + x, a[1] + z], [0, 0]).map((v) => v / st.polys[0].length);
       // (a step can go unlit: `light: false`, to keep a level's many half steps to a reasonable count of lights)
       if (st.light !== false) aisleLights.push({ x: c[0] + ox, y: st.y0 + 0.04, z: c[1] + oz });
@@ -930,7 +930,11 @@ function buildStands(data, {
       }
       g.add(new THREE.Mesh(mergeGeometries(pp), materials.partition ?? std({ color: 0x1a1b1f, roughness: 0.6, metalness: 0.3 })));
     }
-    for (const [x0, z0, x1, z1, y0, y1] of smoothRuns(L.walls)) panel('wall', x0, z0, x1, z1, y0, y1);
+    // (a level's walls in its own material: a box level's glass, materials.levelWall)
+    const ownWall = materials.levelWall?.[L.name];
+    for (const [x0, z0, x1, z1, y0, y1] of smoothRuns(L.walls)) panel(ownWall ? 'own' : 'wall', x0, z0, x1, z1, y0, y1);
+    if (ownWall && panels.own[0].length) { g.add(new THREE.Mesh(mkPanels(panels.own), ownWall)); panels.own = [[], []]; }
+    if (stepGeo !== levelGeo && stepGeo.length) { const sm = new THREE.Mesh(mergeGeometries(stepGeo), materials.step); sm.receiveShadow = true; g.add(sm); }
     const mesh = new THREE.Mesh(mergeGeometries(levelGeo), structMat);
     mesh.receiveShadow = true;
     g.add(mesh);

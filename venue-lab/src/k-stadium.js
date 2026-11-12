@@ -134,8 +134,23 @@ function buildStadium(ctx) {
     const wl = side(-1), wr = side(1), Db = Math.max(...b.ring.map(D)) + 0.1;
     return { b, nx, nz, cx, cz, ux, uz, T, D, Sf, wl, wr, Db, yaw: Math.atan2(nx, nz) };
   });
+  // The finishes, off the photographs in daylight (geograph 2952295, 8222730):
+  // the precast concrete a pale warm grey, the aisles' steps the same a shade
+  // darker and warmer (worn, their nosings), the boxes' glass dark and the
+  // balustrades in front of them glass. (round 41: the concrete was a dark grey)
+  const aisleConc = withRepeat(concreteTex({ key: 'wbaisle', tone: 0.5, warm: 0.05, seed: 37 }), 1 / 2, 1 / 2);
+  const wallConc = withRepeat(concreteTex({ key: 'wbwall', tone: 0.56, warm: 0.03, seed: 43 }), 1 / 3, 1 / 3);
+  const boxGlass = std({ color: 0x10141a, roughness: 0.12, metalness: 0.65, side: THREE.DoubleSide });
+  const balGlass = new THREE.MeshPhysicalMaterial({ color: 0xa8bcc8, roughness: 0.08, metalness: 0, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false });
   const stands = buildStands(WB_STANDS, {
-    offset: OFF, stage: STAGE, seatColor: 0x9a1418, concreteTone: 0.26, seed: 600, roofY: ROOF,
+    offset: OFF, stage: STAGE, seatColor: 0x9a1418, concreteTone: 0.58, concreteWarm: 0.03, seed: 600, roofY: ROOF,
+    materials: {
+      step: std({ ...aisleConc, color: 0xffffff, roughness: 0.92 }),
+      wall: std({ ...wallConc, color: 0xffffff, roughness: 0.92, side: THREE.DoubleSide }),
+      levelWall: { L3: boxGlass, L4: boxGlass },
+      levelRail: { L3: balGlass, L4: balGlass },
+      partition: balGlass,
+    },
     sold: (x, z) => z - 8 > Math.max(2, 0.12 * (Math.abs(x) - 31)),   // in front of the wall (face z 8, 62 m wide)
   });
   root.add(stands.group);
@@ -162,7 +177,7 @@ function buildStadium(ctx) {
   // back, under a light canopy.
   const housingMat = std({ color: 0x2a2c30, roughness: 0.7, metalness: 0.3 });
   const cladMat = std({ color: 0x74777c, roughness: 0.75, metalness: 0.2 });
-  const soffitMat = std({ color: 0x8a8d92, roughness: 0.9, metalness: 0.05 });   // the notch's sides: the stand's own concrete
+  const soffitMat = std({ ...wallConc, color: 0xffffff, roughness: 0.92 });   // the notch's sides: the stand's own concrete
   const fasciaMat = std({ color: 0x5a5d62, roughness: 0.7, metalness: 0.2 });    // Level 5's fascia, carried across the notch
   const glassBandMat = std({ color: 0x14181d, roughness: 0.15, metalness: 0.6 }); // the box level's glass under it
   const glassMat = new THREE.MeshPhysicalMaterial({ color: 0x9fb2bf, roughness: 0.08, metalness: 0, transmission: 0.0, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false });
@@ -194,7 +209,7 @@ function buildStadium(ctx) {
     if (screen) {
       const q = screenBays.find((g) => g.b === b);
       const at = (t, d) => [q.cx + q.ux * t - q.nx * d, q.cz + q.uz * t - q.nz * d];
-      const L5 = WB_STANDS.levels.find((l) => l.name === 'L5'), L2top = WB_STANDS.concourse.L2;
+      const L5 = WB_STANDS.levels.find((l) => l.name === 'L5'), L2top = Math.max(...WB_STANDS.levels.find((l) => l.name === 'L2').rows.map((r) => r.y));   // (Level 2's last row's tread)
       const hw = SCREEN_W / 2 + 0.3;
       // The board stands right behind Level 2's last row (`board`: its plane,
       // from the mouth, given by the generator, which leaves the box level's

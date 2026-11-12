@@ -7,3 +7,4 @@ pipeline/*.pkl
 shots/
 gen-out/
 pipeline/ssa/raw/
+pipeline/wb/ref/

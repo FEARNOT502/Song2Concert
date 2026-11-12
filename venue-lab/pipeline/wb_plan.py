@@ -7,7 +7,9 @@
 # plan's seats in wb/wb_seats.pkl.
 #   python3 wb_plan.py <plan.png>  ->  wb/wb_plan.png
 # (16-bit: bits 3k, 3k+1, 3k+2 the aisle, line and lettering of level k,
-# L1, L2, L5; x north and z east on the generator's 0.1 m grid)
+# L1, L2, L5; bit 9+k where a block's number or the watermark is printed over
+# level k's rows (round 41: wb_nums.py's block numbers, their boxes); x north
+# and z east on the generator's 0.1 m grid)
 import sys, pickle, numpy as np, cv2
 sys.path.insert(0, '.')
 from standlib import Grid
@@ -28,6 +30,16 @@ mark = (b - g >= 5) & (g - r >= 6) & ~aisle                  # the watermark's b
 text = ((mn < 140) & ~aisle & ~mark) | mark
 line = (bh >= 6) & (lum <= 216) & ~aisle & ~(mn < 140)
 o = pickle.load(open('wb/wb_seats.pkl', 'rb'))
+import json
+# the big lettering: each block's number (its box from wb_nums.py, a little
+# larger) and the watermark, per level
+big = {n: np.zeros(im.shape[:2], np.uint8) for n in ('L1', 'L2', 'L5')}
+for w in json.load(open('wb/wb_nums.json')):
+    if w['kind'] != 'block' or len(w['t']) != 3 or w['t'][0] not in '125': continue
+    x0, y0, x1, y1 = w['box']; p = 6
+    big['L' + w['t'][0]][max(0, y0 - p):y1 + p, max(0, x0 - p):x1 + p] = 1
+wm = cv2.dilate(mark.astype(np.uint8), np.ones((9, 9), np.uint8))
+for n in big: big[n] |= wm
 gy, gx = np.mgrid[0:G.H, 0:G.W]; X, Z = G.m(gx, gy)
 out = np.zeros((G.H, G.W), np.uint16)
 for k, name in enumerate(('L1', 'L2', 'L5')):
@@ -43,5 +55,6 @@ for k, name in enumerate(('L1', 'L2', 'L5')):
     near = cv2.dilate(near, np.ones((11, 11), np.uint8)) > 0
     for bit, m in enumerate((aisle, line, text)):
         out |= (m[iy, ix] & near).astype(np.uint16) << (3 * k + bit)
+    out |= ((big[name][iy, ix] > 0) & near).astype(np.uint16) << (9 + k)
 cv2.imwrite('wb/wb_plan.png', out, [cv2.IMWRITE_PNG_COMPRESSION, 9])
-print('wb/wb_plan.png', [int(((out >> i) & 1).sum()) for i in range(9)])
+print('wb/wb_plan.png', [int(((out >> i) & 1).sum()) for i in range(12)])
