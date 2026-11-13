@@ -162,21 +162,23 @@ def finish(data):
  left,right=[w['pts'][-1] for w in upper]
  # Wrap the same upper wall behind the full scoreboard. The prior
  # route followed the mouth centres and doubled back at both ends.
- ret_left,ret_right=[w['ret'][1] for w in upper]
- start=np.degrees(np.arctan2(abs(ret_left[0]),-(ret_left[1]+60)))
+ # Continue from the actual visible wall edge, not its outward return.
+ # The two branches and the rear arc are emitted as ONE wall strip.
+ start=np.degrees(np.arctan2(abs(left[0]),-(left[1]+60)))
+ inner=envelope.buffer(-.6)
  arc=[]
  for a in np.linspace(-start,start,181):
-  # Angle zero points to centre field, behind the screen.
-  rad=np.radians(a);r=float(np.interp(abs(a),[0,start],[77.5,np.linalg.norm(np.array(ret_left)-O)]))
+  rad=np.radians(a);r=float(np.interp(abs(a),[0,start],[77.5,np.linalg.norm(np.array(left)-O)]))
   q=O+np.array([np.sin(rad),-np.cos(rad)])*r
-  # This is an interior wall: retain a 0.6m setback from the actual shell.
-  inner=envelope.buffer(-.6)
   for _ in range(100):
    if inner.covers(Point(q)):break
    q+=(O-q)/np.linalg.norm(O-q)*.2
   arc.append(list(np.round(q,3)))
- front=[left,*arc,right]
+ arc[0]=left;arc[-1]=right
+ front=arc
  data['outfieldBackWall']={'pts':front,'y0':16.2,'back':front}
+ data['continuousUpperWall']={'pts':upper[0]['pts']+front[1:-1]+upper[1]['pts'][::-1],
+                              'y0':upper[0]['y0']+[16.2]*(len(front)-2)+upper[1]['y0'][::-1]}
  under=[left,*[list(np.round(q,3)) for q in centres],right]
  room['ceils'].append({'y':16.2,'polys':polys(Polygon(under+front[::-1]).buffer(0))})
  # Finish rooms along the inner edge of the rear circulation band.
@@ -224,7 +226,7 @@ def labelled(data):
  from td_overrides import OVERRIDES
  names=data['blockNames']
  for lv in data['levels']:
-  S=np.frombuffer(base64.b64decode(lv['seats']),'<i2').reshape(-1,4);L=np.frombuffer(base64.b64decode(lv['labels']),'<i2').reshape(-1,3)
+  S=np.frombuffer(base64.b64decode(lv['seats']),'<i2').reshape(-1,4).copy();L=np.frombuffer(base64.b64decode(lv['labels']),'<i2').reshape(-1,3)
   if lv['name']=='F':
    from shapely.geometry import MultiPoint
    ids=[i for i,(b,r,n) in enumerate(L) if names[b]=='F10']
@@ -235,14 +237,47 @@ def labelled(data):
      if not paint.is_empty:data['backscreen'].append({'y':row['y'],'polys':polys(paint)})
      row['polys']=polys(g.difference(pocket))
   if lv['name']=='F':
-   tunnel={'x':11.2,'z':-119.8,'w':2.8,'L':8.0,'h':2.35,'floor':3.0}
-   cut=box(tunnel['x']-tunnel['w']/2,tunnel['z']-tunnel['L'],tunnel['x']+tunnel['w']/2,tunnel['z'])
-   rebuilt=[]
+   from shapely.affinity import translate
+   # F11 belongs to the F12 aisle, not the old raster pocket under the LED.
+   # Fit the existing aisle edge; preserve all 93 numbered chairs and their yaw.
+   scale=lv.get('seatScale',10);xy=S[:,:2]/scale
+   i11=np.flatnonzero(L[:,0]==names.index('F11'))
+   edge12=np.array([min(xy[(L[:,0]==names.index('F12'))&(L[:,1]==r)],key=lambda p:p[0]) for r in range(1,11)])
+   _,_,vh=np.linalg.svd(edge12-edge12.mean(0));normal=vh[-1];normal*=np.sign(normal[0])
+   edge11=np.array([max(xy[i11[L[i11,1]==r]],key=lambda p:p[0]) for r in range(5,11)])
+   shift=edge12[4:10].mean(0)-edge11.mean(0)-normal*1.94
+   # .42m of floor each side of a 1.10m clear aisle.
+   shift+=normal*((edge12@normal).mean()-1.94-max((xy[i11]+shift)@normal))
+   old=MultiPoint(xy[i11]).convex_hull.buffer(.5,join_style=2)
+   moved=translate(old,*shift);rebuilt=[];data['F11Finish']=[]
+   ranks=set(S[i11,2].tolist())
    for row in lv['rows']:
-    g=geom([row]);inside=g.intersection(cut);outside=g.difference(cut)
-    if not outside.is_empty:rebuilt.append({**row,'polys':polys(outside)})
-    if not inside.is_empty and row['y']>tunnel['floor']+tunnel['h']+.25:rebuilt.append({**row,'y0':max(row.get('y0',0),tunnel['floor']+tunnel['h']+.25),'polys':polys(inside)})
-   lv['rows']=rebuilt;data['F11Tunnel']=tunnel
+    g=geom([row]);part=g.intersection(old);rest=g.difference(old)
+    if not rest.is_empty:rebuilt.append({**row,'polys':polys(rest)})
+    if not part.is_empty:
+     data['backscreen'].append({'y':row['y'],'polys':polys(part)})
+     if row.get('r') in ranks:
+      finish={**row,'polys':polys(translate(part,*shift))};rebuilt.append(finish)
+      data['F11Finish'].append({**finish,'polys':polys(translate(part,*shift).buffer(.008,join_style=2)),'y':row['y']+.012})
+   lv['rows']=rebuilt
+   S[i11,:2]=np.round((xy[i11]+shift)*scale).astype('<i2')
+   for row in data['backscreen']:row['polys']=polys(geom([row]).difference(moved.buffer(.025)))
+   data['F11AisleJoin']={'block':'F12','clearWidth':1.1,'shift':shift.tolist(),'normal':normal.tolist(),'edge':edge12.tolist()}
+   # The official 1F panoramas 1053/1054/1260 show a well open to the
+   # sky, between the front of F11 and the field fence. No roof or stairs.
+   front=xy[i11[L[i11,1]==5]]+shift
+   across=front[-1]-front[0];across/=np.linalg.norm(across)
+   if across[0]<0:across=-across
+   forward=np.array([-across[1],across[0]])
+   back=front.mean(0)+forward*.7;length=3.4;width=7.2
+   corners=[back+across*a+forward*t for a,t in [(-width/2,0),(width/2,0),(width/2,length),(-width/2,length)]]
+   # The original field fence is the hard front limit of the well.
+   # Clip to its outside so no part projects into the playing field.
+   field=Polygon(data['fence'][0][0]);cut=Polygon(corners).difference(field.buffer(.45,join_style=2)).simplify(.1)
+   corners=np.array(cut.exterior.coords[:-1]);heights=[5.74 if abs((p-back)@forward)<.08 else 3.1 for p in corners]
+   for row in lv['rows']+data['backscreen']+data['F11Finish']:row['polys']=polys(geom([row]).difference(cut))
+   for floor in data['floors']:floor['polys']=polys(geom([floor]).difference(cut))
+   data['F11Pit']={'pts':corners.tolist(),'center':list(cut.centroid.coords)[0],'heights':heights,'bottom':.35,'rim':4.6,'backRim':5.74,'openTop':True}
   keep=np.array([names[b] not in OVERRIDES for b,r,n in L]);lv['seats']=base64.b64encode(S[keep].tobytes()).decode();lv['labels']=base64.b64encode(L[keep].tobytes()).decode()
   for key in ('gblocks','gnums','seatY'):
    if key in lv and len(lv[key])==len(keep):lv[key]=[v for v,k in zip(lv[key],keep) if k]

@@ -291,8 +291,8 @@ def _side(sg, chart, FN, standY, mouth=None):
     # One padded front, closed to the existing wall at both ends.
     fence=[at(spans[ORDER[0]][0],edge_at(spans[ORDER[0]][0]))[0],*front,nominal]
     # End padding joins the TOP above the main tread, not the tread itself.
-    home_y=max(FENCE_H+.25,(standY(at(spans['G15'][0])[0],-at(spans['G15'][0])[2]) or .6)+.48)
-    pole_y=1.65
+    home_y=max(FENCE_H+.35,(standY(at(spans['G15'][0])[0],-at(spans['G15'][0])[2]) or .6)+.58)
+    pole_y=1.75
     front_line=LineString(front)
     for stair in aisles:
         a=np.array(stair['a']);b=np.array(stair['b']);axis=_u(b-a)
@@ -354,7 +354,7 @@ def apply(data, chart_path='td/td_rows_real.json'):
     data['exciteFence'] = [{'pts': sd['fence'], 'h': FENCE_H,'hs':sd['fence_heights'],'attachment':sd['attachment']} for sd in sides]
     data['exciteAisles'] = [a for sd in sides for a in sd['aisles']]
     data['exciteGates'] = [g for sd in sides for g in sd['gates']]
-    data['exciteRear']=[{'pts':sd['tail_rear'],'top':1.65} for sd in sides]
+    data['exciteRear']=[{'pts':sd['tail_rear'],'top':1.75} for sd in sides]
     data['exciteRearOpen']=[{'pts':sd['rear']} for sd in sides]
     from shapely.geometry import MultiPoint
     occupied=MultiPoint(standY.seatPoints).buffer(.37)

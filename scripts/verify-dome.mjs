@@ -147,6 +147,14 @@ try{
     const c4=e.voms.map(v=>[v.p[0]+v.u[0]*(v.L+3),v.p[1]+v.u[1]*(v.L+3)])
       .sort((a,b)=>Math.atan2(a[0],a[1]+60)-Math.atan2(b[0],b[1]+60));
     route('C4-rear-corridor',c4,24);
+    // A top-down ray through the F11 well must reach its bottom, not
+    // the former roof, stand slab, or green terrace.
+    if(D.F11Pit){
+      const t=D.F11Pit,c=t.center;
+      const ray=W.ray.clone();ray.origin.set(c[0],t.backRim+1,c[1]+114);ray.direction.set(0,-1,0);
+      const hit=W.bvh.raycastFirst(ray,2,0,20);
+      checks.push({name:'F11-open-well',distance:0,heightError:hit?+Math.abs(hit.point.y-t.bottom).toFixed(3):99,hit:hit?.point.toArray()});
+    }
     return {checks,stats:stage.stats(),effectivePillars:window.__verifyDomePillars};
   });
   fs.writeFileSync(path.join(output,'walk.json'),JSON.stringify(report,null,2));

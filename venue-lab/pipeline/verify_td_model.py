@@ -136,6 +136,25 @@ def verify(path):
     assert np.linalg.norm(np.array(arc[0])-data['upperWall'][0]['pts'][-1])<.01
     assert np.linalg.norm(np.array(arc[-1])-data['upperWall'][1]['pts'][-1])<.01
     assert actual[('F11',5)] and not any(b=='F10' for b,r in actual if actual[(b,r)])
+    # Revision 5: no opaque tread or terrace may cap the open F11 well.
+    pit=data['F11Pit'];opening=Polygon(pit['pts'])
+    assert pit['openTop'] and pit['bottom']<pit['rim']-3
+    assert not data.get('F11Tunnel'),'old closed tunnel remains'
+    assert not opening.intersection(Polygon(data['fence'][0][0]).buffer(.25)).area,'well crosses field fence'
+    f=next(l for l in data['levels'] if l['name']=='F')
+    for row in f['rows']+data['backscreen']+data['F11Finish']:
+        assert unary_union([Polygon(p[0],p[1:]) for p in row['polys']]).intersection(opening.buffer(-.02)).area<1e-5,'F11 well covered by seating/terrace'
+    fs=np.frombuffer(base64.b64decode(f['seats']),'<i2').reshape(-1,4)
+    fl=np.frombuffer(base64.b64decode(f['labels']),'<i2').reshape(-1,3)
+    q=fs[fl[:,0]==names.index('F11'),:2]/f['seatScale']
+    assert len(q)==93
+    join=data['F11AisleJoin'];n=np.array(join['normal']);edge=np.array(join['edge'])
+    gap=(edge@n).mean()-max(q@n)
+    assert 1.90<gap<1.98,('F11 detached from F12 aisle',gap)
+    assert not any(opening.buffer(-.05).covers(Point(p)) for p in q),'F11 chair over well'
+    chain=data['continuousUpperWall']
+    assert len(chain['pts'])==len(chain['y0'])
+    assert max(np.linalg.norm(np.diff(chain['pts'],axis=0),axis=1))<2,'upper wall disconnected'
     assert len(data['exciteRearOpen'])==2
     for a,b in [('G14','G15'),('G36','G35')]:
         ia=np.flatnonzero((gl[:,0]==names.index(a))&(gl[:,1]==4))

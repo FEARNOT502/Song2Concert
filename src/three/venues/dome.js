@@ -628,6 +628,10 @@ export function buildDome(ctx) {
   // underside's line). Plain concrete, as the stands'.
   {
     const parts = [];
+    if(TD_STANDS.continuousUpperWall){
+      const w=TD_STANDS.continuousUpperWall,P=w.pts.map(([x,z])=>({x,z:z+ZH}));
+      parts.push(wallStrip(P,P.map(p=>ringY(p.z)+.5),{y0:w.y0,thick:.4,ease:0}));
+    }else{
     for (const w of TD_STANDS.upperWall ?? []) {
       const P = w.pts.map(([x, z]) => ({ x, z: z + ZH }));
       parts.push(wallStrip(P, P.map((p) => ringY(p.z) + 0.5), { y0: w.y0, thick: 0.4, ease: 0 }));
@@ -638,6 +642,7 @@ export function buildDome(ctx) {
       const w = TD_STANDS.outfieldBackWall;
       const P = w.pts.map(([x, z]) => ({ x, z: z + ZH }));
       parts.push(wallStrip(P, P.map((p) => ringY(p.z) + 0.5), { y0: w.y0, thick: 0.35, ease: 0 }));
+    }
     }
     for (const e of TD_STANDS.upperEnds ?? []) {
       if (e.pts) { parts.push(wallStrip(e.pts.map(([x, z]) => ({ x, z: z + ZH })), e.y1, { y0: e.y0, thick: e.thick ?? 0.3, ease: 0 })); continue; }
@@ -790,6 +795,15 @@ export function buildDome(ctx) {
     // and nowhere under the front of the stand behind it (its concrete face showed over the padding),
     // never over the outfield's height (td_stand1.fit_rake keeps the fronts under it)
     for (let i = 0; i < n; i++) ringH[i] = Math.max(ringH[i], Math.min(outH, ringTop[i]));
+  }
+  for(let i=0;i<ringPts.length;i++){
+    if(ringOut[i])continue;
+    const p=ringPts[i];
+    const distance=Math.min(...(TD_STANDS.exciteFence??[]).map(f=>Math.hypot(p.x-f.pts[0][0],p.z-ZH-f.pts[0][1])));
+    if(distance<12){
+      const t=distance/12,w=1-t*t*(3-2*t),target=Math.max(1.35,Math.min(1.55,ringTop[i]+.15));
+      ringH[i]+=(Math.min(ringH[i],target)-ringH[i])*w;
+    }
   }
   // The rear of the excite seats joins the 1F front tread. A full-height
   // field fence here created an artificial dark gap behind the last row.
@@ -1156,23 +1170,31 @@ export function buildDome(ctx) {
     // These metric depths are photo estimates (modern-25, modern-11).
     {
       const green=std({color:0x18382a,roughness:1});
-      const faceZ=Math.min(lower[Math.floor(lower.length/2)].z-5.2,-18.8);
-      const base=0, top=yl-.12, depth=4.2;
+      const faceZ=lower[Math.floor(lower.length/2)].z-.10;
+      const top=yl-.12, depth=4.2;
       const box=(w,h,d,x,y,z)=>{
         const g=new THREE.BoxGeometry(w,h,d);g.translate(x,y,z);root.add(new THREE.Mesh(g,green));
       };
-      box(20,Math.max(.3,top-base),depth,0,(base+top)/2,faceZ-depth/2);
+      box(20,top,depth,0,top/2,faceZ-depth/2);
       // A room on each shoulder, recessed from the central plinth. The
       // panel sits in a shallow framed recess rather than on a sloped wing.
       const frameM=std({color:0x244738,roughness:.95});
       const panelM=std({color:0x11271e,roughness:1});
       for(const sg of [-1,1]){
-        const x=sg*16.15,w=11.8,lo=8.1,hi=y0-.25,z=faceZ-1.05;
-        box(w,hi-lo,4.8,x,(hi+lo)/2,z-2.4);
-        const surround=new THREE.Mesh(new THREE.BoxGeometry(8.8,2.7,.16),frameM);
-        surround.position.set(x,hi-2.15,z+.08);root.add(surround);
-        const panel=new THREE.Mesh(new THREE.BoxGeometry(8.15,2.1,.05),panelM);
-        panel.position.set(x,hi-2.15,z+.18);root.add(panel);
+        const x=sg*16.15,w=11.8,lo=9.9,hi=y0-.25,z=faceZ-1.05;
+        const panelY=lo+.6,panelH=.85;
+        box(w,hi-lo,2.3,x,(hi+lo)/2,z-1.15);
+        const surround=new THREE.Mesh(new THREE.BoxGeometry(8.8,panelH,.16),frameM);
+        surround.position.set(x,panelY,z+.08);root.add(surround);
+        const panel=new THREE.Mesh(new THREE.BoxGeometry(8.15,panelH-.45,.05),panelM);
+        panel.position.set(x,panelY,z+.18);root.add(panel);
+        const cv=document.createElement('canvas');cv.width=1024;cv.height=256;
+        const ctx=cv.getContext('2d');ctx.fillStyle='#244738';ctx.fillRect(0,0,1024,256);
+        ctx.fillStyle='#dbc777';ctx.font='bold 172px Arial, sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('RYOBI',512,139);
+        const tex=new THREE.CanvasTexture(cv);tex.colorSpace=THREE.SRGBColorSpace;
+        const ad=new THREE.Mesh(new THREE.PlaneGeometry(8.8,1.65),new THREE.MeshBasicMaterial({map:tex,toneMapped:true}));
+        ad.position.set(x,hi-1.02,z+.19);root.add(ad);
+
       }
       // Keep the lower risers as real solid steps, restrict them to the
       // centre, and stop at the vertical face. No sheet covers F's wings.
@@ -1186,14 +1208,14 @@ export function buildDome(ctx) {
         }
         return out;
       };
-      for(const r of TD_STANDS.backscreen??[]){
-        if(r.y>8.1)continue;
+      for(const r of [...(TD_STANDS.backscreen??[]),...(TD_STANDS.F11Finish??[])]){
         for(const poly of r.polys){
-          const ring=clip(clip(poly[0],10,true),-22,false);
+          const right=22;
+          const ring=clip(clip(poly[0],right,true),-22,false);
           if(ring.length<3)continue;
           const shape=new THREE.Shape(ring.map(([x,z])=>new THREE.Vector2(x,-z)));
           for(const hole of poly.slice(1)){
-            const h=clip(clip(hole,10,true),-22,false);
+            const h=clip(clip(hole,right,true),-22,false);
             if(h.length>=3)shape.holes.push(new THREE.Path(h.map(([x,z])=>new THREE.Vector2(x,-z))));
           }
           const g=new THREE.ExtrudeGeometry(shape,{depth:Math.max(.05,r.y),bevelEnabled:false});
@@ -1201,17 +1223,26 @@ export function buildDome(ctx) {
         }
       }
       if(parts.length)root.add(new THREE.Mesh(mergeGeometries(parts),green));
-      // A real recessed passage beneath F11: roof, side returns and floor,
-      // with the seating slabs above cut back to its headroom in the data.
-      const t=TD_STANDS.F11Tunnel;
+      // An open-topped concrete well in front of F11, photographed in
+      // the official 1F scan. Its entire footprint is cut out of the treads.
+      const t=TD_STANDS.F11Pit;
       if(t){
-        const {x,z,w,L,h,floor:fy}=t;
-        for(const side of [-1,1])box(.2,h,L,x+side*(w/2+.1),fy+h/2,z+ZH-L/2);
-        box(w+.4,.25,L,x,fy+h+.125,z+ZH-L/2);
-        const floor=new THREE.Mesh(new THREE.BoxGeometry(w,.10,L),std({color:0x444b43,roughness:1}));
-        floor.position.set(x,fy,z+ZH-L/2);root.add(floor);
-        // The far wall is recessed several metres; the mouth stays open.
-        box(w,h,.2,x,fy+h/2,z+ZH-L);
+        const concrete=std({color:0x8d9287,roughness:1});
+        const P=t.pts.map(([x,z])=>({x,z:z+ZH}));
+        const hs=t.heights;
+        root.add(new THREE.Mesh(wallStrip(P,hs,{y0:t.bottom,thick:.18,closed:true,ease:0}),concrete));
+        root.add(new THREE.Mesh(wallStrip(P,hs.map(h=>h+.12),{y0:hs,thick:.25,closed:true,ease:0}),green));
+        for(let i=0;i<P.length;i++){
+          const a=P[i],b=P[(i+1)%P.length],j=(i+1)%P.length;
+          const start=new THREE.Vector3(a.x,hs[i]+.18,a.z),end=new THREE.Vector3(b.x,hs[j]+.18,b.z);
+          const delta=end.clone().sub(start),rail=new THREE.CylinderGeometry(.035,.035,delta.length(),6);
+          rail.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),delta.normalize()));
+          rail.translate(...start.clone().add(end).multiplyScalar(.5).toArray());
+          root.add(new THREE.Mesh(rail,frameM));
+        }
+        const shape=new THREE.Shape(P.map(p=>new THREE.Vector2(p.x,-p.z)));
+        const floor=new THREE.ShapeGeometry(shape);floor.rotateX(-Math.PI/2);floor.translate(0,t.bottom,0);
+        const mesh=new THREE.Mesh(floor,std({color:0x353c35,roughness:1}));mesh.name='F11 open well floor';root.add(mesh);
       }
 
     }

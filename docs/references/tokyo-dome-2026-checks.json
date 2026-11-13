@@ -1,7 +1,7 @@
 {
-  "revision": 4,
+  "revision": 5,
   "checkedOn": "2026-11-13",
-  "dataSha256": "2414462fed0996458f999d18ecc504581f38c422e45fa6de398b7ceac43e3349",
+  "dataSha256": "a7e78af7db3b0083d69f5dc0909d1f240c23d12545b31aded4d47e45317ad74d",
   "modelAudit": {
     "seats": {
       "A": 10384,
@@ -237,7 +237,7 @@
     "flights": 13
   },
   "walker": {
-    "checks": 177,
+    "checks": 178,
     "failed": []
   },
   "geometryRegressionTests": 7,
@@ -255,23 +255,135 @@
     "connectedWallOutsideShell": 0,
     "F10Seats": 0,
     "F11Seats": 93,
-    "F11Tunnel": {
-      "x": 11.2,
-      "z": -119.8,
-      "w": 2.8,
-      "L": 8.0,
-      "h": 2.35,
-      "floor": 3.0
-    },
     "exciteRearOpenContinuousSides": 2,
     "exciteFenceVertices": [
       8,
       7
-    ]
+    ],
+    "F11Pit": {
+      "pts": [
+        [
+          18.467404458032046,
+          -119.1059287399235
+        ],
+        [
+          11.428874918064505,
+          -120.62220770996969
+        ],
+        [
+          11.305606767778482,
+          -120.05
+        ],
+        [
+          15.286396103067895,
+          -118.85000000000001
+        ],
+        [
+          18.086396103067887,
+          -117.65
+        ]
+      ],
+      "center": [
+        15.375254813790965,
+        -119.25157679991734
+      ],
+      "heights": [
+        5.74,
+        5.74,
+        3.1,
+        3.1,
+        3.1
+      ],
+      "bottom": 0.35,
+      "rim": 4.6,
+      "backRim": 5.74,
+      "openTop": true
+    },
+    "F11AisleJoin": {
+      "block": "F12",
+      "clearWidth": 1.1,
+      "shift": [
+        4.691555699024987,
+        2.4529636253343283
+      ],
+      "normal": [
+        0.9851707795551383,
+        0.171576615862189
+      ],
+      "edge": [
+        [
+          20.36,
+          -116.64
+        ],
+        [
+          20.48,
+          -117.32
+        ],
+        [
+          20.6,
+          -117.98
+        ],
+        [
+          20.72,
+          -118.66
+        ],
+        [
+          20.84,
+          -119.34
+        ],
+        [
+          20.96,
+          -120.02
+        ],
+        [
+          21.08,
+          -120.7
+        ],
+        [
+          21.18,
+          -121.36
+        ],
+        [
+          21.3,
+          -122.04
+        ],
+        [
+          21.42,
+          -122.7
+        ]
+      ]
+    },
+    "upperWallSingleStrip": true,
+    "batterEyeVisibleInFourViews": true
   },
   "limitations": [
     "Photographic dimensions, not a survey",
     "F11 tunnel interior termination simplified",
     "G layout and IDs are user-defined; not an official seating ledger"
-  ]
+  ],
+  "photoReview": {
+    "official1FPanorama": "https://my.matterport.com/show/?m=hKaQSvco93D",
+    "scanYear": 2023,
+    "locations": [
+      1053,
+      1054,
+      1260,
+      288
+    ],
+    "currentRenderViews": [
+      "batter-front.png",
+      "batter-left.png",
+      "batter-right.png",
+      "batter-high.png",
+      "pit-top.png",
+      "pit-rim.png",
+      "F11-join.png",
+      "wall-left.png",
+      "wall-right.png",
+      "03.png",
+      "04.png",
+      "home-fence.png"
+    ],
+    "unmeasuredDimensions": "Photographic estimates, not survey dimensions"
+  }
 }
