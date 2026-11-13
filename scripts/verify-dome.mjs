@@ -85,9 +85,10 @@ try{
     }
     for(const [i,f] of (D.exciteAisles||[]).entries()){
       const dx=f.b[0]-f.a[0],dz=f.b[1]-f.a[1],length=Math.hypot(dx,dz),u=[dx/length,dz/length];
-      const a=[f.a[0]+u[0]*.28,f.a[1]+u[1]*.28],b=[f.b[0]+u[0]*.2,f.b[1]+u[1]*.2];
+      const n=Math.max(2,Math.ceil((f.y1-f.y0)/.19)),firstRun=length/n;
+      const a=[f.a[0]+u[0]*firstRun*.35,f.a[1]+u[1]*firstRun*.35],b=[f.b[0]+u[0]*.2,f.b[1]+u[1]*.2];
       segment(`G-aisle-${i}-up`,a,b,f.y0+.25,f.y1);
-      segment(`G-aisle-${i}-down`,b,a,f.y1,f.y0+Math.min(.19,f.y1-f.y0));
+      segment(`G-aisle-${i}-down`,b,a,f.y1,f.y0+(f.y1-f.y0)/n);
     }
     for(const name of ['E','F']){
       const level=D.levels.find(l=>l.name===name);

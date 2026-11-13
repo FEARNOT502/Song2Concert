@@ -38,6 +38,10 @@ def apply(data):
  ok=np.abs(np.degrees(np.arctan2(S[:,0]/sk,S[:,1]/sk+60)))<C_END-.15
  C['seats']=base64.b64encode(S[ok].tobytes()).decode();C.pop('labels',None)
  C['rails']=[r for r in C['rails'] if abs(np.degrees(np.arctan2((r[0]+r[2])/2,(r[1]+r[3])/2+60)))<C_END]
+ # Trim the actual 1.5m first-tier slab, not just its painted fascia.
+ D=next(l for l in data['levels'] if l['name']=='D')
+ for row in D['rows']:
+  if abs(row['y']-18.6)<.02:row['y0']=18.48
  data['rimCS']=[[p for p in rim if abs(np.degrees(np.arctan2(p[0],p[1]+60)))<=C_END] for rim in data['rimCS']]
  for floor in data['floors']:
   if 13.5<floor['y']<18.7:floor['polys']=polys(geom([floor]).intersection(keep if floor['y']<18 else sector(104)))
@@ -61,7 +65,7 @@ def finish(data):
  # that unoccupied strip for the attached excite rear tread. Seat support
  # is independently checked after this operation; no seat IDs are removed.
  if data.get('exciteRearCut'):
-  cut=unary_union([Polygon(p[0],p[1:]) for p in data['exciteRearCut']])
+  cut=unary_union([Polygon(p[0],p[1:]).buffer(0) for p in data['exciteRearCut']])
   A=next(l for l in data['levels'] if l['name']=='A')
   for row in A['rows']:row['polys']=polys(geom([row]).difference(cut))
   A['rows']=[r for r in A['rows'] if r['polys']]
@@ -156,10 +160,25 @@ def finish(data):
  # wall behind them. Its underside roofs the seats behind the F pillars.
  upper=sorted(data['upperWall'],key=lambda w:w['pts'][-1][0])
  left,right=[w['pts'][-1] for w in upper]
- front=[left,*[list(np.round(q,3)) for q in centres],right]
- back=[upper[0]['ret'][1],*rear,upper[1]['ret'][1]]
- data['outfieldBackWall']={'pts':front,'y0':16.2,'back':back}
- room['ceils'].append({'y':16.2,'polys':polys(Polygon(front+back[::-1]).buffer(0))})
+ # Wrap the same upper wall behind the full scoreboard. The prior
+ # route followed the mouth centres and doubled back at both ends.
+ ret_left,ret_right=[w['ret'][1] for w in upper]
+ start=np.degrees(np.arctan2(abs(ret_left[0]),-(ret_left[1]+60)))
+ arc=[]
+ for a in np.linspace(-start,start,181):
+  # Angle zero points to centre field, behind the screen.
+  rad=np.radians(a);r=float(np.interp(abs(a),[0,start],[77.5,np.linalg.norm(np.array(ret_left)-O)]))
+  q=O+np.array([np.sin(rad),-np.cos(rad)])*r
+  # This is an interior wall: retain a 0.6m setback from the actual shell.
+  inner=envelope.buffer(-.6)
+  for _ in range(100):
+   if inner.covers(Point(q)):break
+   q+=(O-q)/np.linalg.norm(O-q)*.2
+  arc.append(list(np.round(q,3)))
+ front=[left,*arc,right]
+ data['outfieldBackWall']={'pts':front,'y0':16.2,'back':front}
+ under=[left,*[list(np.round(q,3)) for q in centres],right]
+ room['ceils'].append({'y':16.2,'polys':polys(Polygon(under+front[::-1]).buffer(0))})
  # Finish rooms along the inner edge of the rear circulation band.
  br=data['balconyRooms'];br['corridorWalls']=[];br['doors']=[]
  for sd in br['sides']:
@@ -208,13 +227,22 @@ def labelled(data):
   S=np.frombuffer(base64.b64decode(lv['seats']),'<i2').reshape(-1,4);L=np.frombuffer(base64.b64decode(lv['labels']),'<i2').reshape(-1,3)
   if lv['name']=='F':
    from shapely.geometry import MultiPoint
-   ids=[i for i,(b,r,n) in enumerate(L) if names[b]=='F11']
+   ids=[i for i,(b,r,n) in enumerate(L) if names[b]=='F10']
    if ids:
     pocket=MultiPoint(S[ids,:2]/lv.get('seatScale',10)).convex_hull.buffer(.45,join_style=2)
     for row in lv['rows']:
      g=geom([row]);paint=g.intersection(pocket)
      if not paint.is_empty:data['backscreen'].append({'y':row['y'],'polys':polys(paint)})
      row['polys']=polys(g.difference(pocket))
+  if lv['name']=='F':
+   tunnel={'x':11.2,'z':-119.8,'w':2.8,'L':8.0,'h':2.35,'floor':3.0}
+   cut=box(tunnel['x']-tunnel['w']/2,tunnel['z']-tunnel['L'],tunnel['x']+tunnel['w']/2,tunnel['z'])
+   rebuilt=[]
+   for row in lv['rows']:
+    g=geom([row]);inside=g.intersection(cut);outside=g.difference(cut)
+    if not outside.is_empty:rebuilt.append({**row,'polys':polys(outside)})
+    if not inside.is_empty and row['y']>tunnel['floor']+tunnel['h']+.25:rebuilt.append({**row,'y0':max(row.get('y0',0),tunnel['floor']+tunnel['h']+.25),'polys':polys(inside)})
+   lv['rows']=rebuilt;data['F11Tunnel']=tunnel
   keep=np.array([names[b] not in OVERRIDES for b,r,n in L]);lv['seats']=base64.b64encode(S[keep].tobytes()).decode();lv['labels']=base64.b64encode(L[keep].tobytes()).decode()
   for key in ('gblocks','gnums','seatY'):
    if key in lv and len(lv[key])==len(keep):lv[key]=[v for v,k in zip(lv[key],keep) if k]

@@ -125,7 +125,7 @@ def _side(sg, chart, FN, standY, mouth=None):
         return raw_front(station,n)
     def rear_row(station,n):
         return depth_at(station,n)-.60-(len(chart[name(n)])-1)*PITCH
-    rows=[];seats=[];footprints=[];front=[];aisles=[];gates=[];finishes=[];front_samples=[]
+    rows=[];seats=[];footprints=[];front=[];aisles=[];gates=[];finishes=[];front_samples=[];home_frame=None;rear_runs=[];tail_rear=[]
     for n in ORDER:
         lo,hi=spans[n];nums=chart[name(n)];nr=len(nums)
         rear_attached=n != 'G04'
@@ -149,6 +149,8 @@ def _side(sg, chart, FN, standY, mouth=None):
                 probes=np.linspace(lo,hi,24)
                 needed=max((at(v,rear_at(v))[0]-origin)@normal for v in probes)
                 origin=origin+normal*needed
+                if n=='G15':home_frame=(origin.copy(),axis.copy(),normal.copy())
+                if n=='G14' and home_frame is not None:origin,axis,normal=home_frame
                 main_frame=(origin,axis,normal)
         # Continue each shared A aisle axis into the added stand. Fitting
         # the midpoint of its two seat-block edges avoids independent fan
@@ -185,6 +187,8 @@ def _side(sg, chart, FN, standY, mouth=None):
             if main_frame is None:return rear_row(station,n)+(nr-1-r)*PITCH
             origin,axis,normal=main_frame;p,al,inside=at(station)
             return float(((origin-p)@normal+(nr-1-r)*PITCH)/(inside@normal))
+        original_rear_edge=rear_edge
+        rear_edge=lambda v:min(original_rear_edge(v),row_depth(v,nr-1)-.4)
         def patch(lower,upper):
             ts=np.linspace(lo,hi,max(2,int((hi-lo)/.2)+1))
             g=Polygon([geom_at(v,lower(v))[0] for v in ts]+[geom_at(v,upper(v))[0] for v in ts[::-1]]).buffer(0)
@@ -216,6 +220,18 @@ def _side(sg, chart, FN, standY, mouth=None):
                 access=Polygon([geom_at(v,lower(v))[0] for v in (access_start,hi)]+
                                [geom_at(v,upper(v))[0] for v in (hi,access_start)]).buffer(0)
                 finishes.append({'y':round(height_at(r)+.012,3),'polys':_polys(band.intersection(access))})
+        back_points=[geom_at(v,row_depth(v,nr-1)-.4)[0] for v in np.linspace(lo,hi,24)]
+        if int(n[1:])>=6:
+            rear_runs.append([list(np.round(q,3)) for q in back_points])
+            # A continuous supported shoulder replaces the open trench.
+            # Interpolate up to the main front tread without moving chairs.
+            stand_points=[geom_at(v,row_depth(v,nr-1)-1.05)[0] for v in np.linspace(lo,hi,24)]
+            target_y=standY(np.mean(stand_points,axis=0),-inside) or .6
+            for k in range(8):
+                a=k/8;b=(k+1)/8
+                ring=[p+(q-p)*a for p,q in zip(back_points,stand_points)]+[p+(q-p)*b for p,q in zip(back_points[::-1],stand_points[::-1])]
+                rows.append({'r':-1,'y':round(back_y+(target_y-back_y)*b,3),'y0':0.,'polys':_polys(Polygon(ring).buffer(0))})
+        else:tail_rear.extend([list(np.round(q,3)) for q in back_points])
         if n in aisle_after:
             nxt=ORDER[ORDER.index(n)+1];nl,nh=spans[nxt]
             station=(hi+nl)/2;T,al,inside=at(station)
@@ -257,24 +273,39 @@ def _side(sg, chart, FN, standY, mouth=None):
     profile=home[:-1]+bridge+pole[1:]
     ts=np.linspace(profile[0][0],profile[-1][0],160)
     front=[at(t,float(np.interp(t,*zip(*profile))))[0] for t in ts]
+    front=[np.array(p) for p in LineString(front).simplify(.45,preserve_topology=False).coords]
     X=unary_union(footprints).buffer(0)
     envelope=Polygon([at(t,edge_at(t))[0] for t in ts]+front[::-1]).buffer(0)
     apron=envelope.difference(X)
     if not apron.is_empty:rows.append({'r':0,'y':Y0,'y0':0.,'polys':_polys(apron)})
     X=X.union(envelope)
+    # Clip every slab to the field-side polygon: no stair/cell corners can
+    # protrude outside the padded straight runs.
+    front_limit=Polygon([at(t,-6.)[0] for t in np.linspace(ts[0]-2,ts[-1]+2,80)]+[nominal]+front[::-1]).buffer(0)
+    for row in rows:row['polys']=_polys(_geom(row['polys']).intersection(front_limit))
+    rows=[r for r in rows if r['polys']]
+
     # A continuous padded envelope with separate home/pole returns.
     # The five-row transition and the two/three-row pole lots taper
     # diagonally instead of producing a comb of independent rectangles.
     # One padded front, closed to the existing wall at both ends.
     fence=[at(spans[ORDER[0]][0],edge_at(spans[ORDER[0]][0]))[0],*front,nominal]
     # End padding joins the TOP above the main tread, not the tread itself.
-    home_y=max(FENCE_H+.25,(standY(at(spans['G15'][0])[0],-at(spans['G15'][0])[2]) or .6)+.90)
-    pole_y=max((side[0][1] for side in (mouth or {}).get('sides',[]) if side),default=4.0)
+    home_y=max(FENCE_H+.25,(standY(at(spans['G15'][0])[0],-at(spans['G15'][0])[2]) or .6)+.48)
+    pole_y=1.65
+    front_line=LineString(front)
+    for stair in aisles:
+        a=np.array(stair['a']);b=np.array(stair['b']);axis=_u(b-a)
+        crossing=LineString([a-axis*1.5,b]).intersection(front_line)
+        points=[g for g in getattr(crossing,'geoms',[crossing]) if g.geom_type=='Point']
+        if points:
+            entry=min(points,key=lambda p:p.distance(Point(a)))
+            stair['a']=list(np.round(np.array(entry.coords[0])+axis*.35,3))
     fence_heights=[round(home_y,3)]+[FENCE_H]*len(front)+[round(pole_y,3)]
     keep=[0]+[i for i in range(1,len(fence)) if np.linalg.norm(fence[i]-fence[i-1])>.015]
     fence=[fence[i] for i in keep];fence_heights=[fence_heights[i] for i in keep]
     return dict(X=X,rows=rows,seats=seats,finishes=finishes,fence=[list(np.round(p,3)) for p in fence],aisles=aisles,gates=gates,
-                fence_heights=fence_heights,attachment={'point':list(np.round(nominal,3)),'height':round(pole_y,3),'edge':'A03-side outer door hinge; not the two-leaf centre' if sg>0 else 'mirrored wall junction; 3B corner dimensions estimated'},
+                rear_runs=rear_runs,tail_rear=tail_rear,fence_heights=fence_heights,attachment={'point':list(np.round(nominal,3)),'height':round(pole_y,3),'edge':'A03-side outer door hinge; not the two-leaf centre' if sg>0 else 'mirrored wall junction; 3B corner dimensions estimated'},
                 rear=[list(np.round(at(t)[0],3)) for t in np.linspace(spans['G15'][0],spans['G06'][1],180)],
                 cut=_polys(Polygon([at(t,min(0.,edge_at(t)))[0] for t in np.linspace(spans['G15'][0],spans['G06'][1],180)]+[at(t,.05)[0] for t in np.linspace(spans['G06'][1],spans['G15'][0],180)]).buffer(0)))
 
@@ -323,8 +354,11 @@ def apply(data, chart_path='td/td_rows_real.json'):
     data['exciteFence'] = [{'pts': sd['fence'], 'h': FENCE_H,'hs':sd['fence_heights'],'attachment':sd['attachment']} for sd in sides]
     data['exciteAisles'] = [a for sd in sides for a in sd['aisles']]
     data['exciteGates'] = [g for sd in sides for g in sd['gates']]
-    data['exciteRear']=[{'pts':sd['rear'],'top':1.30} for sd in sides]
-    data['exciteRearCut']=[p for sd in sides for p in sd['cut']]
+    data['exciteRear']=[{'pts':sd['tail_rear'],'top':1.65} for sd in sides]
+    data['exciteRearOpen']=[{'pts':sd['rear']} for sd in sides]
+    from shapely.geometry import MultiPoint
+    occupied=MultiPoint(standY.seatPoints).buffer(.37)
+    data['exciteRearCut']=_polys(unary_union([_geom(r['polys']) for r in G['rows']]).difference(occupied))
     data['exciteHomeFinishes']=[f for sd in sides for f in sd['finishes']]
     for k in ('exciteOpen', 'exciteFront'): data.pop(k, None)
     by = {}

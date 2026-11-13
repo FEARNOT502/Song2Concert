@@ -1,0 +1,11 @@
+{
+  "reviewDate": "2026-11-13",
+  "primary": "User annotated screenshots, F10/F11 chart crop and field photos supplied in this conversation",
+  "confirmed": "F10 green steps without seats; F11 seats and lower tunnel",
+  "reusedReferenceIndex": "tokyo-dome-review-3-sources.json",
+  "limits": [
+    "Metric dimensions inferred from photographs; not surveyed",
+    "F11 tunnel interior termination simplified",
+    "G identifiers/counts remain custom layout; G14/G15 rear line takes priority over old PDF geometry"
+  ]
+}

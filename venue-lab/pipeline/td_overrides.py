@@ -4,7 +4,7 @@ OVERRIDES = {
     'G47':'Mirrored G03 removal authorized by the revised block layout.',
     'D01':'User photo review: upper-deck wing is one block too long; shorten both ends.',
     'D51':'User photo review: upper-deck wing is one block too long; shorten both ends.',
-    'F11':'User photo review: remove seats beneath modern scoreboard and restore batter eye.',
+    'F10':'User revision 4: green stepped screening, no seating on the left of the batter eye.',
 }
 def effective(real):
     return {k:v for k,v in real.items() if k not in OVERRIDES}

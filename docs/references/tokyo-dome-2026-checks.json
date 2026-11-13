@@ -1,48 +1,227 @@
 {
-  "checkedOn": "2026-11-12",
-  "dataSha256": "dbe848245c771a61d1e019caa729c5a6a0e65c12421b230f72cc910ff2130c16",
+  "revision": 4,
+  "checkedOn": "2026-11-13",
+  "dataSha256": "2414462fed0996458f999d18ecc504581f38c422e45fa6de398b7ceac43e3349",
   "modelAudit": {
     "seats": {
       "A": 10384,
       "B": 9492,
-      "F": 5904,
+      "F": 5997,
       "C": 1768,
       "D": 5210,
       "E": 8519,
-      "G": 670
+      "G": 526
     },
     "exciteReview": {
       "rearWallDistanceRange": [
         0.005,
-        0.946
+        1.362
       ],
       "frontFenceDistanceRange": [
-        0.344,
-        0.655
+        0.214,
+        2.514
       ],
-      "rearToMainChairDistanceMedian": 1.038,
-      "rearToMainChairDistanceMin": 0.806,
+      "rearToMainChairDistanceMedian": 0.948,
+      "rearToMainChairDistanceMin": 0.766,
+      "frontFenceByBlock": {
+        "G04": [
+          0.825,
+          2.514
+        ],
+        "G05": [
+          0.874,
+          1.851
+        ],
+        "G06": [
+          0.606,
+          1.016
+        ],
+        "G07": [
+          0.426,
+          0.706
+        ],
+        "G08": [
+          0.214,
+          0.295
+        ],
+        "G09": [
+          0.508,
+          0.575
+        ],
+        "G10": [
+          0.857,
+          1.177
+        ],
+        "G11": [
+          0.619,
+          0.738
+        ],
+        "G12": [
+          0.692,
+          0.702
+        ],
+        "G13": [
+          0.622,
+          0.674
+        ],
+        "G14": [
+          1.476,
+          1.832
+        ],
+        "G15": [
+          0.695,
+          1.122
+        ],
+        "G35": [
+          0.707,
+          1.105
+        ],
+        "G36": [
+          1.443,
+          1.882
+        ],
+        "G37": [
+          0.609,
+          0.622
+        ],
+        "G38": [
+          0.646,
+          0.675
+        ],
+        "G39": [
+          0.633,
+          0.661
+        ],
+        "G40": [
+          0.766,
+          1.101
+        ],
+        "G41": [
+          0.437,
+          0.535
+        ],
+        "G42": [
+          0.294,
+          0.383
+        ],
+        "G43": [
+          0.507,
+          0.788
+        ],
+        "G44": [
+          0.651,
+          1.047
+        ],
+        "G45": [
+          0.469,
+          1.641
+        ],
+        "G46": [
+          0.819,
+          2.314
+        ]
+      },
       "homeRowAngles": {
-        "G15": {
-          "yaw": -129,
-          "mainYaw": -130.0
+        "G04": {
+          "yaw": -96,
+          "mainYaw": -97.0
+        },
+        "G05": {
+          "yaw": -102,
+          "mainYaw": -102.0
+        },
+        "G06": {
+          "yaw": -107,
+          "mainYaw": -107.0
+        },
+        "G07": {
+          "yaw": -111,
+          "mainYaw": -111.0
+        },
+        "G08": {
+          "yaw": -114,
+          "mainYaw": -114.0
+        },
+        "G09": {
+          "yaw": -118,
+          "mainYaw": -118.0
+        },
+        "G10": {
+          "yaw": -122,
+          "mainYaw": -122.0
+        },
+        "G11": {
+          "yaw": -126,
+          "mainYaw": -126.0
+        },
+        "G12": {
+          "yaw": -128,
+          "mainYaw": -128.0
+        },
+        "G13": {
+          "yaw": -128,
+          "mainYaw": -128.0
         },
         "G14": {
-          "yaw": -129,
+          "yaw": -130,
           "mainYaw": -129.0
+        },
+        "G15": {
+          "yaw": -130,
+          "mainYaw": -130.0
         },
         "G35": {
           "yaw": 130,
           "mainYaw": 130.0
         },
         "G36": {
-          "yaw": 129,
+          "yaw": 130,
+          "mainYaw": 129.0
+        },
+        "G37": {
+          "yaw": 128,
           "mainYaw": 128.0
+        },
+        "G38": {
+          "yaw": 128,
+          "mainYaw": 128.0
+        },
+        "G39": {
+          "yaw": 127,
+          "mainYaw": 126.0
+        },
+        "G40": {
+          "yaw": 122,
+          "mainYaw": 122.0
+        },
+        "G41": {
+          "yaw": 119,
+          "mainYaw": 118.0
+        },
+        "G42": {
+          "yaw": 114,
+          "mainYaw": 114.0
+        },
+        "G43": {
+          "yaw": 111,
+          "mainYaw": 111.0
+        },
+        "G44": {
+          "yaw": 107,
+          "mainYaw": 107.0
+        },
+        "G45": {
+          "yaw": 102,
+          "mainYaw": 102.0
+        },
+        "G46": {
+          "yaw": 96,
+          "mainYaw": 97.0
         }
       }
     },
-    "pdfBlocks": 230,
-    "pdfRows": 3528,
+    "pdfBlocks": 229,
+    "pdfRows": 3530,
     "intervalMismatches": [],
     "duplicateRows": [],
     "invalidRows": [],
@@ -58,36 +237,41 @@
     "flights": 13
   },
   "walker": {
-    "checks": 130,
+    "checks": 177,
     "failed": []
   },
   "geometryRegressionTests": 7,
   "appBuild": "passed",
-  "pdfSeatsVerified": 39950,
-  "unverifiedSeatRecords": 1997,
-  "limitations": [
-    "C/S individual numbering and some special block assignments lack the same detailed current ledger",
-    "Photographic structure dimensions and hidden service-stair positions are estimates",
-    "Software WebGL functional review; real GPU performance not measured"
-  ],
-  "runtimePillarAudit": {
-    "pillarSeatIntersections": [],
-    "planChanges": 0
+  "suitePicker": {
+    "options": 28,
+    "selected": "S101",
+    "row": 1,
+    "seat": 1,
+    "enterCallback": "S101, not FOH"
   },
-  "mergedMainBase": "2f252210e9e0b5a4d00ba934170897ddba9ee43a",
-  "sourceReliability": "Official G row ranges/start numbers cross-checked for 26 blocks; detailed last numbers and G total 670 remain fan-chart claims, not officially certified current capacity.",
-  "mainBeforeRevision2": "eebe18b83fabb8bd20e6f579507318372694936e",
-  "sharedRendererMerge": "Preserves Wembley own-wall/step materials and aisle/sector options; Dome keeps levelStruct G material.",
-  "fenceEndReview": {
-    "homeTop": [
-      1.52,
-      1.52
-    ],
-    "frontTop": 1.15,
-    "poleTop": [
-      3.56,
-      3.56
-    ],
-    "note": "Estimated top heights, not floor heights. Both returns rise toward stand; 1B endpoint checked against outer A03-side door hinge."
-  }
+  "structuralReview": {
+    "upperFirstSlabBottom": 18.48,
+    "upperFirstSlabThickness": 0.12,
+    "connectedWallOutsideShell": 0,
+    "F10Seats": 0,
+    "F11Seats": 93,
+    "F11Tunnel": {
+      "x": 11.2,
+      "z": -119.8,
+      "w": 2.8,
+      "L": 8.0,
+      "h": 2.35,
+      "floor": 3.0
+    },
+    "exciteRearOpenContinuousSides": 2,
+    "exciteFenceVertices": [
+      8,
+      7
+    ]
+  },
+  "limitations": [
+    "Photographic dimensions, not a survey",
+    "F11 tunnel interior termination simplified",
+    "G layout and IDs are user-defined; not an official seating ledger"
+  ]
 }

@@ -16,6 +16,7 @@ const DOME_TIERS = [
   ['F', '1F OUTFIELD (F)'],
   ['G', '1F EXCITE SEATS (G)'],
   ['C', 'BALCONY (C)'],
+  ['S', 'SUITES (S)'],
   ['D', '2F LOWER (D)'],
   ['E', '2F UPPER (E)'],
 ];

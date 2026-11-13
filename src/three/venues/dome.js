@@ -784,14 +784,9 @@ export function buildDome(ctx) {
         h = Math.min(outH, Math.max(h, ringH[j])); ringH[j] = h;
       }
     }
-    // behind home plate (the backstop) the padded wall stands 2.2 m at the least (the stands' front
-    // rows are laid level with it: td_stand1.fit_rake's fmin), easing back to the lines' height
-    // between 25 and 45 degrees off the line behind the catcher
-    for (let i = 0; i < n; i++) {
-      if (ringOut[i]) continue;
-      const off = 180 - phi(ringPts[i].x, ringPts[i].z), t = Math.min(1, Math.max(0, (45 - off) / 20)), w = t * t * (3 - 2 * t);
-      if (w > 0) ringH[i] = Math.max(ringH[i], ringH[i] + w * (Math.max(2.2, ringTop[i]) - ringH[i]));
-    }
+    // The backstop padding continues at the same height along the inner
+    // infield, then rises with the stand toward the foul poles.
+    for (let i=0;i<n;i++) if(!ringOut[i]) ringH[i]=Math.max(2.2,ringH[i]);
     // and nowhere under the front of the stand behind it (its concrete face showed over the padding),
     // never over the outfield's height (td_stand1.fit_rake keeps the fronts under it)
     for (let i = 0; i < n; i++) ringH[i] = Math.max(ringH[i], Math.min(outH, ringTop[i]));
@@ -816,10 +811,16 @@ export function buildDome(ctx) {
       }
     }
   }
+  const exciteOpen=ringPts.map(p=>(TD_STANDS.exciteRearOpen??[]).some(rear=>{
+    for(let j=1;j<rear.pts.length;j++){
+      const a=rear.pts[j-1],b=rear.pts[j],dx=b[0]-a[0],dz=b[1]-a[1],t=((p.x-a[0])*dx+(p.z-ZH-a[1])*dz)/(dx*dx+dz*dz);
+      if(t>=-.02&&t<=1.02&&Math.hypot(p.x-a[0]-dx*t,p.z-ZH-a[1]-dz*t)<1.25)return true;
+    } return false;
+  }));
   // (open at the mouth of the tunnel under A02: the wall stops either side of it, a swing gate between; and at each of
   // the excite seats' steps up to the stand)
   const tunnels = [...(TD_STANDS.tunnels ?? []), ...(TD_STANDS.exciteGates ?? [])];
-  const inMouth = ringPts.map((p) => tunnels.some((t) => {
+  const inMouth = ringPts.map((p,i) => exciteOpen[i] || tunnels.some((t) => {
     const dx = p.x - t.p[0], dz = p.z - ZH - t.p[1], a = dx * t.u[0] + dz * t.u[1], b = -dx * t.u[1] + dz * t.u[0];
     return Math.abs(b) < t.w / 2 + 0.05 && a > -3 && a < 3;
   }));
@@ -902,7 +903,7 @@ export function buildDome(ctx) {
         treads.push(b.toNonIndexed());
       }
     }
-    if (treads.length) root.add(new THREE.Mesh(mergeGeometries(treads), std({ color: 0xa8a297, roughness: 0.9 })));
+    if (treads.length) root.add(new THREE.Mesh(mergeGeometries(treads), std({ color: 0x3b5144, roughness: 0.98 })));
   }
   // Light stair finish beside the new home-side extension. Its treads
   // use the same main-stand row frame as the black seats, without a fan.
@@ -936,7 +937,7 @@ export function buildDome(ctx) {
     }
     if (pad.length) {
       root.add(new THREE.Mesh(mergeGeometries(pad), std({ color: 0x0b2a1a, roughness: 0.8 })));
-      root.add(new THREE.Mesh(mergeGeometries(cap), std({ color: 0xc9cdc8, roughness: 0.75 })));
+      root.add(new THREE.Mesh(mergeGeometries(cap), std({ color: 0x244735, roughness: 0.95 })));
     }
   }
   // the yellow line along the top of the outfield fence, and its net
@@ -1155,8 +1156,8 @@ export function buildDome(ctx) {
     // These metric depths are photo estimates (modern-25, modern-11).
     {
       const green=std({color:0x18382a,roughness:1});
-      const faceZ=lower[Math.floor(lower.length/2)].z+2.1;
-      const base=7.45, top=yl-.12, depth=6.4;
+      const faceZ=Math.min(lower[Math.floor(lower.length/2)].z-5.2,-18.8);
+      const base=0, top=yl-.12, depth=4.2;
       const box=(w,h,d,x,y,z)=>{
         const g=new THREE.BoxGeometry(w,h,d);g.translate(x,y,z);root.add(new THREE.Mesh(g,green));
       };
@@ -1166,7 +1167,7 @@ export function buildDome(ctx) {
       const frameM=std({color:0x244738,roughness:.95});
       const panelM=std({color:0x11271e,roughness:1});
       for(const sg of [-1,1]){
-        const x=sg*16.15,w=11.8,lo=0,hi=y0-.25,z=faceZ-1.05;
+        const x=sg*16.15,w=11.8,lo=8.1,hi=y0-.25,z=faceZ-1.05;
         box(w,hi-lo,4.8,x,(hi+lo)/2,z-2.4);
         const surround=new THREE.Mesh(new THREE.BoxGeometry(8.8,2.7,.16),frameM);
         surround.position.set(x,hi-2.15,z+.08);root.add(surround);
@@ -1186,13 +1187,13 @@ export function buildDome(ctx) {
         return out;
       };
       for(const r of TD_STANDS.backscreen??[]){
-        if(r.y>base+.3)continue;
+        if(r.y>8.1)continue;
         for(const poly of r.polys){
-          const ring=clip(clip(poly[0],10,true),-10,false);
+          const ring=clip(clip(poly[0],10,true),-22,false);
           if(ring.length<3)continue;
           const shape=new THREE.Shape(ring.map(([x,z])=>new THREE.Vector2(x,-z)));
           for(const hole of poly.slice(1)){
-            const h=clip(clip(hole,10,true),-10,false);
+            const h=clip(clip(hole,10,true),-22,false);
             if(h.length>=3)shape.holes.push(new THREE.Path(h.map(([x,z])=>new THREE.Vector2(x,-z))));
           }
           const g=new THREE.ExtrudeGeometry(shape,{depth:Math.max(.05,r.y),bevelEnabled:false});
@@ -1200,6 +1201,19 @@ export function buildDome(ctx) {
         }
       }
       if(parts.length)root.add(new THREE.Mesh(mergeGeometries(parts),green));
+      // A real recessed passage beneath F11: roof, side returns and floor,
+      // with the seating slabs above cut back to its headroom in the data.
+      const t=TD_STANDS.F11Tunnel;
+      if(t){
+        const {x,z,w,L,h,floor:fy}=t;
+        for(const side of [-1,1])box(.2,h,L,x+side*(w/2+.1),fy+h/2,z+ZH-L/2);
+        box(w+.4,.25,L,x,fy+h+.125,z+ZH-L/2);
+        const floor=new THREE.Mesh(new THREE.BoxGeometry(w,.10,L),std({color:0x444b43,roughness:1}));
+        floor.position.set(x,fy,z+ZH-L/2);root.add(floor);
+        // The far wall is recessed several metres; the mouth stays open.
+        box(w,h,.2,x,fy+h/2,z+ZH-L);
+      }
+
     }
 
   }

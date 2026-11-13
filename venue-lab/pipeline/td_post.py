@@ -12,6 +12,24 @@
 import json, pickle, importlib
 STAGES = ('td_excite', 'td_review', 'td_ends', 'td_tidy', 'td_steps', 'td_balcony', 'td_structure')
 def apply(data):
+    # The continuous 2.2m backstop needs its first seated eye above it.
+    # Lift only the lowest infield treads; fade to the unchanged 3m level.
+    # The upper A/B junction and the outfield-side portals stay fixed.
+    def front_height(y):return round(y+.7*max(0,min(1,(3.-y)/2.4)),3)
+    A=next(l for l in data['levels'] if l['name']=='A')
+    import base64,numpy as np
+    from scipy.spatial import cKDTree
+    from pathlib import Path
+    P,labels=pickle.load(open(Path(__file__).with_name('td_seatlab.pkl'),'rb'))['AB']
+    seats=np.frombuffer(base64.b64decode(A['seats']),'<i2').reshape(-1,4)
+    nearest=cKDTree(P).query(seats[:,:2]/A.get('seatScale',10))[1]
+    lift_rows={int(seat[2]) for seat,j in zip(seats,nearest) if labels[j][0].startswith('A') and 16<=int(labels[j][0][1:])<=34}
+    A['hs']=[front_height(y) if i in lift_rows else y for i,y in enumerate(A['hs'])]
+    for row in A['rows']:
+        if row['r'] in lift_rows:row['y']=front_height(row['y'])
+    # Behind G the padded wall is removed, so those A rows do not need a
+    # sightline lift; keep their existing aisle/landing heights.
+    data['backstopFrontFloor']=1.3
     for name in STAGES:
         try: m = importlib.import_module(name)
         except ModuleNotFoundError as e:

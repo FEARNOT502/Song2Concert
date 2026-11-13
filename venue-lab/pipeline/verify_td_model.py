@@ -104,7 +104,7 @@ def verify(path):
     # rows remain parallel to A. The resulting triangular end apron is
     # intentionally wider; a uniform .85m limit recreated the sawtooth.
     for block,distances in front_by_block.items():
-        limit=2.6 if block in {'G04','G05','G45','G46'} else 1.3
+        limit=2.6 if block in {'G04','G05','G45','G46'} else (2.1 if block in {'G14','G36'} else 1.3)
         assert .2<min(distances) and max(distances)<limit,(block,'front row outside photographic apron',min(distances),max(distances))
     excite_review['frontFenceByBlock']={b:[round(min(d),3),round(max(d),3)] for b,d in sorted(front_by_block.items())}
     # The home-side rows must follow the actual A rows, not the wall's
@@ -127,6 +127,22 @@ def verify(path):
         assert fence['hs'][0]>fence['hs'][1] and fence['hs'][-1]>fence['hs'][-2],'end padding slopes down toward stand'
         assert min(np.linalg.norm(np.diff(np.array(fence['pts']),axis=0),axis=1))>.015,'duplicate fence points'
     excite_review['homeRowAngles']=home_angles
+    # Revision 4: the actual thin slab and the continuous rear building
+    # arc are checked independently of painted trim/materials.
+    deck=next(l for l in data['levels'] if l['name']=='D')
+    assert all(r['y0']>=18.47 for r in deck['rows'] if abs(r['y']-18.6)<.02)
+    arc=data['outfieldBackWall']['pts']
+    assert min(p[1] for p in arc)<-130.5
+    assert np.linalg.norm(np.array(arc[0])-data['upperWall'][0]['pts'][-1])<.01
+    assert np.linalg.norm(np.array(arc[-1])-data['upperWall'][1]['pts'][-1])<.01
+    assert actual[('F11',5)] and not any(b=='F10' for b,r in actual if actual[(b,r)])
+    assert len(data['exciteRearOpen'])==2
+    for a,b in [('G14','G15'),('G36','G35')]:
+        ia=np.flatnonzero((gl[:,0]==names.index(a))&(gl[:,1]==4))
+        ib=np.flatnonzero((gl[:,0]==names.index(b))&(gl[:,1]==4))
+        q=gs[ib,:2]/G['seatScale'];direction=q[-1]-q[0];direction/=np.linalg.norm(direction)
+        normal=np.array([-direction[1],direction[0]])
+        assert np.max(np.abs((gs[ia,:2]/G['seatScale']-q.mean(0))@normal))<.045,'home rear rows are not collinear'
     assert not data.get('signs'),'column number plates remain'
     assert not any(abs(w[4]-13.3)<.02 and abs(w[5]-17.3)<.02 for w in data['rooms']['thinWalls']),'legacy jagged balcony end caps remain'
     duplicates=[(block,row) for (block,row),nums in actual.items() if len(nums)!=len(set(nums))]
