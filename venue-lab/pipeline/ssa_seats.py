@@ -143,7 +143,7 @@ def strip_seats(S, R, OFF):
     grow = S['local'] + np.array([OFF.get(int(b), 0) for b in S['block']]) + 1
     good = np.array([int(bb) in R and len(np.unique(S['local'][S['block'] == bb])) == len(R[int(bb)]['rows']) for bb in S['block']])
     axis = np.abs(f_all).max(1) > 0.995
-    out = {}
+    out = {}; meta = {}
     for b in STRIPS:
         m = np.nonzero(S['block'] == b)[0]
         if not len(m) or b not in R: continue
@@ -170,11 +170,46 @@ def strip_seats(S, R, OFF):
         else: e0, sg = float(np.median(hi)), -1.0
         fixed = set.intersection(*[set(v) for v in rows.values()]).pop()
         yaw = math.atan2(f[0], f[1])
-        for r, nums in rows.items():
-            for k, n_ in enumerate(sorted(nums, key=lambda x: abs(x - fixed))):   # (side by side: a number the
-                # list skips is no gap)
+        order = {r: sorted(nums, key=lambda x: abs(x - fixed)) for r, nums in rows.items()}
+        for r, nums in order.items():
+            for k, n_ in enumerate(nums):                   # (side by side: a number the list skips is no gap)
                 out[(r, n_)] = (-f * depth[r] + e * (e0 + sg * PITCH * k), yaw, int(m[0]))
-    return out
+        meta[b] = dict(f=f, e=e, e0=e0, sg=sg, depth=depth, order=order, yaw=yaw, ref=int(m[0]))
+    return out, meta
+
+
+def even_strips(placed, meta):
+    """The aisle between each strip's wide side and the corner fan beside it one width all the way up: row by row the
+    fan's seat nearest the strip along the row's line; the strip's last seat that width inside it, the row's seats
+    spread evenly from the narrow edge to there, a pitch of 0.46-0.62 m; a row too short to reach (near the tip) moved
+    over, off the narrow edge. The width: the widest every row of two seats or more can keep. A strip with no fan beside it (the
+    ends' strips facing the south's funnels) keeps its pitch. -> {strip: the aisle's clear width}"""
+    done = {}
+    keys = list(placed)
+    P = np.array([placed[k][0] for k in keys])
+    for b, M in meta.items():
+        own = {(r, n_) for r, nums in M['order'].items() for n_ in nums}
+        others = np.array([k not in own for k in keys])
+        f, e, e0, sg = M['f'], M['e'], M['e0'], M['sg']
+        v = -(P @ f); u = sg * (P @ e - e0)
+        fe = {}
+        for r, nums in M['order'].items():
+            near = others & (np.abs(v - M['depth'][r]) < 0.45) & (u > 0.2) & (u < 0.5 * len(nums) + 3.0)
+            if near.any(): fe[r] = float(u[near].min())
+        rows2 = [r for r, nums in M['order'].items() if len(nums) >= 2 and r in fe]
+        if len(rows2) < 6: continue
+        g = min(fe[r] - PITCH - 0.46 * (len(M['order'][r]) - 1) for r in rows2)
+        g = float(np.clip(g, 0.45, 1.2))
+        for r, nums in M['order'].items():
+            if r not in fe: continue
+            n = len(nums); last = fe[r] - g - PITCH          # where the row's last seat stands (from the narrow edge)
+            pitch = float(np.clip(last / (n - 1), 0.46, 0.62)) if n > 1 else 0.0
+            # (a row too short to reach it, near the tip: moved over to it, off the narrow edge)
+            start = max(0.0, last - pitch * (n - 1))
+            for k, n_ in enumerate(nums):
+                placed[(r, n_)] = (-f * M['depth'][r] + e * (e0 + sg * (start + pitch * k)), M['yaw'], M['ref'])
+        done[b] = round(g, 2)
+    return done
 
 
 def match_rows(S, R, rows_of_block):
@@ -307,7 +342,7 @@ def level_official(d, R, rules, lv, OFF, skip=None):
         rob[49] = {r: len(R[49]['rows'].get(r, [])) + len(m46.get(r, [])) for r in sorted(set(R[49]['rows']) | {r for r, v in m46.items() if v})}
         rob[46] = {r: len(v) - len(m46.get(r, [])) for r, v in R[46]['rows'].items() if len(v) - len(m46.get(r, []))}
     grow = match_rows(S, R, rob)
-    strips = strip_seats(S, R, OFF) if lv == '200' else {}
+    strips, smeta = strip_seats(S, R, OFF) if lv == '200' else ({}, {})
     sblk = set(STRIPS) if lv == '200' else set()
     # where the numbering wraps: between the seats of the map blocks that hold the level's last numbers and those
     # that hold its first (the numbers run the way the angle falls)
@@ -420,6 +455,7 @@ def level_official(d, R, rules, lv, OFF, skip=None):
         placed.update(added)
     stats.update({'lay_' + k: v for k, v in lay.items()})
     placed.update(strips); stats['strips'] = len(strips)
+    ev = even_strips(placed, smeta); stats['strips_evened'] = len(ev); print('   strips evened (aisle m):', ev)
     # the 200 level's north end in front of the stage: the map draws the stage over its front blocks (61, 63 and
     # the list's 303), whose rows 1-10 are the south end's front blocks (22, 20, 301) turned north to south, seat
     # for seat; numbered along each row the way the numbers run there (west to east)

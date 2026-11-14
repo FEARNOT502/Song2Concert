@@ -1609,7 +1609,8 @@ export function buildStands(data, {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(fenceP, 3));
     geo.setAttribute('normal', new THREE.Float32BufferAttribute(fenceN, 3));
-    const m = new THREE.Mesh(geo, railMat); m.receiveShadow = true; g.add(m);
+    // (thin steel: a venue's own colour, materials.fence, else the rails')
+    const m = new THREE.Mesh(geo, materials.fence ?? railMat); m.receiveShadow = true; g.add(m);
   }
   if (panels.mouth[0].length) g.add(new THREE.Mesh(mkPanels(panels.mouth), lit.mouthMat));
   if (data.rooms) g.add(buildRooms(data.rooms, { ox, oz, shapeOf, structMat, wallMat, lit }));

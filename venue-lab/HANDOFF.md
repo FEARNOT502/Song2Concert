@@ -47,9 +47,18 @@ Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
   out and the aisles' footlights light the steps from close by: white steps glowed; set a step under.)
 - **Checks:** `npm run build`; the picker (`venue-lab/apppick.mjs <out> arena 236C 15 750`) picks on the plan and enters the
   seat; app renders of the corners, the north end, a side view (360, house up).
-- **Not done / to check:** the north corners are closed bowls (the map leaves them void like the south's, but a covered
-  tunnel there would cut the list's seats over it); doors 239 and 432 have a room wall 3 and 10 cm into the top of their
-  2.2 m opening.
+- **Strips' aisles** (asked after: the gap between 119 and 121 one width to the top): `even_strips` measures, row by row,
+  the fan's seat nearest the strip along the row's line and puts the strip's last seat a fixed clear width inside it (the
+  widest every row of two or more can keep: 0.45 m for 32, 51, 60, 97, 119; 0.68 m for 89), the row's seats evenly from
+  the narrow edge (0.46-0.62 m apart); a row too short to reach is moved over off the narrow edge. The ends' 24 and 128
+  face the south's funnels and keep their pitch.
+- **North corners** (asked: covered tunnels): each bowl's back on the south tunnel's line turned north, a covered tunnel
+  3.2 m wide under the stands to the concourse's underside, 2.44 m high (the lowest row over it is 3.09 m; every seat
+  stays: `ssa_labels.py` asserts one to one).
+- **Rails and fences:** `stands.js` `materials.fence` (thin steel) apart from `materials.rail` (here solid: parapets,
+  cheeks, the bowls' walls): rails grey panels, fences yellow (the photo's yellow is thin rails only; the aisles' own
+  handrails are not modelled).
+- **Not done / to check:** doors 239 and 432 have a room wall 3 and 10 cm into the top of their 2.2 m opening.
 
 ## Round 41: Wembley relabelled seat by seat, Level 2 split by a walkway, the boxes' balcony, the screens' flanks
 - **Asked** (user, 2026-11-12): make the blocks and seats match the real ones (rows per block, seats per row), fix the

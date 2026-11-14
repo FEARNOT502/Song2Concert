@@ -111,7 +111,7 @@ function arenaRoom(ctx, { stage, sold }) {
     offset: V3(0, 0, OZ), stage, seed: 200, roofY: H,
     // The finishes as the arena's own photograph shows them (house lights
     // up; its whites burnt out, so a little under them), all matt: light grey concrete, new and even; blue-grey seats, the 300
-    // level's wine red; the aisles' steps white with yellow handrails; every
+    // level's wine red; the aisles' steps white, the thin steel yellow; every
     // level's front (the fascia facing the floor and the parapet on it) a
     // white panel band; the vomitories' door frames green.
     concreteTone: 0.38, concreteEven: 0.6,
@@ -119,7 +119,9 @@ function arenaRoom(ctx, { stage, sold }) {
     materials: {
       struct: matt(0xffffff, { ...withRepeat(concreteTex({ key: 'ssaconc', tone: 0.38, even: 0.6 }), 1 / 3, 1 / 3), roughnessMap: null, roughness: 1 }),
       step: matt(0x828381),
-      rail: std({ color: 0xa9862f, roughness: 0.5, metalness: 0.3, side: THREE.DoubleSide }),
+      // (the rails here are solid: parapets, the aisles' cheeks, the bowls' walls; the yellow is the thin steel's)
+      rail: matt(0x9d9d9a, { side: THREE.DoubleSide }),
+      fence: std({ color: 0xc29a2e, roughness: 0.5, metalness: 0.3, side: THREE.DoubleSide }),
       wall: matt(0x8a8c92, { side: THREE.DoubleSide }),
       doorFrame: std({ color: 0x3f6b53, roughness: 0.6, metalness: 0.1 }),
       levelFront: Object.fromEntries(['200', '300', '400', '500'].map((lv) => [lv, FRONT])),

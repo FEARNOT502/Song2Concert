@@ -321,6 +321,26 @@ def to_wall(p,u,step=0.2):
     return L
 LTUN=min(round(to_wall(t['o'],t['u'])-0.3,2) for t in TREN)     # (the pair the same length)
 TUN=[{'p':t['o'],'u':t['u'],'w':t['w'],'h':TUN_H,'closed':True,'Lmax':80.0,'Lmin':LTUN,'open':t['open'],'name':t['name'],'T':WALL_T,'sidesAsWalls':True,'along_margin':0.0} for t in TREN]
+# the north corners: the map leaves a bowl at each as at the south (at the stage end: the way in from backstage), but
+# the list has seats behind them (59, 90) where the south has its open cuts. A covered tunnel from each bowl's back on
+# the south's line turned north, under the stands to the concourse's underside: 3.2 m wide, as high as the lowest row
+# over it leaves room for (the rows and their seats stay)
+NTUN_W=3.2
+gy_,gx_=np.mgrid[0:G.H,0:G.W]; XG,ZG=G.m(gx_,gy_)
+for t in list(TREN):
+    o=np.array(t['o'],float); u=np.array(t['u'],float); on=np.array([o[0],-o[1]]); un=np.array([u[0],-u[1]])
+    a=0.0
+    while a<25.0:
+        i_,j_=[int(round(float(c))) for c in G.g(*(on+un*a))]
+        if L2.R[j_,i_]>0 and L2.band[j_,i_]>=0: break
+        a+=0.1
+    p=on+un*(a-0.3); v_=np.array([-un[1],un[0]])
+    al=(XG-p[0])*un[0]+(ZG-p[1])*un[1]; la=np.abs((XG-p[0])*v_[0]+(ZG-p[1])*v_[1])
+    foot=(la<NTUN_W/2+0.3)&(al>0)&(al<to_wall(p,un))&(L2.band>=0)
+    lowest=float(L2.h(L2.band[foot]).min()) if foot.any() else 5.0
+    h=round(min(2.8,lowest-0.65),2)
+    TUN.append({'p':p.round(3).tolist(),'u':un.round(4).tolist(),'w':NTUN_W,'h':h,'closed':True,'covered':True,'Lmax':80.0,'name':'N'+t['name'][1],'T':WALL_T,'sidesAsWalls':True,'along_margin':0.0,'slab':0.6})
+    print('north corner tunnel',TUN[-1]['name'],TUN[-1]['p'],'h',h,'lowest tread over it',round(lowest,2))
 TUNM=cut_tunnels(G,L2,TUN,body_,back=0.0)
 # the funnels have no wall (the stands' own faces): no rail along the treads' edges there, a fence of their own on the faces
 # (ST.funnel_fences), nor along the covered tunnel
