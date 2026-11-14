@@ -1,7 +1,7 @@
 {
-  "revision": 5,
-  "checkedOn": "2026-11-13",
-  "dataSha256": "a7e78af7db3b0083d69f5dc0909d1f240c23d12545b31aded4d47e45317ad74d",
+  "revision": 6,
+  "checkedOn": "2026-11-14",
+  "dataSha256": "80328691f454c273af6ab5fb378ce8a34aff1e4703fa95f2d1d0eec985634b44",
   "modelAudit": {
     "seats": {
       "A": 10384,
@@ -237,7 +237,7 @@
     "flights": 13
   },
   "walker": {
-    "checks": 178,
+    "checks": 192,
     "failed": []
   },
   "geometryRegressionTests": 7,
@@ -263,48 +263,59 @@
     "F11Pit": {
       "pts": [
         [
-          18.467404458032046,
-          -119.1059287399235
+          19.285684149556992,
+          -120.64598194354777
         ],
         [
-          11.428874918064505,
-          -120.62220770996969
+          12.051639900145908,
+          -122.20437977387301
         ],
         [
-          11.305606767778482,
-          -120.05
+          11.569605963062685,
+          -119.9667901400052
         ],
         [
           15.286396103067895,
           -118.85000000000001
         ],
         [
-          18.086396103067887,
-          -117.65
+          18.597188039377823,
+          -117.45
         ]
       ],
       "center": [
-        15.375254813790965,
-        -119.25157679991734
+        15.602173642134645,
+        -120.05444698639276
       ],
       "heights": [
         5.74,
         5.74,
-        3.1,
-        3.1,
-        3.1
+        4.4,
+        4.4,
+        4.4
       ],
       "bottom": 0.35,
       "rim": 4.6,
       "backRim": 5.74,
+      "fasciaBottom": 4.15,
+      "rearEdge": [
+        [
+          12.051639900145908,
+          -122.20437977387301
+        ],
+        [
+          19.285684149556992,
+          -120.64598194354777
+        ]
+      ],
       "openTop": true
     },
     "F11AisleJoin": {
       "block": "F12",
-      "clearWidth": 1.1,
+      "clearWidth": 0.66,
       "shift": [
-        4.691555699024987,
-        2.4529636253343283
+        5.401548320758399,
+        0.9407296689314218
       ],
       "normal": [
         0.9851707795551383,
@@ -353,8 +364,111 @@
         ]
       ]
     },
-    "upperWallSingleStrip": true,
-    "batterEyeVisibleInFourViews": true
+    "upperWallSingleStrip": false,
+    "batterEyeVisibleInFourViews": true,
+    "upperWallSolidSectionWidth": 6.2418,
+    "upperWallUnderside": 13.6,
+    "scoreboardSetback": 2.5,
+    "RYOBIFronts": [
+      [
+        [
+          -11.48776107346728,
+          -126.86301606849058
+        ],
+        [
+          -20.860006097389007,
+          -124.84399519897555
+        ]
+      ],
+      [
+        [
+          11.48776107346728,
+          -126.86301606849058
+        ],
+        [
+          20.860006097389007,
+          -124.84399519897555
+        ]
+      ]
+    ],
+    "effectivePillarSeatIntersections": [],
+    "RYOBIBacks": [
+      [
+        [
+          -12.406248120104125,
+          -131.12661026028636
+        ],
+        [
+          -22.213441788788394,
+          -131.12661026028636
+        ]
+      ],
+      [
+        [
+          12.406248120104125,
+          -131.12661026028636
+        ],
+        [
+          22.213441788788394,
+          -131.12661026028636
+        ]
+      ]
+    ],
+    "narrowOutfieldVoms": [
+      {
+        "p": [
+          -22.25,
+          -124.55
+        ],
+        "u": [
+          -0.17075488993627308,
+          -0.9853135376938912
+        ],
+        "w": 2.4,
+        "L": 4.96,
+        "T": 0.0,
+        "y": 8.314,
+        "roof": 12.7,
+        "top": 10.6,
+        "sides": [],
+        "wall": {
+          "t0": 9.6,
+          "t1": 11.6,
+          "roof": 12.7,
+          "open": true
+        },
+        "bridge": true,
+        "batterEye": true
+      },
+      {
+        "p": [
+          22.25,
+          -124.55
+        ],
+        "u": [
+          0.17075488993627308,
+          -0.9853135376938912
+        ],
+        "w": 2.4,
+        "L": 4.96,
+        "T": 0.0,
+        "y": 8.314,
+        "roof": 12.7,
+        "top": 10.6,
+        "sides": [],
+        "wall": {
+          "t0": 9.6,
+          "t1": 11.6,
+          "roof": 12.7,
+          "open": true
+        },
+        "bridge": true,
+        "batterEye": true
+      }
+    ],
+    "narrowEntriesAddedStairs": 0,
+    "narrowMatchesExistingFShape": true,
+    "sharedOutfieldConcourseHeight": 10.6
   },
   "limitations": [
     "Photographic dimensions, not a survey",
@@ -380,10 +494,15 @@
       "F11-join.png",
       "wall-left.png",
       "wall-right.png",
-      "03.png",
-      "04.png",
-      "home-fence.png"
+      "rear-ceiling-left.png",
+      "rear-ceiling-right.png",
+      "narrow-vom-left.png",
+      "RYOBI-cheek-left.png",
+      "narrow-vom-right.png",
+      "RYOBI-cheek-right.png",
+      "ordinary-vom-reference.png"
     ],
-    "unmeasuredDimensions": "Photographic estimates, not survey dimensions"
+    "unmeasuredDimensions": "Photographic estimates, not survey dimensions",
+    "scope": "Balcony solid sweep, rear-stand ceiling, F11, pit, RYOBI rooms, green surround and scoreboard depth"
   }
 }

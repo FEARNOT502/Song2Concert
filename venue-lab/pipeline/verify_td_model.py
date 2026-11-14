@@ -150,11 +150,25 @@ def verify(path):
     assert len(q)==93
     join=data['F11AisleJoin'];n=np.array(join['normal']);edge=np.array(join['edge'])
     gap=(edge@n).mean()-max(q@n)
-    assert 1.90<gap<1.98,('F11 detached from F12 aisle',gap)
+    assert 1.45<gap<1.55,('F11 detached from F12 aisle',gap)
     assert not any(opening.buffer(-.05).covers(Point(p)) for p in q),'F11 chair over well'
-    chain=data['continuousUpperWall']
-    assert len(chain['pts'])==len(chain['y0'])
-    assert max(np.linalg.norm(np.diff(chain['pts'],axis=0),axis=1))<2,'upper wall disconnected'
+    mass=data['upperOutfieldMass'];front=np.array(mass['front']);back=np.array(mass['back'])
+    widths=np.linalg.norm(back-front,axis=1)
+    assert np.ptp(widths)<.025 and min(widths)>6,'balcony end section loses its thickness'
+    assert mass['y0']==13.6 and Polygon(mass['front']+mass['back'][::-1]).is_valid
+    rear=fs[(fl[:,0]==names.index('F11'))&(fl[:,1]==10),:2]/f['seatScale']
+    room=max(data['batterEyeRooms'],key=lambda r:np.mean(r['front'],axis=0)[0])
+    assert max(LineString(room['front']).distance(Point(p)) for p in rear)<.58,'RYOBI wall detached from F11 rear row'
+    assert len(data['batterEyeVoms'])==2
+    assert not any(f.get('batterEye') for f in data['flights']),'unrequested stairs in shared C2 entries'
+    for v in data['batterEyeVoms']:
+        assert 2<v['w']<3 and v['top']==10.6
+        normal=min([q for q in f['voms'] if not q.get('batterEye')],key=lambda q:abs(q['p'][0]))
+        assert all(v[k]==normal[k] for k in ['y','top','roof','L','T','wall','bridge']),'narrow entry differs from ordinary F vomitory'
+        assert LineString(data['outfieldConcourse']['path']).distance(Point(np.array(v['p'])+np.array(v['u'])*(v['L']+3.6)))<.01
+    hall_floor=unary_union([Polygon(p[0],p[1:]) for f in data['floors'] if abs(f['y']-10.6)<.02 for p in f['polys']])
+    assert LineString(data['outfieldConcourse']['path']).difference(hall_floor.buffer(.01)).length<.01,'shared C2 floor has a gap'
+    assert all(max(p[1] for p in room['back'])<-130.8 for room in data['batterEyeRooms']),'RYOBI rear cheek stops short of hall'
     assert len(data['exciteRearOpen'])==2
     for a,b in [('G14','G15'),('G36','G35')]:
         ia=np.flatnonzero((gl[:,0]==names.index(a))&(gl[:,1]==4))
