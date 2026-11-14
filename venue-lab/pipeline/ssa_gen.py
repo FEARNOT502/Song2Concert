@@ -140,6 +140,12 @@ CORNERS=json.load(open('ssa/ssa_corners.json'))
 FUN=ST.corner_funnels(G,L2,TREN,CORNERS)
 OPEN=round(max([t['open'] for t in TREN]+[f['a_back'] for f in FUN]),2)
 for t in TREN: t['open']=OPEN                    # (the pair alike: the tunnels begin where the back faces cross their lines)
+# the north corners' bowls, with straight faces and fences as the south's (no outline drawn for them: their sides fitted
+# to their own seats, ssa_tunnels.north_corners); the covered tunnels from their backs below
+NCORN={}; NTREN=[]
+for sx_ in (-1,1):
+    c_,t_=ST.north_corners(L2,L2.S['block'],sx_); NCORN[t_['name']]=c_; NTREN.append(t_)
+FUN+=ST.corner_funnels(G,L2,NTREN,NCORN,band=3.5,near=3.5,front_gap=3.5)
 print('funnels',[(f['name'],'faces moved in by',f['shifts'],'back face at %.2f from the cut start'%f['a_back'],'open floor %.1f m2'%(f['mask'].sum()*G.res**2)) for f in FUN])
 for f in FUN:
     print(f['name'],'treads in the open space, cut: %.1f m2, seats among them: %d'%(f['cut'].sum()*G.res**2,int((sample(G,f['cut'].astype(np.uint8),L2.seats)>0).sum())))

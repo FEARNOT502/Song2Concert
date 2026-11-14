@@ -52,9 +52,15 @@ Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
   widest every row of two or more can keep: 0.45 m for 32, 51, 60, 97, 119; 0.68 m for 89), the row's seats evenly from
   the narrow edge (0.46-0.62 m apart); a row too short to reach is moved over off the narrow edge. The ends' 24 and 128
   face the south's funnels and keep their pitch.
-- **North corners** (asked: covered tunnels): each bowl's back on the south tunnel's line turned north, a covered tunnel
-  3.2 m wide under the stands to the concourse's underside, 2.44 m high (the lowest row over it is 3.09 m; every seat
-  stays: `ssa_labels.py` asserts one to one).
+- **North corners** (asked: covered tunnels; then: the bowls' walls bumpy, make them clean with steel fences as the
+  south's): each bowl is a funnel of straight faces like the south's (`ST.north_corners`: no outline is drawn for them on
+  the map, the stage covers them, so each side is the edge of its blocks' seats' hull facing the bowl: the strip 60/89
+  for the end stand's side, the fan 59/90's front for the back, 56+58 / 92+91 for the fan's side, from 56's front tip to
+  58's corner, which stands about 4 m forward of 56's own edge; the fan's face ends at that tip, `fan_front`).
+  `corner_funnels` with a wider band (3.5 m) so the wedge between that face and 56's rows is bare treads up to it, and
+  `front_gap` (how far behind a face the stand may be while it still runs forward), then the south's fences on the faces.
+  From each bowl's back a covered tunnel on the south tunnel's line turned north, 3.2 m wide, 2.44 m high (the lowest row
+  over it 3.09 m), under the stands to the concourse's underside; every seat stays (`ssa_labels.py` asserts one to one).
 - **Rails and fences:** `stands.js` `materials.fence` (thin steel) apart from `materials.rail` (here solid: parapets,
   cheeks, the bowls' walls): rails grey panels, fences yellow (the photo's yellow is thin rails only; the aisles' own
   handrails are not modelled).

@@ -233,7 +233,7 @@ def _poly_mask(G, P):
     return m > 0
 
 
-def corner_funnels(G, l, trenches, corners, clear=0.3, shift_max=1.0, band=1.6, near=1.5, zone_w=0.6, reach_out=0.15):
+def corner_funnels(G, l, trenches, corners, clear=0.3, shift_max=1.0, band=1.6, near=1.5, zone_w=0.6, reach_out=0.15, front_gap=0.75):
     """Each corner's open floor as the map draws it, a funnel between the end stand's last block, the fan's blocks and the line
     the middle blocks' front rows lie on (`corners`: ssa_corners.json, the outline's lines read off the map's image), bounded
     by the stands' own end faces: no wall stands between. Each side is its line (or its two) moved into the funnel only as far
@@ -279,13 +279,16 @@ def corner_funnels(G, l, trenches, corners, clear=0.3, shift_max=1.0, band=1.6, 
             tb = (end - ln['p']) @ ln['d']; first = tb
             for tt in np.arange(tb, tb - 22.0, -0.05):
                 P = ln['p'] + ln['d'] * tt - ln['n'] * 0.6; i, j = [int(round(float(c))) for c in G.g(P[0], P[1])]
-                if 0 <= i < G.W and 0 <= j < G.H and dR[j, i] <= 0.75: first = tt
+                if 0 <= i < G.W and 0 <= j < G.H and dR[j, i] <= front_gap: first = tt      # (`front_gap`: how far behind it the stand may stand)
                 elif first - tt > 0.6: break
             return ln['p'] + ln['d'] * first
         r_front = front_end(ring[0], V[0])
         f_line = _line(ring[-1]['p'], -ring[-1]['d'])                        # (the fan's front piece, running back again)
         f_line['n'] = ring[-1]['n']
         f_front = front_end(f_line, V[-1])
+        if 'fan_front' in C:                               # (a front end given: the fan's own seats' front, not the stand's)
+            q_ = np.asarray(C['fan_front'], float)
+            f_front = f_line['p'] + f_line['d'] * ((q_ - f_line['p']) @ f_line['d'])
         # the funnel: A (the end stand's front end), the bends, B and C, round to D (the mouth is the line from D back to A)
         poly = [r_front] + V + [f_front]
         mask = _poly_mask(G, poly)
@@ -362,3 +365,52 @@ def clip_rows(rows, polys):
         out.append({**r, 'polys': ps})
     return out
 
+
+
+def north_corners(l, seats_block, sx):
+    """The north corners' bowls (under the stage on the map, so no drawn outline: the south's are read off it) as straight
+    faces like the south's: each side a line fitted to the seats of its blocks nearest the bowl, the seats' own edge.
+    `sx` -1 the north-west, +1 the north-east (the blocks there the north-west's mirror). -> (corners entry in
+    ssa_corners.json's form, a trench-like {'name', 'o', 'u'} for corner_funnels)"""
+    S = l.seats
+    m = lambda x: np.array([sx * -x[0], x[1]], float) if sx > 0 else np.array(x, float)
+    B = {'rear': (60, 89), 'back': (59, 90), 'fan0': (56, 92), 'fan1': (58, 91)}
+    side = 0 if sx < 0 else 1
+    c = m((-24.5, -44.3))                                    # the bowl's middle
+    # each side: its blocks, its line's rough direction (as ssa_corners.json runs it) and a normal into the bowl
+    # (the directions along each block's own edge as the list's seats lie: the strip's stepped inner edge, the fan 59's
+    # front, the fan 56's side)
+    spec = {'rear': ((B['rear'][side],), m((-0.29, -0.96))), 'back': ((B['back'][side],), m((-0.9, 0.43))),
+            'fan': ((B['fan0'][side], B['fan1'][side]), m((-0.63, -0.77)))}
+    ends = {}
+    out = {}
+    for k, (blocks, d0) in spec.items():
+        d0 = d0 / np.linalg.norm(d0); n0 = np.array([-d0[1], d0[0]])
+        if (c - S[np.isin(seats_block, blocks)].mean(0)) @ n0 < 0: n0 = -n0
+        Q = S[np.isin(seats_block, blocks)]
+        t = (Q - c) @ d0; s = (Q - c) @ n0
+        # the side: the edge of its seats' hull that faces the bowl (its outward normal nearest the way to the bowl),
+        # the longest such: a straight line touching the seats nearest the bowl, at either end of the side
+        from scipy.spatial import ConvexHull
+        H = Q[ConvexHull(Q).vertices]; best = None
+        for i in range(len(H)):
+            a, b = H[i], H[(i + 1) % len(H)]; dd = b - a; L = float(np.hypot(*dd))
+            if L < 1.0: continue
+            nn = np.array([dd[1], -dd[0]]) / L                 # (outward: the hull's vertices run anticlockwise)
+            if nn @ n0 < np.cos(np.radians(40)): continue
+            if best is None or L > best[0]: best = (L, a, dd / L, b)
+        if best is None: d, p = d0, Q[np.argmax((Q - c) @ n0)]; ends[k] = (p, p)
+        else:
+            _, p, d, b_ = best
+            if d @ d0 < 0: d = -d; p, b_ = b_, p
+            ends[k] = (p, b_)                                  # (its front end and its back end)
+        out[k] = {'p': [round(float(v), 4) for v in p], 'd': [round(float(v), 4) for v in d]}
+    # the fan's side one straight face: the edge of 56's and 58's seats' hull that faces the bowl (56's front tip to 58's
+    # front corner, which stands well forward of 56's own edge); the wedge between it and 56's rows is bare treads up to
+    # it (corner_funnels' pocket, a wider band here), as the south's faces are
+    fan = [out['fan']]
+    # (the fan's face ends where its seats do, at 56's front tip: the side stands' fronts beyond are no part of it)
+    corner = {'rear': [out['rear']], 'fan': fan, 'back': out['back'], 'fan_front': [round(float(v), 4) for v in ends['fan'][0]]}
+    u = m((-0.53, -0.848)); u = u / np.linalg.norm(u)
+    tr = {'name': ('NW', 'NE')[side], 'o': c - u * 6.0, 'u': u}
+    return corner, tr
