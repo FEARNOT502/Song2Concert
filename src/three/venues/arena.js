@@ -68,6 +68,11 @@ export function getArenaSeatCatalog(mode = 'general') {
 // The building, the same for either layout: the stands (the seats turned to
 // `stage`, the crowd in those `sold` says), the 300 level's ends, the suites,
 // the floor, the movable ceiling with its downlights, and the house lights.
+// the levels' fronts: white panels (the photograph's bands)
+// (matt, as precast panels and concrete are: no sheen for the ceiling's downlights to stand in)
+const matt = (color, o = {}) => std({ color, roughness: 1, metalness: 0, envMapIntensity: 0.2, ...o });
+const FRONT = matt(0xa4a4a1, { side: THREE.DoubleSide });
+
 function arenaRoom(ctx, { stage, sold }) {
   const { pipe, q } = ctx;
   const root = new THREE.Group();
@@ -103,15 +108,25 @@ function arenaRoom(ctx, { stage, sold }) {
         || (stub(a) && fan(b.face)) || (stub(b) && fan(a.face));
     },
     sectorMin: 0.2, sectorWhole: 0.12, round: ctx.mode === '360',
-    offset: V3(0, 0, OZ), stage, seed: 200, concreteTone: 0.2, roofY: H,
-    seatColors: { 200: 0x1c1d22, 300: 0xc8341e, 400: 0x1c1d22, 500: 0x1c1d22, '300S': 0x2a1d17 },
-    // the 300 level, the VIP balcony: red seats in boxes behind a dark mesh
-    // front; the suites' balconies behind glass
-    materials: { levelRail: {
-      300: std({ color: 0x141518, roughness: 0.55, metalness: 0.4, side: THREE.DoubleSide }),
+    offset: V3(0, 0, OZ), stage, seed: 200, roofY: H,
+    // The finishes as the arena's own photograph shows them (house lights
+    // up; its whites burnt out, so a little under them), all matt: light grey concrete, new and even; blue-grey seats, the 300
+    // level's wine red; the aisles' steps white with yellow handrails; every
+    // level's front (the fascia facing the floor and the parapet on it) a
+    // white panel band; the vomitories' door frames green.
+    concreteTone: 0.38, concreteEven: 0.6,
+    seatColors: { 200: 0x30343e, 300: 0x7a2b35, 400: 0x30343e, 500: 0x30343e, '300S': 0x2a1d17 },
+    materials: {
+      struct: matt(0xffffff, { ...withRepeat(concreteTex({ key: 'ssaconc', tone: 0.38, even: 0.6 }), 1 / 3, 1 / 3), roughnessMap: null, roughness: 1 }),
+      step: matt(0x828381),
+      rail: std({ color: 0xa9862f, roughness: 0.5, metalness: 0.3, side: THREE.DoubleSide }),
+      wall: matt(0x8a8c92, { side: THREE.DoubleSide }),
+      doorFrame: std({ color: 0x3f6b53, roughness: 0.6, metalness: 0.1 }),
+      levelFront: Object.fromEntries(['200', '300', '400', '500'].map((lv) => [lv, FRONT])),
+      // the suites' balconies behind glass
       // (a soft sheen, not a mirror: glossy, the ceiling's downlights stood in it as two suns)
-      '300S': new THREE.MeshPhysicalMaterial({ color: 0xa8bcc6, roughness: 0.35, metalness: 0, specularIntensity: 0.4, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false }),
-    } },
+      levelRail: { '300S': new THREE.MeshPhysicalMaterial({ color: 0xa8bcc6, roughness: 0.35, metalness: 0, specularIntensity: 0.4, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false }) },
+    },
     crowd: !!q.crowd,
     sold,
   });
@@ -201,7 +216,8 @@ function arenaRoom(ctx, { stage, sold }) {
 
   // ── the building: floor, roof and its steel ──
   const X0 = -76, X1 = 76, Z0 = OZ - 70, Z1 = OZ + 70;
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(X1 - X0, Z1 - Z0), std({ ...withRepeat(concreteTex({ key: 'arenafloor', tone: 0.1 }), (X1 - X0) / 4, (Z1 - Z0) / 4), roughness: 0.9 }));
+  // (covered for a concert: dark grey sheets over the concrete)
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(X1 - X0, Z1 - Z0), std({ ...withRepeat(concreteTex({ key: 'arenafloor', tone: 0.1, even: 0.8 }), (X1 - X0) / 4, (Z1 - Z0) / 4), color: 0x55575c, roughness: 0.92 }));
   floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, (Z0 + Z1) / 2); floor.receiveShadow = true;
   root.add(floor);
   // The ceiling: the arena's movable one, lowered for arena mode to about

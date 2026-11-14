@@ -2,6 +2,55 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 42: the Saitama Super Arena seated from the official seat list, every seat labelled, a block map to pick a seat on; photo finishes; the 300 and 500 fronts lowered
+- **Asked** (user, 2026-11-14, with a photograph of the arena from a side stand): find the real seat chart (blocks, rows per
+  block, seats per row), re-lay the seats to it, label every block and seat as the dome and Wembley are, redo the seating
+  plan so a seat can be picked and entered; take the walls', floor's, seats', fences' and stairs' colours from the photo;
+  the 300 and 500 levels' front concrete to its real height; vomitories and entrances as the real ones. Answers asked first:
+  labels level · row · number with the block named by its door (the app writes `GATE 236C · ROW 15 · SEAT 750`, English);
+  seats re-laid to the official counts; the telescopic rows stay folded (under the stands, closed by the front wall); the
+  floor FOH only; general and 360 both; suites included as S01-S15; floor covered dark grey; 300 and 500 fronts from the
+  photo's proportions; doors from the official map and photos.
+- **Source.** The official seat view (https://www.saitama-arena.co.jp/seat_view/: `js/seat_list.js`, the end-stage-2 map
+  `img/img-map_arena_end02.svg/.png`; `ssa/raw/`, not committed). `seat_list.js`'s arena mode gives, level by level, runs
+  of seat numbers (`separate` keys), the rows of each run up to each `block` key and the map block they are in, and the
+  numbers a row leaves out (`not_need`). `ssa_rules.py` decodes it seat by seat: 200 11,473, 300 644, 400 5,887, 500 755
+  (18,759; the telescopic 'A-L' rows, 2,288 more, folded). Numbers run round each level from the south end's middle, west,
+  north, east. The map's block outlines are not always the list's (the map's 49 holds the list's 49 and 46's 353-363).
+- **Seats** (`ssa_seats.py` -> `ssa/ssa_official.json`, read by `ssa_gen.py` in place of the chart's seats): each map
+  block's drawn rows matched to the list's rows (depth and count); each level's row aligned round the ring with its numbers
+  (a DP: gaps between seats against gaps between numbers within a run, a cost for a seat on another block's number, long
+  skips allowed), the numbering's cut per row between its first and last blocks; then each row's runs re-laid evenly along
+  their matched seats' line (a pitch a seat or a pitch a number, whichever fits). Two straight side blocks the map drew a
+  row short (107, 108) re-laid on their neighbours' row depths. The eight thin wedges between the 200 level's straight
+  blocks and its fans (24, 32, 51, 60, 89, 97, 119, 128: rows 4-19, 1 to 6-7 seats; the map's seats for them were read
+  turned through a right angle) built from the list: each row on the straight block's row line, side by side from the
+  number every row has. The north end's front blocks under the stage on the map (61, 63, 303) are the south's 22, 20, 301
+  turned round. Every level is then exactly the list's count, no seat closer than 0.4 m to another but 8 at fan tips
+  (the map's own, 54 there), none alone. `ssa_north.py` (the north end as the south's mirror) is no longer run: the
+  north's corners have seats (59, 90) where the south has its tunnels, so the north is the list's own.
+- **Labels** (`ssa_labels.py`): every output seat matched to its numbered seat (one to one, asserted); a block is each list
+  block, named by the door badge nearest its middle, a letter after it where a door has several (front rows first):
+  200 89 blocks on 26 doors, 300 20 on 16, 400 64 on 28, 500 20 on 16; suites S01 (south) - S15, seats from 1 per row.
+  (SSA's own tickets name seats by door number.)
+- **Block map** (`ssa_blockmap.py` -> `src/three/venues/ssa-blocks.js`): each block's hull half a seat out (straight
+  sides; the seats run together where a block is not convex). App: `BlockMap.jsx` (shared; `StadiumBlockMap` on it),
+  `ArenaBlockMap.jsx` (tabs 200 / 300 · suites / 400 / 500; the end stage with its runway and cross, or the 360's long
+  stage), `getArenaSeatCatalog(mode)` in `arena.js` (general: in front of the end stage's masking, `arenaEndSold`),
+  `SEAT_ROOMS` + arena in the picker, App and stage. Lightsticks stay by the aisles (`aisleFirst`).
+- **Fronts.** From the photo (door heights for scale): the white band at the 300 level's front about 2.1 m, at the 500's
+  about 2.2 m; with the parapet (0.82 m) the fascia under the first row 1.3 m (was 2.2) and 1.4 m (was 2.4). `stands.js`:
+  `materials.levelFront[level]` takes a level's fascia (sides facing the floor's middle, 0.9 m or taller) and its parapet
+  (rails standing on the front row's tread).
+- **Finishes** (arena.js, all matt): concrete tone 0.38 even; seats blue-grey 0x30343e, 300 wine 0x7a2b35; steps light grey,
+  fronts white-grey bands, handrails yellow, door frames green, walls grey; floor dark grey. (The photo's whites are burnt
+  out and the aisles' footlights light the steps from close by: white steps glowed; set a step under.)
+- **Checks:** `npm run build`; the picker (`venue-lab/apppick.mjs <out> arena 236C 15 750`) picks on the plan and enters the
+  seat; app renders of the corners, the north end, a side view (360, house up).
+- **Not done / to check:** the north corners are closed bowls (the map leaves them void like the south's, but a covered
+  tunnel there would cut the list's seats over it); doors 239 and 432 have a room wall 3 and 10 cm into the top of their
+  2.2 m opening.
+
 ## Round 41: Wembley relabelled seat by seat, Level 2 split by a walkway, the boxes' balcony, the screens' flanks
 - **Asked** (user, 2026-11-12): make the blocks and seats match the real ones (rows per block, seats per row), fix the
   screens and their sides, add the special seats, then label every seat and give Wembley a seating plan to pick a seat

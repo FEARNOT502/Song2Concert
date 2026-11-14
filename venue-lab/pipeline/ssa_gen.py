@@ -16,9 +16,11 @@ C200,C300,C400,C500=6.2,11.44,16.2,23.0
 CH=SB.load_chart(); OFF=SB.row_offsets(CH)
 # each level's section (rake and depth of a row, the slab under a row): as before
 SEC={'200':dict(D=0.865,h0=0.45,rise=0.33,bottom=lambda r,h: 0.0 if r<=24 else h-0.6,fascia=2.6),
-     '300':dict(D=1.0,h0=10.6,rise=0.42,bottom=0.5,fascia=2.2),
+     # (the 300 and 500 levels' fronts as the arena's photographs show them: the white band, front and parapet,
+     # about 2.1 and 2.2 m, a door's height, with the parapet's 0.82 m: the front 1.3 and 1.4 m under the first row)
+     '300':dict(D=1.0,h0=10.6,rise=0.42,bottom=0.5,fascia=1.3),
      '400':dict(D=0.85,h0=14.5,rise=0.42,bottom=0.5,fascia=1.3),
-     '500':dict(D=0.87,h0=22.0,rise=0.5,bottom=0.5,fascia=2.4)}
+     '500':dict(D=0.87,h0=22.0,rise=0.5,bottom=0.5,fascia=1.4)}
 # ── the doors: the map's 94 badges (the level is the number's hundreds), metres ──
 DOORS={lv:{int(g):tuple(SB.to_metres(CH,v['centre'],lv)) for g,v in CH['gates'].items() if str(v['level'])==lv[0]} for lv in ('200','300','400','500')}
 print('doors',{k:len(v) for k,v in DOORS.items()})

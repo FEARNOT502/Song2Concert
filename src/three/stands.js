@@ -1329,7 +1329,9 @@ export function buildStands(data, {
   // round each ring, shaded smooth along a curve and sharp at a corner, the
   // texture running on unbroken along it (faces shaded one by one, the
   // texture starting afresh on each, show a curved front as a row of facets).
-  const prism = (polys, y0, y1, out) => {
+  // (`front`: where a level's front has its own finish, the sides that face the floor's middle and stand
+  // 0.9 m or more, the fascia, go there instead)
+  const prism = (polys, y0, y1, out, front = null) => {
     if (y1 - y0 < 0.01) return;
     const cap = new THREE.ShapeGeometry(shapeOf(polys), 1);
     cap.rotateX(-Math.PI / 2);
@@ -1342,7 +1344,8 @@ export function buildStands(data, {
       for (let i = 1; i < n.length; i += 3) n[i] = -1;
     }
     out.push(top, bot);
-    const P = [], N = [], U = [];
+    const P = [], N = [], U = [], FP = [], FN = [], FU = [];
+    const tall = front && y1 - y0 >= 0.9;
     const cosCrease = Math.cos(35 * DEG);
     polys.forEach((ring0, ri) => {
       let ring = ring0.map(([x, z]) => [x + ox, z + oz]);
@@ -1390,16 +1393,23 @@ export function buildStands(data, {
         const na = vn(i, i), nb = vn(j, i), s1 = s0 + el[i];
         const a0 = [ax, y0, az, na, s0], a1 = [ax, y1, az, na, s0], b0 = [bx, y0, bz, nb, s1], b1 = [bx, y1, bz, nb, s1];
         const tri = sg > 0 ? [a0, b1, b0, a0, a1, b1] : [a0, b0, b1, a0, b1, a1];
-        for (const [x, y, z, nn, uu] of tri) { P.push(x, y, z); N.push(nn[0], 0, nn[1]); U.push(uu, y); }
+        let toFront = false;
+        if (tall) {
+          const mx = (ax + bx) / 2 - ox, mz = (az + bz) / 2 - oz, ml = Math.hypot(mx, mz) || 1;
+          toFront = -((na[0] + nb[0]) * mx + (na[1] + nb[1]) * mz) / (2 * ml) > 0.5;
+        }
+        const [p_, n_, u_] = toFront ? [FP, FN, FU] : [P, N, U];
+        for (const [x, y, z, nn, uu] of tri) { p_.push(x, y, z); n_.push(nn[0], 0, nn[1]); u_.push(uu, y); }
         s0 = s1;
       }
     });
-    if (P.length) {
+    for (const [p_, n_, u_, o_] of [[P, N, U, out], [FP, FN, FU, front]]) {
+      if (!p_.length) continue;
       const side = new THREE.BufferGeometry();
-      side.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
-      side.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
-      side.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2));
-      out.push(side);
+      side.setAttribute('position', new THREE.Float32BufferAttribute(p_, 3));
+      side.setAttribute('normal', new THREE.Float32BufferAttribute(n_, 3));
+      side.setAttribute('uv', new THREE.Float32BufferAttribute(u_, 2));
+      o_.push(side);
     }
   };
   const flat = (polys, y, out) => {
@@ -1432,7 +1442,10 @@ export function buildStands(data, {
   const voms = { pit: [], cap: [], tunnel: [], floor: [], ceil: [], lamps: [], signs: [] };
   for (const L of data.levels) {
     const levelGeo = [], stepGeo = materials.step ? [] : levelGeo;     // (a venue's aisles in their own finish: materials.step)
-    for (const row of L.rows) for (const polys of row.polys) prism(polys, row.y0, row.y, levelGeo);
+    // (a level's front, the fascia facing the floor, in its own finish: materials.levelFront[level])
+    const frontMat = materials.levelFront?.[L.name], frontGeo = frontMat ? [] : null;
+    for (const row of L.rows) for (const polys of row.polys) prism(polys, row.y0, row.y, levelGeo, frontGeo);
+    if (frontGeo?.length) { const fm = new THREE.Mesh(mergeGeometries(frontGeo), frontMat); fm.receiveShadow = true; g.add(fm); }
     // the half steps up the aisles
     for (const st of L.steps) {
       prism(st.polys, st.y0, st.y, stepGeo);
@@ -1461,10 +1474,16 @@ export function buildStands(data, {
     // a level can have its own front (a VIP balcony's dark mesh), and the
     // low partitions between its boxes
     const own = materials.levelRail?.[L.name];
-    for (const [x0, z0, x1, z1, ya0, ya1, yb0, yb1] of slopedRuns(L.rails)) panel4(own ? 'own' : 'rail', x0, z0, x1, z1, ya0, ya1, yb0, yb1);
+    // (with the level's front in its own finish, the parapet along its front row too: a rail standing on the
+    // front row's tread)
+    const fy = frontMat ? L.rows[0].y : null;
+    for (const [x0, z0, x1, z1, ya0, ya1, yb0, yb1] of slopedRuns(L.rails)) {
+      const atFront = fy != null && Math.abs(ya0 - fy) < 0.06 && Math.abs(yb0 - fy) < 0.06;
+      panel4(own || atFront ? 'own' : 'rail', x0, z0, x1, z1, ya0, ya1, yb0, yb1);
+    }
     // thin steel fences (the end faces of a floor corner's funnel): posts and bars, see-through
     for (const [x0, z0, x1, z1, ya0, ya1, yb0, yb1] of slopedRuns(L.fences ?? [])) fenceRun(fenceP, fenceN, [x0 + ox, z0 + oz, x1 + ox, z1 + oz, ya0, ya1, yb0, yb1]);
-    if (own && panels.own[0].length) { g.add(new THREE.Mesh(mkPanels(panels.own), own)); panels.own = [[], []]; }
+    if ((own || frontMat) && panels.own[0].length) { g.add(new THREE.Mesh(mkPanels(panels.own), own ?? frontMat)); panels.own = [[], []]; }
     // the partitions beside a gate's pit and its stairs' cuts: solid, `gateRailT` thick
     if (L.gateRails?.length) {
       const gp = [], gn = [];
