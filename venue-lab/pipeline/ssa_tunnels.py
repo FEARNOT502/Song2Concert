@@ -283,6 +283,9 @@ def corner_funnels(G, l, trenches, corners, clear=0.3, shift_max=1.0, band=1.6, 
                 elif first - tt > 0.6: break
             return ln['p'] + ln['d'] * first
         r_front = front_end(ring[0], V[0])
+        if 'rear_front_z' in C:                            # (a front end given: the stands' front row's line, not past it)
+            ln_ = ring[0]; tz = (C['rear_front_z'] - ln_['p'][1]) / ln_['d'][1]
+            r_front = ln_['p'] + ln_['d'] * tz
         f_line = _line(ring[-1]['p'], -ring[-1]['d'])                        # (the fan's front piece, running back again)
         f_line['n'] = ring[-1]['n']
         f_front = front_end(f_line, V[-1])
@@ -311,7 +314,9 @@ def corner_funnels(G, l, trenches, corners, clear=0.3, shift_max=1.0, band=1.6, 
         axis = ring[len(rear)]                                                     # (the back face)
         a_back = float(((axis['p'] - o) @ axis['n']) / (u @ axis['n']))
         norm = [ln['n'] for ln in ring]
+        nr = len(rear)                                                             # (the back face: between the rear's last and the fan's)
         out.append({'name': t['name'], 'poly': np.array(poly), 'path': path, 'normals': norm, 'mask': mask, 'cut': cut, 'pocket': pocket, 'zone': zone > 0, 'a_back': a_back,
+                    'back_seg': (np.array(V[nr - 1]), np.array(V[nr])), 'back_n': np.array(axis['n']),
                     'shifts': [round(s_, 2) for s_ in shifts]})
     return out
 
@@ -380,9 +385,10 @@ def north_corners(l, seats_block, sx):
     # each side: its blocks, its line's rough direction (as ssa_corners.json runs it) and a normal into the bowl
     # (the directions along each block's own edge as the list's seats lie: the strip's stepped inner edge, the fan 59's
     # front, the fan 56's side)
-    # (the bowl hugging the seats round it: the strip's seats only as deep as the bowl, the back along 59's front and
+    # (the bowl hugging the seats round it: the end stand's side along the strip's own edge, its seats only as deep as
+    # the bowl (from its front tip to its widest there, so the face runs on to the end stand's corner), the back along 59's front and
     # on along 58's (one line, near enough), the fan's side along 56's alone)
-    spec = {'rear': ((B['rear'][side],), m((0.0, -1.0))), 'back': ((B['back'][side], B['fan1'][side]), m((-0.9, 0.43))),
+    spec = {'rear': ((B['rear'][side],), m((-0.29, -0.96))), 'back': ((B['back'][side], B['fan1'][side]), m((-0.9, 0.43))),
             'fan': ((B['fan0'][side],), m((-0.63, -0.77)))}
     depth = {'rear': 5.5}
     ends = {}
@@ -393,10 +399,6 @@ def north_corners(l, seats_block, sx):
         Q = S[np.isin(seats_block, blocks)]
         t = (Q - c) @ d0; s = (Q - c) @ n0
         if k in depth: Q = Q[np.abs(t) < depth[k]]
-        if k == 'rear':                                    # (the end stand's side: straight back, as its blocks' sides run,
-            p = Q[np.argmax((Q - c) @ n0)]                  # touching the strip's widest seat within the bowl's depth)
-            out[k] = {'p': [round(float(v), 4) for v in p], 'd': [round(float(v), 4) for v in d0]}; ends[k] = (p, p)
-            continue
         # the side: the edge of its seats' hull that faces the bowl (its outward normal nearest the way to the bowl),
         # the longest such: a straight line touching the seats nearest the bowl, at either end of the side
         from scipy.spatial import ConvexHull
@@ -418,7 +420,8 @@ def north_corners(l, seats_block, sx):
     # it (corner_funnels' pocket, a wider band here), as the south's faces are
     fan = [out['fan']]
     # (the fan's face ends where its seats do, at 56's front tip: the side stands' fronts beyond are no part of it)
-    corner = {'rear': [out['rear']], 'fan': fan, 'back': out['back'], 'fan_front': [round(float(v), 4) for v in ends['fan'][0]]}
+    # (the end stand's face ends on the stands' front line, z -41.4 at the north end: the floor's edge)
+    corner = {'rear': [out['rear']], 'fan': fan, 'back': out['back'], 'fan_front': [round(float(v), 4) for v in ends['fan'][0]], 'rear_front_z': -41.4}
     u = m((-0.53, -0.848)); u = u / np.linalg.norm(u)
     tr = {'name': ('NW', 'NE')[side], 'o': c - u * 6.0, 'u': u}
     return corner, tr
