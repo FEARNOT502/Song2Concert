@@ -69,6 +69,8 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
   // Before anything plays the house lights are up — the room as you find it
   // walking in — and they go down when the music starts.
   let house = 1, houseTarget = 1;
+  // the standing floor's beat clock, mood and how much it is dancing (see frame)
+  let grooveBeat = 0, grooveMood = 0.3, groove = 0;
   let crowdLight = 'stick';
   // the lighting desk: a part of the song called by hand (null, the song's
   // own), held until it is handed back; when it was called, by the clock and
@@ -304,6 +306,14 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     const cu = ctx.cu;
     cu.uTime.value = t; cu.uKick.value = B.kick * (1 - house); cu.uEnergy.value = B.energy * (1 - house * 0.8);
     cu.uFlick.value = B.kick * (1 - house);
+    // the floor's own beat clock: it runs at the tempo and is drawn softly
+    // onto the tracked beat, so a nudge or a seek is a moment's catch-up, not
+    // a jump in everyone's step (kept to 8 beats, the longest count they keep)
+    const pull = ((B.phase - grooveBeat) % 2 + 3) % 2 - 1;
+    grooveBeat = (grooveBeat + (playing ? dt * f.bpm / 60 : 0) + pull * Math.min(1, dt * 2.5)) % 8;
+    grooveMood += (B.energy - grooveMood) * Math.min(1, dt * 0.4);
+    groove += ((playing ? 1 - house : 0) - groove) * Math.min(1, dt * 0.8);
+    cu.uBeat.value = grooveBeat; cu.uBpm.value = f.bpm; cu.uMood.value = grooveMood; cu.uGroove.value = groove;
     venue.update(f);
     // a light at nothing still costs every lit pixel its share: take it out
     for (const d of dimLights) {

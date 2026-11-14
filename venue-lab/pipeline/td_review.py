@@ -98,6 +98,7 @@ def finish(data):
   a=q-side*portal['outerWidth']/2;b=q+side*portal['outerWidth']/2;head=portal['y']+portal['head']
   room['thinWalls'].append([*a,*b,head-.005,head+.65])
  data['infieldPortals']=portals
+ _narrow_outfield_voms(data)
  F=next(l for l in data['levels'] if l['name']=='F');centres=[];doors=[]
  for v in F['voms']:
   p=np.array(v['p']);u=np.array(v['u']);q=p+u*(v['L']+3.6);centres.append(q)
@@ -156,31 +157,28 @@ def finish(data):
  for sg in (-1,1):
   e=max([p for rim in data['rimCS'] for p in rim if np.sign(p[0])==sg],key=lambda p:abs(np.degrees(np.arctan2(p[0],p[1]+60))))
   r=np.array(e)-O;r/=np.linalg.norm(r);ends.append(list(np.round(np.array(e)+r*4,3)))
- # Continue the actual upper-wall endpoints, rather than a disconnected
- # wall behind them. Its underside roofs the seats behind the F pillars.
+ # Sweep the WHOLE radial balcony end-wall section around the outfield.
+ # Its 6.25m-wide underside, not a separate thin wall, roofs the rear F rows.
  upper=sorted(data['upperWall'],key=lambda w:w['pts'][-1][0])
- left,right=[w['pts'][-1] for w in upper]
- # Wrap the same upper wall behind the full scoreboard. The prior
- # route followed the mouth centres and doubled back at both ends.
- # Continue from the actual visible wall edge, not its outward return.
- # The two branches and the rear arc are emitted as ONE wall strip.
- start=np.degrees(np.arctan2(abs(left[0]),-(left[1]+60)))
- inner=envelope.buffer(-.6)
- arc=[]
+ left,right=[np.array(w['pts'][-1]) for w in upper]
+ widths=[np.linalg.norm(np.array(w['ret'][-1])-w['ret'][0]) for w in upper]
+ width=float(np.mean(widths));start=np.degrees(np.arctan2(abs(left[0]),-(left[1]+60)))
+ front=[];back=[]
  for a in np.linspace(-start,start,181):
-  rad=np.radians(a);r=float(np.interp(abs(a),[0,start],[77.5,np.linalg.norm(np.array(left)-O)]))
-  q=O+np.array([np.sin(rad),-np.cos(rad)])*r
-  for _ in range(100):
-   if inner.covers(Point(q)):break
-   q+=(O-q)/np.linalg.norm(O-q)*.2
-  arc.append(list(np.round(q,3)))
- arc[0]=left;arc[-1]=right
- front=arc
- data['outfieldBackWall']={'pts':front,'y0':16.2,'back':front}
- data['continuousUpperWall']={'pts':upper[0]['pts']+front[1:-1]+upper[1]['pts'][::-1],
-                              'y0':upper[0]['y0']+[16.2]*(len(front)-2)+upper[1]['y0'][::-1]}
- under=[left,*[list(np.round(q,3)) for q in centres],right]
- room['ceils'].append({'y':16.2,'polys':polys(Polygon(under+front[::-1]).buffer(0))})
+  rad=np.radians(a);u=np.array([np.sin(rad),-np.cos(rad)])
+  radius=float(np.interp(abs(a),[0,start],[71.,np.linalg.norm(left-O)]))
+  front.append(O+u*radius);back.append(O+u*(radius+width))
+ front[0]=left;front[-1]=right
+ back[0]=np.array(upper[0]['ret'][-1]);back[-1]=np.array(upper[1]['ret'][-1])
+ front=[list(np.round(p,3)) for p in front];back=[list(np.round(p,3)) for p in back]
+ mass=Polygon(front+back[::-1]);data.pop('continuousUpperWall',None)
+ data['scoreboardSetback']=2.5
+ data['upperOutfieldMass']={'front':front,'back':back,'y0':13.6,'width':round(width,4)}
+ data['outfieldBackWall']={'pts':front,'y0':13.6,'back':back}
+ # Remove the old, independent ceiling sheet through the new solid volume.
+ for ceiling in room['ceils']+room['soffits']:
+  if ceiling['y']>13.61:ceiling['polys']=polys(geom([ceiling]).difference(mass))
+ data['outer']=polys(envelope.union(mass.buffer(.4,join_style=2)))
  # Finish rooms along the inner edge of the rear circulation band.
  br=data['balconyRooms'];br['corridorWalls']=[];br['doors']=[]
  for sd in br['sides']:
@@ -245,9 +243,8 @@ def labelled(data):
    edge12=np.array([min(xy[(L[:,0]==names.index('F12'))&(L[:,1]==r)],key=lambda p:p[0]) for r in range(1,11)])
    _,_,vh=np.linalg.svd(edge12-edge12.mean(0));normal=vh[-1];normal*=np.sign(normal[0])
    edge11=np.array([max(xy[i11[L[i11,1]==r]],key=lambda p:p[0]) for r in range(5,11)])
-   shift=edge12[4:10].mean(0)-edge11.mean(0)-normal*1.94
-   # .42m of floor each side of a 1.10m clear aisle.
-   shift+=normal*((edge12@normal).mean()-1.94-max((xy[i11]+shift)@normal))
+   shift=normal*((edge12@normal).mean()-1.5-max(xy[i11]@normal))
+   # Bring the block .44m closer to its existing adjacent aisle.
    old=MultiPoint(xy[i11]).convex_hull.buffer(.5,join_style=2)
    moved=translate(old,*shift);rebuilt=[];data['F11Finish']=[]
    ranks=set(S[i11,2].tolist())
@@ -262,23 +259,67 @@ def labelled(data):
    lv['rows']=rebuilt
    S[i11,:2]=np.round((xy[i11]+shift)*scale).astype('<i2')
    for row in data['backscreen']:row['polys']=polys(geom([row]).difference(moved.buffer(.025)))
-   data['F11AisleJoin']={'block':'F12','clearWidth':1.1,'shift':shift.tolist(),'normal':normal.tolist(),'edge':edge12.tolist()}
+   data['F11AisleJoin']={'block':'F12','clearWidth':.66,'shift':shift.tolist(),'normal':normal.tolist(),'edge':edge12.tolist()}
    # The official 1F panoramas 1053/1054/1260 show a well open to the
    # sky, between the front of F11 and the field fence. No roof or stairs.
    front=xy[i11[L[i11,1]==5]]+shift
    across=front[-1]-front[0];across/=np.linalg.norm(across)
    if across[0]<0:across=-across
    forward=np.array([-across[1],across[0]])
-   back=front.mean(0)+forward*.7;length=3.4;width=7.2
+   back=front.mean(0)+forward*.65;length=4.;width=7.4
    corners=[back+across*a+forward*t for a,t in [(-width/2,0),(width/2,0),(width/2,length),(-width/2,length)]]
-   # The original field fence is the hard front limit of the well.
-   # Clip to its outside so no part projects into the playing field.
    field=Polygon(data['fence'][0][0]);cut=Polygon(corners).difference(field.buffer(.45,join_style=2)).simplify(.1)
-   corners=np.array(cut.exterior.coords[:-1]);heights=[5.74 if abs((p-back)@forward)<.08 else 3.1 for p in corners]
+   corners=np.array(cut.exterior.coords[:-1]);heights=[5.74 if abs((p-back)@forward)<.08 else 4.4 for p in corners]
    for row in lv['rows']+data['backscreen']+data['F11Finish']:row['polys']=polys(geom([row]).difference(cut))
    for floor in data['floors']:floor['polys']=polys(geom([floor]).difference(cut))
-   data['F11Pit']={'pts':corners.tolist(),'center':list(cut.centroid.coords)[0],'heights':heights,'bottom':.35,'rim':4.6,'backRim':5.74,'openTop':True}
+   data['F11Pit']={'pts':corners.tolist(),'center':list(cut.centroid.coords)[0],'heights':heights,'bottom':.35,'rim':4.6,'backRim':5.74,'fasciaBottom':4.15,'rearEdge':[(back-across*width/2).tolist(),(back+across*width/2).tolist()],'openTop':True}
+   # RYOBI is a tall face immediately behind the last F11 row, not a
+   # small box at the end of a second flight of green terraces.
+   rear=xy[i11[L[i11,1]==10]]+shift
+   outward=-forward;centre=rear.mean(0)+outward*.48
+   span=np.ptp(rear@across)+1.35
+   face=[centre-across*span/2,centre+across*span/2]
+   backface=[p+outward*((-128.4-p[1])/outward[1]) for p in face]
+   data['batterEyeRooms']=[{'front':[(p*np.array([sg,1])).tolist() for p in face],'back':[(p*np.array([sg,1])).tolist() for p in backface],'floor':float(lv['hs'][int(S[i11[-1],2])])} for sg in [-1,1]]
+   _close_batter_rooms_to_hall(data)
   keep=np.array([names[b] not in OVERRIDES for b,r,n in L]);lv['seats']=base64.b64encode(S[keep].tobytes()).decode();lv['labels']=base64.b64encode(L[keep].tobytes()).decode()
   for key in ('gblocks','gnums','seatY'):
    if key in lv and len(lv[key])==len(keep):lv[key]=[v for v,k in zip(lv[key],keep) if k]
  return data
+
+
+def _narrow_outfield_voms(data):
+ import copy,pickle
+ F=next(l for l in data['levels'] if l['name']=='F')
+ P,labels=pickle.load(open(__import__('pathlib').Path(__file__).with_name('td_seatlab.pkl'),'rb'))['F']
+ P=np.array(P);ids=np.array([b=='F12' for b,r,n in labels]);q=P[ids]
+ rows=np.array([r for b,r,n in labels if b=='F12'])
+ edge=np.array([min(q[rows==r],key=lambda p:p[0]) for r in range(1,11)])
+ _,_,vh=np.linalg.svd(edge-edge.mean(0));n=vh[-1];n*=np.sign(n[0]);u=np.array([n[1],-n[0]])
+ data['batterEyeVoms']=[]
+ for sg in [-1,1]:
+  v=copy.deepcopy(min([v for v in F['voms'] if not v.get('batterEye')],key=lambda v:abs(v['p'][0])))
+  v.update(p=[sg*22.25,-124.55],u=(u*np.array([sg,1])).tolist(),w=2.4,batterEye=True)
+  F['voms'].append(v);data['batterEyeVoms'].append(v)
+  p=np.array(v['p']);axis=np.array(v['u']);side=np.array([-axis[1],axis[0]])
+  frame=lambda a,b:Polygon([p+axis*t+side*s for t,s in [(a,-1.34),(b,-1.34),(b,1.34),(a,1.34)]])
+  cut=frame(-.35,v['L']+3.9)
+  for row in F['rows']+data['backscreen']:row['polys']=polys(geom([row]).difference(cut))
+  steps=[]
+  for st in F['steps']:steps.extend({**st,'polys':poly} for poly in polys(Polygon(st['polys'][0],st['polys'][1:]).difference(cut)))
+  F['steps']=steps
+  stair_cut=frame(-.35,v['L']-.2)
+  for f in data['floors']+data['rooms']['lit']:f['polys']=polys(geom([f]).difference(stair_cut))
+
+def _close_batter_rooms_to_hall(data):
+ hall=LineString(data['outfieldConcourse']['path'])
+ for room in data['batterEyeRooms']:
+  P=np.array(room['front']);axis=P[1]-P[0];axis/=np.linalg.norm(axis)
+  outward=np.array([axis[1],-axis[0]])
+  if outward[1]>0:outward=-outward
+  rear=[]
+  for p in P:
+   hit=LineString([p,p+outward*30]).intersection(hall)
+   q=np.array(min(getattr(hit,'geoms',[hit]),key=lambda g:g.distance(Point(p))).coords[0])
+   rear.append((q-outward*1.9).tolist())
+  room['back']=rear

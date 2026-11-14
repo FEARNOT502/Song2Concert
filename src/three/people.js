@@ -18,6 +18,14 @@ export function crowdUniforms() {
     uTime: { value: 0 },
     uKick: { value: 0 },
     uEnergy: { value: 0.4 },
+    // for a floor on its feet: a beat clock eased onto the tracked beat (no
+    // snap on a nudge or a seek), the tempo, the room's mood (energy eased over
+    // seconds, so arms do not flick with every beat's level) and how much the
+    // room is dancing at all (0 with the house up or the song stopped)
+    uBeat: { value: 0 },
+    uBpm: { value: 120 },
+    uMood: { value: 0.3 },
+    uGroove: { value: 0 },
     uRimColor: { value: new THREE.Color(0xffa060) },
     uRim: { value: 1 },
     uStage: { value: V3(0, 8, 0) },   // where the light comes from
@@ -180,36 +188,90 @@ export function personMaterial(cu, kind = 'floor') {
         attribute float aPart; attribute float aArm;
         attribute vec4 iLook;   // x: phase, y: raise propensity, z: which arm (-1, 1, 2 both), w: skin
         attribute vec3 iHair;
-        uniform float uTime, uKick, uEnergy;
+        uniform float uTime, uKick, uEnergy, uBeat, uBpm, uMood, uGroove;
         varying vec3 vPC; varying vec3 vWorldN; varying vec3 vWorldP;
         vec3 skinRamp(float s) {
           vec3 a = vec3(0.72, 0.42, 0.28), b = vec3(0.5, 0.24, 0.12), c = vec3(0.14, 0.06, 0.03);
           return s < 0.5 ? mix(a, b, s * 2.0) : mix(b, c, s * 2.0 - 1.0);
         }
-        float armAngle(float side) {
+        // a person's own numbers, from their seed
+        float hsh(float n) { return fract(sin(n * 91.3458) * 47453.5453); }
+        float own(float k) { return hsh(iLook.x * 7.31 + k); }
+        // a slow smooth wander, 0..1, never repeating the same way
+        float drift(float t) { float i = floor(t), f = fract(t); f = f * f * (3.0 - 2.0 * f); return mix(hsh(i), hsh(i + 1.0), f); }
+        float wander(float k, float lo, float hi) { return drift(uTime / mix(lo, hi, own(k)) + own(k + 0.5) * 50.0); }
+        // how into it this one is right now: the room's mood, how they lean,
+        // and a drift of their own (some get going, others ease off a while)
+        float into() {
+          return clamp(uMood * 0.9 + iLook.y * 0.35 + (wander(1.0, 7.0, 16.0) - 0.5) * 0.7 - 0.12, 0.0, 1.0) * uGroove;
+        }
+        // where this one is in their count: a touch early or late; a share
+        // move half-time, and everyone does when the tempo runs fast
+        float count() {
+          float rate = mix(1.0, 0.5, max(step(own(2.0), 0.3), step(138.0, uBpm)));
+          return uBeat * rate - (own(3.0) - 0.5) * 0.18;
+        }
+        // 1 on the beat, easing to 0 between
+        float onBeat(float c) { float b = 0.5 + 0.5 * cos(6.2832 * c); return b * b; }
+        float yaw() { return (wander(4.0, 9.0, 20.0) - 0.5) * 0.32; }
+        vec2 armAngle(float side) {
           ${kind === 'floor' ? `
-          float up = step(1.0 - uEnergy * 0.75, iLook.y);
           float mine = (iLook.z > 1.5 || abs(iLook.z - side) < 0.1) ? 1.0 : 0.0;
-          float pump = step(0.45, iLook.y) * uKick;
-          float wave = 0.5 + 0.5 * sin(uTime * 2.2 + iLook.x * 3.0);
-          return mine * (up * (2.35 + 0.35 * wave + 0.25 * uKick) + (1.0 - up) * pump * 1.1);
-          ` : 'return 0.0;'}
+          float g = into(), c = count(), b = onBeat(c);
+          // arms go up as the room lifts, each at their own point: every few
+          // seconds each decides afresh (up or down, leaning on the mood) and
+          // the arm goes there over most of a second, eased, never left halfway
+          float T = mix(5.0, 11.0, own(5.0)), at = uTime / T + own(5.5) * 20.0, n = floor(at);
+          float lean = iLook.y - (1.0 - uMood * 0.75), seed = own(5.2) * 100.0;
+          float was = smoothstep(-0.04, 0.04, lean + (hsh(n + seed) - 0.5) * 0.45);
+          float now = smoothstep(-0.04, 0.04, lean + (hsh(n + 1.0 + seed) - 0.5) * 0.45);
+          float up = mine * uGroove * mix(was, now, smoothstep(1.0 - 0.9 / T, 1.0, fract(at)));
+          // up, each their own way: a fist pumped on the beat, a hand waved
+          // side to side over two, or just held there, wandering
+          float style = own(6.0);
+          float pump = step(style, 0.4) * b * 0.32;
+          float wave = step(0.4, style) * step(style, 0.75) * sin(3.1416 * c + side * 0.25) * 0.3;
+          float hold = step(0.75, style) * (wander(7.0, 3.0, 6.0) - 0.5) * 0.3;
+          float high = 2.2 + 0.35 * own(8.0) + pump + hold;
+          // down, the keener ones swing them a little with the beat
+          float low = 0.08 + 0.28 * step(0.45, iLook.y) * g * b;
+          return vec2(mix(low, high, up), wave * up);
+          ` : 'return vec2(0.0);'}
         }
         mat3 rotX(float a) { float c = cos(a), s = sin(a); return mat3(1.0, 0.0, 0.0, 0.0, c, s, 0.0, -s, c); }
+        mat3 rotY(float a) { float c = cos(a), s = sin(a); return mat3(c, 0.0, -s, 0.0, 1.0, 0.0, s, 0.0, c); }
         mat3 rotZ(float a) { float c = cos(a), s = sin(a); return mat3(c, s, 0.0, -s, c, 0.0, 0.0, 0.0, 1.0); }
-        mat3 armRot(float side, float ang) { return rotZ(-side * ang * 0.18) * rotX(-ang); }
+        mat3 armRot(float side, vec2 a) { return rotZ(-side * a.x * 0.18 + a.y) * rotX(-a.x); }
       `)
       .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
-        if (aArm != 0.0) { objectNormal = armRot(aArm, armAngle(aArm)) * objectNormal; }`)
+        if (aArm != 0.0) { objectNormal = armRot(aArm, armAngle(aArm)) * objectNormal; }
+        ${kind === 'floor' ? 'objectNormal = rotY(yaw()) * objectNormal;' : ''}`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
         if (aArm != 0.0) {
           vec3 sh = vec3(aArm * ${SHOULDER_X.toFixed(3)}, ${kind === 'seated' ? '0.94' : SHOULDER_Y.toFixed(3)}, 0.0);
           transformed = armRot(aArm, armAngle(aArm)) * (transformed - sh) + sh;
         }
         ${kind === 'floor' ? `
-        float bob = max(0.0, sin(uTime * 7.6 + iLook.x)) * uKick;
-        transformed.y += (bob * 0.05 + uEnergy * 0.012 * sin(uTime * 3.8 + iLook.x)) * step(0.25, iLook.y);
-        transformed.x += sin(uTime * 1.9 + iLook.x * 2.0) * 0.02 * uEnergy;` : ''}
+        {
+          float g = into(), c = count(), b = onBeat(c);
+          float y = position.y;
+          // the bounce: the knees give on the beat and the body rises between,
+          // the legs taking it, so the feet stay on the floor
+          float body = smoothstep(0.05, 0.95, y);
+          transformed.y -= b * g * mix(0.012, 0.045, own(9.0)) * body;
+          // the weight from foot to foot over two beats, from the hips up
+          float hips = smoothstep(0.35, 1.5, y);
+          float side = (own(10.0) < 0.5 ? 1.0 : -1.0) * sin(3.1416 * c);
+          transformed.x += side * g * mix(0.008, 0.03, own(11.0)) * hips;
+          // and, music or none, a slow shift of weight of their own
+          transformed.x += (wander(12.0, 4.0, 9.0) - 0.5) * 0.035 * hips;
+          transformed.z += (wander(13.0, 5.0, 11.0) - 0.5) * 0.02 * hips;
+          // a lean in on the beat, and the head nodding with it
+          float head = smoothstep(1.4, 1.7, y) * (1.0 - abs(aArm));
+          transformed.z += b * g * (0.012 * smoothstep(0.9, 1.6, y) + mix(0.004, 0.025, own(14.0)) * head);
+          // turning a little, now to a friend, now back to the stage
+          transformed = rotY(yaw()) * transformed;
+        }` : ''}
         ${kind === 'seated' ? 'transformed.x += sin(uTime * 0.6 + iLook.x * 5.0) * 0.006 * step(0.9, position.y);' : ''}
         vec3 top = instanceColor;
         vec3 skin = skinRamp(iLook.w);
