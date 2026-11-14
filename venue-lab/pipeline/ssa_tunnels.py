@@ -380,8 +380,11 @@ def north_corners(l, seats_block, sx):
     # each side: its blocks, its line's rough direction (as ssa_corners.json runs it) and a normal into the bowl
     # (the directions along each block's own edge as the list's seats lie: the strip's stepped inner edge, the fan 59's
     # front, the fan 56's side)
-    spec = {'rear': ((B['rear'][side],), m((-0.29, -0.96))), 'back': ((B['back'][side],), m((-0.9, 0.43))),
-            'fan': ((B['fan0'][side], B['fan1'][side]), m((-0.63, -0.77)))}
+    # (the bowl hugging the seats round it: the strip's seats only as deep as the bowl, the back along 59's front and
+    # on along 58's (one line, near enough), the fan's side along 56's alone)
+    spec = {'rear': ((B['rear'][side],), m((0.0, -1.0))), 'back': ((B['back'][side], B['fan1'][side]), m((-0.9, 0.43))),
+            'fan': ((B['fan0'][side],), m((-0.63, -0.77)))}
+    depth = {'rear': 5.5}
     ends = {}
     out = {}
     for k, (blocks, d0) in spec.items():
@@ -389,6 +392,11 @@ def north_corners(l, seats_block, sx):
         if (c - S[np.isin(seats_block, blocks)].mean(0)) @ n0 < 0: n0 = -n0
         Q = S[np.isin(seats_block, blocks)]
         t = (Q - c) @ d0; s = (Q - c) @ n0
+        if k in depth: Q = Q[np.abs(t) < depth[k]]
+        if k == 'rear':                                    # (the end stand's side: straight back, as its blocks' sides run,
+            p = Q[np.argmax((Q - c) @ n0)]                  # touching the strip's widest seat within the bowl's depth)
+            out[k] = {'p': [round(float(v), 4) for v in p], 'd': [round(float(v), 4) for v in d0]}; ends[k] = (p, p)
+            continue
         # the side: the edge of its seats' hull that faces the bowl (its outward normal nearest the way to the bowl),
         # the longest such: a straight line touching the seats nearest the bowl, at either end of the side
         from scipy.spatial import ConvexHull

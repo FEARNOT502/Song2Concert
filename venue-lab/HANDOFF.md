@@ -45,6 +45,7 @@ Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 - **Finishes** (arena.js, all matt): concrete tone 0.38 even; seats blue-grey 0x30343e, 300 wine 0x7a2b35; steps light grey,
   fronts white-grey bands, handrails yellow, door frames green, walls grey; floor dark grey. (The photo's whites are burnt
   out and the aisles' footlights light the steps from close by: white steps glowed; set a step under.)
+- **Plan labels** two lines where a door has several blocks (the door's number, the letter under it).
 - **Checks:** `npm run build`; the picker (`venue-lab/apppick.mjs <out> arena 236C 15 750`) picks on the plan and enters the
   seat; app renders of the corners, the north end, a side view (360, house up).
 - **Strips' aisles** (asked after: the gap between 119 and 121 one width to the top): `even_strips` measures, row by row,
@@ -54,10 +55,11 @@ Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
   face the south's funnels and keep their pitch.
 - **North corners** (asked: covered tunnels; then: the bowls' walls bumpy, make them clean with steel fences as the
   south's): each bowl is a funnel of straight faces like the south's (`ST.north_corners`: no outline is drawn for them on
-  the map, the stage covers them, so each side is the edge of its blocks' seats' hull facing the bowl: the strip 60/89
-  for the end stand's side, the fan 59/90's front for the back, 56+58 / 92+91 for the fan's side, from 56's front tip to
-  58's corner, which stands about 4 m forward of 56's own edge; the fan's face ends at that tip, `fan_front`).
-  `corner_funnels` with a wider band (3.5 m) so the wedge between that face and 56's rows is bare treads up to it, and
+  the map, the stage covers them, so each side is fitted to the seats round the bowl, hugging them as the user drew:
+  the end stand's side straight back (as its blocks' sides run) touching the strip 60/89's widest seat within the
+  bowl's depth; the back along 59's front and on along 58's (the edge of their seats' hull facing the bowl, one line);
+  the fan's side along 56's edge (its hull's), ending at 56's front tip (`fan_front`)).
+  `corner_funnels` with a wider band (3.5 m) so a gap between a face and its rows is bare treads up to it, and
   `front_gap` (how far behind a face the stand may be while it still runs forward), then the south's fences on the faces.
   From each bowl's back a covered tunnel on the south tunnel's line turned north, 3.2 m wide, 2.44 m high (the lowest row
   over it 3.09 m), under the stands to the concourse's underside; every seat stays (`ssa_labels.py` asserts one to one).

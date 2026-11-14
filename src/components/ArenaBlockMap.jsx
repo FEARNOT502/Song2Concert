@@ -15,9 +15,10 @@ export const ARENA_FLOORS = [
   { id: '400', label: '400 LV', lv: ['400'] },
   { id: '500', label: '500 LV', lv: ['500'] },
 ];
-const FONT = { 300: 1.8, '300S': 1.5, 500: 2.0, 400: 2.6 };
+const FONT = { 200: 2.8, 300: 1.8, '300S': 1.5, 500: 2.0, 400: 2.4 };
 export const arenaBlockText = (n) => (/^S\d+$/.test(n) ? `SUITE ${Number(n.slice(1))}` : `GATE ${n}`);
-const label = (n) => (/^S\d+$/.test(n) ? `S${Number(n.slice(1))}` : n);
+// (the door's number, and under it the block's letter where the door has several)
+const label = (n) => (/^S\d+$/.test(n) ? `S${Number(n.slice(1))}` : /^\d+[A-Z]$/.test(n) ? [n.slice(0, -1), n.slice(-1)] : n);
 
 // the stage as arena.js builds it (app z = data z + 45): the end stage's deck
 // (34 x 15 m), its runway to a cross and a square end stage on the floor; or

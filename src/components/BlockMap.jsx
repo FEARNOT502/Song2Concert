@@ -15,7 +15,7 @@ const path = (p) => `M${p.map(([x, z]) => `${x} ${z}`).join('L')}Z`;
 // floors: [{ id, label, lv: [data levels] }]
 // zc: the app's z of the data's z 0 (a seat's z is the app's)
 // stage: (mode) => SVG of the stage, in data metres; stageText: [x, z] or null
-// font: { level: type size }; label(n): a block's name on the plan; hoverText(n): its name in full
+// font: { level: type size }; label(n): a block's name on the plan (a string, or its lines); hoverText(n): its name in full
 export default function BlockMap({ data, floors, zc, stage, stageText = null, font = {}, label = (n) => n, hoverText = (n) => `BLOCK ${n}`, mode = 'general', selected = null, seat = null, sellable = null, onPick = null }) {
   const floorOf = (lv) => floors.find((f) => f.lv.includes(lv))?.id ?? floors[0].id;
   const box = useMemo(() => {
@@ -64,11 +64,15 @@ export default function BlockMap({ data, floors, zc, stage, stageText = null, fo
           );
         })}
         <g pointerEvents="none" fontFamily="ui-monospace, monospace" textAnchor="middle" dominantBaseline="central">
-          {shown.map((b) => (
-            <text key={b.n} x={b.c[0]} y={b.c[1]} fontSize={font[b.lv] ?? 3.4} fill={b.n === selected ? '#000' : canPick(b) ? '#b9b9c2' : '#4a4a52'} fontWeight={b.n === selected ? 700 : 400}>
-              {label(b.n)}
-            </text>
-          ))}
+          {shown.map((b) => {
+            // (a label of several lines: one under another, about the block's middle)
+            const lines = [].concat(label(b.n)), fs = font[b.lv] ?? 3.4;
+            return (
+              <text key={b.n} x={b.c[0]} y={b.c[1] - ((lines.length - 1) * fs) / 2} fontSize={fs} fill={b.n === selected ? '#000' : canPick(b) ? '#b9b9c2' : '#4a4a52'} fontWeight={b.n === selected ? 700 : 400}>
+                {lines.map((t, i) => <tspan key={i} x={b.c[0]} dy={i ? fs : 0}>{t}</tspan>)}
+              </text>
+            );
+          })}
           {mode !== '360' && stageText && <text x={stageText[0]} y={stageText[1]} fontSize={5} fill="#000" fontWeight={700}>STAGE</text>}
         </g>
         {seat && floorOf(seat.level) === floor && (
