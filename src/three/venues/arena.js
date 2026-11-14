@@ -13,11 +13,56 @@ import { APP, DEG, KELVIN, V3, std, concreteTex, ringTint, withRepeat } from '..
 import { lightPoints } from '../people.js';
 import { ampStack, chainInto, drumKit, guitar, hoists, keyboardRig, ledScreen, mats, micStand, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
 import { bigCrowd, bigScreens, crossThrust, fixtureRow, flashOnCrowd, flashUnits, floorBlocks, floorChairs, fohPosition, fromRow, maskingDrapes, packFloor, paCorner, paHang, paPair, runBlinders, runShow, runStrobes, screenHang, stageRing, stageSet, subLine, thinRow, wallStrip } from '../show.js';
-import { buildStands } from '../stands.js';
+import { buildStands, decodeSeats } from '../stands.js';
 import { SSA_STANDS } from './ssa-data.js';
 
 export function buildArena(ctx) {
   return ctx.mode === '360' ? arenaRound(ctx) : arenaEnd(ctx);
+}
+
+// the floor's centre, in the room's coordinates (the data's z 0)
+export const ARENA_OZ = 45;
+// The end stage's masking (app z): across behind the set, then angled forward
+// past the corners' blocks to the sides' fronts, and on across the sides to
+// the walls. The seats in front of it are the ones an end-stage show sells.
+const END_SZ = 6;
+const END_MASK = { MZ: 2.2 + END_SZ, MX: 16, SX: 31, SZF: 15 };
+const endMaskZ = (x) => { const { MZ, MX, SX, SZF } = END_MASK, a = Math.abs(x); return a <= MX ? MZ : a >= SX ? SZF : MZ + (SZF - MZ) * (a - MX) / (SX - MX); };
+export const arenaEndSold = (x, z) => z > endMaskZ(x) + 0.8;
+
+// Every seat by its ticket (ssa_labels.py's labels: the official seat list's
+// rows and numbers, the block named by its door; the suites S01-S15), and
+// where it is in the room (x, z with the stage end north, the floor's centre at
+// z ARENA_OZ; y its tread). `mode` 'general': only the seats an end-stage show
+// sells (in front of the masking); '360': all.
+const _arenaCatalogs = new Map();
+export function getArenaSeatCatalog(mode = 'general') {
+  const key = mode === '360' ? '360' : 'general';
+  if (_arenaCatalogs.has(key)) return _arenaCatalogs.get(key);
+  const bNames = SSA_STANDS.blockNames || [];
+  const byBlock = new Map(), levelOf = new Map();
+  for (const L of SSA_STANDS.levels) {
+    if (!L.labels) continue;
+    const S = decodeSeats(L.seats), sk = L.seatScale ?? 10, LB = decodeSeats(L.labels);
+    for (let i = 0; i < S.length; i += 4) {
+      const x = S[i] / sk, z = S[i + 1] / sk + ARENA_OZ, rIdx = S[i + 2], yaw = S[i + 3] * DEG;
+      if (key === 'general' && !arenaEndSold(x, z)) continue;
+      const y = L.hs ? L.hs[Math.min(rIdx, L.hs.length - 1)] : L.h0 + L.rise * rIdx;
+      const lk = (i >> 2) * 3, block = bNames[LB[lk]] ?? L.name, row = LB[lk + 1], num = LB[lk + 2];
+      let rm = byBlock.get(block);
+      if (!rm) { rm = new Map(); byBlock.set(block, rm); levelOf.set(block, L.name); }
+      let nm = rm.get(row);
+      if (!nm) { nm = new Map(); rm.set(row, nm); }
+      nm.set(num, { x, y, z, yaw, block, row, num, level: L.name });
+    }
+  }
+  const blocks = [...byBlock.keys()].sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
+  const getRows = (block) => { const rm = byBlock.get(block); return rm ? [...rm.keys()].sort((a, b) => a - b) : []; };
+  const getNums = (block, row) => { const nm = byBlock.get(block)?.get(Number(row)); return nm ? [...nm.keys()].sort((a, b) => a - b) : []; };
+  const getSeat = (block, row, num) => byBlock.get(block)?.get(Number(row))?.get(Number(num)) || null;
+  const cat = { blocks, byBlock, levelOf, getRows, getNums, getSeat };
+  _arenaCatalogs.set(key, cat);
+  return cat;
 }
 
 // The building, the same for either layout: the stands (the seats turned to
@@ -35,13 +80,17 @@ function arenaRoom(ctx, { stage, sold }) {
   // sides); the 300 level's three-row balconies round the ends; the 400 level
   // — its great crescents down the sides, 24 rows at the middle and under ten
   // at the ends where the wall curves in, and five-row balconies round the
-  // ends; the 500 level's three rows over them. (The north end's 200 level
-  // is the south end's, as the centre-stage chart has it: see
-  // pipeline/ssa_north.py.)
-  const OZ = 45;                       // the floor's centre, in this room's coordinates
+  // ends; the 500 level's three rows over them. Every seat of the official
+  // seat list (18,759, the telescopic rows folded away), each where the map
+  // draws it, labelled with its row and number and its block by its door
+  // (pipeline/ssa_seats.py, ssa_labels.py); the north end's front blocks,
+  // under the stage on the map, as the south end's turned round.
+  const OZ = ARENA_OZ;                 // the floor's centre, in this room's coordinates
   const stands = buildStands(SSA_STANDS, {
     // (the lightsticks' blocks by the stands' own aisles)
     byAisle: true,
+    // (by the aisles even now the seats are labelled with their doors' blocks: a door's seats are not one block)
+    aisleFirst: true,
     // (one wedge across every level, cut where the 200 level's aisles run)
     sectors: ['200'],
     // (each corner's fan one block, however many aisles cut it, with the
@@ -196,15 +245,13 @@ function arenaEnd(ctx) {
   // FOH, and the listener there: at the back of the floor's seats
   const eye = V3(0, 1.6 + 0.9, 81.4);
   // the stage set 6 m out from the end, the masking brought forward with it
-  const SZ = 6;
+  const SZ = END_SZ;
   const STAGE = V3(0, DECK, 8 + SZ);
-  // the masking's line: across behind the set, then angled forward past the
-  // corners' blocks to the sides' fronts, and on across the sides to the walls
-  const MZ = 2.2 + SZ, MX = 16, SX = 31, SZF = 15;
-  const maskZ = (x) => { const a = Math.abs(x); return a <= MX ? MZ : a >= SX ? SZF : MZ + (SZF - MZ) * (a - MX) / (SX - MX); };
+  // the masking's line (END_MASK)
+  const { MZ, MX, SX, SZF } = END_MASK;
 
   // nobody behind the masking
-  const { root, stands, H, OZ, X0, X1, Z0, Z1, houseFix, house } = arenaRoom(ctx, { stage: STAGE, sold: (x, z) => z > maskZ(x) + 0.8 });
+  const { root, stands, H, OZ, X0, X1, Z0, Z1, houseFix, house } = arenaRoom(ctx, { stage: STAGE, sold: arenaEndSold });
   // the set stands on the deck; the building's stands carry on round it
   stageSet(root, { w: 30, h: 17, z: 1.8 + SZ, deck: DECK, towerX: 15.8, backdropW: 32, backdropH: 16, wingX: 18.5, wingW: 6, wingH: 11 });
   // masking across the building behind the stage, wall to wall and floor to

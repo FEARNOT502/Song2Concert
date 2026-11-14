@@ -26,8 +26,9 @@ import { BeatFollower } from './beat.js';
 import { buildVenue } from './venues/index.js';
 import { getDomeSeatCatalog } from './venues/dome.js';
 import { getStadiumSeatCatalog } from './venues/stadium.js';
+import { getArenaSeatCatalog } from './venues/arena.js';
 // the rooms whose seats are named (block, row, seat), and each one's list of them
-const seatCatalog = (id, mode) => (id === 'dome' ? getDomeSeatCatalog() : id === 'stadium' ? getStadiumSeatCatalog(mode) : null);
+const seatCatalog = (id, mode) => (id === 'dome' ? getDomeSeatCatalog() : id === 'stadium' ? getStadiumSeatCatalog(mode) : id === 'arena' ? getArenaSeatCatalog(mode) : null);
 import { BASE, PARTS, rollOf, section } from './show.js';
 
 // How far a new venue's camera may widen on a portrait screen: at least ~56°

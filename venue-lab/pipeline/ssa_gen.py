@@ -7,7 +7,7 @@ import sys, json, time, re, pickle, base64, os, numpy as np, cv2
 sys.path.insert(0,'.')
 from standlib import Grid, disk, contours, sample, STRAIGHT
 from standgen import Level, poly_out, mask_polys, edge_walls, enclose, grow_under, trim_tunnels, front_parapet, cut_tunnels, tunnel_rows, tunnels_out, tunnel_decks
-import ssa_blocks as SB, ssa_tunnels as ST
+import ssa_blocks as SB, ssa_tunnels as ST, ssa_seats as SS
 from scipy.spatial import cKDTree
 T0=time.time()
 G=Grid(-74,74,-68,68,0.1)
@@ -53,7 +53,7 @@ def corner_seams(l, reach=3.0):
     print('400 corner seams filled',len(out),[round(float(m.sum()*G.res**2),1) for m in out])
     return out
 for lv in ('200','300','400','500'):
-    S_=SB.level_seats(CH,lv,OFF)
+    S_=SS.load_level(lv)          # the seats the official list numbers (ssa_seats.py), where the map draws them
     l0=SB.build_level(G,lv,S_,**SEC[lv]); gaps=gap_gates(l0,DOORS[lv])
     bays={g:m for g,m in gaps.items() if lv=='200' and CORNER_BAY(DOORS[lv][g][1])}
     GAPDOOR[lv]={g:m for g,m in gaps.items() if g not in bays}

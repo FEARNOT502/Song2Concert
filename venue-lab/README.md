@@ -32,15 +32,23 @@ Open `out/test.html` in a browser (it loads three.js from jsDelivr), e.g.
   from the inputs here; `python3 pipeline/mkdata.py insp kspo`.
   The Tokyo Dome, SSA and Wembley generators also read large intermediate
   files (`*.pkl`, plan images) that are not in the repo.
-  SSA (arena mode, end stage 2) starts from the official seat map: `ssa_chart.py`
-  reads it into `ssa/ssa_chart.json` (downloads go to `ssa/raw/`, not committed),
-  then, from inside `pipeline/`, `python3 ssa_gen.py` (`ssa_blocks.py` lays the
-  levels out, `ssa_tunnels.py` lays the floor's corner tunnels and bounds their
-  funnels with the stands' own end faces on the map's drawn outline, a thin steel
-  fence along their tops; `ssa_outline.py` reads that outline off the map's image
-  into `ssa/ssa_corners.json`)
-  writes `ssa_stands.json`; `python3 pipeline/mkdata.py ssa` (from `venue-lab/`) rewrites
-  `src/i0-ssa-data.js`. `SSA_DOORS_OUT=<file>` also writes the doors' list.
+  SSA (arena mode, end stage 2) starts from the official seat map:
+  `ssa_chart.py` reads it into `ssa/ssa_chart.json` (downloads go to `ssa/raw/`,
+  not committed: `img-map_arena_end02.svg/.png` and `seat_list.js` from
+  https://www.saitama-arena.co.jp/seat_view/). Then, from inside `pipeline/`:
+  `python3 ssa_seats.py` (every seat of the official list, `ssa_rules.py`
+  decoding it, placed where the map draws it: `ssa/ssa_official.json`),
+  `python3 ssa_gen.py` (`ssa_blocks.py` lays the levels out from those seats,
+  `ssa_tunnels.py` the floor's south corner tunnels and their funnels on the
+  map's drawn outline, `ssa_outline.py` reading that outline into
+  `ssa/ssa_corners.json`; writes `ssa_stands.json`), `python3 ssa_labels.py`
+  (each seat's block, row and number; blocks named by their doors) and
+  `python3 ssa_blockmap.py` (the picker's plan, `src/three/venues/ssa-blocks.js`).
+  `python3 pipeline/mkdata.py ssa` (from `venue-lab/`) rewrites
+  `src/i0-ssa-data.js` (the app's `ssa-data.js` is the same with `export`).
+  `SSA_DOORS_OUT=<file>` also writes the doors' list. (`ssa_north.py`, which
+  made the north end the south's mirror, is no longer run: the north end is the
+  list's own.)
 - `gen.mjs` — ports `src/` to ES modules: `node gen.mjs gen-out`, then copy the
   changed files into `../src/three/` (Inspire and KSPO DOME are lab-only and not ported).
 

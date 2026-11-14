@@ -6,8 +6,10 @@ import { VENUES } from '../data.js';
 import { ROUND_VENUES, VENUE_MODES, modeOf } from '../useVenueModes.js';
 import { getDomeSeatCatalog } from '../three/venues/dome.js';
 import { getStadiumSeatCatalog } from '../three/venues/stadium.js';
+import { getArenaSeatCatalog } from '../three/venues/arena.js';
 import DomeBlockMap from './DomeBlockMap.jsx';
 import StadiumBlockMap from './StadiumBlockMap.jsx';
+import ArenaBlockMap, { arenaBlockText } from './ArenaBlockMap.jsx';
 import { useReorder, moved } from './useReorder.js';
 
 const DOME_TIERS = [
@@ -28,15 +30,24 @@ const STADIUM_TIERS = [
   ['L4', 'LEVEL 4 · BOX BALCONY'],
   ['5', 'LEVEL 5 (501-552)'],
 ];
+// the Saitama Super Arena's: a block is a door's seats (its number's hundreds the level), and the suites
+const ARENA_TIERS = [
+  ['2', '200 LEVEL (GATES 2XX)'],
+  ['3', '300 LEVEL · VIP BOXES'],
+  ['S', '300 LEVEL · SUITES'],
+  ['4', '400 LEVEL (GATES 4XX)'],
+  ['5', '500 LEVEL (GATES 5XX)'],
+];
+const TIERS = { dome: DOME_TIERS, stadium: STADIUM_TIERS, arena: ARENA_TIERS };
 // the rooms whose seats are named, and each one's list of them
-export const SEAT_ROOMS = ['dome', 'stadium'];
-const seatCatalog = (id, mode) => (id === 'dome' ? getDomeSeatCatalog() : id === 'stadium' ? getStadiumSeatCatalog(mode) : null);
-// a block's name as the picker writes it (a box by its number)
-const blockText = (b) => (/^B\d+$/.test(b) ? `BOX ${Number(b.slice(1))}` : b === 'L4' ? 'L4 BALCONY' : b);
+export const SEAT_ROOMS = ['dome', 'stadium', 'arena'];
+const seatCatalog = (id, mode) => (id === 'dome' ? getDomeSeatCatalog() : id === 'stadium' ? getStadiumSeatCatalog(mode) : id === 'arena' ? getArenaSeatCatalog(mode) : null);
+// a block's name as the picker writes it (a box by its number; the arena's by its door)
+const blockText = (b, room = null) => (room === 'arena' ? arenaBlockText(b) : /^B\d+$/.test(b) ? `BOX ${Number(b.slice(1))}` : b === 'L4' ? 'L4 BALCONY' : b);
 // (Wembley's Royal Box: Level 2's two middle blocks on the north side)
-const blockOption = (room, b) => (room === 'stadium' && (b === '201' || b === '252') ? `${b} · ROYAL BOX` : blockText(b));
+const blockOption = (room, b) => (room === 'stadium' && (b === '201' || b === '252') ? `${b} · ROYAL BOX` : blockText(b, room));
 // a seat as the picker and the badges write it
-export const seatText = (s, room = null) => (s ? `${blockText(s.block)} · ROW ${s.row} · SEAT ${s.num}` : room === 'stadium' ? 'FOH · PITCH' : 'FOH · ARENA');
+export const seatText = (s, room = null) => (s ? `${blockText(s.block, room)} · ROW ${s.row} · SEAT ${s.num}` : room === 'stadium' ? 'FOH · PITCH' : 'FOH · ARENA');
 
 // ───────────────────────────────────────── Modal shell
 export function Modal({ open, onClose, title, subtitle, children }) {
@@ -243,6 +254,16 @@ export function VenuePicker({ open, onClose, current, currentMode = 'general', m
                   onPick={handleBlockChange}
                 />
               </SeatMap>
+            ) : v.id === 'arena' && domeCat ? (
+              <SeatMap key={`${v.id}-${mode}`} alt={`${v.name}${mode === '360' ? ' 360' : ''} block map`}>
+                <ArenaBlockMap
+                  mode={mode}
+                  selected={selBlock === 'FOH' ? null : selBlock}
+                  seat={selBlock === 'FOH' ? null : domeCat.getSeat(selBlock, selRow, selNum)}
+                  sellable={sellable}
+                  onPick={handleBlockChange}
+                />
+              </SeatMap>
             ) : (
               <SeatMap key={`${v.id}-${mode}`} src={mapSrc(v.id, mode)} alt={`${v.name}${mode === '360' ? ' 360' : ''} 좌석배치도`} />
             )}
@@ -288,7 +309,7 @@ export function VenuePicker({ open, onClose, current, currentMode = 'general', m
                       className="bg-[#0a0a0a] border border-white/20 focus:border-[oklch(0.78_0.16_55)] text-white text-[12px] px-2 py-1.5 outline-none tabular-nums"
                     >
                       <option value="FOH">{sel === 'stadium' ? 'FOH (PITCH)' : 'FOH (ARENA)'}</option>
-                      {(sel === 'stadium' ? STADIUM_TIERS : DOME_TIERS).map(([prefix, label]) => {
+                      {(TIERS[sel] ?? DOME_TIERS).map(([prefix, label]) => {
                         const list = domeCat.blocks.filter((b) => (prefix === 'L4' ? b === 'L4' : b.startsWith(prefix) && b !== 'L4'));
                         if (!list.length) return null;
                         return (
