@@ -16,8 +16,8 @@ function LeftDataPanel({ venue, venueMode = 'general', seat = null, onSeatClick 
           onClick={onSeatClick}
           className="mt-2 inline-flex items-center gap-2 border border-white/15 bg-black/50 hover:border-[oklch(0.78_0.16_55)]/70 px-2.5 py-1 text-[11px] tracking-[0.15em] text-neutral-300 hover:text-white transition-colors tabular-nums"
         >
-          <span className="text-[oklch(0.78_0.16_55)]">{seat ? seatText(seat, venue.id).split(' · ')[0] : 'FOH'}</span>
-          <span>{seat ? `ROW ${seat.row} · SEAT ${seat.num}` : venue.id === 'stadium' ? 'PITCH' : 'ARENA'}</span>
+          <span className="text-[oklch(0.78_0.16_55)]">{seat ? seatText(seat, venue.id).split(' · ')[0] : venue.id === 'theater' ? '1F' : 'FOH'}</span>
+          <span>{seat ? `ROW ${seat.row} · SEAT ${seat.num}` : venue.id === 'theater' ? 'ROW 9 · SEAT 23' : venue.id === 'stadium' ? 'PITCH' : 'ARENA'}</span>
         </button>
       )}
     </div>

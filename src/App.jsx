@@ -244,7 +244,7 @@ export default function App() {
     setVenueId(id);
     if (mode) setVenueMode(id, mode);
     setWetDry(findVenue(id).position.wet); // reset wet/dry to the venue default
-    if (id === 'dome' || id === 'stadium' || id === 'arena') {      // (the rooms whose seats are named: see Modals' SEAT_ROOMS)
+    if (id === 'dome' || id === 'stadium' || id === 'theater' || id === 'arena') {      // (the rooms whose seats are named: see Modals' SEAT_ROOMS)
       setDomeSeat(seat || null);
       setActiveSeat(seat || null);
       stageRef.current?.setSeat(seat || null);
@@ -620,6 +620,7 @@ export default function App() {
           songMap={songMap}
           clock={getClock}
           seat={activeSeat || domeSeat}
+          entrySeat={domeSeat}
           onSeatChange={setActiveSeat}
           apiRef={stageRef}
         />

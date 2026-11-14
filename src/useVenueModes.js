@@ -17,6 +17,7 @@ function load() {
     const v = JSON.parse(window.localStorage.getItem(KEY) || '{}');
     const out = {};
     for (const id of ROUND_VENUES) if (v[id] === '360') out[id] = '360';
+    if (v.theater === 'op') out.theater = 'op';
     return out;
   } catch {
     return {};
@@ -24,7 +25,7 @@ function load() {
 }
 
 // The mode a venue is shown in: its remembered one, 'general' for the rest.
-export const modeOf = (modes, id) => (ROUND_VENUES.includes(id) && modes[id] === '360' ? '360' : 'general');
+export const modeOf = (modes, id) => id === 'theater' ? (modes[id] === 'op' ? 'op' : 'general') : (ROUND_VENUES.includes(id) && modes[id] === '360' ? '360' : 'general');
 
 export function useVenueModes() {
   const [modes, setModes] = useState(load);
@@ -35,8 +36,9 @@ export function useVenueModes() {
 
   // Stable, so the memoised chrome that takes it holds.
   const setMode = useCallback((id, mode) => {
-    if (!ROUND_VENUES.includes(id)) return;
-    setModes((m) => (modeOf(m, id) === mode ? m : { ...m, [id]: mode === '360' ? '360' : 'general' }));
+    if (!ROUND_VENUES.includes(id) && id !== 'theater') return;
+    const next = id === 'theater' ? (mode === 'op' ? 'op' : 'general') : (mode === '360' ? '360' : 'general');
+    setModes((m) => (modeOf(m, id) === next ? m : { ...m, [id]: next }));
   }, []);
 
   return [modes, setMode];

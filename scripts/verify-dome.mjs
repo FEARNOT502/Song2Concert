@@ -92,7 +92,7 @@ try{
     }
     for(const name of ['E','F']){
       const level=D.levels.find(l=>l.name===name);
-      for(const [i,v] of level.voms.entries())for(const offset of name==='F'?[-1.2,1.2]:[0]){
+      for(const [i,v] of level.voms.entries())for(const offset of name==='F'?[-Math.min(1.2,v.w/2-.55),Math.min(1.2,v.w/2-.55)]:[0]){
         const [dx,dz]=v.u,ox=-dz*offset,oz=dx*offset;
         const front=name==='F'?.3:.7;
         const a=[v.p[0]-dx*front+ox,v.p[1]-dz*front+oz];
@@ -126,7 +126,7 @@ try{
       const H=D.outfieldConcourse;
       route('C2-outfield-connected-hall',H.path,H.y);
       for(const [i,v] of D.levels.find(l=>l.name==='F').voms.entries()){
-        const p=v.p,u=v.u,offset=1.2,ox=-u[1]*offset,oz=u[0]*offset;
+        const p=v.p,u=v.u,offset=Math.min(1.2,v.w/2-.55),ox=-u[1]*offset,oz=u[0]*offset;
         const front=[p[0]-u[0]*.3+ox,p[1]-u[1]*.3+oz];
         const rear=[p[0]+u[0]*(v.L+3.0)+ox,p[1]+u[1]*(v.L+3.0)+oz];
         const centre=[p[0]+u[0]*(v.L+3.6),p[1]+u[1]*(v.L+3.6)];
@@ -154,6 +154,14 @@ try{
       const ray=W.ray.clone();ray.origin.set(c[0],t.backRim+1,c[1]+114);ray.direction.set(0,-1,0);
       const hit=W.bvh.raycastFirst(ray,2,0,20);
       checks.push({name:'F11-open-well',distance:0,heightError:hit?+Math.abs(hit.point.y-t.bottom).toFixed(3):99,hit:hit?.point.toArray()});
+    }
+    if(D.upperOutfieldMass){
+      for(const x of [-37,-29,29,37]){
+        const z=Math.abs(x)>30?-124.5:-128.4,ray=W.ray.clone();
+        ray.origin.set(x,13.3,z+114);ray.direction.set(0,1,0);
+        const hit=W.bvh.raycastFirst(ray,2,0,10);
+        checks.push({name:`rear-stand-solid-ceiling-${x}`,distance:0,heightError:hit?+Math.abs(hit.point.y-D.upperOutfieldMass.y0).toFixed(3):99,hit:hit?.point.toArray()});
+      }
     }
     return {checks,stats:stage.stats(),effectivePillars:window.__verifyDomePillars};
   });

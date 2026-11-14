@@ -8,6 +8,11 @@ Its generated data is shared with this lab, but the lab renderer is an older
 prototype. See the [Dome generation and verification notes](../docs/TOKYO_DOME_REMODEL_NOTES.ko.md)
 before regenerating or copying renderer files.
 
+The Theater remodel also targets the app renderer directly. Its official-plan
+seat catalogue and floor/row/seat picker are documented in
+[Theater remodel notes](../docs/THEATER_REMODEL.ko.md). The lab Theater is an older
+prototype; do not overwrite the app's remodeled Theater with the lab generator.
+
 ## Build and view
 
 ```sh

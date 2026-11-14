@@ -11,6 +11,7 @@
     "verify:ir": "node scripts/verify-ir.mjs",
     "verify:fade": "node scripts/verify-venue-fade.mjs",
     "verify:live": "node scripts/verify-live.mjs",
+    "verify:theater": "node scripts/verify-theater.mjs",
     "verify": "npm run verify:acoustics && npm run verify:ir && npm run verify:fade && npm run verify:live && npm run verify:audio",
     "verify:audio": "node scripts/audio-smoke.mjs"
   },

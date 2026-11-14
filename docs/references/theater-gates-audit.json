@@ -1,0 +1,244 @@
+{
+  "source": "https://www.bluesquare.kr/pages/board/board.file.download.php?no=38&fld=attach1",
+  "drawingDate": "2025-10-30",
+  "pages": [
+    1,
+    2,
+    3
+  ],
+  "scalePdfPointsPerMetre": 15.2,
+  "wallInsideHalfWidth": 14.32,
+  "wallThickness": 0.3,
+  "verified": "plan location and clear opening width",
+  "estimated": "door height, transverse landing height, outside concourse dimensions and stairs",
+  "gates": [
+    {
+      "id": "1F-G1",
+      "floor": 1,
+      "num": 1,
+      "plane": "side",
+      "side": -1,
+      "x": -14.60921052631579,
+      "z": 16.05263157894737,
+      "width": 1.9105263157894736,
+      "height": 2.3,
+      "y": 0.535,
+      "outerZ": null,
+      "plan": {
+        "px": 219.24,
+        "py": 404.52,
+        "width": 29.04
+      },
+      "heightVerified": false
+    },
+    {
+      "id": "1F-G6",
+      "floor": 1,
+      "num": 6,
+      "plane": "side",
+      "side": 1,
+      "x": 14.60921052631579,
+      "z": 16.05263157894737,
+      "width": 1.9105263157894736,
+      "height": 2.3,
+      "y": 0.535,
+      "outerZ": null,
+      "plan": {
+        "px": 663.36,
+        "py": 404.52,
+        "width": 29.04
+      },
+      "heightVerified": false
+    },
+    {
+      "id": "1F-G2",
+      "floor": 1,
+      "num": 2,
+      "plane": "side",
+      "side": -1,
+      "x": -14.632894736842108,
+      "z": 30.543421052631587,
+      "width": 1.9026315789473687,
+      "height": 2.3,
+      "y": 2.882,
+      "outerZ": null,
+      "plan": {
+        "px": 218.88,
+        "py": 184.26,
+        "width": 28.92
+      },
+      "heightVerified": false
+    },
+    {
+      "id": "1F-G5",
+      "floor": 1,
+      "num": 5,
+      "plane": "side",
+      "side": 1,
+      "x": 14.60921052631579,
+      "z": 30.543421052631587,
+      "width": 1.9026315789473687,
+      "height": 2.3,
+      "y": 2.882,
+      "outerZ": null,
+      "plan": {
+        "px": 663.36,
+        "py": 184.26,
+        "width": 28.92
+      },
+      "heightVerified": false
+    },
+    {
+      "id": "1F-G3",
+      "floor": 1,
+      "num": 3,
+      "plane": "rear",
+      "side": -1,
+      "x": -4.898684210526318,
+      "z": 34.944736842105264,
+      "width": 1.9105263157894736,
+      "height": 2.3,
+      "y": 2.882,
+      "outerZ": 37.43947368421053,
+      "plan": {
+        "px": 366.84,
+        "py": 117.36,
+        "width": 29.04
+      },
+      "heightVerified": false
+    },
+    {
+      "id": "1F-G4",
+      "floor": 1,
+      "num": 4,
+      "plane": "rear",
+      "side": 1,
+      "x": 4.898684210526315,
+      "z": 34.944736842105264,
+      "width": 1.9105263157894736,
+      "height": 2.3,
+      "y": 2.882,
+      "outerZ": 37.43947368421053,
+      "plan": {
+        "px": 515.76,
+        "py": 117.36,
+        "width": 29.04
+      },
+      "heightVerified": false
+    },
+    {
+      "id": "2F-G1",
+      "floor": 2,
+      "num": 1,
+      "plane": "side",
+      "side": -1,
+      "x": -14.625,
+      "z": 28.68815789473684,
+      "width": 1.9026315789473687,
+      "height": 2.3,
+      "y": 8.021,
+      "outerZ": null,
+      "plan": {
+        "px": 220.08,
+        "py": 315.18,
+        "width": 28.92
+      },
+      "heightVerified": false
+    },
+    {
+      "id": "2F-G4",
+      "floor": 2,
+      "num": 4,
+      "plane": "side",
+      "side": 1,
+      "x": 14.624999999999998,
+      "z": 28.68815789473684,
+      "width": 1.9026315789473687,
+      "height": 2.3,
+      "y": 8.021,
+      "outerZ": null,
+      "plan": {
+        "px": 664.68,
+        "py": 315.18,
+        "width": 28.92
+      },
+      "heightVerified": false
+    },
+    {
+      "id": "2F-G2",
+      "floor": 2,
+      "num": 2,
+      "plane": "rear",
+      "side": -1,
+      "x": -4.898684210526315,
+      "z": 34.834210526315786,
+      "width": 1.9105263157894736,
+      "height": 2.3,
+      "y": 9.624,
+      "outerZ": 36.36578947368421,
+      "plan": {
+        "px": 367.92,
+        "py": 221.76,
+        "width": 29.04
+      },
+      "heightVerified": false
+    },
+    {
+      "id": "2F-G3",
+      "floor": 2,
+      "num": 3,
+      "plane": "rear",
+      "side": 1,
+      "x": 4.898684210526318,
+      "z": 34.834210526315786,
+      "width": 1.9105263157894736,
+      "height": 2.3,
+      "y": 9.624,
+      "outerZ": 36.36578947368421,
+      "plan": {
+        "px": 516.84,
+        "py": 221.76,
+        "width": 29.04
+      },
+      "heightVerified": false
+    },
+    {
+      "id": "3F-G1",
+      "floor": 3,
+      "num": 1,
+      "plane": "side",
+      "side": -1,
+      "x": -14.621052631578946,
+      "z": 28.97631578947368,
+      "width": 1.9105263157894736,
+      "height": 2.3,
+      "y": 13.571,
+      "outerZ": null,
+      "plan": {
+        "px": 221.16,
+        "py": 310.8,
+        "width": 29.04
+      },
+      "heightVerified": false
+    },
+    {
+      "id": "3F-G2",
+      "floor": 3,
+      "num": 2,
+      "plane": "side",
+      "side": 1,
+      "x": 14.621052631578948,
+      "z": 28.97631578947368,
+      "width": 1.9105263157894736,
+      "height": 2.3,
+      "y": 13.571,
+      "outerZ": null,
+      "plan": {
+        "px": 665.64,
+        "py": 310.8,
+        "width": 29.04
+      },
+      "heightVerified": false
+    }
+  ]
+}

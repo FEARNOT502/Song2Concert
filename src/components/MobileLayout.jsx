@@ -82,7 +82,7 @@ export default function MobileLayout({
   onFileClick, onVenueClick,
   strain = 0,
   effects = true, onEffectsChange,
-  crowdLight = 'stick', onCrowdLightChange, analyser = null, songMap = null, clock = null, seat = null, onSeatChange = null, apiRef = null,
+  crowdLight = 'stick', onCrowdLightChange, analyser = null, songMap = null, clock = null, seat = null, entrySeat = seat, onSeatChange = null, apiRef = null,
 }) {
   const [showMixer, setShowMixer] = useState(false);
   const exportPct = Math.round(exportProgress * 100);
@@ -122,7 +122,7 @@ export default function MobileLayout({
             analyser={analyser}
             songMap={songMap}
             clock={clock}
-            seat={seat}
+            seat={entrySeat}
             onSeatChange={onSeatChange}
             apiRef={apiRef}
           />

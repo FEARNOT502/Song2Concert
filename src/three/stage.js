@@ -27,8 +27,9 @@ import { buildVenue } from './venues/index.js';
 import { getDomeSeatCatalog } from './venues/dome.js';
 import { getStadiumSeatCatalog } from './venues/stadium.js';
 import { getArenaSeatCatalog } from './venues/arena.js';
+import { getTheaterSeatCatalog } from './venues/theater-seats.js';
 // the rooms whose seats are named (block, row, seat), and each one's list of them
-const seatCatalog = (id, mode) => (id === 'dome' ? getDomeSeatCatalog() : id === 'stadium' ? getStadiumSeatCatalog(mode) : id === 'arena' ? getArenaSeatCatalog(mode) : null);
+const seatCatalog = (id, mode) => (id === 'dome' ? getDomeSeatCatalog() : id === 'stadium' ? getStadiumSeatCatalog(mode) : id === 'theater' ? getTheaterSeatCatalog(mode) : id === 'arena' ? getArenaSeatCatalog(mode) : null);
 import { BASE, PARTS, rollOf, section } from './show.js';
 
 // How far a new venue's camera may widen on a portrait screen: at least ~56°
@@ -193,9 +194,10 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     cam.updateProjectionMatrix();
     venue = v; ctx = c;
     walker.setVenue(v.root, v.camera.pos, v.camera.target, v.seatNear);
-    if (pendingSeat && seatCatalog(id, venueMode)) {
-      const s = seatCatalog(id, venueMode).getSeat(pendingSeat.block, pendingSeat.row, pendingSeat.num) || pendingSeat;
-      walker.sitAt(s, v.stageTarget);
+    if ((pendingSeat || id === 'theater') && seatCatalog(id, venueMode)) {
+      const cat = seatCatalog(id, venueMode);
+      const s = (pendingSeat && cat.getSeat(pendingSeat.block, pendingSeat.row, pendingSeat.num)) || cat.defaultSeat;
+      if (s) walker.sitAt(s, v.stageTarget);
     }
     const b = v.bloom || {};
     pipe.bloom.strength = b.strength ?? 0.6; pipe.bloom.radius = b.radius ?? 0.6; pipe.bloom.threshold = b.threshold ?? 0.9;
@@ -481,8 +483,8 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
       if (venue && seatCatalog(venueId, venueMode)) {
         if (!seat) walker.sitAt(null);
         else {
-          const s = seatCatalog(venueId, venueMode).getSeat(seat.block, seat.row, seat.num) || seat;
-          walker.sitAt(s, venue.stageTarget);
+          const s = seatCatalog(venueId, venueMode).getSeat(seat.block, seat.row, seat.num);
+          if (s) walker.sitAt(s, venue.stageTarget);
         }
       }
     },

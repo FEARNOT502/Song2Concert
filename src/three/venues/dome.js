@@ -290,13 +290,15 @@ export function buildDome(ctx) {
     // one gentle curve, the same both sides; any column it would come through is set back until it stands 1.7 m behind the face
     const D0 = Math.min(125, back.reduce((m, b) => (Math.abs(b.a) < Math.abs(m.a) ? b : m)).d), KC = 0.012;
     back.forEach((b) => { b.d = D0 - KC * b.a * b.a; });
+    const setback = TD_STANDS.scoreboardSetback ?? 0;
     const colMoved = new Map();
     for (const c of TD_STANDS.pillars) {
       if (!isScr(c)) continue;
-      const r = Math.hypot(c.x, c.z), a = Math.atan2(c.x, -c.z) / DEG, need = D0 - KC * a * a + 1.7 - r;
+      const r = Math.hypot(c.x, c.z), a = Math.atan2(c.x, -c.z) / DEG, d=D0-KC*a*a;
+      const need = Math.hypot(Math.sin(a*DEG)*d,Math.cos(a*DEG)*d+setback)+1.7-r;
       if (need > 0) colMoved.set(c, { x: c.x * (r + need) / r, z: c.z * (r + need) / r });
     }
-    const pts = back.map(({ a, d }) => ({ x: Math.sin(a * DEG) * d, z: ZH - Math.cos(a * DEG) * d, a }));
+    const pts = back.map(({ a, d }) => ({ x: Math.sin(a * DEG) * d, z: ZH - Math.cos(a * DEG) * d - setback, a }));
     const len = [0];
     for (let i = 1; i < pts.length; i++) len.push(len[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z));
     const mid = len[back.findIndex((b) => b.a >= 0)];
@@ -307,7 +309,7 @@ export function buildDome(ctx) {
     const band = along(2 * (armLen + 1.5)), lower = along(20);
     // level, its top 2 m under the floods where the ring is lowest over it
     // (room for the sign over its middle)
-    const y1 = Math.min(...band.map((p) => ringY(p.z))) - 1.6 - 3.0, y0 = y1 - 7.5, yl = y0 - 5.4;
+    const y1 = Math.min(...band.map((p) => ringY(p.z+setback))) - 1.6 - 3.0, y0 = y1 - 7.5, yl = y0 - 5.4;
     return { F, ftop, pts, len, mid, band, lower, y0, y1, yl, a0: band[0].a, a1: band[band.length - 1].a, colMoved };
   })();
   // (the columns under it end at its frame)
@@ -628,7 +630,25 @@ export function buildDome(ctx) {
   // underside's line). Plain concrete, as the stands'.
   {
     const parts = [];
-    if(TD_STANDS.continuousUpperWall){
+    if(TD_STANDS.upperOutfieldMass){
+      for(const w of TD_STANDS.upperWall){
+        const P=w.pts.map(([x,z])=>({x,z:z+ZH}));
+        parts.push(wallStrip(P,P.map(p=>ringY(p.z)+.5),{y0:w.y0,thick:.4,ease:0}));
+      }
+      const m=TD_STANDS.upperOutfieldMass,positions=[];
+      const point=([x,z],top=false)=>[x,top?ringY(z+ZH)+.5:m.y0,z+ZH];
+      const quad=(a,b,c,d)=>positions.push(...a,...b,...c,...a,...c,...d);
+      for(let i=0;i<m.front.length-1;i++){
+        const a=point(m.front[i]),b=point(m.front[i+1]),c=point(m.back[i+1]),d=point(m.back[i]);
+        const A=point(m.front[i],true),B=point(m.front[i+1],true),C=point(m.back[i+1],true),D=point(m.back[i],true);
+        quad(a,b,B,A);quad(d,D,C,c);quad(a,d,c,b);quad(A,B,C,D);
+        if(i===0)quad(a,A,D,d);
+        if(i===m.front.length-2)quad(b,c,C,B);
+      }
+      const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));g.computeVertexNormals();
+      const mesh=new THREE.Mesh(g,std({color:0xcfc6b6,roughness:.9,emissive:0x6a655c,emissiveIntensity:.5,side:THREE.DoubleSide}));
+      mesh.name='Balcony end-wall sweep and rear-stand ceiling';roomLit.push([mesh.material,.5]);root.add(mesh);
+    }else if(TD_STANDS.continuousUpperWall){
       const w=TD_STANDS.continuousUpperWall,P=w.pts.map(([x,z])=>({x,z:z+ZH}));
       parts.push(wallStrip(P,P.map(p=>ringY(p.z)+.5),{y0:w.y0,thick:.4,ease:0}));
     }else{
@@ -1169,7 +1189,8 @@ export function buildDome(ctx) {
     // projects below it, with closed advertisement rooms on either side.
     // These metric depths are photo estimates (modern-25, modern-11).
     {
-      const green=std({color:0x18382a,roughness:1});
+      const green=std({color:0x18382a,roughness:1,emissive:0x0d2318,emissiveIntensity:.22});
+      houseLit.push([green,.22]);
       const faceZ=lower[Math.floor(lower.length/2)].z-.10;
       const top=yl-.12, depth=4.2;
       const box=(w,h,d,x,y,z)=>{
@@ -1180,22 +1201,40 @@ export function buildDome(ctx) {
       // panel sits in a shallow framed recess rather than on a sloped wing.
       const frameM=std({color:0x244738,roughness:.95});
       const panelM=std({color:0x11271e,roughness:1});
-      for(const sg of [-1,1]){
-        const x=sg*16.15,w=11.8,lo=9.9,hi=y0-.25,z=faceZ-1.05;
-        const panelY=lo+.6,panelH=.85;
-        box(w,hi-lo,2.3,x,(hi+lo)/2,z-1.15);
-        const surround=new THREE.Mesh(new THREE.BoxGeometry(8.8,panelH,.16),frameM);
-        surround.position.set(x,panelY,z+.08);root.add(surround);
-        const panel=new THREE.Mesh(new THREE.BoxGeometry(8.15,panelH-.45,.05),panelM);
-        panel.position.set(x,panelY,z+.18);root.add(panel);
+      for(const room of TD_STANDS.batterEyeRooms??[]){
+        const P=room.front.map(([x,z])=>({x,z:z+ZH}));
+        const back=room.back.map(([x,z])=>({x,z:z+ZH}));
+        if(P[0].x>P[1].x){P.reverse();back.reverse();}
+        const lo=room.floor,hi=y0+.3,dx=P[1].x-P[0].x,dz=P[1].z-P[0].z,w=Math.hypot(dx,dz);
+        const cx=(P[0].x+P[1].x)/2,cz=(P[0].z+P[1].z)/2,angle=-Math.atan2(dz,dx);
+        const outline=[P[0],P[1],back[1],back[0]];
+        root.add(new THREE.Mesh(wallStrip(outline,outline.map(()=>hi),{y0:lo,thick:.18,closed:true,ease:0}),green));
+        const inner=Math.abs(P[0].x)<Math.abs(P[1].x)?P[0]:P[1];
+        const edge=cx>0?lower.at(-1):lower[0];
+        root.add(new THREE.Mesh(wallStrip([edge,inner],[hi,hi],{y0:lo,thick:.22,ease:0}),green));
+        const top=new THREE.ShapeGeometry(new THREE.Shape(outline.map(p=>new THREE.Vector2(p.x,-p.z))));top.rotateX(-Math.PI/2);top.translate(0,hi,0);root.add(new THREE.Mesh(top,green));
+        const group=new THREE.Group();group.position.set(cx,0,cz);group.rotation.y=angle;
+        const panelY=lo+.85,panelH=1.15;
+        const surround=new THREE.Mesh(new THREE.BoxGeometry(w-.45,panelH,.18),frameM);
+        surround.position.set(0,panelY,.03);group.add(surround);
+        const panel=new THREE.Mesh(new THREE.BoxGeometry(w-.8,panelH-.3,.08),panelM);
+        panel.position.set(0,panelY,.15);group.add(panel);
         const cv=document.createElement('canvas');cv.width=1024;cv.height=256;
-        const ctx=cv.getContext('2d');ctx.fillStyle='#244738';ctx.fillRect(0,0,1024,256);
+        const ctx=cv.getContext('2d');ctx.fillStyle='#18382a';ctx.fillRect(0,0,1024,256);
         ctx.fillStyle='#dbc777';ctx.font='bold 172px Arial, sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('RYOBI',512,139);
         const tex=new THREE.CanvasTexture(cv);tex.colorSpace=THREE.SRGBColorSpace;
-        const ad=new THREE.Mesh(new THREE.PlaneGeometry(8.8,1.65),new THREE.MeshBasicMaterial({map:tex,toneMapped:true}));
-        ad.position.set(x,hi-1.02,z+.19);root.add(ad);
-
+        const ad=new THREE.Mesh(new THREE.PlaneGeometry(w-.7,2.5),new THREE.MeshBasicMaterial({map:tex,toneMapped:true,side:THREE.DoubleSide}));
+        ad.position.set(0,hi-2.05,.17);group.add(ad);root.add(group);
       }
+      // Green headers close the shoulders of the lower LED and the
+      // horizontal band; the advertising walls join them from behind.
+      for(const sg of [-1,1]){
+        const edge=Math.max(...(TD_STANDS.batterEyeRooms??[]).flatMap(r=>r.front.map(p=>Math.abs(p[0]))))+.15;
+        const shoulder=pts.filter(p=>p.x*sg>=9.8&&p.x*sg<=edge);
+        if(shoulder.length>1)root.add(new THREE.Mesh(wallStrip(shoulder,shoulder.map(()=>y0+.35),{y0:y0-.45,thick:.5,ease:0}),green));
+      }
+      const border=band.map(p=>out(p,1.4));
+      root.add(new THREE.Mesh(wallStrip(border,border.map(()=>y1+.4),{y0:y0-.15,thick:.35,ease:0}),green));
       // Keep the lower risers as real solid steps, restrict them to the
       // centre, and stop at the vertical face. No sheet covers F's wings.
       const parts=[];
@@ -1227,18 +1266,18 @@ export function buildDome(ctx) {
       // the official 1F scan. Its entire footprint is cut out of the treads.
       const t=TD_STANDS.F11Pit;
       if(t){
-        const concrete=std({color:0x8d9287,roughness:1});
-        const P=t.pts.map(([x,z])=>({x,z:z+ZH}));
-        const hs=t.heights;
-        root.add(new THREE.Mesh(wallStrip(P,hs,{y0:t.bottom,thick:.18,closed:true,ease:0}),concrete));
-        root.add(new THREE.Mesh(wallStrip(P,hs.map(h=>h+.12),{y0:hs,thick:.25,closed:true,ease:0}),green));
+        const concrete=std({color:0x414c46,roughness:1,side:THREE.DoubleSide});
+        const P=t.pts.map(([x,z])=>({x,z:z+ZH})),hs=t.heights;
+        root.add(new THREE.Mesh(wallStrip(P,hs.map(h=>Math.min(h,t.fasciaBottom)),{y0:t.bottom,thick:.18,closed:true,ease:0}),concrete));
+        // Green parapets and the rear advertising fascia conceal the
+        // pale slab face without closing the well's open top.
+        root.add(new THREE.Mesh(wallStrip(P,hs,{y0:hs.map(h=>Math.min(h-.16,t.fasciaBottom)),thick:.2,closed:true,ease:0}),green));
         for(let i=0;i<P.length;i++){
           const a=P[i],b=P[(i+1)%P.length],j=(i+1)%P.length;
-          const start=new THREE.Vector3(a.x,hs[i]+.18,a.z),end=new THREE.Vector3(b.x,hs[j]+.18,b.z);
+          const start=new THREE.Vector3(a.x,hs[i]+.12,a.z),end=new THREE.Vector3(b.x,hs[j]+.12,b.z);
           const delta=end.clone().sub(start),rail=new THREE.CylinderGeometry(.035,.035,delta.length(),6);
           rail.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),delta.normalize()));
-          rail.translate(...start.clone().add(end).multiplyScalar(.5).toArray());
-          root.add(new THREE.Mesh(rail,frameM));
+          rail.translate(...start.clone().add(end).multiplyScalar(.5).toArray());root.add(new THREE.Mesh(rail,frameM));
         }
         const shape=new THREE.Shape(P.map(p=>new THREE.Vector2(p.x,-p.z)));
         const floor=new THREE.ShapeGeometry(shape);floor.rotateX(-Math.PI/2);floor.translate(0,t.bottom,0);
