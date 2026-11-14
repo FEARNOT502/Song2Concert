@@ -671,6 +671,21 @@ export function performer(pose = 'stand', { top = 0x101012, height = 1.78, hair 
 
 // ── seating for rooms (club chairs, theatre and hall seats) ──
 export function seatGeometry({ style = 'theatre' } = {}) {
+  if (style === 'bluesquare') {
+    // Operator photos: blue upholstered bucket, squared rounded back, a dark
+    // timber side standard and a broad wooden arm cap; 0.50 m seat pitch.
+    const back = new RoundedBoxGeometry(.438,.565,.105,2,.035); back.rotateX(-.12);back.translate(0,.735,-.19);
+    const pan = new RoundedBoxGeometry(.43,.105,.445,2,.035);pan.rotateX(-.035);pan.translate(0,.435,.01);
+    const lower = new RoundedBoxGeometry(.416,.16,.065,1,.025);lower.rotateX(-.12);lower.translate(0,.52,-.17);
+    const shell = new RoundedBoxGeometry(.45,.59,.045,1,.02);shell.rotateX(-.12);shell.translate(0,.725,-.268);
+    const frame=[shell];
+    for(const side of [-1,1]) {
+      const panel=new RoundedBoxGeometry(.035,.475,.34,1,.012);panel.translate(side*.237,.25,-.025);frame.push(panel);
+      const arm=new RoundedBoxGeometry(.065,.045,.405,1,.018);arm.translate(side*.242,.63,.005);frame.push(arm);
+      const foot=new THREE.BoxGeometry(.052,.025,.31).toNonIndexed();foot.translate(side*.237,.013,-.03);frame.push(foot);
+    }
+    return {fabric:mergeGeometries([back,pan,lower]),frame:mergeGeometries(frame)};
+  }
   if (style === 'theatre') {
     const back = new RoundedBoxGeometry(0.5, 0.62, 0.1, 1, 0.04); back.rotateX(-0.2); back.translate(0, 0.72, -0.2);
     const pan = new RoundedBoxGeometry(0.48, 0.1, 0.46, 1, 0.04); pan.translate(0, 0.44, 0.02);
