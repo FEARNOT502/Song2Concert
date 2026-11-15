@@ -157,23 +157,30 @@ def finish(data):
  for sg in (-1,1):
   e=max([p for rim in data['rimCS'] for p in rim if np.sign(p[0])==sg],key=lambda p:abs(np.degrees(np.arctan2(p[0],p[1]+60))))
   r=np.array(e)-O;r/=np.linalg.norm(r);ends.append(list(np.round(np.array(e)+r*4,3)))
- # Sweep the WHOLE radial balcony end-wall section around the outfield.
- # Its 6.25m-wide underside, not a separate thin wall, roofs the rear F rows.
+ # Match the complete back-of-screen face to the LED's own curve.
+ _front_parapets(data)
  upper=sorted(data['upperWall'],key=lambda w:w['pts'][-1][0])
  left,right=[np.array(w['pts'][-1]) for w in upper]
- widths=[np.linalg.norm(np.array(w['ret'][-1])-w['ret'][0]) for w in upper]
- width=float(np.mean(widths));start=np.degrees(np.arctan2(abs(left[0]),-(left[1]+60)))
- front=[];back=[]
- for a in np.linspace(-start,start,181):
-  rad=np.radians(a);u=np.array([np.sin(rad),-np.cos(rad)])
-  radius=float(np.interp(abs(a),[0,start],[71.,np.linalg.norm(left-O)]))
-  front.append(O+u*radius);back.append(O+u*(radius+width))
- front[0]=left;front[-1]=right
+ data['scoreboardSetback']=2.5
+ data['scoreboardCurve']={'radius':125.,'falloff':.012,'wallBehind':.4,'bandAngle':31.}
+ c=data['scoreboardCurve'];angles=np.arange(-31.,31.01,.5)
+ screen=[np.array([np.sin(np.radians(a))*(125-.012*a*a),-np.cos(np.radians(a))*(125-.012*a*a)-2.5-.4]) for a in angles]
+ def connector(a,b,t0,t1):
+  length=np.linalg.norm(b-a);t0=t0/np.linalg.norm(t0)*length*.7;t1=t1/np.linalg.norm(t1)*length*.7
+  return [(2*t**3-3*t*t+1)*a+(t**3-2*t*t+t)*t0+(-2*t**3+3*t*t)*b+(t**3-t*t)*t1 for t in np.linspace(0,1,13)]
+ join_left=connector(left,screen[0],left-np.array(upper[0]['pts'][-2]),screen[1]-screen[0])
+ join_right=connector(screen[-1],right,screen[-1]-screen[-2],np.array(upper[1]['pts'][-2])-right)
+ front=join_left[:-1]+screen+join_right[1:];back=[]
+ for q in front:
+  u=(q-O)/np.linalg.norm(q-O)
+  hit=LineString([O,O+u*250]).intersection(envelope.boundary)
+  points=[np.array(g.coords[0]) for g in getattr(hit,'geoms',[hit]) if g.geom_type=='Point']
+  radius=max(np.dot(p-O,u) for p in points)
+  back.append(O+u*(radius-.05))
  back[0]=np.array(upper[0]['ret'][-1]);back[-1]=np.array(upper[1]['ret'][-1])
  front=[list(np.round(p,3)) for p in front];back=[list(np.round(p,3)) for p in back]
  mass=Polygon(front+back[::-1]);data.pop('continuousUpperWall',None)
- data['scoreboardSetback']=2.5
- data['upperOutfieldMass']={'front':front,'back':back,'y0':13.6,'width':round(width,4)}
+ data['upperOutfieldMass']={'front':front,'back':back,'y0':13.6,'screenRange':[12,12+len(screen)-1],'screenAngles':angles.tolist()}
  data['outfieldBackWall']={'pts':front,'y0':13.6,'back':back}
  # Remove the old, independent ceiling sheet through the new solid volume.
  for ceiling in room['ceils']+room['soffits']:
@@ -323,3 +330,31 @@ def _close_batter_rooms_to_hall(data):
    q=np.array(min(getattr(hit,'geoms',[hit]),key=lambda g:g.distance(Point(p))).coords[0])
    rear.append((q-outward*1.9).tolist())
   room['back']=rear
+
+
+def _front_parapets(data):
+ # Build complete centreline profiles, including each right-angle return.
+ ends=data['upperEnds'];C=[e for e in ends if 'a' in e];D=[e for e in ends if len(e.get('pts',[]))==2]
+ def wrap(rim,offset,y,targets):
+  P=np.array(rim,float);rad=P-O;P-=rad/np.linalg.norm(rad,axis=1)[:,None]*offset
+  ys=[y]*len(P);corners=[]
+  for first in [True,False]:
+   i=0 if first else len(P)-1;j=1 if first else len(P)-2
+   q=P[i].copy()
+   if abs(np.degrees(np.arctan2(q[0],q[1]+60)))<90:continue
+   target=min(targets,key=lambda e:np.linalg.norm(np.array(e['back'])-q))
+   b=np.array(target['back']);n=(b-q)/np.linalg.norm(b-q)
+   tangent=np.array([-n[1],n[0]])
+   if tangent@(P[j]-q)<0:tangent=-tangent
+   P[j]=q+tangent*np.linalg.norm(P[j]-q)
+   b=b+n*.18
+   if first:
+    P=np.vstack([b,P]);ys=[target['y']]+ys;corners=[k+1 for k in corners]+[1]
+   else:
+    corners.append(len(P)-1);P=np.vstack([P,b]);ys.append(target['y'])
+  return {'pts':np.round(P,4).tolist(),'ys':ys,'corners':corners}
+ ct=[{'back':e['b'],'y':e['y1']-1.05} for e in C]
+ dt=[{'back':e['pts'][-1],'y':e['y1'][-1]-1.05} for e in D]
+ data['frontParapets']={'C':[{'panel':wrap(r,.28,data['rimCY'],ct),'rail':wrap(r,.26,data['rimCY'],ct)} for r in data['rimCS']],
+                        'D':[{'panel':wrap(sum(data['rimS'],[]),.17,data['rimY'],dt),'rail':wrap(sum(data['rimS'],[]),0,data['rimY'],dt)}]}
+ data['upperEnds']=[e for e in ends if e not in C and e not in D]

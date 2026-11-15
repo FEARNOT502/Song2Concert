@@ -132,7 +132,7 @@ def verify(path):
     deck=next(l for l in data['levels'] if l['name']=='D')
     assert all(r['y0']>=18.47 for r in deck['rows'] if abs(r['y']-18.6)<.02)
     arc=data['outfieldBackWall']['pts']
-    assert min(p[1] for p in arc)<-130.5
+    assert min(p[1] for p in arc)<-127.8
     assert np.linalg.norm(np.array(arc[0])-data['upperWall'][0]['pts'][-1])<.01
     assert np.linalg.norm(np.array(arc[-1])-data['upperWall'][1]['pts'][-1])<.01
     assert actual[('F11',5)] and not any(b=='F10' for b,r in actual if actual[(b,r)])
@@ -154,8 +154,24 @@ def verify(path):
     assert not any(opening.buffer(-.05).covers(Point(p)) for p in q),'F11 chair over well'
     mass=data['upperOutfieldMass'];front=np.array(mass['front']);back=np.array(mass['back'])
     widths=np.linalg.norm(back-front,axis=1)
-    assert np.ptp(widths)<.025 and min(widths)>6,'balcony end section loses its thickness'
+    assert min(widths)>5 and max(widths)>10,'screen backing does not reach the rear envelope'
     assert mass['y0']==13.6 and Polygon(mass['front']+mass['back'][::-1]).is_valid
+    i,j=mass['screenRange'];angles=np.array(mass['screenAngles']);rad=np.radians(angles)
+    radius=data['scoreboardCurve']['radius']-data['scoreboardCurve']['falloff']*angles**2
+    expected=np.c_[np.sin(rad)*radius,-np.cos(rad)*radius-data['scoreboardSetback']-data['scoreboardCurve']['wallBehind']]
+    assert np.max(abs(front[i:j+1]-expected))<.001,'backing curve differs from the LED curve'
+    for level in ['C','D']:
+        for profile in data['frontParapets'][level]:
+            for line in [profile['panel'],profile['rail']]:
+                points=np.array(line['pts'])
+                for k in line['corners']:
+                    a=points[k]-points[k-1];b=points[k+1]-points[k]
+                    assert abs(a@b)/(np.linalg.norm(a)*np.linalg.norm(b))<.002,'end fence does not turn 90 degrees'
+    assert not any('a' in e or len(e.get('pts',[]))==2 for e in data['upperEnds']),'old balcony/deck end wall remains'
+    envelope=Polygon(mass['front']+mass['back'][::-1])
+    behind=(fl[:,1]>=17)&(abs(fs[:,0]/f['seatScale'])<64.5)
+    assert all(envelope.covers(Point(p)) for p in fs[behind,:2]/f['seatScale']),'rear outfield seat lacks complete ceiling'
+    assert not data.get('balconyEndMasses'),'extra balcony ceiling plate remains'
     rear=fs[(fl[:,0]==names.index('F11'))&(fl[:,1]==10),:2]/f['seatScale']
     room=max(data['batterEyeRooms'],key=lambda r:np.mean(r['front'],axis=0)[0])
     assert max(LineString(room['front']).distance(Point(p)) for p in rear)<.58,'RYOBI wall detached from F11 rear row'

@@ -3,7 +3,7 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { APP, KELVIN, V3, clamp, pbrSet, valueNoise, glowMat, prng, std, velvet, withRepeat, woodTex, ringTint } from '../core.js';
+import { APP, KELVIN, V3, clamp, pbrSet, valueNoise, glowMat, prng, std, velvet, withRepeat, ringTint } from '../core.js';
 import { crowd3D, lightPoints } from '../people.js';
 import { drapeGeometry, ledScreen, lineArray, mats, shadowSpot, stageSteps } from '../rig.js';
 import { seatFinder } from '../stands.js';
@@ -11,6 +11,7 @@ import { seatFinder } from '../stands.js';
 import { getTheaterSeatCatalog } from './theater-seats.js';
 import { theaterHouse } from './theater-house.js';
 import {buildTheaterStage} from './theater-stage.js';
+import {addTheaterSplayedWalls,theaterWallX,theaterSplayPoint,THEATER_SPLAY,THEATER_SPLAY_SLOPE} from './theater-walls.js';
 import {buildTheaterCeiling,theaterCeilingY} from './theater-ceiling.js';
 import {THEATER_GATES,THEATER_WALL_X,THEATER_WALL_THICKNESS,THEATER_REAR_Z,THEATER_SIDE_FRONT_DOOR,THEATER_SIDE_CONCOURSE_OPENING,theaterSideOpenings} from './theater-entries.js';
 
@@ -32,8 +33,14 @@ export function buildTheater(ctx) {
   const tung = KELVIN(3200);
 
   // ── materials ──
-  const walnut = woodTex({ key: 'bsq-wood-v2', planks: 8, joints: 1, base: [0.41, 0.35, 0.27], tone: 0.025, grain: 0.045, rough: 0.9, seam:.82, seed: 12 });
-  const wallMat = std({ ...withRepeat(walnut, 1 / 1.2, 1 / 4), normalScale:new THREE.Vector2(.15,.15), roughness: 1 });
+  // Horizontal fibres only: no vertical plank seams in colour, normals or
+  // roughness. The existing physical horizontal wall courses remain visible.
+  const wallFiber=valueNoise(212);
+  const wallTimber=pbrSet('bsq-wall-horizontal-v1',256,(_u,v)=>{
+    const n=wallFiber(0,v*128,128),t=.985+.03*n;
+    return [.41*t,.35*t,.27*t,.5+.008*n,.97];
+  },{normal:.2});
+  const wallMat = std({ ...withRepeat(wallTimber, 1 / 1.2, 1 / 4), normalScale:new THREE.Vector2(.15,.15), roughness: 1 });
   const black = std({ color: 0x050506, roughness: 0.9 });
   const fiber=valueNoise(204);
   const carpetSet=pbrSet('bsq-heather-carpet',256,(u,v)=>{
@@ -71,11 +78,12 @@ export function buildTheater(ctx) {
     const P = wg.attributes.position;
     for (let i = 0; i < P.count; i++) { const u = P.getX(i), v = P.getY(i), w=P.getZ(i); P.setXYZ(i, side*(X+w), v, u); }
     wg.computeVertexNormals();
-    const wall = new THREE.Mesh(wg, std({ ...withRepeat(walnut, 1 / 1.2, 1 / 4), normalScale:new THREE.Vector2(.15,.15), roughness: 1, side: THREE.DoubleSide }));
+    const wall = new THREE.Mesh(wg, std({ ...withRepeat(wallTimber, 1 / 1.2, 1 / 4), normalScale:new THREE.Vector2(.15,.15), roughness: 1, side: THREE.DoubleSide }));
     wall.receiveShadow = true;
     root.add(wall);
 
   }
+  addTheaterSplayedWalls(root,{height:H,material:wallMat,front:PZ+PT});
   const ceiling=buildTheaterCeiling(root,{X});
   const backW = new THREE.Mesh(new THREE.PlaneGeometry(W, H), wallMat); backW.rotation.y = Math.PI; backW.position.set(0, H / 2, D); root.add(backW);
 
@@ -114,7 +122,7 @@ export function buildTheater(ctx) {
   root.add(deck);
   // side steps from the house floor up to the apron, either side of the pit
   for (const s of [-1, 1]) {
-    root.add(stageSteps({ x: s * 9.95, z: 8.45, h: DECK, dir: [0, -1], width: 1.4 }));
+    root.add(stageSteps({ x: s * 8.4, z: 8.45, h: DECK, dir: [0, -1], width: 1.1 }));
   }
   const lipM = glowMat(APP.accent, 0.35);
   const lip=new THREE.Mesh(new THREE.TubeGeometry(lipPath,64,.012,4,false),lipM);
@@ -175,7 +183,7 @@ export function buildTheater(ctx) {
   cluster.position.set(0, OT + 2.4, PZ + PT + 0.7); root.add(cluster);
   for (const side of [-1, 1]) {
     const col = lineArray({ boxes: 12, width: 0.7, depth: 0.5, height: 0.3, splay: 0.012 });
-    col.position.set(side * (OW / 2 + 1.35), OT - 0.4, PZ + PT + 0.5); col.rotation.y = -side * 0.25; root.add(col);
+    col.position.set(side * (theaterWallX(PZ+PT+.5)-.48), OT - 0.4, PZ + PT + 0.5); col.rotation.y = -side * 0.25; root.add(col);
   }
 
   // Exact plan-derived chairs and section-derived heights, shared with picker.
@@ -203,16 +211,21 @@ export function buildTheater(ctx) {
   // ── lighting rig ──
   const rig = ctx.rig({ finish: 'black' });
   // box booms on the side walls, near the stage
-  const booms = [];
+  const booms = [],boomBrackets=[];
   for (const side of [-1, 1]) {
     const pipeM = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 8, 6), mats().black);
-    pipeM.position.set(side * (X - 0.5), 7, 9.6); root.add(pipeM);
+    pipeM.position.copy(theaterSplayPoint(side,9.6,7,1));root.add(pipeM);
+    for(const y of [5,10.5]) {
+      const p=theaterSplayPoint(side,9.6,y,.56),g=new THREE.BoxGeometry(1.12,.065,.10);
+      g.rotateY(side*Math.atan(THEATER_SPLAY_SLOPE));g.translate(p.x,p.y,p.z);boomBrackets.push(g);
+    }
     for (let i = 0; i < 5; i++) {
-      const f = rig.add({ kind: 'profile', pos: V3(side * (X - 0.8), 4 + i * 1.4, 9.6), color: KELVIN(3400), length: 24, scale: 0.7, beamGain: 0.06, flareGain: 0.6 });
+      const f = rig.add({ kind: 'profile', pos: theaterSplayPoint(side,9.6,4+i*1.4,1.18), color: KELVIN(3400), length: 24, scale: 0.7, beamGain: 0.06, flareGain: 0.6 });
       rig.aim(f, V3(-side * 1.5 + side * i * 0.4, DECK + 1.2, 1.5 - i * 0.8));
       booms.push(f);
     }
   }
+  const boomMounts=new THREE.Mesh(mergeGeometries(boomBrackets),mats().black);boomMounts.name='Theater side lighting rail brackets';root.add(boomMounts);boomBrackets.forEach(g=>g.dispose());
   // overhead backlight: moving heads on the upstage electric, above the border
   const backs = [];
   for (let i = 0; i < 8; i++) {
@@ -292,15 +305,19 @@ export function buildTheater(ctx) {
   }
   // grazers at the foot of the proscenium wall, up the walnut
   const grazers = [];
-  for (const side of [-1, 1]) for (const x of [9.2, 11.6]) {
+  for (const side of [-1, 1]) for (const x of [THEATER_SPLAY.nearX-.70,THEATER_SPLAY.nearX-.28]) {
     const gz = shadowSpot(KELVIN(2700), 0, { angle: 0.5, penumbra: 1, cast: false });
-    gz.position.set(side * x, 0.4, PZ + PT + 0.35); gz.target.position.set(side * x, 9, PZ + PT - 0.2);
+    gz.name='Theater proscenium grazer';
+    gz.position.set(side*x,DECK+.12,PZ+PT+.35);gz.target.position.set(side*x,9,PZ+PT-.2);
     root.add(gz, gz.target); grazers.push(gz);
   }
   const wallWash = [];
   for (const side of [-1, 1]) for (const z of [12, 21]) {
     const l = new THREE.PointLight(KELVIN(2500), 0, 9, 2);
-    l.position.set(side * (X - 3.3), 7.4, z); root.add(l); wallWash.push(l);
+    if(z<=THEATER_SPLAY.backZ) {
+      l.name='Theater splayed-wall wash';l.position.copy(theaterSplayPoint(side,z,7.4,1.25));
+    } else l.position.set(side*(X-3.3),7.4,z);
+    root.add(l);wallWash.push(l);
   }
 
   // Haze sources for the screen and stage. Followspots use the Rig's actual
@@ -453,7 +470,7 @@ function concourses(root, { X, D, H, CY1, CZW, levels, slabMat, wallMat, SIDE_DO
   across(CZW, CY1, L2.y - 0.45, [2.7,CY1+.7,CY1+1.8]); // ground-floor control booth
   across(THEATER_REAR_Z[2], L2.y, L3.y - 0.45);                      // the 2nd floor's (under the 3rd floor's last tread)
   const zw3 = L3.z + 0.3;
-  across(zw3, L3.y, H, [5.5, L3.y + 1.9, L3.y + 3.2]); // the 3rd floor's, the followspots' window in it
+  across(zw3, L3.y, H); // User-requested solid rear wall; retain the two doors.
 
   for (const side of [-1, 1]) {
     const sx = (a, b) => [Math.min(side * a, side * b), Math.max(side * a, side * b)];

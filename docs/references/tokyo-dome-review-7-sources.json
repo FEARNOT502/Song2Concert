@@ -1,0 +1,62 @@
+{
+  "checkedOn": "2026-11-15",
+  "sources": [
+    {
+      "page": "https://www.tokyo-dome.co.jp/dome/seat/",
+      "type": "operator seat guide",
+      "use": "official panorama links"
+    },
+    {
+      "page": "https://my.matterport.com/show/?m=gGtTH8WLcmJ",
+      "type": "official balcony panorama",
+      "locations": [
+        87,
+        86,
+        319,
+        320
+      ],
+      "viewed": [
+        "balcony-87-sheet.jpg",
+        "balcony-320-sheet.jpg"
+      ],
+      "finding": "End bays at aisles 1 and 34 have a continuous flat ceiling over the seats and rear walkway."
+    },
+    {
+      "page": "https://my.matterport.com/show/?m=1Re8wbYUNXW",
+      "type": "official upper panorama",
+      "locations": [
+        381,
+        444
+      ],
+      "viewed": [
+        "upper-381-sheet.jpg",
+        "upper-444-sheet.jpg"
+      ],
+      "use": "roof grid, bowed fabric seams and perimeter terminations from opposite upper sections"
+    },
+    {
+      "page": "https://nationalstadium-tours.com/?overview=87137",
+      "file": "modern-25.jpg",
+      "image": "https://nationalstadium-tours.com/wp-content/uploads/2026/10/balcony.webp",
+      "use": "balcony ceiling and current scoreboard relationship"
+    },
+    {
+      "page": "https://www.nikken.jp/ja/projects/sports/tokyo_dome.html",
+      "type": "architect project record",
+      "use": "roof membrane construction and 1:10 tilt"
+    },
+    {
+      "page": "https://www.jstage.jst.go.jp/article/mls1989/1/1/1_1_14/_article/-char/ja",
+      "pdf": "https://www.jstage.jst.go.jp/article/mls1989/1/1/1_1_14/_pdf/-char/ja",
+      "type": "Takenaka author, Materials Life 1(1), 1989, pp.14–20",
+      "figure": "Fig.2 on PDF page 2",
+      "use": "orthogonal cable layout and ring profile"
+    }
+  ],
+  "userReferences": [
+    "Annotated C/D balcony ends and roof grid",
+    "Real roof from home plate",
+    "Additional outfield advertisement wall and scoreboard detail"
+  ],
+  "limits": "Panoramas and photographs determine visible relationships. New wall depth and seam phase/bow are visual estimates; no survey claimed. Signed panorama asset URLs are intentionally omitted."
+}
