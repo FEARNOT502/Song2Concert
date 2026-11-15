@@ -1,5 +1,5 @@
-// Geometry and official-chart checks. Canvas drawing and the lighting rig are
-// stubbed: this verifies geometry/collision, never pixels or WebGL appearance.
+// Geometry, official-chart and actual Rig matrix/light checks. Canvas drawing
+// and GPU beam rendering are stubbed; this does not inspect WebGL pixels.
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { MeshBVH } from 'three-mesh-bvh';
@@ -9,6 +9,8 @@ import { crowdUniforms } from '../src/three/people.js';
 import { collisionGeometry, Walker, WALK } from '../src/three/walk.js';
 import {THEATER_GATES,THEATER_WALL_X,theaterGatePath} from '../src/three/venues/theater-entries.js';
 import {theaterCeilingY} from '../src/three/venues/theater-ceiling.js';
+import {theaterRowZ} from '../src/three/venues/theater-balcony.js';
+import {Rig} from '../src/three/rig.js';
 
 globalThis.document = {createElement:()=>({width:1024,height:512,getContext:()=>({
   fillRect(){},fillText(){},createRadialGradient:()=>({addColorStop(){}}),
@@ -34,18 +36,38 @@ for(const mode of ['general','op']) {
     assert(cat.getNums(s.block,s.row).includes(s.num));
     for(const v of [s.x,s.y,s.z,s.yaw])assert(Number.isFinite(v));
   }
-  const fixture=o=>({...o,position:o.pos.clone(),color:new THREE.Color(o.color||0xffffff),intensity:0});
+  const rigs=[],hazeSources=[];
+  const pipe={
+    beams:{add:o=>({...o,pos:o.pos.clone(),dir:o.dir.clone(),color:o.color.clone()})},
+    haze:{add:(pos,color,power=0)=>{const h={pos:pos.clone(),color:new THREE.Color(color),power};hazeSources.push(h);return h;}},
+    flares:{add:(pos,color,size=1,intensity=0)=>({pos:pos.clone(),color:new THREE.Color(color),size,intensity})},
+  };
   const ctx={mode,q:{crowd:0},cu:crowdUniforms(),
-    pipe:{haze:{add:()=>({power:0})},flares:{add:()=>({intensity:0})}},
+    pipe,
     art:{texture:()=>new THREE.Texture()},addScreen(){},screenHaze(){},
-    rig:()=>({add:fixture,aim(){}})};
+    rig:opts=>{const rig=new Rig(pipe,opts);rigs.push(rig);return rig;}};
   const venue=buildTheater(ctx);
+  for(const rig of rigs)venue.root.add(rig.build());
   venue.root.traverse(o=>{
     if(!o.isMesh)return;
     assert(o.geometry,'every visible mesh has geometry');
     for(const n of o.geometry.attributes.position.array)assert(Number.isFinite(n));
   });
   const geo=collisionGeometry(venue.root),bvh=new MeshBVH(geo),ray=new THREE.Ray();
+  // At the former deck/apron overlap, portal sill and side bridge seams there
+  // must be exactly one opaque top mesh at +0.93 m, not coplanar layers.
+  const topRay=new THREE.Raycaster(new THREE.Vector3(),new THREE.Vector3(0,-1,0),0,.22);
+  const stage=venue.root.getObjectByName('Theater continuous stage deck');assert(stage);
+  const edge=venue.root.getObjectByName('Theater apron edge strip').geometry.parameters.path;
+  assert(edge.curves[0].getPoint(1).distanceTo(edge.curves[1].getPoint(0))<1e-7,'apron edge follows a continuous curve without a cross-stage jump');
+  for(const [x,z] of [
+    ...[-6.2,-.3,6.1].flatMap(x=>[3.79,3.91,4.13,4.51,4.77,5.1].map(z=>[x,z])),
+    ...[-1,1].flatMap(side=>[[side*8.1,5.2],[side*9.17,5.2],[side*9.95,6.95]]),
+  ]) {
+    topRay.ray.origin.set(x,1.04,z);
+    const layers=new Set(topRay.intersectObject(venue.root,true).filter(h=>h.object.isMesh&&!h.object.isInstancedMesh&&Math.abs(h.point.y-.93)<.002&&Math.abs(h.face.normal.y)>.9).map(h=>h.object));
+    assert.equal(layers.size,1,`one stage top at ${x},${z}`);assert(layers.has(stage));
+  }
   const gaps=[];
   for(const s of cat.seats)for(const offset of [0,.12]) {
     const x=s.x-Math.sin(s.yaw)*offset,z=s.z-Math.cos(s.yaw)*offset;
@@ -54,6 +76,27 @@ for(const mode of ['general','op']) {
     if(!hit||Math.abs(hit.point.y-s.y)>.04)gaps.push(`${s.floor}F/${s.row}/${s.num} at offset ${offset}`);
   }
   assert.deepEqual(gaps,[],'all seat origins and seated camera positions stand on their own floor');
+  // Sweep the former fan-shaped holes behind both balconies, including the
+  // rear slab joint and the narrow edge against each side wall.
+  for(const floor of [2,3]) {
+    const row=Math.max(...cat.getRows(`${floor}F`).filter(Number.isFinite));
+    const seats=cat.seats.filter(s=>s.floor===floor&&s.row===row&&s.kind==='standard');
+    const central=seats.filter(s=>Math.abs(s.x)<4.9),z=central.reduce((a,s)=>a+s.z,0)/central.length,y=seats[0].y;
+    const last={z,y,seats};
+    const xs=[-THEATER_WALL_X+.025,THEATER_WALL_X-.025];
+    for(let x=-14;x<=14;x+=.28)xs.push(x);
+    for(const x of xs) {
+      const zs=[z+.78,z+.82,z+.9];
+      for(let rear=theaterRowZ(last,x)+.84;rear<z+.91;rear+=.22)zs.push(rear);
+      for(const rear of zs) {
+        // Stay below the nearby horizontal wall battens, which are finishes
+        // above the floor rather than the floor/wall joint being inspected.
+        ray.origin.set(x,y+.025,rear);ray.direction.set(0,-1,0);
+        const hit=bvh.raycastFirst(ray,THREE.DoubleSide,0,.06);
+        assert(hit&&Math.abs(hit.point.y-y)<.015,`${floor}F rear floor reaches the walls at ${x.toFixed(2)},${rear.toFixed(2)}: ${JSON.stringify(hit?.point)}`);
+      }
+    }
+  }
   const ceiling=venue.root.getObjectByName('Theater continuous acoustic ceiling');assert(ceiling);
   assert.equal(ceiling.userData.apertures.length,4,'one long gallery aperture and three subdivided apertures');
   for(const z of [10,17,23,29.5,35.4]) {
@@ -160,9 +203,36 @@ for(const mode of ['general','op']) {
   assert(pit);
   assert(Math.abs(pit.point.y-(mode==='op'?0:-1.87))<.005,'pit opens physically and its cover returns in OP mode');
   assert.equal(venue.seatNear(cat.defaultSeat.x,cat.defaultSeat.z,cat.defaultSeat.y)?.num,23);
-  // House/show update functions must still accept the existing music/light inputs.
+  // Exercise the real Rig: body, beam, lens flare and stage illumination must
+  // share the two fence-mounted origins, including during playback.
   const palette=Object.fromEntries(['a','b','c','d'].map(k=>[k,new THREE.Color('#ff9745')]));
-  for(const house of [1,0])venue.update({dt:.016,t:1,energy:.5,house,pal:palette,cam:venue.eye});
-  console.log(`PASS Theater ${mode}: ${cat.seats.length} seats; closed balcony shells; continuous ceiling and recessed galleries; 12 measured gate widths; 24 bidirectional concourse routes; 8 stair routes; pit; house/show`);
+  const rig=rigs[0],follows=rig.fx.filter(f=>f.kind==='follow');assert.equal(follows.length,2);
+  for(const house of [1,0]) {
+    venue.update({dt:.016,t:1,energy:.2,house,pal:palette,cam:venue.eye});rig.update(1,venue.eye);
+    for(const f of follows) {
+      assert(f.body,'followspots have visible mounted bodies');
+      ray.origin.set(f.pos.x,f.pos.y-.35,f.pos.z);ray.direction.set(0,0,1);
+      const fence=bvh.raycastFirst(ray,THREE.DoubleSide,0,.6);
+      assert(fence&&fence.distance>.2&&fence.distance<.4,'fixture is immediately ahead of the 3F fence');
+      assert(f.beam.pos.distanceTo(f._lens)<1e-7);
+      const light=rig.lights.find(l=>l.userData.fx===f);assert(light);
+      assert(light.position.distanceTo(f._lens)<1e-7,'real stage light starts at the visible lens');
+      assert(f.flare.pos.distanceTo(f._lens.clone().addScaledVector(f.dir,.05))<1e-7);
+      assert.equal(f.beam.intensity>0,house===0);assert.equal(light.intensity>0,house===0);
+    }
+  }
+  const moving=rig.fx.filter(f=>f.kind==='spot');assert.equal(moving.length,8);
+  const wash=venue.root.getObjectByName('Theater concert wash'),low=wash.intensity;
+  assert.equal(low>0,mode==='op');assert.equal(moving.some(f=>f.intensity>0),mode==='op');
+  const before=moving.map(f=>f.dir.clone());
+  venue.update({dt:1,t:2,energy:.9,house:0,pal:palette,cam:venue.eye});rig.update(1,venue.eye);
+  if(mode==='op') {
+    assert(wash.intensity>low,'concert wash responds to music energy');
+    assert(moving.some((f,i)=>f.dir.distanceTo(before[i])>.01),'concert moving heads sweep');
+  } else {
+    assert.equal(wash.intensity,0);assert(rig.fx.filter(f=>f.kind!=='follow').every(f=>f.intensity===0),'musical playback keeps the other rig dark');
+  }
+  assert(!hazeSources.some(h=>h.power>0&&h.pos.y>10&&h.pos.z>25),'no detached followspot glow in rear seats');
+  console.log(`PASS Theater ${mode}: ${cat.seats.length} seats; single stage surface; sealed rear floors; fence-mounted followspots; ${mode==='op'?'concert':'musical'} lighting; closed balconies; ceiling; 12 gates; 24 concourse routes; 8 stair routes; pit`);
   geo.dispose();
 }

@@ -294,6 +294,8 @@ export function VenuePicker({ open, onClose, current, currentMode = 'general', m
                 className={`py-2 text-[10px] tracking-[0.16em] ${mode===m?'bg-[oklch(0.78_0.16_55)]/20 text-white':'text-neutral-500 hover:text-white'}`}>{label}</button>)}
             </div>}
 
+            {v.id==='theater'&&<p className="mt-2 text-[10px] text-neutral-500 tracking-[0.12em]" aria-live="polite">{mode==='op'?'Concert lighting':'Musical lighting'}</p>}
+
             {round && (
               <div className="mt-4 grid grid-cols-2 border border-white/15" role="group" aria-label="배치">
                 {VENUE_MODES.map((m) => (

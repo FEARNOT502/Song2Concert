@@ -35,12 +35,13 @@ export function buildTheaterLanding({X,front,back,yFront,yBack,bottom,material})
 export function buildTheaterBalcony({ floor, rows, X, carpet, fascia, soffit, rail }) {
   const root = new THREE.Group();root.name = `Theater balcony ${floor}F`;
   const first = rows[0], last = rows.at(-1);
+  const rearZ=last.z+.8;
   const landingY = first.y - (floor === 3 ? .758 : .064);
   const frontHeight = .664, noseOffset = 1.86;
   const stations = [-X, -X+.9, -5.2, -4.15, 4.15, 5.2, X-.9, X];
   const lineAt=theaterRowZ;
   const profile = (x) => {
-    const firstZ=lineAt(first,x), lastZ=lineAt(last,x), front=firstZ-noseOffset;
+    const firstZ=lineAt(first,x), front=firstZ-noseOffset;
     // Each point's material describes the edge arriving at that point.
     const p=[], add=(z,y,mat)=>p.push({z,y,mat});
     add(front,landingY-.6,2);
@@ -58,8 +59,10 @@ export function buildTheaterBalcony({ floor, rows, X, carpet, fascia, soffit, ra
       const z=lineAt(rows[i],x)-.2;
       add(z,rows[i-1].y,0);add(z,rows[i].y,0);
     }
-    add(lastZ+.8,last.y,0);
-    add(lastZ+.8,last.y-.55,2);
+    // Close the outer fan wedges up to the same straight rear joint as the
+    // central block, instead of leaving triangular gaps behind side seats.
+    add(rearZ,last.y,0);
+    add(rearZ,last.y-.55,2);
     add(firstZ+.65,first.y-.55,2);
     if(Math.abs(x)===X) {
       // Reserve the outer aisle as a level doorway landing. Otherwise the
@@ -140,6 +143,6 @@ export function buildTheaterBalcony({ floor, rows, X, carpet, fascia, soffit, ra
   }
   // Keep trim meshes cheap without sharing the shell's material topology.
   root.add(new THREE.Mesh(mergeGeometries(trims),rail));trims.forEach(g=>g.dispose());
-  return {root,landingY,frontZ:(x)=>lineAt(first,x)-noseOffset,
+  return {root,landingY,railY:landingY+frontHeight,rearZ,frontZ:(x)=>lineAt(first,x)-noseOffset,
     lamps:[-9,0,9].map(x=>new THREE.Vector3(x,landingY-.45,lineAt(first,x)-noseOffset-.1))};
 }
