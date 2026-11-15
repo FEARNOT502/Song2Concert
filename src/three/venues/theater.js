@@ -3,7 +3,7 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { APP, KELVIN, V3, clamp, pbrSet, valueNoise, glowMat, prng, std, velvet, withRepeat, woodTex, ringTint } from '../core.js';
+import { APP, KELVIN, V3, clamp, pbrSet, valueNoise, glowMat, prng, std, velvet, withRepeat, ringTint } from '../core.js';
 import { crowd3D, lightPoints } from '../people.js';
 import { drapeGeometry, ledScreen, lineArray, mats, shadowSpot, stageSteps } from '../rig.js';
 import { seatFinder } from '../stands.js';
@@ -33,8 +33,14 @@ export function buildTheater(ctx) {
   const tung = KELVIN(3200);
 
   // ── materials ──
-  const walnut = woodTex({ key: 'bsq-wood-v2', planks: 8, joints: 1, base: [0.41, 0.35, 0.27], tone: 0.025, grain: 0.045, rough: 0.9, seam:.82, seed: 12 });
-  const wallMat = std({ ...withRepeat(walnut, 1 / 1.2, 1 / 4), normalScale:new THREE.Vector2(.15,.15), roughness: 1 });
+  // Horizontal fibres only: no vertical plank seams in colour, normals or
+  // roughness. The existing physical horizontal wall courses remain visible.
+  const wallFiber=valueNoise(212);
+  const wallTimber=pbrSet('bsq-wall-horizontal-v1',256,(_u,v)=>{
+    const n=wallFiber(0,v*128,128),t=.985+.03*n;
+    return [.41*t,.35*t,.27*t,.5+.008*n,.97];
+  },{normal:.2});
+  const wallMat = std({ ...withRepeat(wallTimber, 1 / 1.2, 1 / 4), normalScale:new THREE.Vector2(.15,.15), roughness: 1 });
   const black = std({ color: 0x050506, roughness: 0.9 });
   const fiber=valueNoise(204);
   const carpetSet=pbrSet('bsq-heather-carpet',256,(u,v)=>{
@@ -72,7 +78,7 @@ export function buildTheater(ctx) {
     const P = wg.attributes.position;
     for (let i = 0; i < P.count; i++) { const u = P.getX(i), v = P.getY(i), w=P.getZ(i); P.setXYZ(i, side*(X+w), v, u); }
     wg.computeVertexNormals();
-    const wall = new THREE.Mesh(wg, std({ ...withRepeat(walnut, 1 / 1.2, 1 / 4), normalScale:new THREE.Vector2(.15,.15), roughness: 1, side: THREE.DoubleSide }));
+    const wall = new THREE.Mesh(wg, std({ ...withRepeat(wallTimber, 1 / 1.2, 1 / 4), normalScale:new THREE.Vector2(.15,.15), roughness: 1, side: THREE.DoubleSide }));
     wall.receiveShadow = true;
     root.add(wall);
 
