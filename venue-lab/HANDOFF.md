@@ -2,6 +2,31 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 43: the Saitama Super Arena's doors and ends tidied: the north concourse, the 400 level's back walled to the ceiling, the 300 and 500 balconies' ends, every door checked
+- **Asked** (user, 2026-11-15, with five screenshots): the awkward door openings (219: the opening half blocked, a dark
+  underside in it); the 300 level's ends untidy; the 200 level's short-side doors with no concourse behind them; the 400
+  level's back looking open; the 500 balconies' ends untidy. Answers asked first: the north concourse joined round like the
+  south's; the 400 back walls up to the ceiling; the ends with a cheek wall and a flat underside; all 70 doors checked, their
+  places kept.
+- **North concourse** (`ssa_gen.py`): the `backstage` cut out of the 200 concourse is gone: behind the north end stand the
+  concourse runs on as the south's, doors 221-224 open onto it, the ring whole (new stairs up from it at the north too).
+- **400 level's back** (`walls_to_roof`): its concourse's walls, where no 500 level stands over them (the sides, the
+  corners), go on up to the ceiling (30 m; 919 half-metre pieces); its own ceiling stays.
+- **300 and 500 balconies** (`SEC` bottoms, `end_cuts`, `finish_ends`): undersides flat at the front's foot (9.3, 20.6 m;
+  3.9 and 4.4 m over the rows under them), not stepped row by row. Each end cut on one straight line along the rows' depth
+  a little past the last seats; every row run on to it; a flat cheek on the line from the underside up to the rail over
+  each row; the old end pieces, the rails past the line and steps past it gone; the concourse behind stops on the same
+  line; the parapets and row outlines smoothed of the raster's 0.1 m steps.
+- **Doors** (all 70 checked by a script: floor beyond, nothing across the way in or out, headroom):
+  507 and 518 faced along the wall (the depth's slope turns at the balcony's end): a door now faces as its nearby seats
+  do when the slope is more than 30 deg off. Raised doors (a stair down to the concourse): a stair whose way ran under the
+  next stand's back rows (219, 239: 1 m of headroom) is turned on its landing (20, 10 deg) to clear them; an opening under
+  a ceiling lower than 2.5 m is as high as the room there (219, 239 2.11 m; 212, 232 2.44 m), its plate only on the bowl's
+  face; each raised door set in a wall of its own (jambs out to the wall or the rising rows beside it, a panel over it).
+  A wall run along the aisle and hung down into an opening (432) starts over it; the opening's top from the higher sill.
+  The generator's check: no door with anything across its opening (was 2).
+- **Checks.** Build; the arena picker (236C · 15 · 750 entered); renders of each spot in the screenshots.
+
 ## Round 42: the Saitama Super Arena seated from the official seat list, every seat labelled, a block map to pick a seat on; photo finishes; the 300 and 500 fronts lowered
 - **Asked** (user, 2026-11-14, with a photograph of the arena from a side stand): find the real seat chart (blocks, rows per
   block, seats per row), re-lay the seats to it, label every block and seat as the dome and Wembley are, redo the seating
