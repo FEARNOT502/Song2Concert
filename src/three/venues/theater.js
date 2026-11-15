@@ -3,13 +3,14 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { APP, KELVIN, V3, pbrSet, valueNoise, glowMat, prng, std, velvet, withRepeat, woodTex, ringTint } from '../core.js';
+import { APP, KELVIN, V3, clamp, pbrSet, valueNoise, glowMat, prng, std, velvet, withRepeat, woodTex, ringTint } from '../core.js';
 import { crowd3D, lightPoints } from '../people.js';
-import { drapeGeometry, ledScreen, lineArray, mats, shadowSpot, stageDeck, stageSteps } from '../rig.js';
+import { drapeGeometry, ledScreen, lineArray, mats, shadowSpot, stageSteps } from '../rig.js';
 import { seatFinder } from '../stands.js';
 
 import { getTheaterSeatCatalog } from './theater-seats.js';
 import { theaterHouse } from './theater-house.js';
+import {buildTheaterStage} from './theater-stage.js';
 import {buildTheaterCeiling,theaterCeilingY} from './theater-ceiling.js';
 import {THEATER_GATES,THEATER_WALL_X,THEATER_WALL_THICKNESS,THEATER_REAR_Z,THEATER_SIDE_FRONT_DOOR,THEATER_SIDE_CONCOURSE_OPENING,theaterSideOpenings} from './theater-entries.js';
 
@@ -22,7 +23,7 @@ export function buildTheater(ctx) {
   const PZ = 4.0, PT = 0.7;            // proscenium wall: audience face at PZ + PT
   const OW = 14.9, OB = 0.93, OT = 10.93; // opening width, sill (deck), head
   const DECK = 0.93;
-  const FOLLOW_Y=17.7; // inside the 3F rear booth window, above its floor
+  const concert=ctx.mode==='op';
   const APRON = 5.9;                    // stage edge
   const PIT0 = APRON, PIT1 = 8.9;
   const catalog = getTheaterSeatCatalog(ctx.mode);
@@ -82,7 +83,9 @@ export function buildTheater(ctx) {
   const wallShape = new THREE.Shape();
   wallShape.moveTo(-X, 0); wallShape.lineTo(X, 0); wallShape.lineTo(X, H); wallShape.lineTo(-X, H); wallShape.lineTo(-X, 0);
   const hole = new THREE.Path();
-  hole.moveTo(-OW / 2, OB); hole.lineTo(OW / 2, OB); hole.lineTo(OW / 2, OT); hole.lineTo(-OW / 2, OT); hole.lineTo(-OW / 2, OB);
+  // Recess the concealed wall sill so its timber top cannot fight the deck.
+  const sill=DECK-.08;
+  hole.moveTo(-OW / 2, sill); hole.lineTo(OW / 2, sill); hole.lineTo(OW / 2, OT); hole.lineTo(-OW / 2, OT); hole.lineTo(-OW / 2, sill);
   wallShape.holes.push(hole);
   const pros = new THREE.Mesh(new THREE.ExtrudeGeometry(wallShape, { depth: PT, bevelEnabled: false }), wallMat);
   pros.position.z = PZ;
@@ -107,30 +110,15 @@ export function buildTheater(ctx) {
   }
 
   // ── stage house ──
-  const deck = stageDeck({ w: 24, d: 18, h: DECK, z: -14 + 9, lip: false, fascia: 0x050505 });
+  const {deck,lipPath}=buildTheaterStage({openingWidth:OW,height:DECK,front:APRON,portalFront:PZ+PT,mainFront:PZ});
   root.add(deck);
-  // apron, curved, out to the pit
-  const apron = stageDeck({ w: OW + 2, d: APRON - PZ - PT + 1, h: DECK, z: (PZ + PT + APRON) / 2 - 0.5, round: 0.8, fascia: 0x050505 });
-  root.add(apron);
   // side steps from the house floor up to the apron, either side of the pit
   for (const s of [-1, 1]) {
     root.add(stageSteps({ x: s * 9.95, z: 8.45, h: DECK, dir: [0, -1], width: 1.4 }));
-    // a landing at the top, and a step across to the apron clear of the pit
-    const lm = std({ color: 0x0c0c0e, roughness: 0.8 });
-    const landing = new THREE.Mesh(new THREE.BoxGeometry(1.5, DECK, 2.15), lm);
-    landing.position.set(s * 9.9, DECK / 2, 5.775); root.add(landing);
-    const bridge = new THREE.Mesh(new THREE.BoxGeometry(1.3, DECK, 1.15), lm);
-    bridge.position.set(s * 8.55, DECK / 2, 5.275); root.add(bridge);
   }
   const lipM = glowMat(APP.accent, 0.35);
-  // along the apron's curved front (stageDeck's round front: the corners
-  // 0.8 m back from its edge, the middle 0.2 m out past it)
-  {
-    const aw = OW + 2, az = (PZ + PT + APRON) / 2 - 0.5, ad = APRON - PZ - PT + 1, y = DECK - 0.01;
-    const path = new THREE.CurvePath();
-    for (const s of [-1, 1]) path.add(new THREE.QuadraticBezierCurve3(V3(s * aw / 2, y, az + ad / 2 - 0.8 + 0.01), V3(s * aw / 2, y, az + ad / 2 + 0.01), V3(0, y, az + ad / 2 + 0.21)));
-    root.add(new THREE.Mesh(new THREE.TubeGeometry(path, 64, 0.012, 4, false), lipM));
-  }
+  const lip=new THREE.Mesh(new THREE.TubeGeometry(lipPath,64,.012,4,false),lipM);
+  lip.name='Theater apron edge strip';root.add(lip);
   const stageBack = new THREE.Mesh(new THREE.PlaneGeometry(24, 16), black);
   stageBack.position.set(0, 8, -14); root.add(stageBack);
   // legs and borders: the black masking that makes wings
@@ -238,12 +226,19 @@ export function buildTheater(ctx) {
     rig.aim(f, V3(-side * 4, DECK + 1.2, z + 0.4));
     sides.push(f);
   }
-  // followspots from the booth at the back
-  const follows = [];
+  // Both visible fixtures and their real light are mounted on the audience-
+  // facing side of the 3F fence, using the balcony's actual fan profile.
+  const follows = [],followBrackets=[],front3=levels[1].balcony;
   for (const side of [-1, 1]) {
-    const f = rig.add({ kind: 'follow', pos: V3(side * 3.5, FOLLOW_Y, D - 1.2), color: KELVIN(5600), length: 44, scale: 1.2, beamGain: 0.35, flareGain: 0.6, body: false, soft: 0.2 });
+    const x=side*3.5,z=front3.frontZ(x),y=front3.railY;
+    const bracket=new THREE.BoxGeometry(.44,.07,.5);bracket.translate(x,y+.035,z-.17);followBrackets.push(bracket);
+    const f = rig.add({ kind: 'follow', pos: V3(x,y+.075,z-.30), color: KELVIN(5600), length: 44, scale:.8, beamGain:.35, flareGain:.6, body:true,soft:.2 });
+    const light=shadowSpot(KELVIN(5600),0,{angle:.035,penumbra:.4,cast:false});
+    light.name='Theater fence followspot';rig.light(f,light,320);
     follows.push(f);
   }
+  const mounts=new THREE.Mesh(mergeGeometries(followBrackets),std({color:0x1c1b19,roughness:.7,metalness:.5}));
+  mounts.name='Theater 3F fence followspot brackets';root.add(mounts);followBrackets.forEach(g=>g.dispose());
   // FOH front light from the ceiling bridges (above frame; their beams cross it)
   const fohs = [];
   for (const position of ceiling.rigPoints) {
@@ -258,11 +253,11 @@ export function buildTheater(ctx) {
   const front2 = shadowSpot(tung, 0, { angle: 0.32, penumbra: 0.6, size: q.shadowSize, far: 40, cast: q.shadows });
   front2.position.set(6, theaterCeilingY(14)-.4, 14); front2.target.position.set(0.5, DECK, 0.5);
   const washA = shadowSpot(0xffffff, 0, { angle: 0.6, penumbra: 1, cast: false });
+  washA.name='Theater concert wash';
   washA.position.set(0, OT + 1, -2); washA.target.position.set(0, DECK, 2);
   const backC = shadowSpot(0xffffff, 0, { angle: 0.7, penumbra: 1, cast: false });
   backC.position.set(0, OT + 0.8, -5); backC.target.position.set(0, DECK, 3);
-  const followL = shadowSpot(KELVIN(5600), 0, { angle: 0.035, penumbra: 0.4, cast: false });
-  for (const s of [front1, front2, washA, backC, followL]) { root.add(s); root.add(s.target); }
+  for (const s of [front1, front2, washA, backC]) { root.add(s); root.add(s.target); }
   const houseLights = [];
   for (const [x, z] of [[-6, 12], [6, 12], [-6, 24], [6, 24], [0, 32]]) {
     const l = new THREE.SpotLight(KELVIN(3000), 0, 30, 1.05, .7, 2);
@@ -308,13 +303,13 @@ export function buildTheater(ctx) {
     l.position.set(side * (X - 3.3), 7.4, z); root.add(l); wallWash.push(l);
   }
 
-  // haze points: the screen, the practicals, the followspot booth
+  // Haze sources for the screen and stage. Followspots use the Rig's actual
+  // lens beam and flare; no separate glowing point is left in the rear seats.
   const hz = pipe.haze;
   const offs = [[-0.6, 0.4], [0.6, 0.4], [-0.6, -0.4], [0.6, -0.4], [0, 0]];
   const hzs = offs.map(([dx, dy]) => hz.add(V3(dx * SW * 0.5, screen.position.y + dy * SH * 0.5, -5.8), 0xffffff, 0));
   ctx.screenHaze(screen, hzs, offs);
   screen.userData.hazePower = 26;
-  const hzBooth = [-1, 1].map((s) => hz.add(V3(s * 3.5, FOLLOW_Y, D - 1.3), KELVIN(5600), 0));
   const hzStage = hz.add(V3(0, DECK + 3, 1), tung, 0);
 
   let aimT = 0;
@@ -334,30 +329,27 @@ export function buildTheater(ctx) {
     update(f) {
       const show = 1 - f.house;
       const { a, b, c, d } = f.pal;
-      aimT += f.dt * (0.4 + f.energy * 0.6);
+      const energy=clamp(f.energy??0),live=concert?show:0;
+      aimT += f.dt * (0.4 + energy * 0.6);
       const leadPos = V3(lead.position.x, DECK + 1.3, lead.position.z);
-      // In the show the house is dark but for the two followspots from the
-      // booth on the 3rd floor, the screen, the exit signs and the aisles'
-      // step lights: the rig, the front light, the washes and the stage's own
-      // lamps are out, lit only with the house.
-      front1.intensity = 60 * f.house;
-      front2.intensity = 50 * f.house;
-      washA.color.copy(a); washA.intensity = 0;
-      backC.color.copy(b); backC.intensity = 0;
-      followL.position.set(3.5, FOLLOW_Y, D - 1.2); followL.target.position.copy(leadPos); followL.target.updateMatrixWorld();
-      followL.intensity = 900 * show;
-      booms.forEach((fx) => { fx.color.copy(tung); fx.intensity = 0.1 * f.house; });
-      fohs.forEach((fx) => { fx.intensity = 0.15 * f.house; });
+      // OPEN PIT keeps the restrained musical look. OP SEATING enables the
+      // existing stage rig as a music-driven concert, with a dark auditorium.
+      front1.color.copy(tung).lerp(a,.45*live);front1.intensity=60*f.house+120*live;
+      front2.color.copy(tung).lerp(b,.45*live);front2.intensity=50*f.house+90*live;
+      washA.color.copy(a);washA.intensity=(150+600*energy)*live;
+      backC.color.copy(b);backC.intensity=(150+450*energy)*live;
+      booms.forEach((fx) => { fx.color.copy(tung).lerp(c,.5*live);fx.intensity=.1*f.house+(.25+.65*energy)*live; });
+      fohs.forEach((fx) => {fx.color.copy(tung).lerp(d,.3*live);fx.intensity=.15*f.house+(.2+.5*energy)*live;});
       backs.forEach((fx, i) => {
         const sw = Math.sin(aimT * 1.3 + i * 0.8);
         fx.color.copy(i % 2 ? b : a);
         rig.aim(fx, V3(-6.3 + i * 1.8 + sw * 2.2, DECK, 1.8 + Math.cos(aimT + i) * 1.5));
-        fx.intensity = 0;
+        fx.intensity=(.55+energy)*(.8+.2*Math.sin(aimT*3+i)**2)*live;
       });
-      sides.forEach((fx, i) => { fx.color.copy(i % 2 ? c : d); fx.intensity = 0; });
-      follows.forEach((fx) => { rig.aim(fx, leadPos); fx.intensity = 1.4 * show; });
-      practicals.forEach((p, i) => { p.intensity = (0.45 + 0.1 * Math.sin(f.t * 2 + i)) * 0.6 * f.house; });
-      practical.color.copy(KELVIN(2600)).multiplyScalar(6 * f.house);
+      sides.forEach((fx, i) => { fx.color.copy(i % 2 ? c : d);fx.intensity=(.35+.7*energy)*live; });
+      follows.forEach((fx) => { rig.aim(fx, leadPos);fx.intensity=(concert?.5:1.4)*show; });
+      practicals.forEach((p, i) => { p.intensity=(.45+.1*Math.sin(f.t*2+i))*(.6*f.house+(.25+.35*energy)*live); });
+      practical.color.copy(KELVIN(2600)).multiplyScalar(6*f.house+3*live);
       houseLights.forEach((l) => { l.intensity = 420 * f.house; });
       bounce.color.copy(tung).lerp(a, 0.4).lerp(b, 0.2);
       bounce.intensity = 0.3 * f.house;
@@ -375,11 +367,10 @@ export function buildTheater(ctx) {
       // the concourses: lit with the house; in the show only while someone is in one
       conc.set(Math.max(f.house, conc.inside(f.cam) ? 1 : 0));
       ringTint(lipM.color, f.pal.a).multiplyScalar(0.25 * f.house);
-      hzBooth.forEach((h) => { h.power = 30 * show; });
       hzStage.power = 6 * f.house;
-      cu.uRimColor.value.copy(tung).lerp(a, 0.35).multiplyScalar(0.02 * show + 0.01);
+      cu.uRimColor.value.copy(tung).lerp(a, 0.35).multiplyScalar(0.02*show+0.01+.04*energy*live);
       cu.uStage.value.set(0, 5, 0);
-      cu.uWash.value.copy(tung).multiplyScalar(0.02 * show);
+      cu.uWash.value.copy(tung).lerp(b,.6*live).multiplyScalar(.02*show+.04*energy*live);
       cu.uAmb.value.setRGB(0.008, 0.006, 0.005).multiplyScalar(1 + f.house * 6);
     },
   };
@@ -415,7 +406,7 @@ function concourses(root, { X, D, H, CY1, CZW, levels, slabMat, wallMat, SIDE_DO
   // a slab across the house from z0 to the rear wall, cut where `holes`
   // ([x0, x1, z0, z1] on the right, mirrored on the left) are
   const slab = (out, y0, y1, z0, holes) => {
-    const xs = [-X + 0.1, X - 0.1];
+    const xs = [-X, X];
     for (const [hx0, hx1] of holes) xs.push(-hx1, -hx0, hx0, hx1);
     xs.sort((a, b) => a - b);
     const zs = [z0, D];
@@ -435,9 +426,9 @@ function concourses(root, { X, D, H, CY1, CZW, levels, slabMat, wallMat, SIDE_DO
   // a wall across the house at z, from y0 to y1, a door at each aisle (and,
   // with `win`, a window from x -win[0]..win[0] between win[1] and win[2])
   const across = (z, y0, y1, win) => {
-    const xs = [-X + 0.05];
+    const xs = [-X];
     for (const x of DOORS) xs.push(x - DW / 2, x + DW / 2);
-    xs.push(X - 0.05);
+    xs.push(X);
     for (let i = 0; i < xs.length - 1; i++) {
       if (i % 2 === 1) { box(walls, xs[i], xs[i + 1], y0 + DH, y1, z - T / 2, z + T / 2); continue; }   // over a door
       if (win && xs[i] < win[0] && xs[i + 1] > -win[0]) {

@@ -68,9 +68,8 @@ export function theaterHouse(root, { mode, carpet, wood, fabric, X, D }) {
     if(f>1) {
       const balcony=buildTheaterBalcony({floor:f,rows:floorRows,X,carpet,fascia:mats.dark,soffit:mats.soffit,rail:mats.rail});
       root.add(balcony.root);lampSpots.push(...balcony.lamps);
-      // Carpet over the rear slabs; the concourse builder cuts the stair wells.
-      levels.push({y:lastY,z:lastZ+.78,parts:[]});
-      box(carpet,0,lastY-.025,(lastZ+.7+36.4)/2,2*X-.2,.05,36.4-lastZ-.7);
+      // One exact full-width joint; the slab builder keeps the stair wells.
+      levels.push({y:lastY,z:balcony.rearZ,parts:[],balcony});
     } else {
       const a=floorRows[6],b=floorRows[7];
       root.add(buildTheaterLanding({X,front:x=>theaterRowZ(a,x)+.65,back:x=>theaterRowZ(b,x)-.2,yFront:a.y,yBack:b.y,bottom:-.18,material:carpet}));
