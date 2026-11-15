@@ -10,6 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import * as THREE from 'three';
+import { joinedStrip } from './dome-rails.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { APP, DEG, KELVIN, V3, clamp, lerp, prng, std, floorPanelTex, glowMat, ringTint } from '../core.js';
 import { lightPoints } from '../people.js';
@@ -75,7 +76,9 @@ export function membraneMaterial() {
   // a pale lamp either side of it; and from the crown out to each big triangle's
   // point a staircase of pale lit strips along the cables, step by step down the
   // diagonal. The colour a warm grey-white; by day warmer, lit through.
-  const ZC = 81, TRI_X = 50.4, TRI_Z = 50.4, GRID = 2 * TRI_X / 13;
+  const TRI_X = 50.4, TRI_Z = 50.4, GRID = 2 * TRI_X / 13;
+  // One world-space grid covers the complete dome, including all four wings.
+  const ZC = 81 + GRID / 2, CROSS_BOW = .5;
   const LAYER = '1.6';               // metres between the inner liner and the outer skin
   const GL = GRID.toFixed(4), HG = (GRID / 2).toFixed(4);
   // how far the fabric hangs between the straight cables, and how much each row bellies between its seams (m)
@@ -87,7 +90,8 @@ export function membraneMaterial() {
     // on them — full with the house up, very faint during the show)
     sh.uniforms.uSky = m.userData.uSky = { value: 1 };
     m.userData.shader = sh;
-    const triGL = `float bigTri(vec2 c, float zs, float e) { return smoothstep(${TRI_X.toFixed(1)} + e, ${TRI_X.toFixed(1)} + e + 0.2, abs(c.x)) * smoothstep(${TRI_Z.toFixed(1)} + e, ${TRI_Z.toFixed(1)} + e + 0.2, abs(zs)); }
+    const triGL = `float crossZ(vec2 c) { float d = fract((c.x + ${HG}) / ${GL}) - 0.5; float side = sign(c.y) * smoothstep(0.0, ${GL} * 2.0, abs(c.y)); return c.y - ${CROSS_BOW.toFixed(2)} * side * (1.0 - 4.0*d*d); }
+      float bigTri(vec2 c, float zs, float e) { return smoothstep(${TRI_X.toFixed(1)} + e, ${TRI_X.toFixed(1)} + e + 0.2, abs(c.x)) * smoothstep(${TRI_Z.toFixed(1)} + e, ${TRI_Z.toFixed(1)} + e + 0.2, abs(zs)); }
       // (the hang dies away over the first few metres into each triangle, so the row beside it meets it without a step)
       float triHang(vec2 c) { return smoothstep(${TRI_X.toFixed(1)}, ${(TRI_X + 3.5).toFixed(1)}, abs(c.x)) * smoothstep(${TRI_Z.toFixed(1)}, ${(TRI_Z + 3.5).toFixed(1)}, abs(c.y)); }`;
     sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
@@ -96,7 +100,7 @@ export function membraneMaterial() {
       .replace('#include <begin_vertex>', `#include <begin_vertex>
         {
           vec2 c = position.xz - vec2(0.0, ${ZC.toFixed(1)});
-          float dx = fract((c.x + ${HG}) / ${GL}) - 0.5, dz = fract((c.y + ${HG}) / ${GL}) - 0.5;
+          float dx = fract((c.x + ${HG}) / ${GL}) - 0.5, dz = fract((crossZ(c) + ${HG}) / ${GL}) - 0.5;
           // (in the mesh half the kink at the cable: the mesh is a metre or so fine, and a full kink smeared over
           // its triangles made the straight cables wobble, none made the seams' arcs wavy; the shading keeps it all)
           float ax = cos(3.14159 * dx); ax = 0.5 * ax * ax + 0.5 * (1.0 - 4.0 * dx * dx);
@@ -118,7 +122,7 @@ export function membraneMaterial() {
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         {
           vec2 c = vWP.xz - vec2(0.0, ${ZC.toFixed(1)});
-          float dx = fract((c.x + ${HG}) / ${GL}) - 0.5, dz = fract((c.y + ${HG}) / ${GL}) - 0.5;
+          float dx = fract((c.x + ${HG}) / ${GL}) - 0.5, dz = fract((crossZ(c) + ${HG}) / ${GL}) - 0.5;
           float k = (1.0 - smoothstep(0.84, 0.98, vRho)) * (1.0 - triHang(c)) * 8.0 / ${GL};
           vec3 g = vec3((${SAG_A} + ${SAG_B} * (1.0 - 4.0 * dz * dz)) * dx, 0.0, ${SAG_B} * (1.0 - 4.0 * dx * dx) * dz) * k;
           normal = normalize(normal + mat3(viewMatrix) * g);
@@ -128,7 +132,7 @@ export function membraneMaterial() {
           vec2 c = vWP.xz - vec2(0.0, ${ZC.toFixed(1)});
           vec2 fw = fwidth(c) + 1e-4;
           float fx = fract((c.x + ${HG}) / ${GL}), dx = fx - 0.5;
-          float zs = c.y;
+          float zs = crossZ(c);
           float dz = fract((zs + ${HG}) / ${GL}) - 0.5;
           // distance (m) to the nearest straight cable, and to the nearest seam across
           float along = abs(fract((c.x + ${HG}) / ${GL} + 0.5) - 0.5) * ${GL};
@@ -169,7 +173,7 @@ export function membraneMaterial() {
           totalEmissiveRadiance += uBounce * shade * lines * pale + diffuseColor.rgb * 0.7 * lit;
         }`);
   };
-  m.customProgramCacheKey = () => 'membrane14';
+  m.customProgramCacheKey = () => 'membrane16';
   return m;
 }
 
@@ -288,7 +292,7 @@ export function buildDome(ctx) {
     const angs = [...far.keys()].filter((a) => Math.abs(a) <= 44).sort((u, v) => u - v);
     const back = angs.map((a) => { let sm = 0, w = 0; for (const b of angs) if (Math.abs(b - a) <= 3) { sm += far.get(b); w++; } return { a, d: sm / w - 5.9 }; });
     // one gentle curve, the same both sides; any column it would come through is set back until it stands 1.7 m behind the face
-    const D0 = Math.min(125, back.reduce((m, b) => (Math.abs(b.a) < Math.abs(m.a) ? b : m)).d), KC = 0.012;
+    const D0 = TD_STANDS.scoreboardCurve?.radius ?? Math.min(125, back.reduce((m, b) => (Math.abs(b.a) < Math.abs(m.a) ? b : m)).d), KC = TD_STANDS.scoreboardCurve?.falloff ?? .012;
     back.forEach((b) => { b.d = D0 - KC * b.a * b.a; });
     const setback = TD_STANDS.scoreboardSetback ?? 0;
     const colMoved = new Map();
@@ -413,49 +417,44 @@ export function buildDome(ctx) {
   //              between stainless posts, a round stainless rail on top: the seats show through from the field
   // (the 2nd floor's front runs on unbroken behind home; the balcony's stops either side of the wall between S101 and S301)
   {
-    const inward = ([x, z]) => { const dx = -x, dz = -60 - z, l = Math.hypot(dx, dz) || 1; return [dx / l, dz / l]; };
-    const along = (rim, d) => rim.map((p) => { const n = inward(p); return { x: p[0] + n[0] * d, z: p[1] + n[1] * d + ZH }; });
     const steel = [], glass = [];
-    // a round tube through the points at height y (one per line, merged below)
-    const tube = (P, y, r) => {
-      if (P.length < 2) return;
-      const curve = new THREE.CatmullRomCurve3(P.map((p) => new THREE.Vector3(p.x, y, p.z)), false, 'centripetal');
-      steel.push(new THREE.TubeGeometry(curve, Math.max(8, P.length * 2), r, 6, false));
-    };
-    // posts along a line, about every `every` m: [y0, y1], `w` square
-    const posts = (P, y0, y1, w, every) => {
-      let acc = every;
-      for (let i = 0; i < P.length; i++) {
-        if (i) acc += Math.hypot(P[i].x - P[i - 1].x, P[i].z - P[i - 1].z);
-        if (acc < every && i !== P.length - 1) continue;
-        acc = 0;
-        const b = new THREE.BoxGeometry(w, y1 - y0, w); b.translate(P[i].x, (y0 + y1) / 2, P[i].z); steel.push(b.toNonIndexed());
+    const tube = (P, Y, r) => {
+      for(let i=1;i<P.length;i++){
+        const a=new THREE.Vector3(P[i-1].x,Y[i-1],P[i-1].z),b=new THREE.Vector3(P[i].x,Y[i],P[i].z),delta=b.clone().sub(a);
+        const g=new THREE.CylinderGeometry(r,r,delta.length(),6);
+        g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),delta.normalize()));g.translate(...a.add(b).multiplyScalar(.5).toArray());steel.push(g);
+      }
+      for(let i=1;i<P.length-1;i++){
+        const a=new THREE.Vector2(P[i].x-P[i-1].x,P[i].z-P[i-1].z).normalize(),b=new THREE.Vector2(P[i+1].x-P[i].x,P[i+1].z-P[i].z).normalize();
+        if(a.dot(b)<.95){const g=new THREE.SphereGeometry(r,8,6);g.translate(P[i].x,Y[i],P[i].z);steel.push(g);}
       }
     };
-    const paint = std({ color: 0xb7b9b8, roughness: 0.85 });
-    // the 2nd floor
-    {
-      const rim = TD_STANDS.rimS.flat(), y = TD_STANDS.rimY;
-      const g = wallStrip(along(rim, 0.17), rim.map(() => y + 0.60), { y0: y - 0.06, thick: 0.22, ease: 0 });
-      if (g) { const m3 = new THREE.Mesh(g, paint); m3.receiveShadow = true; root.add(m3); }
-      const face = along(rim, 0.0);
-      tube(face, y + 0.54, 0.024);
-      tube(face, y + 0.90, 0.024);
-      posts(face, y + 0.52, y + 0.90, 0.045, 2.4);
-    }
-    // the balcony
-    {
-      const fascia = std({ color: 0xd9d9d5, roughness: 0.8 });
-      const y = TD_STANDS.rimCY;
-      for (const rim of TD_STANDS.rimCS ?? []) {
-        const g = wallStrip(along(rim, 0.28), rim.map(() => y + 0.08), { y0: y - 1.2, thick: 0.08, ease: 0 });
-        if (g) { const m3 = new THREE.Mesh(g, fascia); m3.receiveShadow = true; root.add(m3); }
-        const line = along(rim, 0.26);
-        const gl = wallStrip(line, rim.map(() => y + 0.93), { y0: y + 0.08, thick: 0.012, ease: 0 });
-        if (gl) glass.push(gl);
-        tube(line, y + 0.95, 0.028);
-        posts(line, y + 0.08, y + 0.95, 0.04, 1.5);
+    const posts = (P,lo,hi,w,every,corners) => {
+      const add=(i,t=0)=>{
+        const j=Math.min(i+1,P.length-1),x=P[i].x+(P[j].x-P[i].x)*t,z=P[i].z+(P[j].z-P[i].z)*t;
+        const a=lo[i]+(lo[j]-lo[i])*t,b=hi[i]+(hi[j]-hi[i])*t;
+        const g=new THREE.BoxGeometry(w,b-a,w);g.translate(x,(a+b)/2,z);steel.push(g);
+      };
+      add(0);let acc=0;
+      for(let i=1;i<P.length;i++){
+        const length=Math.hypot(P[i].x-P[i-1].x,P[i].z-P[i-1].z);
+        let next=every-acc;
+        while(next<length-1e-5){add(i-1,next/length);next+=every;}
+        acc=(acc+length)%every;
+        if(corners.includes(i)||i===P.length-1){add(i);acc=0;}
       }
+    };
+    const paint=std({color:0xb7b9b8,roughness:.85}),fascia=std({color:0xd9d9d5,roughness:.8});
+    for(const level of ['D','C'])for(const profile of TD_STANDS.frontParapets?.[level]??[]){
+      const P=profile.panel.pts.map(([x,z])=>({x,z:z+ZH})),Y=profile.panel.ys;
+      const rail=profile.rail,R=rail.pts.map(([x,z])=>({x,z:z+ZH})),H=rail.ys;
+      const isC=level==='C';
+      const g=joinedStrip(P,Y.map(y=>y+(isC?.08:.6)),Y.map(y=>y-(isC?1.2:.06)),isC?.08:.22);
+      const mesh=new THREE.Mesh(g,isC?fascia:paint);mesh.receiveShadow=true;mesh.name=level+' front and right-angle return fascia';root.add(mesh);
+      if(isC)glass.push(joinedStrip(R,H.map(y=>y+.93),H.map(y=>y+.08),.012));
+      if(!isC)tube(R,H.map(y=>y+.54),.024);
+      tube(R,H.map(y=>y+(isC?.95:.9)),isC?.028:.024);
+      posts(R,H.map(y=>y+(isC?.08:.52)),H.map(y=>y+(isC?.95:.9)),isC?.04:.045,isC?1.5:2.4,rail.corners);
     }
     if (steel.length) {
       const m3 = new THREE.Mesh(mergeGeometries(steel.map((s) => (s.index ? s.toNonIndexed() : s))), std({ color: 0xc9ccd0, roughness: 0.28, metalness: 0.85, envMapIntensity: 0.8 }));

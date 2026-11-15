@@ -1,7 +1,7 @@
 {
-  "revision": 6,
-  "checkedOn": "2026-11-14",
-  "dataSha256": "80328691f454c273af6ab5fb378ce8a34aff1e4703fa95f2d1d0eec985634b44",
+  "revision": 7,
+  "checkedOn": "2026-11-15",
+  "dataSha256": "fff6a1df25f1826053780e305fd3756b4c954fd5a0c652a970cd22a08ea26668",
   "modelAudit": {
     "seats": {
       "A": 10384,
@@ -237,7 +237,7 @@
     "flights": 13
   },
   "walker": {
-    "checks": 192,
+    "checks": 193,
     "failed": []
   },
   "geometryRegressionTests": 7,
@@ -366,7 +366,6 @@
     },
     "upperWallSingleStrip": false,
     "batterEyeVisibleInFourViews": true,
-    "upperWallSolidSectionWidth": 6.2418,
     "upperWallUnderside": 13.6,
     "scoreboardSetback": 2.5,
     "RYOBIFronts": [
@@ -468,7 +467,32 @@
     ],
     "narrowEntriesAddedStairs": 0,
     "narrowMatchesExistingFShape": true,
-    "sharedOutfieldConcourseHeight": 10.6
+    "sharedOutfieldConcourseHeight": 10.6,
+    "upperWallSolidSectionWidthRange": [
+      6.235,
+      12.594
+    ],
+    "scoreboardCurve": {
+      "radius": 125.0,
+      "falloff": 0.012,
+      "wallBehind": 0.4,
+      "bandAngle": 31.0
+    },
+    "C3EndFence": "continuous fascia/glass/rail, 90-degree returns",
+    "D4EndFence": "same paint material as front; shared mitered corner vertices",
+    "additionalBalconyCeilingPlate": "removed; no extra box wall beside D end",
+    "roofTransverseSeams": {
+      "shiftMeters": 3.8769,
+      "bowBetweenCablesMeters": 0.5,
+      "bowDirection": "outward from grid center on both halves",
+      "fittingsFollowSeams": true,
+      "checkedDirections": [
+        "home",
+        "outfield",
+        "first",
+        "third"
+      ]
+    }
   },
   "limitations": [
     "Photographic dimensions, not a survey",
@@ -486,23 +510,35 @@
     ],
     "currentRenderViews": [
       "batter-front.png",
-      "batter-left.png",
-      "batter-right.png",
-      "batter-high.png",
-      "pit-top.png",
-      "pit-rim.png",
-      "F11-join.png",
       "wall-left.png",
       "wall-right.png",
       "rear-ceiling-left.png",
       "rear-ceiling-right.png",
-      "narrow-vom-left.png",
-      "RYOBI-cheek-left.png",
-      "narrow-vom-right.png",
-      "RYOBI-cheek-right.png",
-      "ordinary-vom-reference.png"
+      "C-corner-left.png",
+      "C-corner-right.png",
+      "D-corner-left.png",
+      "D-corner-right.png",
+      "F13-row17-ceiling.png",
+      "roof-outfield.png",
+      "roof-home.png",
+      "roof-first.png",
+      "roof-third.png",
+      "balcony-end-left.png",
+      "balcony-end-right.png"
     ],
     "unmeasuredDimensions": "Photographic estimates, not survey dimensions",
-    "scope": "Balcony solid sweep, rear-stand ceiling, F11, pit, RYOBI rooms, green surround and scoreboard depth"
+    "scope": "revision 7: C/D returns, scoreboard backing, rear F ceiling, open C ends, roof grid in all four directions",
+    "userReference": "Annotated balcony ends, ceiling mass and real Tokyo Dome roof photo from this task"
+  },
+  "parapetCornerTests": {
+    "closedMesh": true,
+    "cornerRays": 3,
+    "passed": true
+  },
+  "additionalBalconyCeilingPlate": "removed per final user instruction",
+  "rearOutfieldCeiling": {
+    "samples": 688,
+    "rows": "17 onward, central outfield behind pillars, abs(x)<64.5",
+    "missing": []
   }
 }

@@ -163,6 +163,18 @@ try{
         checks.push({name:`rear-stand-solid-ceiling-${x}`,distance:0,heightError:hit?+Math.abs(hit.point.y-D.upperOutfieldMass.y0).toFixed(3):99,hit:hit?.point.toArray()});
       }
     }
+    {
+      const f=D.levels.find(l=>l.name==='F'),decode=(b,n)=>{const raw=atob(b),a=new Int16Array(raw.length/2);for(let i=0;i<a.length;i++)a[i]=(raw.charCodeAt(i*2)|(raw.charCodeAt(i*2+1)<<8))<<16>>16;return a;};
+      const seats=decode(f.seats),labels=decode(f.labels),ray=W.ray.clone(),missing=[];let samples=0;
+      for(let i=0,j=0;i<seats.length;i+=4,j+=3){
+        const x=seats[i]/f.seatScale,z=seats[i+1]/f.seatScale;
+        if(labels[j+1]<17||Math.abs(x)>=64.5)continue;
+        const y=f.hs[seats[i+2]];ray.origin.set(x,y+1.2,z+114);ray.direction.set(0,1,0);
+        const hit=W.bvh.raycastFirst(ray,2,0,16.3-y-1.2);samples++;
+        if(!hit)missing.push([D.blockNames[labels[j]],labels[j+1],labels[j+2]]);
+      }
+      checks.push({name:'all-rear-outfield-seats-have-ceiling',samples,missing:missing.slice(0,20),distance:0,heightError:missing.length?99:0});
+    }
     return {checks,stats:stage.stats(),effectivePillars:window.__verifyDomePillars};
   });
   fs.writeFileSync(path.join(output,'walk.json'),JSON.stringify(report,null,2));
