@@ -5,6 +5,7 @@ import { seatField } from '../rig.js';
 import { getTheaterSeatCatalog } from './theater-seats.js';
 import { buildTheaterBalcony,buildTheaterLanding,theaterRowZ } from './theater-balcony.js';
 import {addTheaterGateFrames,theaterSideOpenings} from './theater-entries.js';
+import {THEATER_SPLAY,THEATER_SPLAY_SLOPE,theaterWallX} from './theater-walls.js';
 
 // These are the drawn chair centres, with the section's own per-row heights.
 // Separate stair treads halve the high balcony risers so walking stays possible.
@@ -31,6 +32,10 @@ export function theaterHouse(root, { mode, carpet, wood, fabric, X, D }) {
     }
     for(const [z0,z1,y0,y1] of pieces)box(mat,x,(y0+y1)/2,(z0+z1)/2,w,y1-y0,z1-z0);
   };
+  const splayNorm=Math.hypot(1,THEATER_SPLAY_SLOPE);
+  const splayBox=(mat,side,z,y,offset,depth,h,length)=>box(mat,
+    side*(theaterWallX(z)-offset/splayNorm),y,z+offset*THEATER_SPLAY_SLOPE/splayNorm,
+    depth,h,length,side*Math.atan(THEATER_SPLAY_SLOPE));
   const levels=[], stepPts=[], lampSpots=[];
   for(let f=1;f<=3;f++) {
     const rows=catalog.getRows(`${f}F`).filter(r=>typeof r==='number'&&r<=22);
@@ -97,13 +102,14 @@ export function theaterHouse(root, { mode, carpet, wood, fabric, X, D }) {
   }
   // Projecting FOH lighting boxes and their horizontal timber slats.
   for(const side of [-1,1]) {
-    box(wood,side*(X-.45),9.45,14.25,.9,8.3,7.1);
-    box(mats.black,side*(X-.94),9.45,14.25,.055,6.4,5.75);
+    const mid=(THEATER_SPLAY.frontZ+THEATER_SPLAY.backZ)/2;
+    splayBox(wood,side,mid,9.45,.28,.8,8.3,7.1);
+    splayBox(mats.black,side,mid,9.45,.70,.035,6.4,5.75);
     for(let y=5.3;y<13.65;y+=.145) {
-      box(mats.dark,side*(X-.92),y,14.25,.035,.016,7.1);
+      splayBox(mats.dark,side,mid,y,.71,.025,.016,7.1);
     }
-    for(const z of [11.15,17.35]) {
-      box(wood,side*(X-1),9.45,z,.2,8.35,.38);
+    for(const z of [mid-3.35/splayNorm,mid+3.35/splayNorm]) {
+      splayBox(wood,side,z,9.45,.73,.18,8.35,.25);
     }
     // Wall reflector panels behind the boxes, staggered like the photos.
     for(let z=20;z<35;z+=3) {
@@ -111,10 +117,17 @@ export function theaterHouse(root, { mode, carpet, wood, fabric, X, D }) {
       wallFinish(wood,side,side*(X-.13),12.2+(Math.round(z)%2)*.5,z,.25,2.2,1.7);
     }
     // Horizontal wall courses, not the former vertical fins.
-    for(let y=.2;y<18;y+=.22)wallFinish(mats.dark,side,side*(X-.015),y,20,.03,.009,29);
+    for(let y=.2;y<18;y+=.22) {
+      splayBox(mats.dark,side,mid,y,.004,.016,.009,(THEATER_SPLAY.backZ-THEATER_SPLAY.frontZ)*splayNorm);
+      box(mats.dark,side*(THEATER_SPLAY.nearX-.008),y,(4.7+THEATER_SPLAY.frontZ)/2,.016,.009,THEATER_SPLAY.frontZ-4.7);
+      box(mats.dark,side*(THEATER_SPLAY.nearX+THEATER_SPLAY.frontX)/2,y,THEATER_SPLAY.frontZ+.008,THEATER_SPLAY.frontX-THEATER_SPLAY.nearX,.009,.016);
+      box(mats.dark,side*(THEATER_SPLAY.backX+X)/2,y,THEATER_SPLAY.backZ+.008,X-THEATER_SPLAY.backX,.009,.016);
+      wallFinish(mats.dark,side,side*(X-.015),y,(THEATER_SPLAY.backZ+34.5)/2,.03,.009,34.5-THEATER_SPLAY.backZ);
+    }
   }
   const regular=spots.filter(s=>s.kind!=='wheelchair');
-  root.add(seatField(regular,{fabric,frame:std({color:0x332719,roughness:.62}),style:'bluesquare'}));
+  const chairs=seatField(regular.map(s=>({...s,turn:s.yaw})),{fabric,frame:std({color:0x332719,roughness:.62}),style:'bluesquare'});
+  chairs.name='Theater seats';root.add(chairs);
   addSeatNumbers(root,regular);
   // Accessible bays get a small blue floor marker, not a theatre chair.
   for(const s of spots.filter(s=>s.kind==='wheelchair')) {

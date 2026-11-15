@@ -11,6 +11,7 @@ import { seatFinder } from '../stands.js';
 import { getTheaterSeatCatalog } from './theater-seats.js';
 import { theaterHouse } from './theater-house.js';
 import {buildTheaterStage} from './theater-stage.js';
+import {addTheaterSplayedWalls,theaterWallX} from './theater-walls.js';
 import {buildTheaterCeiling,theaterCeilingY} from './theater-ceiling.js';
 import {THEATER_GATES,THEATER_WALL_X,THEATER_WALL_THICKNESS,THEATER_REAR_Z,THEATER_SIDE_FRONT_DOOR,THEATER_SIDE_CONCOURSE_OPENING,theaterSideOpenings} from './theater-entries.js';
 
@@ -76,6 +77,7 @@ export function buildTheater(ctx) {
     root.add(wall);
 
   }
+  addTheaterSplayedWalls(root,{height:H,material:wallMat,front:PZ+PT});
   const ceiling=buildTheaterCeiling(root,{X});
   const backW = new THREE.Mesh(new THREE.PlaneGeometry(W, H), wallMat); backW.rotation.y = Math.PI; backW.position.set(0, H / 2, D); root.add(backW);
 
@@ -114,7 +116,7 @@ export function buildTheater(ctx) {
   root.add(deck);
   // side steps from the house floor up to the apron, either side of the pit
   for (const s of [-1, 1]) {
-    root.add(stageSteps({ x: s * 9.95, z: 8.45, h: DECK, dir: [0, -1], width: 1.4 }));
+    root.add(stageSteps({ x: s * 8.4, z: 8.45, h: DECK, dir: [0, -1], width: 1.1 }));
   }
   const lipM = glowMat(APP.accent, 0.35);
   const lip=new THREE.Mesh(new THREE.TubeGeometry(lipPath,64,.012,4,false),lipM);
@@ -175,7 +177,7 @@ export function buildTheater(ctx) {
   cluster.position.set(0, OT + 2.4, PZ + PT + 0.7); root.add(cluster);
   for (const side of [-1, 1]) {
     const col = lineArray({ boxes: 12, width: 0.7, depth: 0.5, height: 0.3, splay: 0.012 });
-    col.position.set(side * (OW / 2 + 1.35), OT - 0.4, PZ + PT + 0.5); col.rotation.y = -side * 0.25; root.add(col);
+    col.position.set(side * (theaterWallX(PZ+PT+.5)-.48), OT - 0.4, PZ + PT + 0.5); col.rotation.y = -side * 0.25; root.add(col);
   }
 
   // Exact plan-derived chairs and section-derived heights, shared with picker.
@@ -206,9 +208,9 @@ export function buildTheater(ctx) {
   const booms = [];
   for (const side of [-1, 1]) {
     const pipeM = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 8, 6), mats().black);
-    pipeM.position.set(side * (X - 0.5), 7, 9.6); root.add(pipeM);
+    pipeM.position.set(side * (theaterWallX(9.6)-.2), 7, 9.6); root.add(pipeM);
     for (let i = 0; i < 5; i++) {
-      const f = rig.add({ kind: 'profile', pos: V3(side * (X - 0.8), 4 + i * 1.4, 9.6), color: KELVIN(3400), length: 24, scale: 0.7, beamGain: 0.06, flareGain: 0.6 });
+      const f = rig.add({ kind: 'profile', pos: V3(side * (theaterWallX(9.6)-.38), 4 + i * 1.4, 9.6), color: KELVIN(3400), length: 24, scale: 0.7, beamGain: 0.06, flareGain: 0.6 });
       rig.aim(f, V3(-side * 1.5 + side * i * 0.4, DECK + 1.2, 1.5 - i * 0.8));
       booms.push(f);
     }
@@ -453,7 +455,7 @@ function concourses(root, { X, D, H, CY1, CZW, levels, slabMat, wallMat, SIDE_DO
   across(CZW, CY1, L2.y - 0.45, [2.7,CY1+.7,CY1+1.8]); // ground-floor control booth
   across(THEATER_REAR_Z[2], L2.y, L3.y - 0.45);                      // the 2nd floor's (under the 3rd floor's last tread)
   const zw3 = L3.z + 0.3;
-  across(zw3, L3.y, H, [5.5, L3.y + 1.9, L3.y + 3.2]); // the 3rd floor's, the followspots' window in it
+  across(zw3, L3.y, H); // User-requested solid rear wall; retain the two doors.
 
   for (const side of [-1, 1]) {
     const sx = (a, b) => [Math.min(side * a, side * b), Math.max(side * a, side * b)];
