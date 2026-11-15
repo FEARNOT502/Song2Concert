@@ -2,6 +2,37 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 44: the Saitama Super Arena's concourses closed in everywhere, the 400 level's backs walled from the seats' edge, square balcony ends, sloped funnel sides
+- **Asked** (user, 2026-11-15, five screenshots): the 300 and 500 levels' end faces as one clean face (a drawn box); the
+  300 level's partitions sticking out over the fence gone; places like 219 where the concourse's inside and outside meet
+  oddly found and fixed; the corner tunnels' side faces a clean slope, not steps; two seats of 207's block and the one
+  opposite pushed out in row 4; the fan lights' blocks tested and shown; why the wall was not raised from the 400 level's
+  long sides' back edge (the concourse's floor below seen past it); then: check the whole concourse so inside and outside
+  are cleanly split everywhere.
+- **400 level's backs** (`back_walls`): where a stand's back edge stands over its concourse (more than a rail's drop: the
+  400 long sides, 8 m over theirs), the rail there is a wall from the concourse's floor to its ceiling, or the arena's
+  ceiling where nothing stands over it (143 m on the 400, 31 m on the 200), smoothed of the raster's steps. Last round's
+  walls went up only at the concourse's outer side; the strip between was still seen from the seats.
+- **Raised doors** (212, 219, 232, 239, 407, 414, 425, 432): last round's free-standing jambs gone; each now a porch: a
+  face round the door (half a metre each side, less where the rows rise beside the aisle) and a wall each side of its
+  stair to the stair's foot, the room's own walls that wandered through it taken out.
+- **Every concourse closed** (`ssa_closure.py`, run by `ssa_gen.py` at the end and on its own): along each concourse's
+  enclosed floor's outline every 0.25 m, whatever is open between its floor and its ceiling (not a door, a vomitory's
+  mouth or a stair) is walled up floor to ceiling: 130 pieces (32.5 m: the 300 ends, the 400 corners, between 418 and
+  421, the 200's west by the suites' stairs); the check after: 0 open.
+- **Balcony ends** (`finish_ends`): one flat face on each end line, front row's front to the last row's back, from the
+  flat underside to the parapet's top at the front and the rail's over the last row (the top on the rows' slope), on to
+  the concourse's back below its floor; 0.25 m thick in the level's front finish. New `slopeWalls` on a level in
+  `stands.js` ([x0, z0, x1, z1, ya0, ya1, yb0, yb1, T, 'front'|'struct'], drawn as `thickPanel`s).
+- **300 partitions** removed.
+- **Funnels' sides**: each straight piece of a face with the rows stepping up it gets a concrete wall on the face's line from
+  the floor to one slope just over every step, and the fence on that slope (11 pieces).
+- **Seats** (`ssa_seats.align_runs`): a straight block's run between two aisles that the map draws two seats along from
+  the runs before and after it is moved back in line (0.9-1.2 m; straight blocks only): 207A row 4 and the north's copy.
+  (Wider rules moved fan rows and renamed a block; kept narrow so every label stays.)
+- **Fan lights**: pinned to the verse's block-colour scenes, house down: each block one colour, split at the aisles.
+- **Checks.** Build; the arena picker (236C · 15 · 750); doors: nothing across an opening; concourses: 0 open.
+
 ## Round 43: the Saitama Super Arena's doors and ends tidied: the north concourse, the 400 level's back walled to the ceiling, the 300 and 500 balconies' ends, every door checked
 - **Asked** (user, 2026-11-15, with five screenshots): the awkward door openings (219: the opening half blocked, a dark
   underside in it); the 300 level's ends untidy; the 200 level's short-side doors with no concourse behind them; the 400

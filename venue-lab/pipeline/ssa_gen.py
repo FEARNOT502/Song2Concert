@@ -417,7 +417,29 @@ for t in TUN:
     al=(X-p_[0])*u_[0]+(Z-p_[1])*u_[1]; la=np.abs((X-p_[0])*v_[0]+(Z-p_[1])*v_[1])
     WALLZONE|=(la<=t['w']/2+0.8)&(al>=-0.2)&(al<=t['L'])
 for f in FUN: WALLZONE|=f['zone']
-FENCES=[s_ for f in FUN for s_ in ST.funnel_fences(G,L2,f,floor=C200)]
+FENCES=[]; FUNWALLS=[]
+# each straight piece of a funnel's faces: the rows' ends step up it, row by row; a wall laid over them on the face's line,
+# from the floor up to one straight slope just over every step (the steps are under it, not seen), and the fence on that
+# slope, not stepping with the rows
+for f in FUN:
+    segs=ST.funnel_fences(G,L2,f,floor=C200)
+    path,norms=f['path'],f['normals']; i0=0
+    for k in range(len(path)-1):
+        a,b=np.asarray(path[k],float),np.asarray(path[k+1],float); Lk=float(np.hypot(*(b-a)))
+        m=max(1,int(np.ceil(Lk/0.25))); piece=segs[i0:i0+m]; i0+=m
+        if not piece: continue
+        u=(b-a)/max(Lk,1e-9)
+        S0=[(np.array(p[:2])-a)@u for p in piece]; S1=[(np.array(p[2:4])-a)@u for p in piece]; H=[p[4] for p in piece]
+        if max(H)-min(H)<0.2 or max(H)>C200-0.1:          # (a level piece, or one along the concourse: as it was)
+            FENCES+=piece; continue
+        B_=(H[-1]-H[0])/max(S1[-1]-S0[0],1e-6)
+        A_=max(max(h-B_*s0_,h-B_*s1_) for h,s0_,s1_ in zip(H,S0,S1))
+        top=lambda s_: A_+B_*s_
+        FENCES+=[[p[0],p[1],p[2],p[3],round(top(s0_),3),round(top(s1_),3)] for p,s0_,s1_ in zip(piece,S0,S1)]
+        n_=np.asarray(norms[k],float); rn=np.array([u[1],-u[0]])
+        pa,pb,ya,yb=(a,b,top(0.0),top(Lk)) if rn@n_<0 else (b,a,top(Lk),top(0.0))     # (thick away from the open floor)
+        FUNWALLS.append([round(float(pa[0]),2),round(float(pa[1]),2),round(float(pb[0]),2),round(float(pb[1]),2),0.0,round(ya,2),0.0,round(yb,2),0.3,'struct'])
+print('funnels\' faces walled on the slope: %d pieces'%len(FUNWALLS))
 print('corner tunnels',[(t['name'],[round(float(c),1) for c in t['p']],t['w'],'L',t['L'],'open cut',t['deck']) for t in TUN],'; funnel fences',len(FENCES),'segments')
 slabs=[(grow_under(c,y,[L2,L3,L4,L5]),(0.0 if y==C200 else y-0.35),y) for c,y in ((c200,C200),(c300,C300),(c400,C400),(c500,C500))]
 slabs.append((corr,SUY-0.45,SUY))        # the suites' corridor
@@ -501,8 +523,8 @@ for name,l,cm,cy in (('200',L2,c200,C200),('300',L3,c300,C300),('400',L4,c400,C4
             a,b=G.g((r[0]+r[2])/2,(r[1]+r[3])/2); a=int(round(float(a))); b=int(round(float(b)))
             return 0<=a<G.W and 0<=b<G.H and zone[b,a]
         rails=[r for r in rails if not inzone(r)]
-    levels.append({'name':name,'D':l.D,'h0':l.h0,'rise':l.rise,'rows':rows_,'steps':l.aisles_out(),'holes':[],'voms':VOMS.get(name,[]),'partitions':PART300 if name=='300' else [],
-                   'seats':l.seats_out(),'rails':rails,'walls':walls,'fences':FENCES if name=='200' else []})
+    levels.append({'name':name,'D':l.D,'h0':l.h0,'rise':l.rise,'rows':rows_,'steps':l.aisles_out(),'holes':[],'voms':VOMS.get(name,[]),'partitions':[],
+                   'seats':l.seats_out(),'rails':rails,'walls':walls,'fences':FENCES if name=='200' else [],'slopeWalls':FUNWALLS if name=='200' else []})
     print(name,'rows',len(levels[-1]['rows']),'steps',len(levels[-1]['steps']),'rails',len(rails),'walls',len(walls),round(time.time()-T0,1))
 # ── the 300 and 500 balconies' ends: each cut square on one straight line (along the rows' depth, a little past the
 # rows' last seats), every row run on to it, and closed there by a flat concrete cheek from the flat underside up
@@ -543,9 +565,10 @@ def finish_ends(entry,l,flat,rail=1.0,front_top=0.8):
         o=e*s; t=np.array([-e[1],e[0]])*90
         q=SPoly([(0,0),(sx*90,0),(sx*90,sz*90),(0,sz*90)])
         return SPoly([o+t,o-t,o-t+e*90,o+t+e*90]).intersection(q)
-    cheeks=[]
+    cheeks=[]; faces=[]
+    cm_=c300 if entry['name']=='300' else c500; cy_=C300 if entry['name']=='300' else C500
     for e,s,f,c,sx,sz in cuts:
-        H=beyond(e,s,sx,sz); near=beyond(e,s-1.2,sx,sz)
+        H=beyond(e,s,sx,sz); near=beyond(e,s-1.2,sx,sz); onl=[]
         for r in rows:
             g=G_[r['r']]
             if g.is_empty or not g.intersects(near): continue
@@ -561,8 +584,30 @@ def finish_ends(entry,l,flat,rail=1.0,front_top=0.8):
             for seg in ([ln] if isinstance(ln,SLine) else list(getattr(ln,'geoms',[]))):
                 if not isinstance(seg,SLine) or seg.length<0.1: continue
                 (ax,az),(bx,bz)=seg.coords[0],seg.coords[-1]
-                top=r['y']+(front_top if r['r']==0 else rail)
-                cheeks.append([round(ax,2),round(az,2),round(bx,2),round(bz,2),round(flat,2),round(top,2)])
+                onl.append((r['r'],r['y'],np.array([ax,az]),np.array([bx,bz])))
+        # the end's face: one flat wall on the line from the front row's front to the last row's back, from the flat
+        # underside to the parapet's top at the front and the rail's over the last row at the back (its top on the
+        # slope of the rows); on behind it to the concourse's back, closed from the underside up to the concourse's
+        # floor (its own wall stands on from there), 0.25 m thick, in the front's finish
+        if onl:
+            o=c+e*(s-c@e)                                     # (a point on the line)
+            P_=[q for _,_,a_,b_ in onl for q in (a_,b_)]; k_=[(q-o)@f for q in P_]
+            F=P_[int(np.argmax(k_))]; B=P_[int(np.argmin(k_))]
+            yF=min(y_ for _,y_,_,_ in onl)+front_top; yB=max(y_ for _,y_,_,_ in onl)+rail
+            # the concourse behind: from B back along the line while the concourse is there
+            k=0.0
+            while k<12.0:
+                i_,j_=[int(round(float(cc))) for cc in G.g(*(B-f*(k+0.1)-e*0.3))]
+                if not (0<=i_<G.W and 0<=j_<G.H and cm_[j_,i_]): break
+                k+=0.1
+            Bc=B-f*k
+            def face(a_,b_,ya0,ya1,yb0,yb1):
+                # (thick inward, away from the end: thickPanel lays it out to the right of a->b)
+                d_=b_-a_; rn=np.array([d_[1],-d_[0]])
+                if rn@e>0: a_,b_,ya0,ya1,yb0,yb1=b_,a_,yb0,yb1,ya0,ya1
+                faces.append([round(float(a_[0]),2),round(float(a_[1]),2),round(float(b_[0]),2),round(float(b_[1]),2),round(ya0,2),round(ya1,2),round(yb0,2),round(yb1,2),0.25,'front'])
+            face(F,B,flat,yF,flat,yB)
+            if k>0.2: face(B,Bc,flat,cy_,flat,cy_)
         # what stood past the line, or along it at the end (the old end pieces): gone
         def keep(w):
             a=np.array(w[:2]); b=np.array(w[2:4]); u=b-a; L=np.linalg.norm(u)
@@ -578,11 +623,43 @@ def finish_ends(entry,l,flat,rail=1.0,front_top=0.8):
         entry['steps']=[st for st in entry['steps'] if not SPoly(st['polys'][0]).buffer(0).centroid.within(H)]
     for r in rows:
         r['polys']=_out_poly(G_[r['r']].simplify(0.06))
-    entry['rails']=smooth_rails(entry['rails'])+cheeks
-    print('balcony',entry['name'],'ends cut',len(cuts),'cheeks',len(cheeks),[(round(float(s),2),e.round(2).tolist()) for e,s,*_ in cuts])
+    entry['rails']=smooth_rails(entry['rails'])
+    entry['slopeWalls']=faces
+    print('balcony',entry['name'],'ends cut',len(cuts),'end faces',len(faces),[(round(float(s),2),e.round(2).tolist()) for e,s,*_ in cuts])
 for entry_ in levels:
     if entry_['name'] in ('300','500'):
         finish_ends(entry_,LV[entry_['name']],SEC[entry_['name']]['bottom'](0,0))
+# ── the stands' backs where they stand over the concourse behind them (a drop of more than a rail's worth: the 400
+# level's long sides, 8 m over their concourse; the corners' raised doors): a wall up from the concourse's floor at the
+# treads' back edge to its ceiling (the 400 level's, where nothing stands over it: to the arena's ceiling), not a rail
+# with the concourse's floor seen past it; the doors cut through it as through any wall ──
+def back_walls(entry,l,cm,cy,top_of):
+    keep=[]; made=[]
+    for w in entry['rails']:
+        a=np.array(w[:2]); b=np.array(w[2:4]); L_=float(np.hypot(*(b-a)))
+        if L_<1e-6 or w[5]-w[4]<0.7 or w[5]-w[4]>1.3: keep.append(w); continue          # (the back edge's own rails: a rail's height)
+        m=(a+b)/2; u=(b-a)/L_; n_=np.array([-u[1],u[0]])
+        side=[]
+        for sg in (1,-1):
+            i_,j_=[int(round(float(c))) for c in G.g(*(m+n_*sg*0.5))]
+            side.append((i_,j_) if 0<=i_<G.W and 0<=j_<G.H else None)
+        ins=[s_ for s_ in side if s_ is not None and l.R[s_[1],s_[0]]>0]; out=[s_ for s_ in side if s_ is not None and l.R[s_[1],s_[0]]==0]
+        if len(ins)!=1 or len(out)!=1: keep.append(w); continue
+        (ii,ij),(oi,oj)=ins[0],out[0]
+        if l.d[ij,ii]<3.0 or (entry['name']=='200' and WALLZONE[oj,oi]): keep.append(w); continue   # (a front, or a funnel's side)
+        if not cm[oj,oi]: keep.append(w); continue                     # (not over its concourse)
+        if w[4]-cy<0.6: keep.append(w); continue
+        made.append([w[0],w[1],w[2],w[3],round(cy,2),round(float(top_of(oi,oj,w[4])),2)])
+    entry['rails']=keep; entry['walls']=entry['walls']+merge_runs(smooth_rails(made,0.12))
+    print('back walls',entry['name'],len(made),'pieces, %.0f m'%sum(np.hypot(p[2]-p[0],p[3]-p[1]) for p in made))
+def _top200(oi,oj,h): 
+    t=roomtop[oj,oi]; return t if np.isfinite(t) and t>h+0.5 else C200+4.0
+def _top400(oi,oj,h):
+    if not over4[oj,oi]: return ROOF
+    t=roomtop[oj,oi]; return t if np.isfinite(t) and t>h+0.5 else C400+4.0
+for entry_ in levels:
+    if entry_['name']=='200': back_walls(entry_,L2,c200,C200,_top200)
+    if entry_['name']=='400': back_walls(entry_,L4,c400,C400,_top400)
 # ── the doors' frames and number plates (one plate on each face of the wall over the opening), and a check that
 # nothing stands in an opening ──
 DOOR_W,DOOR_H=1.8,2.5
@@ -672,36 +749,53 @@ def cut_doors(panels,doors,keep_lintel=True):
         if L-s0>0.02: out.append([*(a+u*s0).round(2),*b.round(2),pnl[4],pnl[5]])
     return [[round(float(c),2) for c in o] for o in out]
 encl['walls']=cut_doors(encl['walls'],DOORLIST)
-# a raised door (up a stair from the concourse) stands at the stand's back edge with no wall of the concourse's round it:
-# set in a wall of its own, the door's face run out from each post to whatever is beside it (a wall, or the rows rising
-# beside the aisle; 1.5 m at most), from the ground up to over the opening, and over the opening to the same height
-_RW=[SLine([(w[0],w[1]),(w[2],w[3])]) for w in encl['walls']]
-def _ground(q,sill):
+# a raised door (up a stair from the concourse): its stair in a porch of its own, square, set on the stand's back
+# edge: a face round the door (the frame's width and half a metre each side, up to over the opening; less where the
+# rows beside the aisle rise above the sill) and a wall each side of the stair from the face's ends to the stair's foot,
+# from the concourse's floor to its ceiling (or to the face's top where nothing is over it); so from the stands the door
+# stands in a wall, and through it the stair goes down between walls
+def _tread_at(q):
     i_,j_=[int(round(float(c))) for c in G.g(*q)]
-    if not (0<=i_<G.W and 0<=j_<G.H): return None
+    if not (0<=i_<G.W and 0<=j_<G.H): return None,None
     for l__ in (L2,L4):
-        if l__.band[j_,i_]>=0:
-            h_=float(l__.h(l__.band[j_,i_]))
-            if abs(h_-sill)<3.0: return h_
-    return None
-JAMBS=[]
+        if l__.band[j_,i_]>=0: return float(l__.h(l__.band[j_,i_])),(i_,j_)
+    return None,(i_,j_)
+PORCH=[]; PORCH_IN=[]
 for dd in DOORLIST:
     if (dd['level'],dd['n']) not in RAISED: continue
-    p=np.array(dd['p']); v=np.array(dd['v']); t=np.array([-v[1],v[0]]); sill=dd['y']; top=round(sill+dd['h']+0.6,2)
+    p=np.array(dd['p']); v=np.array(dd['v']); t=np.array([-v[1],v[0]]); sill=dd['y']; yc=LVL[dd['level']][0]
+    fl=[f for f in flights if abs(f['y1']-sill)<0.02 and np.hypot(f['x']+f['dx']*f['L']-p[0],f['z']+f['dz']*f['L']-p[1])<0.3]
+    if not fl: continue
+    f=fl[0]; u=-np.array([f['dx'],f['dz']]); Ls=f['L']+0.3
+    top=round(sill+dd['h']+0.45,2)
     for sg in (1,-1):
-        a0=DOOR_W/2+0.06; a=a0; lows=[]
-        while a<a0+1.5:
-            q=p+t*sg*(a+0.1); gr=_ground(q,sill)
-            if gr is not None and gr>sill+0.12: break                         # the rows rise beside the aisle
-            if any(w_.distance(SPt(*q))<0.08 and encl['walls'][k_][5]>sill+0.5 and encl['walls'][k_][4]<sill+2.0 for k_,w_ in enumerate(_RW) if w_.distance(SPt(*q))<0.5): a+=0.1; break
-            lows.append(gr if gr is not None else LVL[dd['level']][0]); a+=0.1
-        if a-a0<0.15: continue
-        A=p+t*sg*a0; B=p+t*sg*a
-        JAMBS.append([*np.round(A,2),*np.round(B,2),round(min(min(lows),sill),2),top])
-    A=p+t*(DOOR_W/2+0.06); B=p-t*(DOOR_W/2+0.06)
-    JAMBS.append([*np.round(A,2),*np.round(B,2),round(sill+dd['h']+0.2,2),top])     # over the opening (its frame's lintel under)
-print('raised doors set in walls: %d panels'%len(JAMBS))
-encl['walls']+=[[float(c) for c in j_] for j_ in JAMBS]
+        # the face, out from the post
+        a0=DOOR_W/2+0.06; a=a0
+        while a<DOOR_W/2+0.6:
+            h_,_=_tread_at(p+t*sg*(a+0.1))
+            if h_ is not None and h_>sill+0.12: break
+            a+=0.1
+        if a-a0>=0.1: PORCH.append([*np.round(p+t*sg*a0,2),*np.round(p+t*sg*a,2),round(sill-0.02,2),top])
+        # the stair's side, from the face's end back along the stair while it is clear of the stands
+        s0=p+t*sg*a; b=0.0
+        while b<Ls:
+            h_,ij=_tread_at(s0+u*(b+0.1))
+            if h_ is not None and h_>yc+0.3 and b>0.3: break
+            b+=0.1
+        if b<0.3: continue
+        q1=s0+u*b; ij=[int(round(float(c))) for c in G.g(*((s0+q1)/2))]
+        rt=roomtop[ij[1],ij[0]] if (0<=ij[0]<G.W and 0<=ij[1]<G.H) else -np.inf
+        PORCH.append([*np.round(s0,2),*np.round(q1,2),round(yc,2),round(float(rt) if np.isfinite(rt) and rt>yc+2.0 else top,2)])
+    # over the opening, to the face's top
+    PORCH.append([*np.round(p+t*(DOOR_W/2+0.06),2),*np.round(p-t*(DOOR_W/2+0.06),2),round(sill+dd['h']+0.2,2),top])
+    # inside the porch nothing else stands: the room's own walls that wandered through it go
+    hw=DOOR_W/2+0.02
+    PORCH_IN.append((SPoly([p+t*hw+u*0.08,p-t*hw+u*0.08,p-t*hw+u*(Ls-0.1),p+t*hw+u*(Ls-0.1)]),top))
+_n0=len(encl['walls'])
+encl['walls']=[w_ for w_ in encl['walls'] if not any(pg.contains(SPt((w_[0]+w_[2])/2,(w_[1]+w_[3])/2)) and w_[4]<tp_ for pg,tp_ in PORCH_IN)]
+print('  walls taken out of the porches',_n0-len(encl['walls']))
+encl['walls']+=[[float(c) for c in w_] for w_ in PORCH]
+print('raised doors\' porches: %d panels'%len(PORCH))
 for L_ in levels:
     L_['walls']=cut_doors(L_['walls'],DOORLIST); L_['rails']=cut_doors(L_['rails'],DOORLIST,keep_lintel=False)
 from shapely.geometry import LineString
@@ -743,6 +837,17 @@ data={'levels':levels,'floors':floors,'flights':[{k:(round(float(v),3) if not is
       'outer':[poly_out(p) for p in ow],'rooms':encl,'tunnels':tunnels_out(TUN),'suites':suites,'signs':SIGNS,'frames':FRAMES,'cutWalls':[]}
 data['levels'].append({'name':'300S','D':1.0,'h0':SY,'rise':SR,'rows':srows,'steps':[],'holes':[],'voms':[],'partitions':parts,
                        'seats':base64.b64encode(enc.tobytes()).decode('ascii'),'rails':glass_rail,'walls':[]})
+# ── every concourse closed in: along each concourse's enclosed floor's outline, whatever is open between its floor and
+# its ceiling (not a door, a vomitory's mouth or a stair: ssa_closure.py) is walled up, floor to ceiling ──
+import ssa_closure as SCL
+_n=0
+for _it in range(3):
+    _gp=SCL.gaps(data)
+    if not _gp: break
+    _n+=len(_gp)
+    _patch=[[round(g_['a'][0],2),round(g_['a'][1],2),round(g_['b'][0],2),round(g_['b'][1],2),round(g_['lo']-0.15,2),round(g_['hi']+0.15,2)] for g_ in _gp]
+    data['rooms']['walls']+=merge_runs(_patch)
+print('concourses closed: %d gaps walled up (%.1f m); left open: %d'%(_n,_n*0.25,len(SCL.gaps(data))))
 json.dump(data,open('ssa_stands.json','w'),separators=(',',':'))
 print('json KB',os.path.getsize('ssa_stands.json')//1024,round(time.time()-T0,1))
 pickle.dump((c200,c300,c400,c500),open('ssa_conc.pkl','wb'))

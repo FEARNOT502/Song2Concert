@@ -1500,6 +1500,22 @@ export function buildStands(data, {
         const m = new THREE.Mesh(geo, railMat); m.receiveShadow = true; g.add(m);
       }
     }
+    // walls whose top (and foot) run on a slope, [x0, z0, x1, z1, ya0, ya1, yb0, yb1, T, kind]: a balcony's end
+    // face square across it ('front': in the level's front finish), a funnel's side over its stepped rows ('struct')
+    if (L.slopeWalls?.length) {
+      const by = { front: [[], []], struct: [[], []] };
+      for (const r of L.slopeWalls) {
+        const k = r[9] === 'front' && frontMat ? 'front' : 'struct';
+        thickPanel(by[k][0], by[k][1], [r[0] + ox, r[1] + oz, r[2] + ox, r[3] + oz, r[4], r[5], r[6], r[7]], r[8] ?? 0.25);
+      }
+      for (const [k, [sp, sn]] of Object.entries(by)) {
+        if (!sp.length) continue;
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3));
+        geo.setAttribute('normal', new THREE.Float32BufferAttribute(sn, 3));
+        const m = new THREE.Mesh(geo, k === 'front' ? frontMat : (materials.levelStruct?.[L.name] ?? structMat)); m.receiveShadow = true; g.add(m);
+      }
+    }
     if (L.partitions?.length) {
       const pp = [];
       for (const [x0, z0, x1, z1, y0, y1] of L.partitions) {

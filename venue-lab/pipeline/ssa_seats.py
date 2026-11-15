@@ -324,6 +324,44 @@ def align(t, P, nums, runs, band=40, sb=None, nb=None):
     return out
 
 
+def align_runs(res, tol=0.6):
+    """A straight block's run of seats (a row between two aisles) that the map draws shifted along the row from the runs
+    before and after it (so it runs into the aisle at one end and stops short at the other: 207A's fourth row, two seats
+    over): moved along its own line to start where its neighbours do. -> how many runs moved"""
+    P, yaw, row, rb = res['P'], res['yaw'], res['row'], res['rblock']; n = 0
+    for b in np.unique(rb):
+        mb = rb == b; rows = sorted(set(row[mb].tolist())); runs = {}
+        k0 = np.nonzero(mb)[0]
+        f = np.array([np.sin(yaw[k0]).mean(), np.cos(yaw[k0]).mean()])
+        if np.ptp(np.degrees(np.unwrap(yaw[k0]))) > 0.5: continue              # (a fan or a curved block: its rows are not lines)
+        f /= np.linalg.norm(f); e = np.array([-f[1], f[0]])
+        for r in rows:
+            k = np.nonzero(mb & (row == r))[0]; k = k[np.argsort(P[k] @ e)]; s = P[k] @ e
+            cut = np.nonzero(np.diff(s) > 0.9)[0]
+            runs[r] = [k[a_:b_] for a_, b_ in zip(np.r_[0, cut + 1], np.r_[cut + 1, len(k)])]
+        def ov(k1, k2):
+            s1, s2 = P[k1] @ e, P[k2] @ e
+            return min(s1.max(), s2.max()) - max(s1.min(), s2.min())
+        for r in rows:
+            if r - 1 not in runs or r + 1 not in runs: continue
+            for k in runs[r]:
+                n1 = max(runs[r - 1], key=lambda q: ov(k, q)); n2 = max(runs[r + 1], key=lambda q: ov(k, q))
+                if ov(k, n1) < 1.0 or ov(k, n2) < 1.0: continue
+                s = P[k] @ e; s1 = P[n1] @ e; s2 = P[n2] @ e
+                a, b_ = s.min(), s.max(); a1, a2 = s1.min(), s2.min(); b1, b2 = s1.max(), s2.max()
+                d_ = None
+                # (the end its neighbours agree on: it should start there too, and not then run past their other ends)
+                if abs(a1 - a2) <= 0.3 and abs(a - (a1 + a2) / 2) > tol:
+                    d_ = (a1 + a2) / 2 - a
+                    if b_ + d_ > max(b1, b2) + 0.3: d_ = None
+                elif abs(b1 - b2) <= 0.3 and abs(b_ - (b1 + b2) / 2) > tol:
+                    d_ = (b1 + b2) / 2 - b_
+                    if a + d_ < min(a1, a2) - 0.3: d_ = None
+                if d_ is None or not 0.9 <= abs(d_) <= 1.2: continue      # (seats a whole two over, as the map's slips are)
+                P[k] += e * d_; n += 1
+    return n
+
+
 def level_official(d, R, rules, lv, OFF, skip=None):
     """The level's seats, numbered from the list (see the module's comment).
     skip(x, z): where no seat is added (the north end's front, rebuilt later)"""
@@ -525,6 +563,7 @@ def level_official(d, R, rules, lv, OFF, skip=None):
                added=np.array([0 if np.allclose(placed[k][0], S['P'][placed[k][2]]) else 1 for k in keys]),
                num=np.array([k[1] for k in keys]), rblock=np.array([dict(orows[k[0]])[k[1]] for k in keys]))
     stats['relaid'] = len(fixed)
+    stats['runs_aligned'] = align_runs(res)
     stats['seats'] = len(keys); stats['official'] = sum(len(v) for v in orows.values())
     stats['unplaced'] = stats['official'] - len(keys)
     return res, stats
