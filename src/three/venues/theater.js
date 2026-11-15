@@ -11,7 +11,7 @@ import { seatFinder } from '../stands.js';
 import { getTheaterSeatCatalog } from './theater-seats.js';
 import { theaterHouse } from './theater-house.js';
 import {buildTheaterStage} from './theater-stage.js';
-import {addTheaterSplayedWalls,theaterWallX} from './theater-walls.js';
+import {addTheaterSplayedWalls,theaterWallX,theaterSplayPoint,THEATER_SPLAY,THEATER_SPLAY_SLOPE} from './theater-walls.js';
 import {buildTheaterCeiling,theaterCeilingY} from './theater-ceiling.js';
 import {THEATER_GATES,THEATER_WALL_X,THEATER_WALL_THICKNESS,THEATER_REAR_Z,THEATER_SIDE_FRONT_DOOR,THEATER_SIDE_CONCOURSE_OPENING,theaterSideOpenings} from './theater-entries.js';
 
@@ -211,16 +211,21 @@ export function buildTheater(ctx) {
   // ── lighting rig ──
   const rig = ctx.rig({ finish: 'black' });
   // box booms on the side walls, near the stage
-  const booms = [];
+  const booms = [],boomBrackets=[];
   for (const side of [-1, 1]) {
     const pipeM = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 8, 6), mats().black);
-    pipeM.position.set(side * (theaterWallX(9.6)-.2), 7, 9.6); root.add(pipeM);
+    pipeM.position.copy(theaterSplayPoint(side,9.6,7,1));root.add(pipeM);
+    for(const y of [5,10.5]) {
+      const p=theaterSplayPoint(side,9.6,y,.56),g=new THREE.BoxGeometry(1.12,.065,.10);
+      g.rotateY(side*Math.atan(THEATER_SPLAY_SLOPE));g.translate(p.x,p.y,p.z);boomBrackets.push(g);
+    }
     for (let i = 0; i < 5; i++) {
-      const f = rig.add({ kind: 'profile', pos: V3(side * (theaterWallX(9.6)-.38), 4 + i * 1.4, 9.6), color: KELVIN(3400), length: 24, scale: 0.7, beamGain: 0.06, flareGain: 0.6 });
+      const f = rig.add({ kind: 'profile', pos: theaterSplayPoint(side,9.6,4+i*1.4,1.18), color: KELVIN(3400), length: 24, scale: 0.7, beamGain: 0.06, flareGain: 0.6 });
       rig.aim(f, V3(-side * 1.5 + side * i * 0.4, DECK + 1.2, 1.5 - i * 0.8));
       booms.push(f);
     }
   }
+  const boomMounts=new THREE.Mesh(mergeGeometries(boomBrackets),mats().black);boomMounts.name='Theater side lighting rail brackets';root.add(boomMounts);boomBrackets.forEach(g=>g.dispose());
   // overhead backlight: moving heads on the upstage electric, above the border
   const backs = [];
   for (let i = 0; i < 8; i++) {
@@ -300,15 +305,19 @@ export function buildTheater(ctx) {
   }
   // grazers at the foot of the proscenium wall, up the walnut
   const grazers = [];
-  for (const side of [-1, 1]) for (const x of [9.2, 11.6]) {
+  for (const side of [-1, 1]) for (const x of [THEATER_SPLAY.nearX-.70,THEATER_SPLAY.nearX-.28]) {
     const gz = shadowSpot(KELVIN(2700), 0, { angle: 0.5, penumbra: 1, cast: false });
-    gz.position.set(side * x, 0.4, PZ + PT + 0.35); gz.target.position.set(side * x, 9, PZ + PT - 0.2);
+    gz.name='Theater proscenium grazer';
+    gz.position.set(side*x,DECK+.12,PZ+PT+.35);gz.target.position.set(side*x,9,PZ+PT-.2);
     root.add(gz, gz.target); grazers.push(gz);
   }
   const wallWash = [];
   for (const side of [-1, 1]) for (const z of [12, 21]) {
     const l = new THREE.PointLight(KELVIN(2500), 0, 9, 2);
-    l.position.set(side * (X - 3.3), 7.4, z); root.add(l); wallWash.push(l);
+    if(z<=THEATER_SPLAY.backZ) {
+      l.name='Theater splayed-wall wash';l.position.copy(theaterSplayPoint(side,z,7.4,1.25));
+    } else l.position.set(side*(X-3.3),7.4,z);
+    root.add(l);wallWash.push(l);
   }
 
   // Haze sources for the screen and stage. Followspots use the Rig's actual

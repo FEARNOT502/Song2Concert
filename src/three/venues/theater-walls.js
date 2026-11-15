@@ -18,6 +18,13 @@ export function theaterWallX(z) {
   return THEATER_WALL_X;
 }
 
+// Positive offset is perpendicular to the sloped wall, into the auditorium.
+// Use the same frame for cabinet faces, rails and actual lighting fixtures.
+export function theaterSplayPoint(side,z,y,offset=0) {
+  const norm=Math.hypot(1,THEATER_SPLAY_SLOPE);
+  return new THREE.Vector3(side*(theaterWallX(z)-offset/norm),y,z+offset*THEATER_SPLAY_SLOPE/norm);
+}
+
 export function addTheaterSplayedWalls(root,{height,material,front=4.7}) {
   const p=THEATER_SPLAY;
   for(const side of [-1,1]) {

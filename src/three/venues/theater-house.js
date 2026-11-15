@@ -5,7 +5,7 @@ import { seatField } from '../rig.js';
 import { getTheaterSeatCatalog } from './theater-seats.js';
 import { buildTheaterBalcony,buildTheaterLanding,theaterRowZ } from './theater-balcony.js';
 import {addTheaterGateFrames,theaterSideOpenings} from './theater-entries.js';
-import {THEATER_SPLAY,THEATER_SPLAY_SLOPE,theaterWallX} from './theater-walls.js';
+import {THEATER_SPLAY,THEATER_SPLAY_SLOPE,theaterSplayPoint} from './theater-walls.js';
 
 // These are the drawn chair centres, with the section's own per-row heights.
 // Separate stair treads halve the high balcony risers so walking stays possible.
@@ -33,9 +33,10 @@ export function theaterHouse(root, { mode, carpet, wood, fabric, X, D }) {
     for(const [z0,z1,y0,y1] of pieces)box(mat,x,(y0+y1)/2,(z0+z1)/2,w,y1-y0,z1-z0);
   };
   const splayNorm=Math.hypot(1,THEATER_SPLAY_SLOPE);
-  const splayBox=(mat,side,z,y,offset,depth,h,length)=>box(mat,
-    side*(theaterWallX(z)-offset/splayNorm),y,z+offset*THEATER_SPLAY_SLOPE/splayNorm,
-    depth,h,length,side*Math.atan(THEATER_SPLAY_SLOPE));
+  const splayBox=(mat,side,z,y,offset,depth,h,length)=>{
+    const p=theaterSplayPoint(side,z,y,offset);
+    box(mat,p.x,p.y,p.z,depth,h,length,side*Math.atan(THEATER_SPLAY_SLOPE));
+  };
   const levels=[], stepPts=[], lampSpots=[];
   for(let f=1;f<=3;f++) {
     const rows=catalog.getRows(`${f}F`).filter(r=>typeof r==='number'&&r<=22);
@@ -103,8 +104,11 @@ export function theaterHouse(root, { mode, carpet, wood, fabric, X, D }) {
   // Projecting FOH lighting boxes and their horizontal timber slats.
   for(const side of [-1,1]) {
     const mid=(THEATER_SPLAY.frontZ+THEATER_SPLAY.backZ)/2;
-    splayBox(wood,side,mid,9.45,.28,.8,8.3,7.1);
-    splayBox(mats.black,side,mid,9.45,.70,.035,6.4,5.75);
+    // Hollow frame with a recessed back. The former full timber box plus
+    // opaque front panel enclosed the real side-light bodies and lenses.
+    for(const y of [9.45-3.675,9.45+3.675])splayBox(wood,side,mid,y,.28,.8,.95,7.1);
+    for(const z of [mid-3.2125/splayNorm,mid+3.2125/splayNorm])splayBox(wood,side,z,9.45,.28,.8,6.4,.675);
+    splayBox(mats.black,side,mid,9.45,.05,.06,6.4,5.75);
     for(let y=5.3;y<13.65;y+=.145) {
       splayBox(mats.dark,side,mid,y,.71,.025,.016,7.1);
     }

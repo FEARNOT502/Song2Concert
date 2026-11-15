@@ -293,6 +293,41 @@ for(const mode of ['general','op']) {
     assert.equal(wash.intensity,0);assert(rig.fx.filter(f=>f.kind!=='follow').every(f=>f.intensity===0),'musical playback keeps the other rig dark');
   }
   assert(!hazeSources.some(h=>h.power>0&&h.pos.y>10&&h.pos.z>25),'no detached followspot glow in rear seats');
+  // The side cabinets must be open recesses, and the real lamp bodies/lenses
+  // must sit ahead of their grille instead of being buried in opaque boxes.
+  const norm=Math.hypot(1,THEATER_SPLAY_SLOPE),mid=(THEATER_SPLAY.frontZ+THEATER_SPLAY.backZ)/2;
+  for(const side of [-1,1]) {
+    const inward=new THREE.Vector3(-side/norm,0,THEATER_SPLAY_SLOPE/norm);
+    ray.origin.set(side*theaterWallX(mid),11.037,mid);ray.origin.addScaledVector(inward,1.5);ray.direction.copy(inward).negate();
+    const back=bvh.raycastFirst(ray,THREE.DoubleSide,0,1.6);
+    assert(back&&back.distance>1.3,'side cabinet aperture has depth rather than an opaque front');
+  }
+  const sideLamps=rig.fx.filter(f=>f.kind==='profile'&&Math.abs(f.pos.x)>8&&f.pos.z>9&&f.pos.z<11);
+  assert.equal(sideLamps.length,10);
+  const bodyMatrix=new THREE.Matrix4(),bodyVertex=new THREE.Vector3();
+  for(const f of sideLamps) {
+    const index=rig.bodied.indexOf(f);assert(index>=0);
+    for(const mesh of [rig.iBase,rig.iYoke,rig.iHead]) {
+      mesh.getMatrixAt(index,bodyMatrix);
+      const p=mesh.geometry.attributes.position;
+      for(let i=0;i<p.count;i++) {
+        bodyVertex.fromBufferAttribute(p,i).applyMatrix4(bodyMatrix);
+        const offset=(theaterWallX(bodyVertex.z)-Math.abs(bodyVertex.x))/norm;
+        assert(offset>.85,'entire side fixture body clears the projecting cabinet frame');
+      }
+    }
+    ray.origin.copy(f._lens).addScaledVector(f.dir,.02);ray.direction.copy(f.dir);
+    assert(!bvh.raycastFirst(ray,THREE.DoubleSide,0,2),'side lens has an unobstructed path out towards the stage');
+  }
+  const washes=venue.root.getObjectsByProperty('name','Theater splayed-wall wash');assert.equal(washes.length,2);
+  for(const light of washes)assert((theaterWallX(light.position.z)-Math.abs(light.position.x))/norm>1,'auxiliary wash source is ahead of the side cabinet');
+  const grazers=venue.root.getObjectsByProperty('name','Theater proscenium grazer');assert.equal(grazers.length,4);
+  for(const light of grazers) {
+    assert(light.position.y>.93,'grazer is above the stage deck');
+    ray.origin.copy(light.position);ray.direction.set(0,-1,0);
+    const floor=bvh.raycastFirst(ray,THREE.DoubleSide,0,.5);
+    assert(floor&&Math.abs(floor.point.y-.93)<.005&&floor.distance>.08,'grazer stands above the stage, outside the splayed wall');
+  }
   console.log(`PASS Theater ${mode}: ${cat.seats.length} seats; splayed walls; ${aisle.toFixed(2)} m minimum clear side aisle; stage access; solid 3F rear wall; single stage surface; sealed rear floors; fence followspots; ${mode==='op'?'concert':'musical'} lighting; 12 gates; 24 concourse routes; 8 stair routes; pit`);
   geo.dispose();
 }
