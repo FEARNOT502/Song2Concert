@@ -23,6 +23,13 @@ Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
   slab over the point), not `enclose`'s `roomtop` (the highest of every storey's tops: it had them up to the 500's 27 m
   ceiling, tall pale columns over 212, 219, 232, 239); slivers of the 200's outline left by the porches under the 400's
   slab removed (the closing walls up what they shut).
+- **Porches squared** (user: "the layered walls, tidied"): each raised door's porch a box square to its door, as wide
+  as the door and its (turned) stair need, out to the stair's foot; every concourse wall touching the box (0.2 m round)
+  cleared, the 400's bowl wall kept; on the 400 the bowl wall is the box's face, its outline straightened through the door
+  (the notch in front filled with a rectangle back to the stand, the treads' ends 0-1.5 m past the door line within 1.3 m
+  of it cut back: the seats 1.6 m out untouched); on the 200 a face floor to its storey's ceiling, out past the box's side
+  to the concourse's wall beside it (2 m at most), a lintel to the same ceiling; a lid over the box just over the opening
+  where its storey's ceiling is higher (211, 220, 231, 240 and the 400's).
 - **Checks.** Doors: nothing across an opening; concourses: 0 open; renders of the four corners from the 400 seats and
   of the corner doors (200, 400) from both sides; build; the arena picker.
 

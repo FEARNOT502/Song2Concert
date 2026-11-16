@@ -481,9 +481,19 @@ encl['walls']=walls_to_roof(encl['walls'])
 # concourse's slab) or the arena's ceiling, 0.3 m thick into the concourse; the doors cut through it as through any
 # wall (lintels over them). The concourse's own walls along that line, in pieces of differing heights with the
 # doors' gaps run to the ceiling, go. ──
-def bowl_wall(l,floor_y,yb,over,keep_off=0.6,piece=0.5):
+def bowl_wall(l,floor_y,yb,over,keep_off=0.6,piece=0.5,doors=()):
     m=((l.R>0)|(getattr(l,'pits',None) if getattr(l,'pits',None) is not None else False)).astype(np.uint8)
     m=cv2.morphologyEx(m,cv2.MORPH_CLOSE,disk(0.4/G.res))
+    # (a raised door stands in a notch of the outline, the aisle's head: the notch filled to the door's own line, so the
+    # wall runs straight across it, through the door)
+    for p_,v_ in doors:
+        al_=(X-p_[0])*v_[0]+(Z-p_[1])*v_[1]; la_=np.abs(-(X-p_[0])*v_[1]+(Z-p_[1])*v_[0])
+        box_=(la_<1.8/2+0.9)&(al_<0)&(al_>-3.5)
+        # (only as far back as the stand: the box's cells with the stand somewhere behind them on their line)
+        m[box_]=1
+        # (and the treads' ends just past the door's line beside it cut back to it, short of the seats there 1.6 m out:
+        # the wall straight across the door and its jambs)
+        m[(la_<1.3)&(al_>=0)&(al_<1.5)]=0
     cs,_=cv2.findContours(m,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_NONE)
     cs=[c for c in cs if cv2.contourArea(c)*G.res**2>200]
     out=[]
@@ -508,7 +518,7 @@ def bowl_wall(l,floor_y,yb,over,keep_off=0.6,piece=0.5):
                         if bb==bb and floor_y+2.7<bb<top: top=float(bb)
                 out.append([round(float(p0[0]),2),round(float(p0[1]),2),round(float(p1[0]),2),round(float(p1[1]),2),round(yb,2),round(top,2)])
     return merge_runs(out)
-BOWL4=bowl_wall(L4,C400,C400-0.35,[level_solid(L5)[0],np.where(c500,C500-0.35,np.nan).astype(np.float32)])
+BOWL4=bowl_wall(L4,C400,C400-0.35,[level_solid(L5)[0],np.where(c500,C500-0.35,np.nan).astype(np.float32)],doors=[SNAP['400'][g_] for (n_,g_) in RAISED if n_=='400' and g_ in SNAP['400']])
 _bl=[SLine([(w[0],w[1]),(w[2],w[3])]) for w in BOWL4]; _bt=STRtree(_bl)
 def _near_bowl(w,d=0.6):
     q=SLine([(w[0],w[1]),(w[2],w[3])]).interpolate(0.5,normalized=True)
@@ -825,42 +835,54 @@ def _tread_at(q):
     for l__ in (L2,L4):
         if l__.band[j_,i_]>=0: return float(l__.h(l__.band[j_,i_])),(i_,j_)
     return None,(i_,j_)
-PORCH=[]; PORCH_IN=[]
+PORCH=[]; PORCH_BOX=[]; PORCH_LIDS=[]; FACES=[]
 for dd in DOORLIST:
     if (dd['level'],dd['n']) not in RAISED: continue
     p=np.array(dd['p']); v=np.array(dd['v']); t=np.array([-v[1],v[0]]); sill=dd['y']; yc=LVL[dd['level']][0]
     fl=[f for f in flights if abs(f['y1']-sill)<0.02 and np.hypot(f['x']+f['dx']*f['L']-p[0],f['z']+f['dz']*f['L']-p[1])<0.3]
     if not fl: continue
-    f=fl[0]; u=-np.array([f['dx'],f['dz']]); Ls=f['L']+0.3
+    f=fl[0]; u=-np.array([f['dx'],f['dz']]); tu=np.array([-u[1],u[0]])
+    # the box: square to the door, as wide as the door and the stair (turned or not) need, out to the stair's foot
+    corners=[p+tu*sg*WID/2+u*l_ for sg in (1,-1) for l_ in (0.0,f['L'])]
+    hw=max(DOOR_W/2+0.06,max(abs((c-p)@t) for c in corners)+0.15); d1=max((c-p)@v for c in corners)+0.3
+    d0=WALLT if dd['level']=='400' else 0.0
     top=round(sill+dd['h']+0.45,2)
     for sg in (1,-1):
-        # the face, out from the post
-        a0=DOOR_W/2+0.06; a=a0
-        while a<DOOR_W/2+0.6:
-            h_,_=_tread_at(p+t*sg*(a+0.1))
-            if h_ is not None and h_>sill+0.12: break
-            a+=0.1
-        if a-a0>=0.1 and dd['level']!='400':
-            A_,B_=(p+t*sg*a0,p+t*sg*a) if sg<0 else (p+t*sg*a,p+t*sg*a0)      # (left side the concourse's)
-            PORCH.append([*np.round(A_,2),*np.round(B_,2),round(sill-0.02,2),top])   # (the 400's bowl wall is its face)
-        # the stair's side, from the face's end back along the stair while it is clear of the stands
-        s0=p+t*sg*a+(v*WALLT if dd['level']=='400' else 0); b=0.0
-        while b<Ls:
-            h_,ij=_tread_at(s0+u*(b+0.1))
-            if h_ is not None and h_>yc+0.3 and b>0.3: break
-            b+=0.1
-        if b<0.3: continue
-        q1=s0+u*b; rt=over_at((s0+q1)/2,yc)
-        PORCH.append([*np.round(s0,2),*np.round(q1,2),round(yc,2),round(rt if rt is not None and rt>yc+2.0 else top,2)])
-    # over the opening, to the face's top
-    if dd['level']!='400': PORCH.append([*np.round(p+t*(DOOR_W/2+0.06),2),*np.round(p-t*(DOOR_W/2+0.06),2),round(sill+dd['h'],2),top])
-    # inside the porch nothing else stands: the room's own walls that wandered through it go
-    hw=DOOR_W/2+0.02
-    PORCH_IN.append((SPoly([p+t*hw+u*0.08,p-t*hw+u*0.08,p-t*hw+u*(Ls-0.1),p+t*hw+u*(Ls-0.1)]),top))
+        # its sides, square to the door's wall, from the wall back to the stair's foot, floor to its storey's ceiling
+        s0=p+t*sg*hw+v*d0; s1=p+t*sg*hw+v*d1; rt=over_at((s0+s1)/2,yc)
+        A_,B_=(s0,s1) if sg>0 else (s1,s0)                          # (thick outward, away from the stair)
+        PORCH.append([*np.round(A_,2),*np.round(B_,2),round(yc,2),round(rt if rt is not None and rt>yc+2.0 else top,2)])
+        if dd['level']!='400':
+            # (the 200's: a face round the door, floor to its storey's ceiling, out past the box's side to the concourse's
+            # wall beside it: laid once the walls round the box are cleared, below)
+            FACES.append((p,v,t,sg,hw,yc,sill,dd['h']))
+    if dd['level']!='400':
+        oc_=over_at(p+v*0.4,yc); PORCH.append([*np.round(p+t*(DOOR_W/2+0.06),2),*np.round(p-t*(DOOR_W/2+0.06),2),round(sill+dd['h'],2),round(oc_ if oc_ is not None and oc_<yc+6.0 else top,2)])
+    PORCH_BOX.append((SPoly([p+t*hw+v*(d0+0.05),p-t*hw+v*(d0+0.05),p-t*hw+v*d1,p+t*hw+v*d1]).buffer(0.2),max(top,yc+4.5)))
+    # a lid over the box, just over the opening (under its storey's ceiling): from the concourse the porch is a short
+    # tunnel up to the door, whatever the stands' undersides do over it
+    oc=over_at(p+v*(d0+d1)/2,yc); lid=min(sill+dd['h']+0.4,(oc-0.02) if oc is not None else 99.0)
+    if lid>sill+dd['h']+0.05:
+        ring=[p+t*hw+v*d0,p-t*hw+v*d0,p-t*hw+v*d1,p+t*hw+v*d1]
+        PORCH_LIDS.append({'y':round(lid,3),'polys':[[[[round(float(q[0]),2),round(float(q[1]),2)] for q in ring]]]})
+# in and round the box nothing else stands: the concourse's own walls through it or along its sides go
 _n0=len(encl['walls'])
-encl['walls']=[w_ for w_ in encl['walls'] if not any(pg.contains(SPt((w_[0]+w_[2])/2,(w_[1]+w_[3])/2)) and w_[4]<tp_ for pg,tp_ in PORCH_IN)]
+_B4=set(tuple(w_[:4]) for w_ in BOWL4)
+encl['walls']=[w_ for w_ in encl['walls'] if tuple(w_[:4]) in _B4 or not any(SLine([(w_[0],w_[1]),(w_[2],w_[3])]).intersects(pg) and w_[4]<tp_ for pg,tp_ in PORCH_BOX)]
 print('  walls taken out of the porches',_n0-len(encl['walls']))
+_EW2=[SLine([(w_[0],w_[1]),(w_[2],w_[3])]) for w_ in encl['walls']]; _ET2=STRtree(_EW2)
+for p,v,t,sg,hw,yc,sill,dh in FACES:
+    oc=over_at(p+v*0.4,yc); ftop=oc if oc is not None and oc<yc+6.0 else sill+dh+0.45
+    a0=DOOR_W/2+0.06; a=hw
+    while a<hw+2.0:                                   # (on to the concourse's wall beside it, 2 m at most)
+        q=SPt(*(p+t*sg*a+v*0.05))
+        if any(_EW2[i].distance(q)<0.12 for i in _ET2.query(q.buffer(0.12))): break
+        a+=0.1
+    A_,B_=(p+t*sg*a,p+t*sg*a0) if sg>0 else (p-t*a0,p-t*a)     # (thick into the concourse)
+    PORCH.append([*np.round(A_,2),*np.round(B_,2),round(yc,2),round(ftop,2)])
 encl['walls']+=[[float(c) for c in w_] for w_ in PORCH]
+encl['ceils']+=PORCH_LIDS
+print('  porch lids',len(PORCH_LIDS))
 # (slivers of the concourse's outline left beside a porch, under a storey's slab far over the door: gone; the closing
 # below walls up what they shut, to the storey's own ceiling)
 _RD=[(np.array(dd['p']),dd['y']+dd['h']) for dd in DOORLIST if (dd['level'],dd['n']) in RAISED and dd['level']=='200']
