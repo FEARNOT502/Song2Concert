@@ -724,6 +724,12 @@ def headroom(p,v,sill):
             for y_,g_ in OVER:
                 if sill+0.5<y_<lo and g_.contains(q): lo=y_
     return lo-sill
+def over_at(q,y):
+    """the lowest ceiling, underside or slab over the point q above the floor y (its own storey's top)"""
+    lo=99.0; P_=SPt(*q)
+    for y_,g_ in OVER:
+        if y+0.5<y_<lo and g_.contains(P_): lo=y_
+    return lo if lo<99 else None
 SIGNS=[]; FRAMES=[]; DOORLIST=[]; LOWDOORS={}; WALLT=0.3
 for name,sn in SNAP.items():
     y0,l=FL[name]
@@ -834,19 +840,20 @@ for dd in DOORLIST:
             h_,_=_tread_at(p+t*sg*(a+0.1))
             if h_ is not None and h_>sill+0.12: break
             a+=0.1
-        if a-a0>=0.1: PORCH.append([*np.round(p+t*sg*a0,2),*np.round(p+t*sg*a,2),round(sill-0.02,2),top])
+        if a-a0>=0.1 and dd['level']!='400':
+            A_,B_=(p+t*sg*a0,p+t*sg*a) if sg<0 else (p+t*sg*a,p+t*sg*a0)      # (left side the concourse's)
+            PORCH.append([*np.round(A_,2),*np.round(B_,2),round(sill-0.02,2),top])   # (the 400's bowl wall is its face)
         # the stair's side, from the face's end back along the stair while it is clear of the stands
-        s0=p+t*sg*a; b=0.0
+        s0=p+t*sg*a+(v*WALLT if dd['level']=='400' else 0); b=0.0
         while b<Ls:
             h_,ij=_tread_at(s0+u*(b+0.1))
             if h_ is not None and h_>yc+0.3 and b>0.3: break
             b+=0.1
         if b<0.3: continue
-        q1=s0+u*b; ij=[int(round(float(c))) for c in G.g(*((s0+q1)/2))]
-        rt=roomtop[ij[1],ij[0]] if (0<=ij[0]<G.W and 0<=ij[1]<G.H) else -np.inf
-        PORCH.append([*np.round(s0,2),*np.round(q1,2),round(yc,2),round(float(rt) if np.isfinite(rt) and rt>yc+2.0 else top,2)])
+        q1=s0+u*b; rt=over_at((s0+q1)/2,yc)
+        PORCH.append([*np.round(s0,2),*np.round(q1,2),round(yc,2),round(rt if rt is not None and rt>yc+2.0 else top,2)])
     # over the opening, to the face's top
-    PORCH.append([*np.round(p+t*(DOOR_W/2+0.06),2),*np.round(p-t*(DOOR_W/2+0.06),2),round(sill+dd['h']+0.2,2),top])
+    if dd['level']!='400': PORCH.append([*np.round(p+t*(DOOR_W/2+0.06),2),*np.round(p-t*(DOOR_W/2+0.06),2),round(sill+dd['h'],2),top])
     # inside the porch nothing else stands: the room's own walls that wandered through it go
     hw=DOOR_W/2+0.02
     PORCH_IN.append((SPoly([p+t*hw+u*0.08,p-t*hw+u*0.08,p-t*hw+u*(Ls-0.1),p+t*hw+u*(Ls-0.1)]),top))
@@ -854,6 +861,12 @@ _n0=len(encl['walls'])
 encl['walls']=[w_ for w_ in encl['walls'] if not any(pg.contains(SPt((w_[0]+w_[2])/2,(w_[1]+w_[3])/2)) and w_[4]<tp_ for pg,tp_ in PORCH_IN)]
 print('  walls taken out of the porches',_n0-len(encl['walls']))
 encl['walls']+=[[float(c) for c in w_] for w_ in PORCH]
+# (slivers of the concourse's outline left beside a porch, under a storey's slab far over the door: gone; the closing
+# below walls up what they shut, to the storey's own ceiling)
+_RD=[(np.array(dd['p']),dd['y']+dd['h']) for dd in DOORLIST if (dd['level'],dd['n']) in RAISED and dd['level']=='200']
+_n0=len(encl['walls'])
+encl['walls']=[w_ for w_ in encl['walls'] if not (w_[4]<C200+0.5 and np.hypot(w_[2]-w_[0],w_[3]-w_[1])<0.6 and any(np.hypot((w_[0]+w_[2])/2-q_[0],(w_[1]+w_[3])/2-q_[1])<2.0 and w_[5]>t_+1.0 for q_,t_ in _RD))]
+print('  slivers by the porches taken out',_n0-len(encl['walls']))
 print('raised doors\' porches: %d panels'%len(PORCH))
 # over every door the wall is whole: the concourse's walls leave a door's gap open to their tops (the frame and its wall
 # standing only a door's height): a lintel across it from the opening's top to the walls' tops beside it
@@ -868,11 +881,13 @@ for dd in DOORLIST:
             if _EW[i].distance(q)<0.4 and w[4]<top_o and w[5]>top_o+0.2: nb.append(w)
     if not nb: continue
     top=max(w[5] for w in nb)
+    # (no higher than the concourse's own ceiling just inside the door: a taller wall beside it is another storey's)
+    rt=over_at(p+v*0.8,dd['y'])
+    top=min(top,rt if rt is not None else dd['y']+4.5)
+    if top<=top_o+0.1: continue
     covered=any(_EW[i].distance(SPt(*p))<0.3 and encl['walls'][i][4]<=top_o+0.1 and encl['walls'][i][5]>=top-0.1 for i in _ET.query(SPt(*p).buffer(0.3)))
     if covered: continue
-    w0=max(nb,key=lambda w:np.hypot(w[2]-w[0],w[3]-w[1])); dn=np.array([w0[2]-w0[0],w0[3]-w0[1]])
-    a_,b_=p-t*(DOOR_W/2+0.2),p+t*(DOOR_W/2+0.2)
-    if (b_-a_)@dn<0: a_,b_=b_,a_
+    a_,b_=p+t*(DOOR_W/2+0.2),p-t*(DOOR_W/2+0.2)          # (laid so its thickness goes into the concourse, the way the door faces)
     LINT.append([round(a_[0],2),round(a_[1],2),round(b_[0],2),round(b_[1],2),round(top_o,2),round(top,2)])
 encl['walls']+=LINT
 print('lintels over doors: %d'%len(LINT))

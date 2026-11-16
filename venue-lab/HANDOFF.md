@@ -18,8 +18,13 @@ Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
   (`enclose` leaves a door's gap open to the walls' tops): 54, from the opening's top to the walls' tops beside it.
 - **Thickness**: `rooms.thick` 0.3 (stands.js mitres the runs, closes jambs, tops and lintels' undersides); the closure
   patches and lintels laid so their thickness goes into the concourse.
-- **Checks.** Doors: nothing across an opening; concourses: 0 open; renders of each corner and of the corner doors from
-  both sides.
+- **Raised doors' porches**: on the 400 the bowl wall is their face (no face of their own; their sides start behind the
+  wall). The porches' sides and the lintels reach their own storey's ceiling (`over_at`: the lowest ceiling, underside or
+  slab over the point), not `enclose`'s `roomtop` (the highest of every storey's tops: it had them up to the 500's 27 m
+  ceiling, tall pale columns over 212, 219, 232, 239); slivers of the 200's outline left by the porches under the 400's
+  slab removed (the closing walls up what they shut).
+- **Checks.** Doors: nothing across an opening; concourses: 0 open; renders of the four corners from the 400 seats and
+  of the corner doors (200, 400) from both sides; build; the arena picker.
 
 ## Round 44: the Saitama Super Arena's concourses closed in everywhere, the 400 level's backs walled from the seats' edge, square balcony ends, sloped funnel sides
 - **Asked** (user, 2026-11-15, five screenshots): the 300 and 500 levels' end faces as one clean face (a drawn box); the
