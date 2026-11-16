@@ -160,6 +160,10 @@ def finish(data):
  # Match the complete back-of-screen face to the LED's own curve.
  _front_parapets(data)
  upper=sorted(data['upperWall'],key=lambda w:w['pts'][-1][0])
+ datum=round(data['rimCY']-1.2,3)
+ data['scoreboardBottom']=datum
+ for wall in upper:
+  wall['y0']=[datum if abs(y-16.2)<.01 else y for y in wall['y0']]
  left,right=[np.array(w['pts'][-1]) for w in upper]
  data['scoreboardSetback']=2.5
  data['scoreboardCurve']={'radius':125.,'falloff':.012,'wallBehind':.4,'bandAngle':31.}
@@ -180,8 +184,8 @@ def finish(data):
  back[0]=np.array(upper[0]['ret'][-1]);back[-1]=np.array(upper[1]['ret'][-1])
  front=[list(np.round(p,3)) for p in front];back=[list(np.round(p,3)) for p in back]
  mass=Polygon(front+back[::-1]);data.pop('continuousUpperWall',None)
- data['upperOutfieldMass']={'front':front,'back':back,'y0':13.6,'screenRange':[12,12+len(screen)-1],'screenAngles':angles.tolist()}
- data['outfieldBackWall']={'pts':front,'y0':13.6,'back':back}
+ data['upperOutfieldMass']={'front':front,'back':back,'y0':datum,'screenRange':[12,12+len(screen)-1],'screenAngles':angles.tolist()}
+ data['outfieldBackWall']={'pts':front,'y0':datum,'back':back}
  # Remove the old, independent ceiling sheet through the new solid volume.
  for ceiling in room['ceils']+room['soffits']:
   if ceiling['y']>13.61:ceiling['polys']=polys(geom([ceiling]).difference(mass))

@@ -1183,7 +1183,7 @@ export function buildRooms(R, { ox, oz, shapeOf, structMat, wallMat, lit: M }) {
 // pass under, walled either side a rail's height above the rows beside it,
 // then on under the rows above, walled, roofed and lit; closed at its end
 // by doors when it leads to rooms not drawn here.
-export function buildTunnels(data, ox, oz) {
+export function buildTunnels(data, ox, oz, materials = {}) {
   const g = new THREE.Group();
   const tunnelGeo = { wall: [], floor: [], lamp: [], metal: [] }, wire = [];
   const h1 = data.levels[0].h0;
@@ -1259,8 +1259,21 @@ export function buildTunnels(data, ox, oz) {
   }
   if (tunnelGeo.wall.length) g.add(new THREE.Mesh(mergeGeometries(tunnelGeo.wall), std({ color: data.tunnelFinish?.wall ?? 0x4c4a47, roughness: 0.92 })));
   if (tunnelGeo.floor.length) g.add(new THREE.Mesh(mergeGeometries(tunnelGeo.floor), std({ color: data.tunnelFinish?.floor ?? 0x2c2c2e, roughness: 0.95 })));
-  if (tunnelGeo.metal.length) g.add(new THREE.Mesh(mergeGeometries(tunnelGeo.metal), std({ color: 0x959a99, roughness: 0.96, metalness: 0.04, envMapIntensity: 0.08 })));
-  if (wire.length) {
+  if (tunnelGeo.metal.length) {
+    const mesh=new THREE.Mesh(mergeGeometries(tunnelGeo.metal),materials.tunnelMetal??std({ color: 0x959a99, roughness: 0.96, metalness: 0.04, envMapIntensity: 0.08 }));
+    mesh.name='Tunnel fence frame';g.add(mesh);
+  }
+  if (wire.length && materials.tunnelWire) {
+    const pieces=[];
+    for(let i=0;i<wire.length;i+=6){
+      const a=V3(...wire.slice(i,i+3)),b=V3(...wire.slice(i+3,i+6)),d=b.clone().sub(a);
+      if(d.length()<.001)continue;
+      const tube=new THREE.CylinderGeometry(.004,.004,d.length(),3);
+      tube.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(V3(0,1,0),d.normalize()));
+      tube.translate(...a.add(b).multiplyScalar(.5).toArray());pieces.push(tube.toNonIndexed());
+    }
+    const mesh=new THREE.Mesh(mergeGeometries(pieces),materials.tunnelWire);mesh.name='Tunnel fence wire';mesh.userData.noCollide=true;g.add(mesh);
+  } else if (wire.length) {
     const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(wire,3));
     const mesh=new THREE.LineSegments(geo,new THREE.LineBasicMaterial({color:0x929b9d}));mesh.userData.noCollide=true;g.add(mesh);
   }
@@ -1630,7 +1643,7 @@ export function buildStands(data, {
   }
   if (panels.mouth[0].length) g.add(new THREE.Mesh(mkPanels(panels.mouth), lit.mouthMat));
   if (data.rooms) g.add(buildRooms(data.rooms, { ox, oz, shapeOf, structMat, wallMat, lit }));
-  if (data.tunnels?.length) g.add(buildTunnels(data, ox, oz));
+  if (data.tunnels?.length) g.add(buildTunnels(data, ox, oz, materials));
   // the vomitories
   const addMerged = (list, mat, collide = true) => {
     if (!list.length) return;

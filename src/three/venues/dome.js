@@ -10,7 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import * as THREE from 'three';
-import { joinedStrip } from './dome-rails.js';
+import { joinedStrip, outfieldWallProfile } from './dome-rails.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { APP, DEG, KELVIN, V3, clamp, lerp, prng, std, floorPanelTex, glowMat, ringTint } from '../core.js';
 import { lightPoints } from '../people.js';
@@ -311,9 +311,8 @@ export function buildDome(ctx) {
     const sup = TD_STANDS.pillars.filter((c) => isScr(c) && !c.aisle);
     const armLen = sup.length ? Math.max(...sup.map((c) => { let bi = 0, bd = Infinity; pts.forEach((q, i) => { const d = Math.hypot(q.x - c.x, q.z - (c.z + ZH)); if (d < bd) { bd = d; bi = i; } }); return Math.abs(len[bi] - mid); })) : 46;
     const band = along(2 * (armLen + 1.5)), lower = along(20);
-    // level, its top 2 m under the floods where the ring is lowest over it
-    // (room for the sign over its middle)
-    const y1 = Math.min(...band.map((p) => ringY(p.z+setback))) - 1.6 - 3.0, y0 = y1 - 7.5, yl = y0 - 5.4;
+    // The long display and balcony fascia share the same bottom line.
+    const y0=TD_STANDS.scoreboardBottom??TD_STANDS.rimCY-1.2,y1=y0+7.5,yl=y0-5.4;
     return { F, ftop, pts, len, mid, band, lower, y0, y1, yl, a0: band[0].a, a1: band[band.length - 1].a, colMoved };
   })();
   // (the columns under it end at its frame)
@@ -366,6 +365,8 @@ export function buildDome(ctx) {
       floor: std({ color: 0xa7adab, roughness: 0.72, emissive: 0x5e6663, emissiveIntensity: 0.4, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }),
       levelStruct: { G: std({ color: 0x3b5144, roughness: 0.98 }) },
       levelRail: { C: new THREE.MeshBasicMaterial({ visible: false }) },
+      tunnelMetal: std({ color: 0x596160, roughness: 1, metalness: 0, envMapIntensity: 0 }),
+      tunnelWire: std({ color: 0x596160, roughness: 1, metalness: 0, envMapIntensity: 0 }),
     },
   });
   root.add(stands.group);
@@ -449,7 +450,7 @@ export function buildDome(ctx) {
       const P=profile.panel.pts.map(([x,z])=>({x,z:z+ZH})),Y=profile.panel.ys;
       const rail=profile.rail,R=rail.pts.map(([x,z])=>({x,z:z+ZH})),H=rail.ys;
       const isC=level==='C';
-      const g=joinedStrip(P,Y.map(y=>y+(isC?.08:.6)),Y.map(y=>y-(isC?1.2:.06)),isC?.08:.22);
+      const g=joinedStrip(P,Y.map(y=>y+(isC?.08:.6)),Y.map(y=>isC?TD_STANDS.rimCY-1.2:y-.06),isC?.08:.22);
       const mesh=new THREE.Mesh(g,isC?fascia:paint);mesh.receiveShadow=true;mesh.name=level+' front and right-angle return fascia';root.add(mesh);
       if(isC)glass.push(joinedStrip(R,H.map(y=>y+.93),H.map(y=>y+.08),.012));
       if(!isC)tube(R,H.map(y=>y+.54),.024);
@@ -630,17 +631,15 @@ export function buildDome(ctx) {
   {
     const parts = [];
     if(TD_STANDS.upperOutfieldMass){
-      for(const w of TD_STANDS.upperWall){
-        const P=w.pts.map(([x,z])=>({x,z:z+ZH}));
-        parts.push(wallStrip(P,P.map(p=>ringY(p.z)+.5),{y0:w.y0,thick:.4,ease:0}));
-      }
+      const profile=outfieldWallProfile(TD_STANDS),P=profile.points.map(([x,z])=>({x,z:z+ZH}));
+      parts.push(joinedStrip(P,P.map(p=>ringY(p.z)+.5),profile.bottoms,.4));
       const m=TD_STANDS.upperOutfieldMass,positions=[];
-      const point=([x,z],top=false)=>[x,top?ringY(z+ZH)+.5:m.y0,z+ZH];
+      const point=([x,z],i,top=false)=>[x,top?ringY(z+ZH)+.5:profile.massBottoms[i],z+ZH];
       const quad=(a,b,c,d)=>positions.push(...a,...b,...c,...a,...c,...d);
       for(let i=0;i<m.front.length-1;i++){
-        const a=point(m.front[i]),b=point(m.front[i+1]),c=point(m.back[i+1]),d=point(m.back[i]);
-        const A=point(m.front[i],true),B=point(m.front[i+1],true),C=point(m.back[i+1],true),D=point(m.back[i],true);
-        quad(a,b,B,A);quad(d,D,C,c);quad(a,d,c,b);quad(A,B,C,D);
+        const a=point(m.front[i],i),b=point(m.front[i+1],i+1),c=point(m.back[i+1],i+1),d=point(m.back[i],i);
+        const A=point(m.front[i],i,true),B=point(m.front[i+1],i+1,true),C=point(m.back[i+1],i+1,true),D=point(m.back[i],i,true);
+        quad(d,D,C,c);quad(a,d,c,b);quad(A,B,C,D);
         if(i===0)quad(a,A,D,d);
         if(i===m.front.length-2)quad(b,c,C,B);
       }
@@ -906,23 +905,6 @@ export function buildDome(ctx) {
     root.add(stageSteps({ x: p.x - ux * (len + 0.2), z: p.z - uz * (len + 0.2), h, dir: [ux, uz], width: 1.6 }));
   }
   root.add(new THREE.Mesh(padGeo, std({ color: 0x0b2a1a, roughness: 0.8 })));
-  // (behind home, between the back of the wall and the stand's first treads: closed in concrete at the wall's height)
-  {
-    const n = ringPts.length, parts = [];
-    let run = [];
-    const flushR = () => {
-      if (run.length > 3) {
-        const P = run.map((i) => { const p = ringPts[i], dx = p.x, dz = p.z - (ZH - 60), l = Math.hypot(dx, dz) || 1; return { x: p.x + dx / l * 0.5, z: p.z + dz / l * 0.5 }; });
-        const g = wallStrip(P, run.map((i) => ringH[i] - 0.01), { thick: 0.75, ease: 6 });
-        if (g) parts.push(g);
-      }
-      run = [];
-    };
-    let s0 = inMouth.findIndex((m, i) => m || ringOut[i]); if (s0 < 0) s0 = 0;
-    for (let k = 0; k < n; k++) { const i = (s0 + k) % n; if (!inMouth[i] && !ringOut[i] && 180 - phi(ringPts[i].x, ringPts[i].z) < 58) run.push(i); else flushR(); }
-    flushR();
-    if (parts.length) root.add(new THREE.Mesh(mergeGeometries(parts), std({ color: 0xa8a297, roughness: 0.9 })));
-  }
   // the steps of the excite seats: from the walkway behind their back rows up through a gap in the 1st floor's wall to the stand's aisle
   {
     const treads = [], RISE = 0.19;
@@ -1142,7 +1124,8 @@ export function buildDome(ctx) {
     const out = (p, k) => { const l = Math.hypot(p.x, p.z - ZH) || 1; return { x: p.x + p.x / l * k, z: p.z + (p.z - ZH) / l * k }; };
     const face = std({ color: 0x050506, roughness: 0.3, metalness: 0.2 });
     const frame = std({ color: 0x1c1d21, roughness: 0.7 });
-    root.add(new THREE.Mesh(wallStrip(band, band.map(() => y1), { y0, thick: 0.25, ease: 0 }), face));
+    const longDisplay=new THREE.Mesh(wallStrip(band,band.map(()=>y1),{y0,thick:.25,ease:0}),face);
+    longDisplay.name='Outfield long display';root.add(longDisplay);
     root.add(new THREE.Mesh(wallStrip(lower, lower.map(() => y0), { y0: yl, thick: 0.25, ease: 0 }), face));
     root.add(new THREE.Mesh(wallStrip(band.map((p) => out(p, 0.7)), band.map(() => y1 + 0.4), { y0: y0 - 0.4, thick: 1.0, ease: 0 }), frame));
     root.add(new THREE.Mesh(wallStrip(lower.map((p) => out(p, 0.7)), lower.map(() => y0), { y0: yl - 0.3, thick: 1.0, ease: 0 }), frame));
@@ -1198,8 +1181,8 @@ export function buildDome(ctx) {
       box(20,top,depth,0,top/2,faceZ-depth/2);
       // A room on each shoulder, recessed from the central plinth. The
       // panel sits in a shallow framed recess rather than on a sloped wing.
-      const frameM=std({color:0x244738,roughness:.95});
-      const panelM=std({color:0x11271e,roughness:1});
+      const frameM=std({color:0x244738,roughness:1,envMapIntensity:0});
+      const panelM=std({color:0x11271e,roughness:1,envMapIntensity:0});
       for(const room of TD_STANDS.batterEyeRooms??[]){
         const P=room.front.map(([x,z])=>({x,z:z+ZH}));
         const back=room.back.map(([x,z])=>({x,z:z+ZH}));
@@ -1222,7 +1205,8 @@ export function buildDome(ctx) {
         const ctx=cv.getContext('2d');ctx.fillStyle='#18382a';ctx.fillRect(0,0,1024,256);
         ctx.fillStyle='#dbc777';ctx.font='bold 172px Arial, sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('RYOBI',512,139);
         const tex=new THREE.CanvasTexture(cv);tex.colorSpace=THREE.SRGBColorSpace;
-        const ad=new THREE.Mesh(new THREE.PlaneGeometry(w-.7,2.5),new THREE.MeshBasicMaterial({map:tex,toneMapped:true,side:THREE.DoubleSide}));
+        const ad=new THREE.Mesh(new THREE.PlaneGeometry(w-.7,2.5),std({map:tex,roughness:1,metalness:0,envMapIntensity:0,side:THREE.DoubleSide}));
+        ad.name='RYOBI advertisement panel';ad.receiveShadow=true;
         ad.position.set(0,hi-2.05,.17);group.add(ad);root.add(group);
       }
       // Green headers close the shoulders of the lower LED and the

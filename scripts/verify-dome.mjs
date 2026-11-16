@@ -175,6 +175,23 @@ try{
       }
       checks.push({name:'all-rear-outfield-seats-have-ceiling',samples,missing:missing.slice(0,20),distance:0,heightError:missing.length?99:0});
     }
+    {
+      const issues=[],targets=[];
+      pipe.scene.traverse(o=>{
+        if(!['RYOBI advertisement panel','Tunnel fence frame','Tunnel fence wire'].includes(o.name))return;
+        const m=o.material;targets.push(o.name);
+        if(!m.isMeshStandardMaterial||m.emissive.getHex()!==0||m.envMapIntensity!==0)issues.push(o.name);
+      });
+      if(targets.length!==4)issues.push('missing sign or fence component');
+      checks.push({name:'RYOBI-and-A02-fence-have-no-self-light',samples:targets.length,issues,distance:0,heightError:issues.length?99:0});
+    }
+    {
+      let screen=null;const ads=[];
+      pipe.scene.traverse(o=>{if(o.name==='Outfield long display')screen=o;if(o.name==='RYOBI advertisement panel')ads.push(o);});
+      screen.geometry.computeBoundingBox();const bottom=screen.geometry.boundingBox.min.y,target=D.rimCY-1.2;
+      const error=Math.max(Math.abs(bottom-target),...ads.map(o=>Math.abs(o.position.y+1.25-(target-.5))));
+      checks.push({name:'scoreboard-and-RYOBI-follow-balcony-datum',bottom,target,RYOBITops:ads.map(o=>o.position.y+1.25),distance:0,heightError:+error.toFixed(4)});
+    }
     return {checks,stats:stage.stats(),effectivePillars:window.__verifyDomePillars};
   });
   fs.writeFileSync(path.join(output,'walk.json'),JSON.stringify(report,null,2));

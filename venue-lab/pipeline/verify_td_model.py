@@ -155,7 +155,9 @@ def verify(path):
     mass=data['upperOutfieldMass'];front=np.array(mass['front']);back=np.array(mass['back'])
     widths=np.linalg.norm(back-front,axis=1)
     assert min(widths)>5 and max(widths)>10,'screen backing does not reach the rear envelope'
-    assert mass['y0']==13.6 and Polygon(mass['front']+mass['back'][::-1]).is_valid
+    assert mass['y0']==data['scoreboardBottom']==data['rimCY']-1.2
+    assert all(w['y0'][-1]==mass['y0'] for w in data['upperWall']),'step at balcony/outfield join'
+    assert Polygon(mass['front']+mass['back'][::-1]).is_valid
     i,j=mass['screenRange'];angles=np.array(mass['screenAngles']);rad=np.radians(angles)
     radius=data['scoreboardCurve']['radius']-data['scoreboardCurve']['falloff']*angles**2
     expected=np.c_[np.sin(rad)*radius,-np.cos(rad)*radius-data['scoreboardSetback']-data['scoreboardCurve']['wallBehind']]

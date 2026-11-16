@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import {joinedStrip} from '../src/three/venues/dome-rails.js';
+import {joinedStrip,outfieldWallProfile} from '../src/three/venues/dome-rails.js';
+import {TD_STANDS} from '../src/three/venues/td-data.js';
 const P=[{x:0,z:0},{x:4,z:0},{x:4,z:3}],g=joinedStrip(P,[1,1,1],[0,0,0],.2);
 const a=g.attributes.position.array,edges=new Map();
 const key=i=>Array.from(a.slice(i,i+3),v=>v.toFixed(5)).join(',');
@@ -14,3 +15,14 @@ for(const [x,z] of [[4.05,-.05],[3.98,.02],[4.05,.05]]){
  assert(hit&&Math.abs(hit.point.y-1)<1e-6,`gap at right-angle corner ${x}, ${z}`);
 }
 console.log('Closed parapet and three corner rays passed');
+const profile=outfieldWallProfile(TD_STANDS),mass=TD_STANDS.upperOutfieldMass;
+const walls=[...TD_STANDS.upperWall].sort((a,b)=>a.pts.at(-1)[0]-b.pts.at(-1)[0]);
+for(const [i,k] of profile.joins.entries()){
+ assert.deepEqual(profile.points[k],walls[i].pts.at(-1),'wall junction shifted in plan');
+ assert.equal(profile.bottoms[k],walls[i].y0.at(-1),'vertical step at the wall junction');
+}
+assert.equal(profile.massBottoms[mass.screenRange[0]],mass.y0);
+assert.equal(profile.massBottoms[mass.screenRange[1]],mass.y0);
+assert(profile.massBottoms.every(y=>y===TD_STANDS.rimCY-1.2));
+assert.equal(TD_STANDS.scoreboardBottom,TD_STANDS.rimCY-1.2);
+console.log('Both wall joins share their face and soffit heights');
