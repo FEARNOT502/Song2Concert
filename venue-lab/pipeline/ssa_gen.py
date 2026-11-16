@@ -457,6 +457,8 @@ print('enclose',round(time.time()-t,1),{k:len(v) for k,v in encl.items()})
 # go on up to the arena's ceiling, so from the 500 balconies one looks at a wall, not over it onto the concourse's top;
 # its own ceiling stays where it is
 ROOF=30.0
+from shapely.geometry import Polygon as SPoly, LineString as SLine
+from shapely.strtree import STRtree
 over4=dil((L5.band>=0)|(L5.hull>0)|c500,0.4)
 def walls_to_roof(walls,top=20.5,piece=1.0):
     out=[]; n_=0
@@ -474,6 +476,47 @@ def walls_to_roof(walls,top=20.5,piece=1.0):
     return merge_runs(out)
 from standgen import merge_runs
 encl['walls']=walls_to_roof(encl['walls'])
+# ── the 400 level's bowl wall: between its concourse and the bowl one wall, on the stand's outline (smoothed of the
+# raster's steps), from the concourse's slab up to whatever stands over it (the 500 balcony's flat underside, its
+# concourse's slab) or the arena's ceiling, 0.3 m thick into the concourse; the doors cut through it as through any
+# wall (lintels over them). The concourse's own walls along that line, in pieces of differing heights with the
+# doors' gaps run to the ceiling, go. ──
+def bowl_wall(l,floor_y,yb,over,keep_off=0.6,piece=0.5):
+    m=((l.R>0)|(getattr(l,'pits',None) if getattr(l,'pits',None) is not None else False)).astype(np.uint8)
+    m=cv2.morphologyEx(m,cv2.MORPH_CLOSE,disk(0.4/G.res))
+    cs,_=cv2.findContours(m,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_NONE)
+    cs=[c for c in cs if cv2.contourArea(c)*G.res**2>200]
+    out=[]
+    for c in cs:
+        P=np.c_[G.m(c[:,0,0].astype(float),c[:,0,1].astype(float))]
+        ring=SPoly(P).buffer(0.02).simplify(0.15)
+        R_=np.array(ring.exterior.coords)
+        # clockwise in x, z: each piece's left side (where the renderer lays the thickness) the concourse's
+        if SPoly(R_).exterior.is_ccw: R_=R_[::-1]
+        for k in range(len(R_)-1):
+            a,b=R_[k],R_[k+1]; L_=float(np.hypot(*(b-a)))
+            if L_<1e-6: continue
+            u=(b-a)/L_; nl=np.array([-u[1],u[0]]); n_=max(1,int(np.ceil(L_/piece)))
+            for j in range(n_):
+                p0=a+(b-a)*j/n_; p1=a+(b-a)*(j+1)/n_; mid=(p0+p1)/2
+                top=ROOF
+                for q in (mid,mid+nl*0.3,mid-nl*0.3):
+                    i_,j_=[int(round(float(cc))) for cc in G.g(*q)]
+                    if not (0<=i_<G.W and 0<=j_<G.H): continue
+                    for B in over:
+                        bb=B[j_,i_]
+                        if bb==bb and floor_y+2.7<bb<top: top=float(bb)
+                out.append([round(float(p0[0]),2),round(float(p0[1]),2),round(float(p1[0]),2),round(float(p1[1]),2),round(yb,2),round(top,2)])
+    return merge_runs(out)
+BOWL4=bowl_wall(L4,C400,C400-0.35,[level_solid(L5)[0],np.where(c500,C500-0.35,np.nan).astype(np.float32)])
+_bl=[SLine([(w[0],w[1]),(w[2],w[3])]) for w in BOWL4]; _bt=STRtree(_bl)
+def _near_bowl(w,d=0.6):
+    q=SLine([(w[0],w[1]),(w[2],w[3])]).interpolate(0.5,normalized=True)
+    return any(_bl[i].distance(q)<d for i in _bt.query(q.buffer(d)))
+_n0=len(encl['walls'])
+encl['walls']=[w for w in encl['walls'] if not (w[4]>=C400-0.6 and w[5]>C400+0.5 and w[4]<C500-0.5 and _near_bowl(w))]
+encl['walls']+=BOWL4
+print('400 bowl wall: %d panels, %.0f m; the concourse\'s walls along it taken out: %d'%(len(BOWL4),sum(np.hypot(w[2]-w[0],w[3]-w[1]) for w in BOWL4),_n0-len(encl['walls'])+len(BOWL4)))
 skip=lambda ox,oy,h: roomtop[oy,ox]>=h+1.0
 fronts={'200':(0.0,0.75),'300':('tread',0.8),'400':('tread',0.8),'500':('tread',0.8)}
 def outside_fn(cmask,y):
@@ -681,20 +724,30 @@ def headroom(p,v,sill):
             for y_,g_ in OVER:
                 if sill+0.5<y_<lo and g_.contains(q): lo=y_
     return lo-sill
-SIGNS=[]; FRAMES=[]; DOORLIST=[]; LOWDOORS={}
+SIGNS=[]; FRAMES=[]; DOORLIST=[]; LOWDOORS={}; WALLT=0.3
 for name,sn in SNAP.items():
     y0,l=FL[name]
     for g,(p,v) in sn.items():
         y0=RAISED.get((name,g),FL[name][0])            # (the sill of a raised door)
+        if name=='400':
+            # (on the bowl wall's face: the nearest point of its line)
+            q_=SPt(*p); best_=None
+            for i_ in _bt.query(q_.buffer(1.0)):
+                dd_=_bl[i_].distance(q_)
+                if dd_<1.0 and (best_ is None or dd_<best_[0]): best_=(dd_,i_)
+            if best_: pp_=_bl[best_[1]].interpolate(_bl[best_[1]].project(q_)); p=np.array([pp_.x,pp_.y])
         yaw=float(np.arctan2(v[0],v[1]))
         # a door under something lower than a door's height (a raised door at a corner, its stair under the next stand's
         # back rows): the opening as high as there is room for, the underside its lintel, not hanging across it
         hr=headroom(p,v,y0); dh=DOOR_H
         if hr<DOOR_H+0.05: dh=round(max(2.0,hr-0.05),2); LOWDOORS[g]=(round(hr,2),dh)
-        FRAMES.append({'x':round(float(p[0]),2),'z':round(float(p[1]),2),'yaw':round(yaw,3),'w':DOOR_W,'h':dh,'y':y0,'label':str(g)})
+        # (the concourses' walls stand WALL_T thick from the door's line into the concourse: the frame through the
+        # whole of it, a plate on each face)
+        fc=p+v*WALLT/2
+        FRAMES.append({'x':round(float(fc[0]),2),'z':round(float(fc[1]),2),'yaw':round(yaw,3),'w':DOOR_W,'h':dh,'y':y0,'label':str(g)})
         for face,sg in ((0,1.0),(np.pi,-1.0)):
             if sg>0 and dh+0.38+0.25>hr: continue          # (no plate on the concourse's face where its ceiling comes down to the opening)
-            q=p+v*0.07*sg
+            q=p+v*(WALLT+0.07) if sg>0 else p-v*0.07
             SIGNS.append({'x':round(float(q[0]),2),'y':round(y0+dh+0.38,2),'z':round(float(q[1]),2),'yaw':round(yaw+face,3),'w':1.1,'label':str(g)})
         a_,b_=[int(round(float(c))) for c in G.g(*(p-v*1.5))]
         r_=int(l.band[b_,a_]) if l.band[b_,a_]>=0 else 0
@@ -707,19 +760,25 @@ def cut_doors(panels,doors,keep_lintel=True):
     for pnl in panels:
         a=np.array(pnl[0:2],float); b=np.array(pnl[2:4],float); L=float(np.hypot(*(b-a)))
         if L<1e-6: out.append(list(pnl)); continue
-        u=(b-a)/L; cuts=[]; drop=False
+        u=(b-a)/L; cuts=[]; drop=False; extra=[]
         for dd in doors:
             p=np.array(dd['p']); v=np.array(dd['v']); t=np.array([-v[1],v[0]])
             if abs(u@v)>0.88:                                    # runs along the aisle's axis: the aisle's side
                 # (a stub of it left in the opening itself goes)
                 lat=[abs((q-p)@t) for q in (a,b)]; dep=[(q-p)@v for q in (a,b)]
                 if L<0.6 and max(lat)<DOOR_W/2-0.2 and min(dep)>-1.5 and max(dep)<1.5: drop=True
-                # (one hung down into the way through, from over it: it starts over the opening)
+                # (one in the way through, from the sill up: the part of it within the opening's depth starts over the
+                # opening; the rest of it stays)
                 elif max(lat)<DOOR_W/2 and min(dep)<1.3 and max(dep)>-1.3:
                     tp=max(dd['y'],dd['yIn'])+dd.get('h',DOOR_H)
-                    if pnl[4]<tp and pnl[4]>dd['y']+0.5:
-                        if pnl[5]>tp+0.05: pnl=list(pnl); pnl[4]=round(tp,2)
-                        else: drop=True
+                    if pnl[4]<tp and pnl[5]>dd['y']+0.3:
+                        d0,d1=dep; t0=(-1.3-d0)/(d1-d0) if abs(d1-d0)>1e-9 else 0.0; t1=(1.3-d0)/(d1-d0) if abs(d1-d0)>1e-9 else 1.0
+                        lo_,hi_=max(0.0,min(t0,t1)),min(1.0,max(t0,t1))
+                        P_=lambda tt: (a+(b-a)*tt).round(2).tolist()
+                        for (u0,u1) in ((0.0,lo_),(hi_,1.0)):
+                            if u1-u0>1e-3: extra.append([*P_(u0),*P_(u1),pnl[4],pnl[5]])
+                        if pnl[5]>tp+0.05: extra.append([*P_(lo_),*P_(hi_),round(tp,2),pnl[5]])
+                        drop=True
                 continue
             sill=None
             for yy in (dd['y'],dd['yIn']):
@@ -738,7 +797,7 @@ def cut_doors(panels,doors,keep_lintel=True):
                     if t0>t1: t0,t1=t1,t0
                     lo_=max(lo_,t0); hi_=min(hi_,t1)
             if lo_<hi_-1e-6: cuts.append((lo_*L,hi_*L,sill,dd.get('h',DOOR_H)))
-        if drop: continue
+        if drop: out+=[list(e_) for e_ in extra]; continue
         if not cuts: out.append(list(pnl)); continue
         cuts.sort(key=lambda c:c[0]); s0=0.0
         for c0,c1,dd,dh_ in cuts:   # (dd: the sill's height, dh_ the opening's)
@@ -796,6 +855,27 @@ encl['walls']=[w_ for w_ in encl['walls'] if not any(pg.contains(SPt((w_[0]+w_[2
 print('  walls taken out of the porches',_n0-len(encl['walls']))
 encl['walls']+=[[float(c) for c in w_] for w_ in PORCH]
 print('raised doors\' porches: %d panels'%len(PORCH))
+# over every door the wall is whole: the concourse's walls leave a door's gap open to their tops (the frame and its wall
+# standing only a door's height): a lintel across it from the opening's top to the walls' tops beside it
+_EW=[SLine([(w[0],w[1]),(w[2],w[3])]) for w in encl['walls']]; _ET=STRtree(_EW); LINT=[]
+for dd in DOORLIST:
+    p=np.array(dd['p']); v=np.array(dd['v']); t=np.array([-v[1],v[0]]); top_o=max(dd['y'],dd['yIn'])+dd.get('h',DOOR_H)
+    nb=[]
+    for sg in (1,-1):
+        q=SPt(*(p+t*sg*(DOOR_W/2+0.35)))
+        for i in _ET.query(q.buffer(0.4)):
+            w=encl['walls'][i]
+            if _EW[i].distance(q)<0.4 and w[4]<top_o and w[5]>top_o+0.2: nb.append(w)
+    if not nb: continue
+    top=max(w[5] for w in nb)
+    covered=any(_EW[i].distance(SPt(*p))<0.3 and encl['walls'][i][4]<=top_o+0.1 and encl['walls'][i][5]>=top-0.1 for i in _ET.query(SPt(*p).buffer(0.3)))
+    if covered: continue
+    w0=max(nb,key=lambda w:np.hypot(w[2]-w[0],w[3]-w[1])); dn=np.array([w0[2]-w0[0],w0[3]-w0[1]])
+    a_,b_=p-t*(DOOR_W/2+0.2),p+t*(DOOR_W/2+0.2)
+    if (b_-a_)@dn<0: a_,b_=b_,a_
+    LINT.append([round(a_[0],2),round(a_[1],2),round(b_[0],2),round(b_[1],2),round(top_o,2),round(top,2)])
+encl['walls']+=LINT
+print('lintels over doors: %d'%len(LINT))
 for L_ in levels:
     L_['walls']=cut_doors(L_['walls'],DOORLIST); L_['rails']=cut_doors(L_['rails'],DOORLIST,keep_lintel=False)
 from shapely.geometry import LineString
@@ -840,12 +920,17 @@ data['levels'].append({'name':'300S','D':1.0,'h0':SY,'rise':SR,'rows':srows,'ste
 # ── every concourse closed in: along each concourse's enclosed floor's outline, whatever is open between its floor and
 # its ceiling (not a door, a vomitory's mouth or a stair: ssa_closure.py) is walled up, floor to ceiling ──
 import ssa_closure as SCL
+data['rooms']['thick']=WALLT          # (the concourses' walls 0.3 m thick, into the concourse)
 _n=0
 for _it in range(3):
     _gp=SCL.gaps(data)
     if not _gp: break
     _n+=len(_gp)
-    _patch=[[round(g_['a'][0],2),round(g_['a'][1],2),round(g_['b'][0],2),round(g_['b'][1],2),round(g_['lo']-0.15,2),round(g_['hi']+0.15,2)] for g_ in _gp]
+    _patch=[]
+    for g_ in _gp:
+        a_,b_=np.array(g_['a']),np.array(g_['b']); u_=b_-a_
+        if np.array([-u_[1],u_[0]])@np.array(g_['n'])>0: a_,b_=b_,a_          # (its thickness into the concourse)
+        _patch.append([round(a_[0],2),round(a_[1],2),round(b_[0],2),round(b_[1],2),round(g_['lo']-0.15,2),round(g_['hi']+0.15,2)])
     data['rooms']['walls']+=merge_runs(_patch)
 print('concourses closed: %d gaps walled up (%.1f m); left open: %d'%(_n,_n*0.25,len(SCL.gaps(data))))
 json.dump(data,open('ssa_stands.json','w'),separators=(',',':'))

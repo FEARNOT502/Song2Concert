@@ -57,7 +57,7 @@ def gaps(d,step=0.25,min_gap=0.3):
                         if cur<top-0.15 and top-0.15-cur>best[0]: best=(top-0.15-cur,(cur,top-0.15))
                         if best[0]>min_gap:
                             h=min(step,L_)/2
-                            out.append({'y':y,'a':(p-u*h).tolist(),'b':(p+u*h).tolist(),'lo':best[1][0],'hi':best[1][1]})
+                            out.append({'y':y,'a':(p-u*h).tolist(),'b':(p+u*h).tolist(),'lo':best[1][0],'hi':best[1][1],'n':n.tolist()})
     return out
 if __name__=='__main__':
     d=json.load(open(sys.argv[1] if len(sys.argv)>1 else 'ssa_stands.json'))

@@ -2,6 +2,25 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 45: the Saitama Super Arena's 400 level walled from the bowl in one wall, lintels over every door, concourse walls 0.3 m thick
+- **Asked** (user, 2026-11-16, three screenshots): over 408 (the south-west corner) the concourse not shut off from the
+  bowl; 407 badly placed; all four corners checked and fixed; the open slots over the door frames and the gaps seen past
+  their sides; the concourse walls given some thickness; the concourse redone if need be.
+- **The 400 level's bowl wall** (`bowl_wall`): the stand's outline (the 400 ring's outer edge, closed over cracks of 0.4
+  m, smoothed to 0.15 m), one wall all round (412 m) from the concourse's slab to whatever stands over it (the 500
+  balcony's flat underside, its concourse's slab) or the ceiling (30 m), laid clockwise so its thickness goes into the
+  concourse. The concourse's own walls within 0.6 m of it, on the 400 floor, go (646 pieces: the raster's outline in
+  pieces of differing heights, the doors' gaps open to the ceiling). Its doors snapped onto its line.
+- **Doors in thick walls**: every frame now stands through the wall (centred 0.15 m in from the door's line), its
+  concourse-side plate on the wall's far face. A wall run along an aisle through an opening (425, 432, by the new wall)
+  is cut within the opening's depth up to the opening's top (`cut_doors`).
+- **Lintels** over every door whose wall stood only a door's height with the concourse's walls beside it running on up
+  (`enclose` leaves a door's gap open to the walls' tops): 54, from the opening's top to the walls' tops beside it.
+- **Thickness**: `rooms.thick` 0.3 (stands.js mitres the runs, closes jambs, tops and lintels' undersides); the closure
+  patches and lintels laid so their thickness goes into the concourse.
+- **Checks.** Doors: nothing across an opening; concourses: 0 open; renders of each corner and of the corner doors from
+  both sides.
+
 ## Round 44: the Saitama Super Arena's concourses closed in everywhere, the 400 level's backs walled from the seats' edge, square balcony ends, sloped funnel sides
 - **Asked** (user, 2026-11-15, five screenshots): the 300 and 500 levels' end faces as one clean face (a drawn box); the
   300 level's partitions sticking out over the fence gone; places like 219 where the concourse's inside and outside meet
