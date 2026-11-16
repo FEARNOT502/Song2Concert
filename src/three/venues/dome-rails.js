@@ -1,5 +1,18 @@
 import * as THREE from 'three';
 
+// A single face through the balcony walls and the screen backing, with
+// their common horizontal soffit at the balcony fascia's underside.
+export function outfieldWallProfile(data) {
+  const walls=[...data.upperWall].sort((a,b)=>a.pts.at(-1)[0]-b.pts.at(-1)[0]);
+  const [left,right]=walls,m=data.upperOutfieldMass;
+  const massBottoms=m.front.map(()=>m.y0);
+  return {
+    points:[...left.pts,...m.front.slice(1),...right.pts.slice(0,-1).reverse()],
+    bottoms:[...left.y0,...massBottoms.slice(1),...right.y0.slice(0,-1).reverse()],
+    joins:[left.pts.length-1,left.pts.length+m.front.length-2],massBottoms,
+  };
+}
+
 // A closed band with a true miter at every corner. The same vertices serve
 // the front and the return, including their top, underside and end caps.
 export function joinedStrip(points, tops, bottoms, thickness) {
