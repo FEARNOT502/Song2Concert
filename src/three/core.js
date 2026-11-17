@@ -259,7 +259,7 @@ export function grilleTex() {
   }, { normal: 2 });
 }
 
-// ── grey floor protection panels (dome field, stadium pitch) ──
+// ── grey floor protection panels ──
 export function floorPanelTex({ key, S = 512, tone = 0.3, seed = 51 }) {
   const n = valueNoise(seed);
   const rnd = prng(seed);
@@ -272,6 +272,24 @@ export function floorPanelTex({ key, S = 512, tone = 0.3, seed = 51 }) {
     const t = tone * shades[i % 64] * (0.85 + 0.3 * f);
     return seam ? [t * 0.5, t * 0.5, t * 0.5, 0.2, 0.9] : [t, t, t * 1.02, 0.5 + 0.1 * f, 0.7 + 0.2 * f];
   }, { normal: 1.5 });
+}
+
+// Concert field covering: matte teal-green rubber, in 2 × 8 m sheets.
+// Its joints sit nearly flush; the colour variation is much quieter than
+// the rigid grey protection panels used in the other venues.
+export function rubberSheetTex() {
+  const n = valueNoise(52), rnd = prng(52);
+  const shades = Array.from({ length: 24 }, () => 0.97 + rnd() * 0.06);
+  return pbrSet('dome-rubber-sheets', 1024, (u, v) => {
+    const cu = u * 8, column = Math.floor(cu);
+    const cv = v * 2 + (column % 2) * 0.5;
+    const grain = n(u * 256, v * 256);
+    const joint = Math.min(cu % 1, 1 - cu % 1, cv % 1, 1 - cv % 1);
+    const seam = Math.max(0, 1 - joint / 0.009);
+    const shade = shades[column + Math.floor(cv) * 8];
+    const t = shade * (0.985 + grain * 0.03) * (1 - seam * 0.14);
+    return [0.12 * t, 0.43 * t, 0.36 * t, 0.5 + grain * 0.015 - seam * 0.025, 0.94 + grain * 0.04];
+  }, { normal: 0.5 });
 }
 
 // ── plaster / painted wall ──

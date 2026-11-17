@@ -1,7 +1,7 @@
 {
-  "revision": 8,
-  "checkedOn": "2026-11-16",
-  "dataSha256": "f036056233f4f9b1fff85a8cfdecd18bfdfc7a4e9541e47e73b7c3d476086369",
+  "revision": 9,
+  "checkedOn": "2026-11-17",
+  "dataSha256": "987c2a797a6cd39ebe919d9382993ab5c7fe4cc2fe3d7a43a076bdd2d1a5b1db",
   "modelAudit": {
     "seats": {
       "A": 10384,
@@ -234,10 +234,92 @@
       "C3",
       "C4"
     ],
+    "filledBackstopFloor": [
+      {
+        "point": [
+          -8.2,
+          20.65
+        ],
+        "height": 1.674,
+        "block": "A27"
+      },
+      {
+        "point": [
+          -9.2,
+          21
+        ],
+        "height": 1.674,
+        "block": "A27"
+      },
+      {
+        "point": [
+          -10,
+          21.3
+        ],
+        "height": 1.674,
+        "block": "A27"
+      },
+      {
+        "point": [
+          -15.7,
+          17.2
+        ],
+        "height": 1.702,
+        "block": "A29"
+      },
+      {
+        "point": [
+          -16.2,
+          17.5
+        ],
+        "height": 1.702,
+        "block": "A29"
+      },
+      {
+        "point": [
+          8.2,
+          20.65
+        ],
+        "height": 1.674,
+        "block": "A23"
+      },
+      {
+        "point": [
+          9.2,
+          21
+        ],
+        "height": 1.674,
+        "block": "A23"
+      },
+      {
+        "point": [
+          10,
+          21.3
+        ],
+        "height": 1.674,
+        "block": "A23"
+      },
+      {
+        "point": [
+          15.7,
+          17.2
+        ],
+        "height": 1.702,
+        "block": "A21"
+      },
+      {
+        "point": [
+          16.2,
+          17.5
+        ],
+        "height": 1.702,
+        "block": "A21"
+      }
+    ],
     "flights": 13
   },
   "walker": {
-    "checks": 195,
+    "checks": 198,
     "failed": []
   },
   "geometryRegressionTests": 7,
@@ -517,19 +599,16 @@
       288
     ],
     "currentRenderViews": [
-      "join-left.png",
-      "join-right.png",
-      "screen-alignment.png",
-      "home-ledge.png",
-      "home-ledge-high.png",
-      "RYOBI-day.png",
-      "A02-day.png",
-      "RYOBI-play.png",
-      "A02-play.png"
+      "rubber-floor-wide.png",
+      "rubber-floor-close.png",
+      "home-right.png",
+      "home-left.png",
+      "home-high.png",
+      "rubber-floor-play.png"
     ],
     "unmeasuredDimensions": "Photographic estimates, not survey dimensions",
-    "scope": "revision 8: level balcony and raised scoreboard datum, removed backstop ledge, non-emitting RYOBI and A02 fence in house and playback modes",
-    "userReference": "2026-11-16 balcony wall junction and marked backstop band; instruction to align the long display bottom with the balcony"
+    "scope": "revision 9: teal-green concert rubber sheets and filled home-side front tread depressions at adjacent floor height",
+    "userReference": "Concert rubber floor instruction and left/right floor depressions in the supplied backstop image"
   },
   "parapetCornerTests": {
     "closedMesh": true,
@@ -567,39 +646,27 @@
     "heightError": 0
   },
   "renderStates": {
-    "join-left": {
+    "rubber-floor-wide": {
       "house": 1,
       "part": null
     },
-    "join-right": {
+    "rubber-floor-close": {
       "house": 1,
       "part": null
     },
-    "screen-alignment": {
+    "home-right": {
       "house": 1,
       "part": null
     },
-    "home-ledge": {
+    "home-left": {
       "house": 1,
       "part": null
     },
-    "home-ledge-high": {
+    "home-high": {
       "house": 1,
       "part": null
     },
-    "RYOBI-day": {
-      "house": 1,
-      "part": null
-    },
-    "A02-day": {
-      "house": 1,
-      "part": null
-    },
-    "RYOBI-play": {
-      "house": 0,
-      "part": "chorus"
-    },
-    "A02-play": {
+    "rubber-floor-play": {
       "house": 0,
       "part": "chorus"
     }
@@ -607,5 +674,233 @@
   "removedBackstopBand": {
     "removed": true,
     "centreFloorAfter": 1.3619999885559082
+  },
+  "concertFloor": {
+    "material": "matte teal-green rubber sheets",
+    "baseSRGB": [
+      0.12,
+      0.43,
+      0.36
+    ],
+    "sheetMetres": [
+      2,
+      8
+    ],
+    "modes": [
+      "end",
+      "360"
+    ],
+    "actualGroundCheck": {
+      "name": "concert-rubber-floor-walk-support",
+      "distance": 0,
+      "heightError": 0,
+      "samples": [
+        {
+          "point": [
+            0,
+            124
+          ],
+          "top": 0.01999999955296522
+        },
+        {
+          "point": [
+            25,
+            106
+          ],
+          "top": 0.019999999552965164
+        },
+        {
+          "point": [
+            -25,
+            106
+          ],
+          "top": 0.01999999955296522
+        },
+        {
+          "point": [
+            48,
+            75
+          ],
+          "top": 0.019999999552965164
+        },
+        {
+          "point": [
+            -48,
+            75
+          ],
+          "top": 0.01999999955296522
+        }
+      ],
+      "bad": []
+    }
+  },
+  "backstopFloorInfill": {
+    "raisedEmptyTreads": [
+      {
+        "level": "A",
+        "row": 830,
+        "before": 0.974,
+        "after": 1.518
+      },
+      {
+        "level": "A",
+        "row": 855,
+        "before": 0.974,
+        "after": 1.518
+      },
+      {
+        "level": "A",
+        "row": 880,
+        "before": 0.958,
+        "after": 1.687
+      },
+      {
+        "level": "A",
+        "row": 905,
+        "before": 0.958,
+        "after": 1.687
+      },
+      {
+        "level": "A",
+        "row": 930,
+        "before": 0.974,
+        "after": 1.699
+      },
+      {
+        "level": "A",
+        "row": 955,
+        "before": 0.974,
+        "after": 1.699
+      },
+      {
+        "level": "A",
+        "row": 980,
+        "before": 0.979,
+        "after": 1.702
+      },
+      {
+        "level": "A",
+        "row": 1005,
+        "before": 0.979,
+        "after": 1.702
+      },
+      {
+        "level": "A",
+        "row": 1054,
+        "before": 0.885,
+        "after": 1.623
+      },
+      {
+        "level": "A",
+        "row": 1079,
+        "before": 1.027,
+        "after": 1.674
+      },
+      {
+        "level": "A",
+        "row": 1104,
+        "before": 1.027,
+        "after": 1.674
+      }
+    ],
+    "seatPositionsAndNumbersUnchanged": true,
+    "groundChecks": [
+      {
+        "name": "backstop-left-pockets-filled",
+        "distance": 0,
+        "heightError": 0,
+        "samples": [
+          {
+            "point": [
+              -8.2,
+              134.65
+            ],
+            "top": 1.6740000247955322,
+            "expected": 1.674
+          },
+          {
+            "point": [
+              -9.2,
+              135
+            ],
+            "top": 1.6740000247955322,
+            "expected": 1.674
+          },
+          {
+            "point": [
+              -10,
+              135.3
+            ],
+            "top": 1.6740000247955322,
+            "expected": 1.674
+          },
+          {
+            "point": [
+              -15.7,
+              131.2
+            ],
+            "top": 1.7020000219345093,
+            "expected": 1.702
+          },
+          {
+            "point": [
+              -16.2,
+              131.5
+            ],
+            "top": 1.7020000219345093,
+            "expected": 1.702
+          }
+        ],
+        "bad": []
+      },
+      {
+        "name": "backstop-right-pockets-filled",
+        "distance": 0,
+        "heightError": 0,
+        "samples": [
+          {
+            "point": [
+              8.2,
+              134.65
+            ],
+            "top": 1.6740000247955322,
+            "expected": 1.674
+          },
+          {
+            "point": [
+              9.2,
+              135
+            ],
+            "top": 1.6740000247955322,
+            "expected": 1.674
+          },
+          {
+            "point": [
+              10,
+              135.3
+            ],
+            "top": 1.6740000247955322,
+            "expected": 1.674
+          },
+          {
+            "point": [
+              15.7,
+              131.2
+            ],
+            "top": 1.7020000219345093,
+            "expected": 1.702
+          },
+          {
+            "point": [
+              16.2,
+              131.5
+            ],
+            "top": 1.7020000219345093,
+            "expected": 1.702
+          }
+        ],
+        "bad": []
+      }
+    ]
   }
 }

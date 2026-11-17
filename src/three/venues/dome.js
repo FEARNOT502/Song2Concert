@@ -12,7 +12,7 @@
 import * as THREE from 'three';
 import { joinedStrip, outfieldWallProfile } from './dome-rails.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { APP, DEG, KELVIN, V3, clamp, lerp, prng, std, floorPanelTex, glowMat, ringTint } from '../core.js';
+import { APP, DEG, KELVIN, V3, clamp, lerp, prng, std, rubberSheetTex, glowMat, ringTint } from '../core.js';
 import { lightPoints } from '../people.js';
 import { hoists, micStand, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
 import { bigCrowd, bigScreens, crossThrust, diagonalTowers, roundBlocks, roundStage, delayTower, fixtureRow, flashOnCrowd, flashUnits, floorChairs, fohPosition, fromRow, groundRoof, paCorner, paHang, paPair, paWing, runBlinders, runShow, runStrobes, scaffoldMasking, screenHang, section, stageRing, subLine, thinRow, wallStrip } from '../show.js';
@@ -212,7 +212,8 @@ export function buildDome(ctx) {
   fieldGeo.rotateX(-Math.PI / 2);
   const fuv = fieldGeo.attributes.uv; const fpos = fieldGeo.attributes.position;
   for (let i = 0; i < fuv.count; i++) fuv.setXY(i, fpos.getX(i) / 16, fpos.getZ(i) / 16);
-  const field = new THREE.Mesh(fieldGeo, std({ ...floorPanelTex({ key: 'domefloor', tone: 0.1 }), roughness: 0.8 }));
+  const field = new THREE.Mesh(fieldGeo, std({ ...rubberSheetTex(), roughness: 1, envMapIntensity: 0.15 }));
+  field.name = 'Dome concert rubber floor';
   field.position.y = 0.02; field.receiveShadow = true; root.add(field);
 
   // ── the roof's geometry, from the drawings of it ──
