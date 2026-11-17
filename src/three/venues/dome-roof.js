@@ -1,15 +1,25 @@
 // Figure 2 of the Takenaka roof paper specifies 8.5m cable spacing.
 // The wall-side progression omits strokes on that uniform grid.
 const GRID=8.5;
-export const DOME_ROOF=Object.freeze({radius:100.5,exponent:1.53,grid:GRID,core:GRID*6.5,centreZ:81,gridOriginZ:81});
+export const DOME_ROOF=Object.freeze({radius:100.5,exponent:1.53,grid:GRID,core:GRID*6.5,triangleX:GRID*6.5,triangleZ:GRID*5.5,centreZ:81,gridOriginZ:81});
 export const ROOF_WINGS=['home','outfield','first','third'];
+
+// Independent tip coordinates keep the plain panel over four outfield
+// blocks while its apex still meets the unchanged 8.5m cable grid.
+export function roofTriangleCorners() {
+  const R=DOME_ROOF,at=x=>R.radius*(1-(x/R.radius)**R.exponent)**(1/R.exponent);
+  return [-1,1].flatMap(x=>[-1,1].map(z=>({
+    side:[x,z],apex:[x*R.triangleX,z*R.triangleZ],
+    ends:[[x*R.triangleX,z*at(R.triangleX)],[x*at(R.triangleZ),z*R.triangleZ]],
+  })));
+}
 
 // The four plain corner panels start at straight cable boundaries. End the
 // periodic cloth deformation on the grid side, before entering those panels.
 export function roofTriangleGLSL() {
-  const edge=DOME_ROOF.core.toFixed(4);
+  const edge=`vec2(${DOME_ROOF.triangleX.toFixed(4)},${DOME_ROOF.triangleZ.toFixed(4)})`;
   return `float triangleDistance(vec2 c) {
-    vec2 q=abs(c)-vec2(${edge});
+    vec2 q=abs(c)-${edge};
     return min(q.x,q.y);
   }
   float trianglePanel(vec2 c) {
@@ -22,10 +32,23 @@ export function roofTriangleGLSL() {
   // These two half-lines meet at the cable intersection. They must survive
   // the wall-side stroke omissions that apply to the ordinary grid.
   float triangleBoundary(vec2 c,vec2 fw) {
-    vec2 q=abs(c)-vec2(${edge});
+    vec2 q=abs(c)-${edge};
     float x=(1.0-smoothstep(.09,.09+fw.x,abs(q.x)))*smoothstep(-fw.y,0.0,q.y);
     float z=(1.0-smoothstep(.09,.09+fw.y,abs(q.y)))*smoothstep(-fw.x,0.0,q.x);
     return max(x,z);
+  }
+  // Narrow pale edges and round fittings just inside the plain panels,
+  // as visible in the user's concert photograph.
+  float triangleEdgeStrip(vec2 c,vec2 fw) {
+    vec2 q=abs(c)-${edge};
+    vec2 band=smoothstep(vec2(.12)-fw,vec2(.12)+fw,q)*(1.0-smoothstep(vec2(.28)-fw,vec2(.28)+fw,q));
+    return max(band.x*smoothstep(0.0,.5,q.y),band.y*smoothstep(0.0,.5,q.x));
+  }
+  float triangleFittings(vec2 c,float aa) {
+    vec2 q=abs(c)-${edge};
+    float rowX=mod(q.x-1.5+1.5,3.0)-1.5,rowZ=mod(q.y-1.5+1.5,3.0)-1.5;
+    float x=length(vec2(q.x-.9,rowZ)),z=length(vec2(rowX,q.y-.9));
+    return (1.0-smoothstep(.12,.12+aa,min(x,z)))*step(.4,min(q.x,q.y))*min(1.0,.12/aa);
   }`;
 }
 

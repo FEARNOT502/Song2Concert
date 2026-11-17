@@ -10,9 +10,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import * as THREE from 'three';
-import { joinedStrip, outfieldWallProfile, parapetLightMounts, UPPER_PARAPET_HEIGHT } from './dome-rails.js';
+import { joinedStrip, outfieldWallProfile, UPPER_PARAPET_HEIGHT } from './dome-rails.js';
 import { DOME_ROOF, roofLineMaskGLSL, roofTriangleGLSL } from './dome-roof.js';
 import { roofEquipment } from './dome-roof-equipment.js';
+import { addDomeStandLights, updateDomeStandLights } from './dome-stand-lights.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { APP, DEG, KELVIN, V3, clamp, lerp, prng, std, rubberSheetTex, glowMat, ringTint } from '../core.js';
 import { lightPoints } from '../people.js';
@@ -61,8 +62,8 @@ export function getDomeSeatCatalog() {
 }
 
 export function membraneMaterial() {
-  // The roof from inside, as the photographs show it: cables each way, 14 from one big triangle's side to the next, the
-  // same distance apart, none on either centre line, with a
+  // The roof from inside: thirteen longitudinal panel bays between the
+  // two outfield triangle tips, on an evenly spaced cable grid, with a
   // clamp at each crossing; the fabric between them sewn in widths.
   // On each of the four diagonals the net stops at one crossing: past it, out to
   // the ring, one big plain triangle, its point at that crossing, its two short
@@ -78,7 +79,7 @@ export function membraneMaterial() {
   // a pale lamp either side of it; and from the crown out to each big triangle's
   // point a staircase of pale lit strips along the cables, step by step down the
   // diagonal. The colour a warm grey-white; by day warmer, lit through.
-  const TRI_X = DOME_ROOF.core, GRID = DOME_ROOF.grid;
+  const TRI_X = DOME_ROOF.triangleX, GRID = DOME_ROOF.grid;
   // One world-space grid covers the complete dome, including all four wings.
   const ZC = DOME_ROOF.gridOriginZ, CROSS_BOW = .5;
   const LAYER = '1.6';               // metres between the inner liner and the outer skin
@@ -115,8 +116,8 @@ export function membraneMaterial() {
         float stripAt(vec2 c, vec2 fw, float w0, float w1) {
           vec2 a = abs(c) / ${GL};
           float Lb = floor(a.y) + 0.5, La = floor(a.x) + 0.5;
-          float sB = step(Lb - 1.0, a.x) * step(a.x, Lb) * step(Lb, 6.6) * smoothstep(w0, w0 + fw.y, (a.y - Lb) * ${GL}) * (1.0 - smoothstep(w1, w1 + fw.y, (a.y - Lb) * ${GL}));
-          float sA = step(La, a.y) * step(a.y, La + 1.0) * step(La, 5.6) * smoothstep(w0, w0 + fw.x, (a.x - La) * ${GL}) * (1.0 - smoothstep(w1, w1 + fw.x, (a.x - La) * ${GL}));
+          float sB = step(Lb, a.x) * step(a.x, Lb + 1.0) * step(Lb, ${(DOME_ROOF.triangleZ / GRID + .1).toFixed(1)}) * smoothstep(w0, w0 + fw.y, (a.y - Lb) * ${GL}) * (1.0 - smoothstep(w1, w1 + fw.y, (a.y - Lb) * ${GL}));
+          float sA = step(La - 1.0, a.y) * step(a.y, La) * step(La, ${(DOME_ROOF.triangleX / GRID - 1 + .1).toFixed(1)}) * smoothstep(w0, w0 + fw.x, (a.x - La) * ${GL}) * (1.0 - smoothstep(w1, w1 + fw.x, (a.x - La) * ${GL}));
           return max(sA, sB);
         }`)
       // (the hang's slope, so the light falls on it as on the real thing: the normal faces into the house, down)
@@ -174,17 +175,17 @@ export function membraneMaterial() {
           vec2 local=vec2(dx,dz)*${GL},cell=floor(vec2(c.x,zs)/${GL}+.5);
           float aa=max(fw.x,fw.y),radius=mix(.075,.20,step(2.5,mod(abs(cell.x)+abs(cell.y),4.0)));
           float roundPart=(1.0-smoothstep(radius,radius+aa,length(local)))*min(1.0,radius/aa)*net;
-          vec2 triLocal=abs(c)-vec2(${(DOME_ROOF.core+2.5).toFixed(2)});
-          float triDots=(1.0-smoothstep(.20,.20+aa,length(triLocal)))*inTri;
+          float triFittings=triangleFittings(c,aa)*inTri;
+          float triEdge=triangleEdgeStrip(c,fw)*inTri;
           float weave=(sin(c.x*170.0)+sin(c.y*190.0))*.0025*(1.0-smoothstep(.01,.04,aa));
           // (every line the same in the fabric's own colour and in what the show throws on it: dark or lit, they stay sharp)
-          float lines = (1.0 - kA * aLine) * (1.0 - kB * bLine * (1.0 - aLine)) * (1.0 - 0.55 * clampD) * (1.0 - 0.06 * seam) * (1.0 - 0.06 * tseam)*(1.0-.65*max(roundPart,triDots))*(1.0-.78*panelBoundary);
-          float lit = max(0.35 * lamp, 0.45 * strip) * (1.0 - aLine) * uSky, pale = 1.0 + lit;
+          float lines = (1.0 - kA * aLine) * (1.0 - kB * bLine * (1.0 - aLine)) * (1.0 - 0.55 * clampD) * (1.0 - 0.06 * seam) * (1.0 - 0.06 * tseam)*(1.0-.65*roundPart)*(1.0-.78*panelBoundary);
+          float lit = max(max(0.35 * lamp, 0.45 * strip) * (1.0 - aLine),max(.45*triEdge,.7*triFittings)) * uSky, pale = 1.0 + lit;
           diffuseColor.rgb *= (shade+weave) * lines * pale;
           totalEmissiveRadiance += uBounce * shade * lines * pale + diffuseColor.rgb * 0.7 * lit;
         }`);
   };
-  m.customProgramCacheKey = () => 'membrane22-complete-triangle-boundaries';
+  m.customProgramCacheKey = () => 'membrane25-thirteen-panel-staircase';
   return m;
 }
 
@@ -1354,35 +1355,14 @@ export function buildDome(ctx) {
   // the delay towers on the field, either side of the runway, past the
   // cross: for the back of the field and the stands behind home
   for (const [x, z] of DT) towerLights.push(...delayTower(root, { x, z, h: 26, boxes: 16, width: 1.3, from: V3(0, 0, 0) }));
-  const spots = [], beams = [], washes = [], ups = [], ring2 = [], bst = [];
+  const spots = [], beams = [], washes = [], ups = [], bst = [];
+  const ring2=addDomeStandLights({rig,root,data:TD_STANDS,quality:q,offsetZ:ZH,roofCentreZ:ZC});
   spots.push(...fixtureRow(q, 14, (i) => ({ fx: rig.add({ kind: 'spot', pos: V3(-26 + i * 4, LT - 0.7, BZ[3]), length: 70, angle: 0.08 }), group: 0 })));
   beams.push(...fixtureRow(q, 14, (i) => ({ fx: rig.add({ kind: 'beam', pos: V3(-26 + i * 4, LT - 0.7, BZ[2]), length: 90, beamGain: 1.2 }), group: 1 })));
   washes.push(...fixtureRow(q, 10, (i) => ({ fx: rig.add({ kind: 'wash', pos: V3(-27 + i * 6, LT - 0.7, BZ[1]), length: 35, beamGain: 0.4, flareGain: 0.15 }), group: 2 })));
   // the lights on the delay towers' heads, sweeping the field and the stands
   const tw = fixtureRow(q, towerLights.length, (i) => ({ fx: rig.add({ pos: towerLights[i], kind: 'beam', length: 70, beamGain: 0.9 }), group: 5 }));
   ups.push(...fixtureRow(q, 12, (i) => ({ fx: rig.add({ kind: 'beam', pos: V3(-26 + i * (52 / 11), DECK, RW0 - 0.2), hang: 'up', length: 70 }), group: 3 })));
-  // the ring: beams along the 2nd-floor front, pole to pole, pointing in
-  {
-    const N2 = (q.rig ?? 1) < 1 ? 10 : 18;
-    const mounts = parapetLightMounts(TD_STANDS, N2, ZH), brackets = [];
-    for (const [i, mount] of mounts.entries()) {
-      const { x, y, z, yaw } = mount;
-      // A saddle plate touches the cap, with a short clamp down each face.
-      // The up-facing fixture's base starts on the plate's upper surface.
-      const plate = new THREE.BoxGeometry(.56,.06,.42);
-      plate.rotateY(yaw);plate.translate(x,y+.03,z);brackets.push(plate);
-      for (const side of [-1,1]) {
-        const leg = new THREE.BoxGeometry(.12,.22,.06);
-        leg.rotateY(yaw);leg.translate(x+Math.sin(yaw)*side*.14,y-.08,z+Math.cos(yaw)*side*.14);brackets.push(leg);
-      }
-      const pos = V3(x,y+.06,z);
-      const a = Math.atan2(pos.x, pos.z - ZC);
-      ring2.push({ fx: rig.add({ kind: 'beam', pos, hang: 'up', length: 110, beamGain: 0.9, flareGain: 0.6 }), i, n: N2, group: 4, a });
-    }
-    const hardware = new THREE.Mesh(mergeGeometries(brackets),std({color:0x272a2d,roughness:.9,envMapIntensity:.15}));
-    hardware.name='4F beam mounting brackets';hardware.userData.noCollide=true;hardware.userData.mounts=mounts;
-    root.add(hardware);
-  }
   // blinders under the front truss and on the wing towers' faces; strobes
   // along the foot of the wall and under the middle truss
   const bu = [], bt = [];
@@ -1578,13 +1558,7 @@ export function buildDome(ctx) {
       runShow(rig, ups, f, { house: V3(0, 40, 50), stage: STAGE, up: true });
       washes.forEach(({ fx }) => { fx.angle = 0.3; });
       // the ring converges on the long stage in the chorus, spreads to the roof otherwise
-      const sec = f.sec || section(f.bar);
-      ring2.forEach(({ fx, i, a }) => {
-        const tgt = sec === 'chorus' ? V3(Math.sin(f.t * 0.8 + i) * 22, 26, CZ + XD / 2 + Math.cos(f.t * 0.8 + i) * 3) : V3(Math.sin(a) * 30, 56, ZC + Math.cos(a) * 30);
-        fx.dir.lerp(tgt.sub(fx.pos).normalize(), Math.min(1, f.dt * 2)).normalize();
-        fx.color.copy(i % 2 ? f.pal.a : f.pal.c);
-        fx.intensity = (sec === 'chorus' ? 0.9 + 0.4 * f.kick : sec === 'pre' ? 0.5 : 0.18) * show;
-      });
+      updateDomeStandLights(ring2,{...f,sec:f.sec||section(f.bar)},CZ+XD/2,ZC);
       // (idle, at half what it was: it glared off the deck)
       front1.intensity = 90000 * show;
       stageWash.color.copy(f.pal.a); stageWash.intensity = (12000 + 14000 * f.energy + 6000 * f.kick) * show;
@@ -1638,6 +1612,7 @@ export function buildDome(ctx) {
     // (the outfield's pair as high as the outfield stand they play to; home's to the 2nd floor)
     for (const [x, z] of DTR) towerLights.push(...delayTower(root, { x, z, h: z < STAGE.z ? 20 : 30, boxes: z < STAGE.z ? 14 : 18, width: 1.3, from: STAGE }));
     const rig = ctx.rig({ finish: 'black' });
+    const ring2=addDomeStandLights({rig,root,data:TD_STANDS,quality:q,offsetZ:ZH,roofCentreZ:ZC});
     const tw = fixtureRow(q, towerLights.length, (i) => ({ fx: rig.add({ pos: towerLights[i], kind: 'beam', length: 70, beamGain: 0.9 }), group: 5 }));
     // (well back from the runway's end, towards home)
     const feye = V3(0, 1.6 + 1.0, STAGE.z + 60);
@@ -1679,6 +1654,7 @@ export function buildDome(ctx) {
         const show = 1 - f.house;
         const [bl, sb] = RC.run(f, { follow: 90000, wash: 12000 });
         runShow(rig, tw, f, { house: V3(0, 30, STAGE.z), stage: RC.stage, span: 60 });
+        updateDomeStandLights(ring2,{...f,sec:f.sec||section(f.bar)},STAGE.z,ZC);
         floodM.color.copy(KELVIN(5200)).multiplyScalar(0.03 + 2.6 * f.house);
         for (const [m, e] of roomLit) m.emissiveIntensity = e * (0.04 + 0.96 * f.house);
         if (membrane.userData.uSky) membrane.userData.uSky.value = 0.06 + 0.94 * f.house;

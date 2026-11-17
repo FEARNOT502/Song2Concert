@@ -1,0 +1,20 @@
+{
+  "checkedOn": "2026-11-17",
+  "earlierPhotographs": "tokyo-dome-review-11-sources.json",
+  "primaryReference": {
+    "type": "user-provided concert interior photograph in this conversation",
+    "observations": [
+      "13 longitudinal panel bays between the two triangular panels",
+      "Plain triangular panels with no repeated cloth bulges",
+      "Pale strips and small round elements along the two triangle edges",
+      "Stepped bright strips terminate at triangle apices"
+    ],
+    "dimensions": "Photographic proportions; no surveyed triangle measurements supplied"
+  },
+  "additionalUserConstraint": "Triangle base is roughly four outfield seating blocks wide",
+  "drawingBasis": {
+    "page": "https://www.jstage.jst.go.jp/article/mls1989/1/1/1_1_14/_article/-char/ja",
+    "figure": "Figure 2",
+    "uniformCablePitchMetres": 8.5
+  }
+}

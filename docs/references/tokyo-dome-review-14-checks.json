@@ -1,0 +1,162 @@
+{
+  "revision": 14,
+  "checkedOn": "2026-11-17",
+  "baseline": "484bb19b7555aad7ad4091ca25d6fcf94e8729ba",
+  "scope": "revision 14: user concert photo; thirteen vertical panel bays between triangle apices; triangle base about four outfield blocks; pale edges and round fittings; shared stand lights in general and 360 modes; diagnostic number/block overlays only",
+  "roofTriangleLayout": {
+    "roof": {
+      "radius": 100.5,
+      "exponent": 1.53,
+      "grid": 8.5,
+      "core": 55.25,
+      "triangleX": 55.25,
+      "triangleZ": 46.75,
+      "centreZ": 81,
+      "gridOriginZ": 81
+    },
+    "corners": [
+      {
+        "side": [
+          -1,
+          -1
+        ],
+        "apex": [
+          -55.25,
+          -46.75
+        ],
+        "ends": [
+          [
+            -55.25,
+            -71.94405778232183
+          ],
+          [
+            -78.85190825110074,
+            -46.75
+          ]
+        ]
+      },
+      {
+        "side": [
+          -1,
+          1
+        ],
+        "apex": [
+          -55.25,
+          46.75
+        ],
+        "ends": [
+          [
+            -55.25,
+            71.94405778232183
+          ],
+          [
+            -78.85190825110074,
+            46.75
+          ]
+        ]
+      },
+      {
+        "side": [
+          1,
+          -1
+        ],
+        "apex": [
+          55.25,
+          -46.75
+        ],
+        "ends": [
+          [
+            55.25,
+            -71.94405778232183
+          ],
+          [
+            78.85190825110074,
+            -46.75
+          ]
+        ]
+      },
+      {
+        "side": [
+          1,
+          1
+        ],
+        "apex": [
+          55.25,
+          46.75
+        ],
+        "ends": [
+          [
+            55.25,
+            71.94405778232183
+          ],
+          [
+            78.85190825110074,
+            46.75
+          ]
+        ]
+      }
+    ]
+  },
+  "outfieldBlocks": [
+    [
+      "F02",
+      "F03",
+      "F04",
+      "F05"
+    ],
+    [
+      "F16",
+      "F17",
+      "F18",
+      "F19"
+    ]
+  ],
+  "verticalPanelCount": 13,
+  "walker": {
+    "checks": 203,
+    "failed": []
+  },
+  "mode360": [
+    {
+      "name": "360-mode-has-4F-fixtures-and-clamps",
+      "count": 10,
+      "clamps": 10,
+      "distance": 0,
+      "heightError": 0
+    }
+  ],
+  "lightingModes": [
+    "general",
+    "360"
+  ],
+  "lightingQualityCounts": [
+    10,
+    18
+  ],
+  "runtimeLightCountPerMode": 10,
+  "allPlaybackFixturesActive": true,
+  "allBodiesBuiltAndClamped": true,
+  "appBuild": "passed",
+  "currentViews": [
+    "triangle-left-outfield.png",
+    "triangle-left-home.png",
+    "triangle-right-outfield.png",
+    "triangle-right-home.png",
+    "triangle-after.png",
+    "roof-upper-right.png",
+    "outfield-four-blocks.png",
+    "roof-thirteen-panels.png",
+    "roof-photo-layout.png",
+    "stand-light-day.png",
+    "stand-light-play.png",
+    "triangle-play.png",
+    "360-stand-light-day.png",
+    "360-stand-light-play.png",
+    "360-stand-wide-play.png"
+  ],
+  "comparisonViews": [
+    "triangle-before.png",
+    "triangle-after.png"
+  ],
+  "errors": []
+}
