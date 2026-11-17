@@ -7,11 +7,26 @@ export const ROOF_WINGS=['home','outfield','first','third'];
 // The four plain corner panels start at straight cable boundaries. End the
 // periodic cloth deformation on the grid side, before entering those panels.
 export function roofTriangleGLSL() {
-  const edge=DOME_ROOF.core.toFixed(4),start=(DOME_ROOF.core-3.5).toFixed(4);
-  return `float trianglePanel(vec2 c) {
-    return smoothstep(${start},${edge},abs(c.x))*smoothstep(${start},${edge},abs(c.y));
+  const edge=DOME_ROOF.core.toFixed(4);
+  return `float triangleDistance(vec2 c) {
+    vec2 q=abs(c)-vec2(${edge});
+    return min(q.x,q.y);
   }
-  float roofSagWeight(vec2 c) { return 1.0-trianglePanel(c); }`;
+  float trianglePanel(vec2 c) {
+    return smoothstep(-3.5,0.0,triangleDistance(c));
+  }
+  float roofSagWeight(vec2 c) { return 1.0-trianglePanel(c); }
+  float triangleInterior(vec2 c,float aa) {
+    return smoothstep(-aa,aa,triangleDistance(c));
+  }
+  // These two half-lines meet at the cable intersection. They must survive
+  // the wall-side stroke omissions that apply to the ordinary grid.
+  float triangleBoundary(vec2 c,vec2 fw) {
+    vec2 q=abs(c)-vec2(${edge});
+    float x=(1.0-smoothstep(.09,.09+fw.x,abs(q.x)))*smoothstep(-fw.y,0.0,q.y);
+    float z=(1.0-smoothstep(.09,.09+fw.y,abs(q.y)))*smoothstep(-fw.x,0.0,q.x);
+    return max(x,z);
+  }`;
 }
 
 export function roofFoldRows(wing='home') {

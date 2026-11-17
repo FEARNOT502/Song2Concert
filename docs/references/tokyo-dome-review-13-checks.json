@@ -1,0 +1,221 @@
+{
+  "revision": 13,
+  "checkedOn": "2026-11-17",
+  "baseline": "759d76c2242506e48cfeefe47f9e76ae68afc091",
+  "scope": "revision 13: complete triangle apices and both boundary cables independently of the 5/7/9 stroke mask; exclude grid and ripples from the same triangle area",
+  "walker": {
+    "checks": 203,
+    "failed": []
+  },
+  "plainTrianglePanels": {
+    "periodicSagInside": 0,
+    "rippleShadingInside": false,
+    "boundary": "both cable half-lines meet at each apex and continue to the outer ring, independent of ordinary stroke omissions",
+    "transition": "3.5m on grid side, completed at panel boundary",
+    "GPUCheck": {
+      "name": "four-triangle-panels-have-zero-periodic-sag-GPU",
+      "samples": 4096,
+      "bad": 0,
+      "distance": 0,
+      "heightError": 0
+    },
+    "apexCoordinatesRelativeToRoofCentre": [
+      [
+        -55.25,
+        -55.25
+      ],
+      [
+        -55.25,
+        55.25
+      ],
+      [
+        55.25,
+        -55.25
+      ],
+      [
+        55.25,
+        55.25
+      ]
+    ],
+    "interiorGrid": false,
+    "colourShadingExtendsOutsidePanel": false,
+    "boundaryGPUCheck": {
+      "name": "four-triangle-apices-and-both-edges-complete-GPU",
+      "apices": 4,
+      "edgeSamples": 504,
+      "interiorSamples": 4,
+      "bad": 0,
+      "distance": 0,
+      "heightError": 0
+    }
+  },
+  "roofGrid": "uniform 8.5m pitch and 5/7/9/11/13 bays unchanged; node scripts/verify-dome-roof.mjs passed",
+  "appBuild": "passed",
+  "renderStates": {
+    "triangle-left-outfield": {
+      "house": 1,
+      "part": null
+    },
+    "triangle-left-home": {
+      "house": 1,
+      "part": null
+    },
+    "triangle-right-outfield": {
+      "house": 1,
+      "part": null
+    },
+    "triangle-right-home": {
+      "house": 1,
+      "part": null
+    },
+    "triangle-before": {
+      "house": 1,
+      "part": null
+    },
+    "triangle-after": {
+      "house": 1,
+      "part": null
+    },
+    "roof-upper-right": {
+      "house": 1,
+      "part": null
+    },
+    "triangle-play": {
+      "house": 0,
+      "part": "chorus"
+    }
+  },
+  "views": [
+    {
+      "id": "triangle-left-outfield",
+      "eye": [
+        -44,
+        28,
+        37
+      ],
+      "target": [
+        -61,
+        40,
+        20
+      ],
+      "fov": 75,
+      "name": "triangle-left-outfield",
+      "file": "triangle-left-outfield.png"
+    },
+    {
+      "id": "triangle-left-home",
+      "eye": [
+        -44,
+        28,
+        125
+      ],
+      "target": [
+        -61,
+        40,
+        142
+      ],
+      "fov": 75,
+      "name": "triangle-left-home",
+      "file": "triangle-left-home.png"
+    },
+    {
+      "id": "triangle-right-outfield",
+      "eye": [
+        44,
+        28,
+        37
+      ],
+      "target": [
+        61,
+        40,
+        20
+      ],
+      "fov": 75,
+      "name": "triangle-right-outfield",
+      "file": "triangle-right-outfield.png"
+    },
+    {
+      "id": "triangle-right-home",
+      "eye": [
+        44,
+        28,
+        125
+      ],
+      "target": [
+        61,
+        40,
+        142
+      ],
+      "fov": 75,
+      "name": "triangle-right-home",
+      "file": "triangle-right-home.png"
+    },
+    {
+      "id": "triangle-before",
+      "eye": [
+        44,
+        28,
+        125
+      ],
+      "target": [
+        61,
+        40,
+        142
+      ],
+      "fov": 65,
+      "original": true,
+      "name": "triangle-before",
+      "file": "triangle-before.png"
+    },
+    {
+      "id": "triangle-after",
+      "eye": [
+        44,
+        28,
+        125
+      ],
+      "target": [
+        61,
+        40,
+        142
+      ],
+      "fov": 65,
+      "name": "triangle-after",
+      "file": "triangle-after.png"
+    },
+    {
+      "id": "roof-upper-right",
+      "eye": [
+        60,
+        31,
+        135
+      ],
+      "target": [
+        28,
+        50,
+        125
+      ],
+      "fov": 95,
+      "name": "roof-upper-right",
+      "file": "roof-upper-right.png"
+    },
+    {
+      "id": "triangle-play",
+      "eye": [
+        44,
+        28,
+        125
+      ],
+      "target": [
+        61,
+        40,
+        142
+      ],
+      "fov": 75,
+      "playing": true,
+      "name": "triangle-play",
+      "file": "triangle-play.png"
+    }
+  ],
+  "errors": []
+}

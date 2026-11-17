@@ -78,7 +78,7 @@ export function membraneMaterial() {
   // a pale lamp either side of it; and from the crown out to each big triangle's
   // point a staircase of pale lit strips along the cables, step by step down the
   // diagonal. The colour a warm grey-white; by day warmer, lit through.
-  const TRI_X = DOME_ROOF.core, TRI_Z = DOME_ROOF.core, GRID = DOME_ROOF.grid;
+  const TRI_X = DOME_ROOF.core, GRID = DOME_ROOF.grid;
   // One world-space grid covers the complete dome, including all four wings.
   const ZC = DOME_ROOF.gridOriginZ, CROSS_BOW = .5;
   const LAYER = '1.6';               // metres between the inner liner and the outer skin
@@ -94,9 +94,7 @@ export function membraneMaterial() {
     m.userData.shader = sh;
     const triGL = `${roofLineMaskGLSL()}
       ${roofTriangleGLSL()}
-      float crossZ(vec2 c) { float d = fract((c.x + ${HG}) / ${GL}) - 0.5; float side = sign(c.y) * smoothstep(0.0, ${GL} * 2.0, abs(c.y)); return c.y - ${CROSS_BOW.toFixed(2)} * side * (1.0 - 4.0*d*d) * roofSagWeight(c); }
-      // Plain panel boundaries follow the straight cables, never a bowed seam.
-      float bigTri(vec2 c, float e) { return smoothstep(${TRI_X.toFixed(4)} + e, ${TRI_X.toFixed(4)} + e + 0.2, abs(c.x)) * smoothstep(${TRI_Z.toFixed(4)} + e, ${TRI_Z.toFixed(4)} + e + 0.2, abs(c.y)); }`;
+      float crossZ(vec2 c) { float d = fract((c.x + ${HG}) / ${GL}) - 0.5; float side = sign(c.y) * smoothstep(0.0, ${GL} * 2.0, abs(c.y)); return c.y - ${CROSS_BOW.toFixed(2)} * side * (1.0 - 4.0*d*d) * roofSagWeight(c); }`;
     sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
         varying vec3 vWP; varying float vRho; attribute float aRho; ${triGL}`)
       // the fabric hangs between the straight cables, less and less out to the ring; the triangles lie flat
@@ -140,7 +138,8 @@ export function membraneMaterial() {
           // distance (m) to the nearest straight cable, and to the nearest seam across
           float along = abs(fract((c.x + ${HG}) / ${GL} + 0.5) - 0.5) * ${GL};
           float across = abs(fract((zs + ${HG}) / ${GL} + 0.5) - 0.5) * ${GL};
-          float inTri = bigTri(c, 0.0), net = 1.0 - inTri;
+          float inTri = triangleInterior(c, max(fw.x,fw.y)), net = 1.0 - inTri;
+          float panelBoundary = triangleBoundary(c,fw);
           vec2 keep=roofLineMask(c,fw,zs);
           // the cables: about 0.18 m across, near-black; never drawn under a pixel or so, but then only as dark
           // as their real width would make that pixel (with a floor, so from the far side they still read, thinly)
@@ -169,7 +168,7 @@ export function membraneMaterial() {
           float tv = (abs(c.x) - abs(c.y)) / 1.41421 / 4.5;
           float tseam = (1.0 - smoothstep(0.0, fwidth(tv) * 1.5 + 0.01, abs(fract(tv + 0.5) - 0.5) * 2.0)) * inTri;
           // each row of fabric: a soft shadow just past the seam it hangs from, pale through its middle; the triangles plain, a touch paler
-          float shade = mix((1.0 - 0.07 * 4.0 * dx * dx) * (1.0 - 0.12 * smoothstep(0.15, 0.5, abs(dz))), 1.07, trianglePanel(c));
+          float shade = mix((1.0 - 0.07 * 4.0 * dx * dx) * (1.0 - 0.12 * smoothstep(0.15, 0.5, abs(dz))), 1.07, inTri);
           // Fine fabric detail and the small circular fittings visible in
           // the interior photographs; these do not alter the grid.
           vec2 local=vec2(dx,dz)*${GL},cell=floor(vec2(c.x,zs)/${GL}+.5);
@@ -179,13 +178,13 @@ export function membraneMaterial() {
           float triDots=(1.0-smoothstep(.20,.20+aa,length(triLocal)))*inTri;
           float weave=(sin(c.x*170.0)+sin(c.y*190.0))*.0025*(1.0-smoothstep(.01,.04,aa));
           // (every line the same in the fabric's own colour and in what the show throws on it: dark or lit, they stay sharp)
-          float lines = (1.0 - kA * aLine) * (1.0 - kB * bLine * (1.0 - aLine)) * (1.0 - 0.55 * clampD) * (1.0 - 0.06 * seam) * (1.0 - 0.06 * tseam)*(1.0-.65*max(roundPart,triDots));
+          float lines = (1.0 - kA * aLine) * (1.0 - kB * bLine * (1.0 - aLine)) * (1.0 - 0.55 * clampD) * (1.0 - 0.06 * seam) * (1.0 - 0.06 * tseam)*(1.0-.65*max(roundPart,triDots))*(1.0-.78*panelBoundary);
           float lit = max(0.35 * lamp, 0.45 * strip) * (1.0 - aLine) * uSky, pale = 1.0 + lit;
           diffuseColor.rgb *= (shade+weave) * lines * pale;
           totalEmissiveRadiance += uBounce * shade * lines * pale + diffuseColor.rgb * 0.7 * lit;
         }`);
   };
-  m.customProgramCacheKey = () => 'membrane21-plain-corner-panels';
+  m.customProgramCacheKey = () => 'membrane22-complete-triangle-boundaries';
   return m;
 }
 

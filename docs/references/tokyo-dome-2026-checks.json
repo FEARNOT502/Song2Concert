@@ -1,5 +1,5 @@
 {
-  "revision": 12,
+  "revision": 13,
   "checkedOn": "2026-11-17",
   "dataSha256": "098188dc703543d5adedc8b57609ebe503453d2afda80971031b7586a1c2e506",
   "modelAudit": {
@@ -319,7 +319,7 @@
     "flights": 13
   },
   "walker": {
-    "checks": 202,
+    "checks": 203,
     "failed": []
   },
   "geometryRegressionTests": 7,
@@ -610,7 +610,7 @@
       "triangle-play.png"
     ],
     "unmeasuredDimensions": "Photographic estimates, not survey dimensions",
-    "scope": "revision 12: remove periodic deformation and ripple shading from four plain triangle panels; straight panel boundaries; before and after shown at the same camera",
+    "scope": "revision 13: complete triangle apices and both boundary cables independently of the 5/7/9 stroke mask; exclude grid and ripples from the same triangle area",
     "userReference": "Final instruction: actual-photo sag, curvature and pitch; wall-nearest five bays then seven and nine made by omitting crosswise strokes rather than compressing the grid",
     "diagnosticViews": [
       "roof-orthographic.png"
@@ -1198,8 +1198,8 @@
     }
   },
   "roofCanvasPlan": {
-    "document": "docs/TOKYO_DOME_REVISION12.ko.md",
-    "status": "plain triangle panels corrected and visually checked",
+    "document": "docs/TOKYO_DOME_REVISION13.ko.md",
+    "status": "triangle apices and both boundary cables restored; grid excluded from panel interiors",
     "roofGeometryChanged": true,
     "primaryCloseup": "https://www.tokyo-dome.co.jp/themes/common/img/dome/about/index-image-7.webp"
   },
@@ -1745,11 +1745,40 @@
     "plainTrianglePanels": {
       "periodicSagInside": 0,
       "rippleShadingInside": false,
-      "boundary": "straight cable coordinates; independent of bowed seams",
+      "boundary": "both cable half-lines meet at each apex and continue to the outer ring, independent of ordinary stroke omissions",
       "transition": "3.5m on grid side, completed at panel boundary",
       "GPUCheck": {
         "name": "four-triangle-panels-have-zero-periodic-sag-GPU",
         "samples": 4096,
+        "bad": 0,
+        "distance": 0,
+        "heightError": 0
+      },
+      "apexCoordinatesRelativeToRoofCentre": [
+        [
+          -55.25,
+          -55.25
+        ],
+        [
+          -55.25,
+          55.25
+        ],
+        [
+          55.25,
+          -55.25
+        ],
+        [
+          55.25,
+          55.25
+        ]
+      ],
+      "interiorGrid": false,
+      "colourShadingExtendsOutsidePanel": false,
+      "boundaryGPUCheck": {
+        "name": "four-triangle-apices-and-both-edges-complete-GPU",
+        "apices": 4,
+        "edgeSamples": 504,
+        "interiorSamples": 4,
         "bad": 0,
         "distance": 0,
         "heightError": 0
