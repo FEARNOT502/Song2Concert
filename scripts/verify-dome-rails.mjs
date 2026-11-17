@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import {joinedStrip,outfieldWallProfile} from '../src/three/venues/dome-rails.js';
+import {joinedStrip,outfieldWallProfile,parapetLightMounts,UPPER_PARAPET_HEIGHT} from '../src/three/venues/dome-rails.js';
 import {TD_STANDS} from '../src/three/venues/td-data.js';
 const P=[{x:0,z:0},{x:4,z:0},{x:4,z:3}],g=joinedStrip(P,[1,1,1],[0,0,0],.2);
 const a=g.attributes.position.array,edges=new Map();
@@ -26,3 +26,14 @@ assert.equal(profile.massBottoms[mass.screenRange[1]],mass.y0);
 assert(profile.massBottoms.every(y=>y===TD_STANDS.rimCY-1.2));
 assert.equal(TD_STANDS.scoreboardBottom,TD_STANDS.rimCY-1.2);
 console.log('Both wall joins share their face and soffit heights');
+
+const fences=TD_STANDS.frontParapets.D.map(({panel})=>{
+ const P=panel.pts.map(([x,z])=>({x,z:z+114}));
+ const geo=joinedStrip(P,panel.ys.map(y=>y+UPPER_PARAPET_HEIGHT),panel.ys.map(y=>y-.06),.22);
+ const m=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({side:THREE.DoubleSide}));m.updateMatrixWorld();return m;
+});
+for(const count of [10,18])for(const p of parapetLightMounts(TD_STANDS,count)){
+ const hits=new THREE.Raycaster(new THREE.Vector3(p.x,p.y+.1,p.z),new THREE.Vector3(0,-1,0),0,.15).intersectObjects(fences);
+ assert(hits.length&&Math.abs(hits[0].point.y-p.y)<1e-5,`4F beam lacks a parapet under its bracket: ${p.x}, ${p.z}`);
+}
+console.log('All 28 light positions have a solid 4F parapet directly under their bracket');

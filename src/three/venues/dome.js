@@ -10,7 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import * as THREE from 'three';
-import { joinedStrip, outfieldWallProfile } from './dome-rails.js';
+import { joinedStrip, outfieldWallProfile, parapetLightMounts, UPPER_PARAPET_HEIGHT } from './dome-rails.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { APP, DEG, KELVIN, V3, clamp, lerp, prng, std, rubberSheetTex, glowMat, ringTint } from '../core.js';
 import { lightPoints } from '../people.js';
@@ -451,7 +451,7 @@ export function buildDome(ctx) {
       const P=profile.panel.pts.map(([x,z])=>({x,z:z+ZH})),Y=profile.panel.ys;
       const rail=profile.rail,R=rail.pts.map(([x,z])=>({x,z:z+ZH})),H=rail.ys;
       const isC=level==='C';
-      const g=joinedStrip(P,Y.map(y=>y+(isC?.08:.6)),Y.map(y=>isC?TD_STANDS.rimCY-1.2:y-.06),isC?.08:.22);
+      const g=joinedStrip(P,Y.map(y=>y+(isC?.08:UPPER_PARAPET_HEIGHT)),Y.map(y=>isC?TD_STANDS.rimCY-1.2:y-.06),isC?.08:.22);
       const mesh=new THREE.Mesh(g,isC?fascia:paint);mesh.receiveShadow=true;mesh.name=level+' front and right-angle return fascia';root.add(mesh);
       if(isC)glass.push(joinedStrip(R,H.map(y=>y+.93),H.map(y=>y+.08),.012));
       if(!isC)tube(R,H.map(y=>y+.54),.024);
@@ -1352,19 +1352,25 @@ export function buildDome(ctx) {
   ups.push(...fixtureRow(q, 12, (i) => ({ fx: rig.add({ kind: 'beam', pos: V3(-26 + i * (52 / 11), DECK, RW0 - 0.2), hang: 'up', length: 70 }), group: 3 })));
   // the ring: beams along the 2nd-floor front, pole to pole, pointing in
   {
-    const edge = TD_STANDS.rim.map(([x, z]) => ({ x, z: z + ZH }));
-    edge.sort((p, q2) => Math.atan2(p.x, p.z - ZH) - Math.atan2(q2.x, q2.z - ZH));
-    const len = [0];
-    for (let i = 1; i < edge.length; i++) len.push(len[i - 1] + Math.hypot(edge[i].x - edge[i - 1].x, edge[i].z - edge[i - 1].z));
     const N2 = (q.rig ?? 1) < 1 ? 10 : 18;
-    for (let i = 0, j = 0; i < N2; i++) {
-      const want = (i + 0.5) / N2 * len[len.length - 1];
-      while (j < len.length - 2 && len[j + 1] < want) j++;
-      const t = (want - len[j]) / (len[j + 1] - len[j]);
-      const pos = V3(lerp(edge[j].x, edge[j + 1].x, t), TD_STANDS.rimY - 1.6, lerp(edge[j].z, edge[j + 1].z, t));
+    const mounts = parapetLightMounts(TD_STANDS, N2, ZH), brackets = [];
+    for (const [i, mount] of mounts.entries()) {
+      const { x, y, z, yaw } = mount;
+      // A saddle plate touches the cap, with a short clamp down each face.
+      // The up-facing fixture's base starts on the plate's upper surface.
+      const plate = new THREE.BoxGeometry(.56,.06,.42);
+      plate.rotateY(yaw);plate.translate(x,y+.03,z);brackets.push(plate);
+      for (const side of [-1,1]) {
+        const leg = new THREE.BoxGeometry(.12,.22,.06);
+        leg.rotateY(yaw);leg.translate(x+Math.sin(yaw)*side*.14,y-.08,z+Math.cos(yaw)*side*.14);brackets.push(leg);
+      }
+      const pos = V3(x,y+.06,z);
       const a = Math.atan2(pos.x, pos.z - ZC);
       ring2.push({ fx: rig.add({ kind: 'beam', pos, hang: 'up', length: 110, beamGain: 0.9, flareGain: 0.6 }), i, n: N2, group: 4, a });
     }
+    const hardware = new THREE.Mesh(mergeGeometries(brackets),std({color:0x272a2d,roughness:.9,envMapIntensity:.15}));
+    hardware.name='4F beam mounting brackets';hardware.userData.noCollide=true;hardware.userData.mounts=mounts;
+    root.add(hardware);
   }
   // blinders under the front truss and on the wing towers' faces; strobes
   // along the foot of the wall and under the middle truss

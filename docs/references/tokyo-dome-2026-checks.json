@@ -1,7 +1,7 @@
 {
-  "revision": 9,
+  "revision": 10,
   "checkedOn": "2026-11-17",
-  "dataSha256": "987c2a797a6cd39ebe919d9382993ab5c7fe4cc2fe3d7a43a076bdd2d1a5b1db",
+  "dataSha256": "098188dc703543d5adedc8b57609ebe503453d2afda80971031b7586a1c2e506",
   "modelAudit": {
     "seats": {
       "A": 10384,
@@ -319,7 +319,7 @@
     "flights": 13
   },
   "walker": {
-    "checks": 198,
+    "checks": 200,
     "failed": []
   },
   "geometryRegressionTests": 7,
@@ -599,16 +599,17 @@
       288
     ],
     "currentRenderViews": [
-      "rubber-floor-wide.png",
-      "rubber-floor-close.png",
-      "home-right.png",
-      "home-left.png",
-      "home-high.png",
-      "rubber-floor-play.png"
+      "4F-light-left.png",
+      "4F-light-right.png",
+      "4F-mount-close.png",
+      "4F-vom-left.png",
+      "4F-vom-right.png",
+      "roof-plan-baseline.png",
+      "4F-mount-play.png"
     ],
     "unmeasuredDimensions": "Photographic estimates, not survey dimensions",
-    "scope": "revision 9: teal-green concert rubber sheets and filled home-side front tread depressions at adjacent floor height",
-    "userReference": "Concert rubber floor instruction and left/right floor depressions in the supplied backstop image"
+    "scope": "revision 10: 4F fence-mounted beams with contacting clamps and half-height upper vomitory guards; unchanged roof baseline for the proposed membrane plan",
+    "userReference": "Floating balcony fixtures and marked upper vomitory guard wall"
   },
   "parapetCornerTests": {
     "closedMesh": true,
@@ -646,27 +647,31 @@
     "heightError": 0
   },
   "renderStates": {
-    "rubber-floor-wide": {
+    "4F-light-left": {
       "house": 1,
       "part": null
     },
-    "rubber-floor-close": {
+    "4F-light-right": {
       "house": 1,
       "part": null
     },
-    "home-right": {
+    "4F-mount-close": {
       "house": 1,
       "part": null
     },
-    "home-left": {
+    "4F-vom-left": {
       "house": 1,
       "part": null
     },
-    "home-high": {
+    "4F-vom-right": {
       "house": 1,
       "part": null
     },
-    "rubber-floor-play": {
+    "roof-plan-baseline": {
+      "house": 1,
+      "part": null
+    },
+    "4F-mount-play": {
       "house": 0,
       "part": "chorus"
     }
@@ -902,5 +907,291 @@
         "bad": []
       }
     ]
+  },
+  "upperVomitoryGuards": {
+    "nominalProjectionBefore": 1,
+    "nominalProjectionAfter": 0.5,
+    "changed": [
+      {
+        "entry": "14",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "14",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "13",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "13",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "12",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "12",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "11",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "11",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "10",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "10",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "9",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "9",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "8",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "8",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "7",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "7",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "6",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "6",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "5",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "5",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "4",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "4",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "3",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "3",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "2",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "2",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "1",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "1",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      }
+    ],
+    "allOtherDataUnchanged": true
+  },
+  "fourthFloorLights": {
+    "parapetSupportRays": 28,
+    "qualityCounts": [
+      10,
+      18
+    ],
+    "runtimeContact": {
+      "name": "4F-lights-touch-brackets-and-parapet",
+      "samples": [
+        {
+          "base": [
+            -82.38590748676489,
+            19.26,
+            50.04744171251884
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        },
+        {
+          "base": [
+            -82.52264605075435,
+            19.26,
+            81.712652955821
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        },
+        {
+          "base": [
+            -65.31439400324884,
+            19.26,
+            109.84019230630375
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        },
+        {
+          "base": [
+            -43.755204580917024,
+            19.26,
+            134.85722411898635
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        },
+        {
+          "base": [
+            -16.86676789491444,
+            19.26,
+            152.98165844453163
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        },
+        {
+          "base": [
+            16.17686358056638,
+            19.26,
+            153.06514395393071
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        },
+        {
+          "base": [
+            43.21685989558072,
+            19.26,
+            135.24489542140049
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        },
+        {
+          "base": [
+            64.88842292249203,
+            19.26,
+            110.3253462493485
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        },
+        {
+          "base": [
+            82.2812085056153,
+            19.26,
+            82.31252280716734
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        },
+        {
+          "base": [
+            82.51871836764575,
+            19.26,
+            50.64363877626657
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        }
+      ],
+      "bad": [],
+      "distance": 0,
+      "heightError": 0
+    }
+  },
+  "roofCanvasPlan": {
+    "document": "docs/TOKYO_DOME_ROOF_CANVAS_PLAN.ko.md",
+    "status": "plan",
+    "roofGeometryChanged": false,
+    "primaryCloseup": "https://www.tokyo-dome.co.jp/themes/common/img/dome/about/index-image-7.webp"
   }
 }
