@@ -47,7 +47,7 @@ def gaps(d,step=0.25,min_gap=0.3):
                             if y+0.5<cy<top and G_.contains(pin): top=cy
                         if any(np.linalg.norm(p-fp)<2.1 and abs(fy-y)<3.5 for fp,fy in frames): continue
                         if any(G_.contains(q) and y0<=y<=y1 for G_,y0,y1 in skip): continue
-                        iv=[(walls[i][4],walls[i][5]) for i in WT.query(q.buffer(0.2)) if WL[i].distance(q)<0.2]
+                        iv=[(walls[i][4],walls[i][5]) for i in WT.query(q.buffer(0.35)) if WL[i].distance(q)<0.35]
                         iv+=[(y0,y1) for y0,y1,G_ in solids if y1>y and y0<top and (G_.contains(pout) or G_.contains(q))]
                         iv.sort(); cur=y+0.15; best=(0.0,None)
                         for lo,hi in iv:

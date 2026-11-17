@@ -2,6 +2,24 @@
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 
+## Round 46: the Saitama Super Arena's concourses closed all round, the 200 level's back walled up to the 400, every wall smoothed
+- **Asked** (user, 2026-11-17, two screenshots): the concourse wall by 212 not made properly; the odd grey square at the
+  balcony's end gone; the walls redone overall; walls in clean straight lines and curves, nothing bumpy; door 212's side
+  wall carried up and on to where the suites begin.
+- **No concourse left open onto the bowl**: `enclose`'s rooms have no `own` stands now (the part of a concourse inside the
+  back of its stands, nothing over it, was left open with no wall: from the seats one saw its floor or roof); every one
+  closed in, walls and ceiling (the vomitories' pits stay open).
+- **The 200 level's back** (`BOWL2`, `bowl_wall(..., need_over, behind)`): on the stand's outline, over its concourse,
+  from just under the concourse's ceiling (10.15 m) up to what stands over it (the 300/400/500 rows' undersides, their
+  concourses' slabs, the suites' corridor), 341 m; not along the suites' glass fronts (the west side between their
+  ends), not where nothing stands over it (the stand's floor-side edges, split as the 200 is by the corner tunnels).
+- **Smooth walls**: every run of concourse walls at one height, end to end, taken as one line (`smooth_walls`):
+  simplified to 0.12 m, gentle bends (under 35 deg) rounded by Chaikin's cut (at most 0.4 m), corners kept, ends fixed; the
+  bowl walls' outlines the same. The closing check takes a wall within 0.35 m of the outline (the smoothed walls stand off
+  the raster's outline by up to that).
+- **Balcony ends**: the face under the concourse behind the 300/500 ends (`face(B, Bc)`) removed: the grey square.
+- **Checks.** Doors: nothing across an opening; concourses: 0 open; build; the arena picker; renders by 212, 219, 239.
+
 ## Round 45: the Saitama Super Arena's 400 level walled from the bowl in one wall, lintels over every door, concourse walls 0.3 m thick
 - **Asked** (user, 2026-11-16, three screenshots): over 408 (the south-west corner) the concourse not shut off from the
   bowl; 407 badly placed; all four corners checked and fixed; the open slots over the door frames and the gaps seen past

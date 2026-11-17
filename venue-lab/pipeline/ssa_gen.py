@@ -448,7 +448,8 @@ s0_=slabs[0][0]; slabs[0]=(s0_&~TUNM,0.0,C200)
 if (s0_&TUNM).any(): slabs.insert(1,(s0_&TUNM,TUN_H,C200))
 t=time.time()
 doors={k:[tuple(p) for p,_ in v.values()] for k,v in SNAP.items()}
-rooms=[{'name':name,'mask':cm,'y':cy,'cl':4.0,'own':[l],'doors':doors[name],'open':getattr(l,'pits',None),'toroof':name in ('400','500')}
+# (no part of a concourse left open onto the bowl: every one closed in, walls and ceiling, all round)
+rooms=[{'name':name,'mask':cm,'y':cy,'cl':4.0,'own':[],'doors':doors[name],'open':getattr(l,'pits',None),'toroof':name in ('400','500')}
        for name,l,cm,cy in (('200',L2,c200,C200),('300',L3,c300,C300),('400',L4,c400,C400),('500',L5,c500,C500))]
 for name,cm in (('200',c200),('400',c400)): trim_tunnels(G,VOMS[name],cm)
 encl,roomtop=enclose(G,rooms,[L2,L3,L4,L5],slabs,flights)
@@ -481,7 +482,7 @@ encl['walls']=walls_to_roof(encl['walls'])
 # concourse's slab) or the arena's ceiling, 0.3 m thick into the concourse; the doors cut through it as through any
 # wall (lintels over them). The concourse's own walls along that line, in pieces of differing heights with the
 # doors' gaps run to the ceiling, go. ──
-def bowl_wall(l,floor_y,yb,over,keep_off=0.6,piece=0.5,doors=()):
+def bowl_wall(l,floor_y,yb,over,keep_off=0.6,piece=0.5,doors=(),skip=None,min_h=0.0,need_over=False,behind=None):
     m=((l.R>0)|(getattr(l,'pits',None) if getattr(l,'pits',None) is not None else False)).astype(np.uint8)
     m=cv2.morphologyEx(m,cv2.MORPH_CLOSE,disk(0.4/G.res))
     # (a raised door stands in a notch of the outline, the aisle's head: the notch filled to the door's own line, so the
@@ -501,6 +502,16 @@ def bowl_wall(l,floor_y,yb,over,keep_off=0.6,piece=0.5,doors=()):
         P=np.c_[G.m(c[:,0,0].astype(float),c[:,0,1].astype(float))]
         ring=SPoly(P).buffer(0.02).simplify(0.15)
         R_=np.array(ring.exterior.coords)
+        # (its gentle bends rounded, as the concourses' walls are: Chaikin's cut at bends under 35 deg)
+        for _ in range(2):
+            Q_=[R_[0]]
+            for k in range(1,len(R_)-1):
+                a,b,c=R_[k-1],R_[k],R_[k+1]; u1=b-a; u2=c-b; l1,l2=np.linalg.norm(u1),np.linalg.norm(u2)
+                if l1<1e-6 or l2<1e-6: continue
+                ang=np.degrees(np.arccos(np.clip(u1@u2/l1/l2,-1,1)))
+                if ang<35 and min(l1,l2)>0.3: c_=min(0.25*min(l1,l2),0.4); Q_+=[b-u1/l1*c_,b+u2/l2*c_]
+                else: Q_.append(b)
+            Q_.append(R_[-1]); R_=np.array(Q_)
         # clockwise in x, z: each piece's left side (where the renderer lays the thickness) the concourse's
         if SPoly(R_).exterior.is_ccw: R_=R_[::-1]
         for k in range(len(R_)-1):
@@ -516,6 +527,12 @@ def bowl_wall(l,floor_y,yb,over,keep_off=0.6,piece=0.5,doors=()):
                     for B in over:
                         bb=B[j_,i_]
                         if bb==bb and floor_y+2.7<bb<top: top=float(bb)
+                if skip is not None and skip(mid): continue
+                if top-yb<min_h: continue
+                if need_over and top>=ROOF: continue                     # (nothing over it: open to the bowl's air)
+                if behind is not None:
+                    i_,j_=[int(round(float(cc))) for cc in G.g(*(mid+nl*0.4))]
+                    if not (0<=i_<G.W and 0<=j_<G.H and behind[j_,i_]): continue   # (not over its concourse)
                 out.append([round(float(p0[0]),2),round(float(p0[1]),2),round(float(p1[0]),2),round(float(p1[1]),2),round(yb,2),round(top,2)])
     return merge_runs(out)
 BOWL4=bowl_wall(L4,C400,C400-0.35,[level_solid(L5)[0],np.where(c500,C500-0.35,np.nan).astype(np.float32)],doors=[SNAP['400'][g_] for (n_,g_) in RAISED if n_=='400' and g_ in SNAP['400']])
@@ -527,6 +544,14 @@ _n0=len(encl['walls'])
 encl['walls']=[w for w in encl['walls'] if not (w[4]>=C400-0.6 and w[5]>C400+0.5 and w[4]<C500-0.5 and _near_bowl(w))]
 encl['walls']+=BOWL4
 print('400 bowl wall: %d panels, %.0f m; the concourse\'s walls along it taken out: %d'%(len(BOWL4),sum(np.hypot(w[2]-w[0],w[3]-w[1]) for w in BOWL4),_n0-len(encl['walls'])+len(BOWL4)))
+# ── the 200 level's back, over its concourse: past the stand's last rows, between the concourse's ceiling and what stands
+# over it (the 400 level's rows, a slab), the gap seen from the seats closed by a wall on the stand's outline, from just
+# under that ceiling up; but along the suites' glass fronts (the west side between their ends), which are the wall there ──
+_SUZ=(z0s-0.2,z1s+0.2)
+BOWL2=bowl_wall(L2,C200,C200+4.0-0.05,[level_solid(L3)[0],level_solid(L4)[0],level_solid(L5)[0]]+[np.where(c_,y_-0.35,np.nan).astype(np.float32) for c_,y_ in ((c300,C300),(c400,C400),(c500,C500))]+[np.where(corr,SUY-0.45,np.nan).astype(np.float32)],
+                skip=lambda q: q[0]<0 and _SUZ[0]<q[1]<_SUZ[1],min_h=0.3,need_over=True,behind=dil(c200,0.3))
+encl['walls']+=BOWL2
+print('200 upper bowl wall: %d panels, %.0f m'%(len(BOWL2),sum(np.hypot(w[2]-w[0],w[3]-w[1]) for w in BOWL2)))
 skip=lambda ox,oy,h: roomtop[oy,ox]>=h+1.0
 fronts={'200':(0.0,0.75),'300':('tread',0.8),'400':('tread',0.8),'500':('tread',0.8)}
 def outside_fn(cmask,y):
@@ -660,7 +685,6 @@ def finish_ends(entry,l,flat,rail=1.0,front_top=0.8):
                 if rn@e>0: a_,b_,ya0,ya1,yb0,yb1=b_,a_,yb0,yb1,ya0,ya1
                 faces.append([round(float(a_[0]),2),round(float(a_[1]),2),round(float(b_[0]),2),round(float(b_[1]),2),round(ya0,2),round(ya1,2),round(yb0,2),round(yb1,2),0.25,'front'])
             face(F,B,flat,yF,flat,yB)
-            if k>0.2: face(B,Bc,flat,cy_,flat,cy_)
         # what stood past the line, or along it at the end (the old end pieces): gone
         def keep(w):
             a=np.array(w[:2]); b=np.array(w[2:4]); u=b-a; L=np.linalg.norm(u)
@@ -823,6 +847,55 @@ def cut_doors(panels,doors,keep_lintel=True):
             s0=max(s0,c1)
         if L-s0>0.02: out.append([*(a+u*s0).round(2),*b.round(2),pnl[4],pnl[5]])
     return [[round(float(c),2) for c in o] for o in out]
+# ── every concourse wall a clean line: each run of walls at one height, end to end, taken as one line and smoothed of the
+# raster's steps (simplified to 0.12 m, then its gentle bends rounded: straight runs straight, curved ones a smooth
+# curve, real corners kept), its ends where they were so the runs still meet ──
+def smooth_walls(walls,tol=0.12,join=0.06):
+    W=[list(w) for w in walls]; n=len(W)
+    key=lambda w:(round(w[4],2),round(w[5],2))
+    from collections import defaultdict
+    starts=defaultdict(list)
+    for i,w in enumerate(W): starts[(key(w),round(w[0]/join),round(w[1]/join))].append(i)
+    used=[False]*n; out=[]
+    def nxt(w):
+        k=key(w)
+        for dx in (-1,0,1):
+            for dz in (-1,0,1):
+                for j in starts.get((k,round(w[2]/join)+dx,round(w[3]/join)+dz),[]):
+                    if not used[j] and np.hypot(W[j][0]-w[2],W[j][1]-w[3])<join: return j
+        return None
+    ends=set()
+    for i,w in enumerate(W): ends.add((key(w),round(w[2]/join),round(w[3]/join)))
+    order=sorted(range(n),key=lambda i:(key(W[i]),W[i][0],W[i][1]))
+    for i in order:
+        if used[i]: continue
+        # walk back to the chain's start
+        ch=[i]; used[i]=True; j=nxt(W[i])
+        while j is not None: used[j]=True; ch.append(j); j=nxt(W[j])
+        P=[(W[ch[0]][0],W[ch[0]][1])]+[(W[c][2],W[c][3]) for c in ch]
+        if len(P)>=4:
+            closed=np.hypot(P[0][0]-P[-1][0],P[0][1]-P[-1][1])<join
+            Q=np.array(SLine(P).simplify(tol).coords)
+            # (rounded where it bends gently: Chaikin's cut, only at bends under 35 deg)
+            for _ in range(2):
+                if len(Q)<3: break
+                R=[Q[0]]
+                for k in range(1,len(Q)-1):
+                    a,b,c=Q[k-1],Q[k],Q[k+1]; u1=b-a; u2=c-b
+                    l1,l2=np.linalg.norm(u1),np.linalg.norm(u2)
+                    if l1<1e-6 or l2<1e-6: continue
+                    ang=np.degrees(np.arccos(np.clip(u1@u2/l1/l2,-1,1)))
+                    if ang<35 and min(l1,l2)>0.3: c_=min(0.25*min(l1,l2),0.4); R+=[b-u1/l1*c_,b+u2/l2*c_]
+                    else: R.append(b)
+                R.append(Q[-1]); Q=np.array(R)
+            P=[tuple(q) for q in Q]
+        y0,y1=W[ch[0]][4],W[ch[0]][5]
+        for a,b in zip(P[:-1],P[1:]):
+            if np.hypot(b[0]-a[0],b[1]-a[1])>1e-3: out.append([round(a[0],2),round(a[1],2),round(b[0],2),round(b[1],2),y0,y1])
+    return out
+_n0=len(encl['walls'])
+encl['walls']=smooth_walls(encl['walls'])
+print('concourse walls smoothed: %d panels -> %d'%(_n0,len(encl['walls'])))
 encl['walls']=cut_doors(encl['walls'],DOORLIST)
 # a raised door (up a stair from the concourse): its stair in a porch of its own, square, set on the stand's back
 # edge: a face round the door (the frame's width and half a metre each side, up to over the opening; less where the
