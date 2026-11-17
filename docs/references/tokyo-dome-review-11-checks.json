@@ -1,0 +1,1757 @@
+{
+  "revision": 11,
+  "checkedOn": "2026-11-17",
+  "dataSha256": "098188dc703543d5adedc8b57609ebe503453d2afda80971031b7586a1c2e506",
+  "modelAudit": {
+    "seats": {
+      "A": 10384,
+      "B": 9492,
+      "F": 5997,
+      "C": 1768,
+      "D": 5210,
+      "E": 8519,
+      "G": 526
+    },
+    "exciteReview": {
+      "rearWallDistanceRange": [
+        0.005,
+        1.362
+      ],
+      "frontFenceDistanceRange": [
+        0.214,
+        2.514
+      ],
+      "rearToMainChairDistanceMedian": 0.948,
+      "rearToMainChairDistanceMin": 0.766,
+      "frontFenceByBlock": {
+        "G04": [
+          0.825,
+          2.514
+        ],
+        "G05": [
+          0.874,
+          1.851
+        ],
+        "G06": [
+          0.606,
+          1.016
+        ],
+        "G07": [
+          0.426,
+          0.706
+        ],
+        "G08": [
+          0.214,
+          0.295
+        ],
+        "G09": [
+          0.508,
+          0.575
+        ],
+        "G10": [
+          0.857,
+          1.177
+        ],
+        "G11": [
+          0.619,
+          0.738
+        ],
+        "G12": [
+          0.692,
+          0.702
+        ],
+        "G13": [
+          0.622,
+          0.674
+        ],
+        "G14": [
+          1.476,
+          1.832
+        ],
+        "G15": [
+          0.695,
+          1.122
+        ],
+        "G35": [
+          0.707,
+          1.105
+        ],
+        "G36": [
+          1.443,
+          1.882
+        ],
+        "G37": [
+          0.609,
+          0.622
+        ],
+        "G38": [
+          0.646,
+          0.675
+        ],
+        "G39": [
+          0.633,
+          0.661
+        ],
+        "G40": [
+          0.766,
+          1.101
+        ],
+        "G41": [
+          0.437,
+          0.535
+        ],
+        "G42": [
+          0.294,
+          0.383
+        ],
+        "G43": [
+          0.507,
+          0.788
+        ],
+        "G44": [
+          0.651,
+          1.047
+        ],
+        "G45": [
+          0.469,
+          1.641
+        ],
+        "G46": [
+          0.819,
+          2.314
+        ]
+      },
+      "homeRowAngles": {
+        "G04": {
+          "yaw": -96,
+          "mainYaw": -97.0
+        },
+        "G05": {
+          "yaw": -102,
+          "mainYaw": -102.0
+        },
+        "G06": {
+          "yaw": -107,
+          "mainYaw": -107.0
+        },
+        "G07": {
+          "yaw": -111,
+          "mainYaw": -111.0
+        },
+        "G08": {
+          "yaw": -114,
+          "mainYaw": -114.0
+        },
+        "G09": {
+          "yaw": -118,
+          "mainYaw": -118.0
+        },
+        "G10": {
+          "yaw": -122,
+          "mainYaw": -122.0
+        },
+        "G11": {
+          "yaw": -126,
+          "mainYaw": -126.0
+        },
+        "G12": {
+          "yaw": -128,
+          "mainYaw": -128.0
+        },
+        "G13": {
+          "yaw": -128,
+          "mainYaw": -128.0
+        },
+        "G14": {
+          "yaw": -130,
+          "mainYaw": -129.0
+        },
+        "G15": {
+          "yaw": -130,
+          "mainYaw": -130.0
+        },
+        "G35": {
+          "yaw": 130,
+          "mainYaw": 130.0
+        },
+        "G36": {
+          "yaw": 130,
+          "mainYaw": 129.0
+        },
+        "G37": {
+          "yaw": 128,
+          "mainYaw": 128.0
+        },
+        "G38": {
+          "yaw": 128,
+          "mainYaw": 128.0
+        },
+        "G39": {
+          "yaw": 127,
+          "mainYaw": 126.0
+        },
+        "G40": {
+          "yaw": 122,
+          "mainYaw": 122.0
+        },
+        "G41": {
+          "yaw": 119,
+          "mainYaw": 118.0
+        },
+        "G42": {
+          "yaw": 114,
+          "mainYaw": 114.0
+        },
+        "G43": {
+          "yaw": 111,
+          "mainYaw": 111.0
+        },
+        "G44": {
+          "yaw": 107,
+          "mainYaw": 107.0
+        },
+        "G45": {
+          "yaw": 102,
+          "mainYaw": 102.0
+        },
+        "G46": {
+          "yaw": 96,
+          "mainYaw": 97.0
+        }
+      }
+    },
+    "pdfBlocks": 229,
+    "pdfRows": 3530,
+    "intervalMismatches": [],
+    "duplicateRows": [],
+    "invalidRows": [],
+    "unsupportedSeats": [],
+    "overlappingSeats": [],
+    "pillarSeatIntersections": [],
+    "concourses": [
+      "C1",
+      "C2",
+      "C3",
+      "C4"
+    ],
+    "filledBackstopFloor": [
+      {
+        "point": [
+          -8.2,
+          20.65
+        ],
+        "height": 1.674,
+        "block": "A27"
+      },
+      {
+        "point": [
+          -9.2,
+          21
+        ],
+        "height": 1.674,
+        "block": "A27"
+      },
+      {
+        "point": [
+          -10,
+          21.3
+        ],
+        "height": 1.674,
+        "block": "A27"
+      },
+      {
+        "point": [
+          -15.7,
+          17.2
+        ],
+        "height": 1.702,
+        "block": "A29"
+      },
+      {
+        "point": [
+          -16.2,
+          17.5
+        ],
+        "height": 1.702,
+        "block": "A29"
+      },
+      {
+        "point": [
+          8.2,
+          20.65
+        ],
+        "height": 1.674,
+        "block": "A23"
+      },
+      {
+        "point": [
+          9.2,
+          21
+        ],
+        "height": 1.674,
+        "block": "A23"
+      },
+      {
+        "point": [
+          10,
+          21.3
+        ],
+        "height": 1.674,
+        "block": "A23"
+      },
+      {
+        "point": [
+          15.7,
+          17.2
+        ],
+        "height": 1.702,
+        "block": "A21"
+      },
+      {
+        "point": [
+          16.2,
+          17.5
+        ],
+        "height": 1.702,
+        "block": "A21"
+      }
+    ],
+    "flights": 13
+  },
+  "walker": {
+    "checks": 201,
+    "failed": []
+  },
+  "geometryRegressionTests": 7,
+  "appBuild": "passed",
+  "suitePicker": {
+    "options": 28,
+    "selected": "S101",
+    "row": 1,
+    "seat": 1,
+    "enterCallback": "S101, not FOH"
+  },
+  "structuralReview": {
+    "upperFirstSlabBottom": 18.48,
+    "upperFirstSlabThickness": 0.12,
+    "connectedWallOutsideShell": 0,
+    "F10Seats": 0,
+    "F11Seats": 93,
+    "exciteRearOpenContinuousSides": 2,
+    "exciteFenceVertices": [
+      8,
+      7
+    ],
+    "F11Pit": {
+      "pts": [
+        [
+          19.285684149556992,
+          -120.64598194354777
+        ],
+        [
+          12.051639900145908,
+          -122.20437977387301
+        ],
+        [
+          11.569605963062685,
+          -119.9667901400052
+        ],
+        [
+          15.286396103067895,
+          -118.85000000000001
+        ],
+        [
+          18.597188039377823,
+          -117.45
+        ]
+      ],
+      "center": [
+        15.602173642134645,
+        -120.05444698639276
+      ],
+      "heights": [
+        5.74,
+        5.74,
+        4.4,
+        4.4,
+        4.4
+      ],
+      "bottom": 0.35,
+      "rim": 4.6,
+      "backRim": 5.74,
+      "fasciaBottom": 4.15,
+      "rearEdge": [
+        [
+          12.051639900145908,
+          -122.20437977387301
+        ],
+        [
+          19.285684149556992,
+          -120.64598194354777
+        ]
+      ],
+      "openTop": true
+    },
+    "F11AisleJoin": {
+      "block": "F12",
+      "clearWidth": 0.66,
+      "shift": [
+        5.401548320758399,
+        0.9407296689314218
+      ],
+      "normal": [
+        0.9851707795551383,
+        0.171576615862189
+      ],
+      "edge": [
+        [
+          20.36,
+          -116.64
+        ],
+        [
+          20.48,
+          -117.32
+        ],
+        [
+          20.6,
+          -117.98
+        ],
+        [
+          20.72,
+          -118.66
+        ],
+        [
+          20.84,
+          -119.34
+        ],
+        [
+          20.96,
+          -120.02
+        ],
+        [
+          21.08,
+          -120.7
+        ],
+        [
+          21.18,
+          -121.36
+        ],
+        [
+          21.3,
+          -122.04
+        ],
+        [
+          21.42,
+          -122.7
+        ]
+      ]
+    },
+    "upperWallSingleStrip": false,
+    "batterEyeVisibleInFourViews": true,
+    "upperWallUnderside": 13.8,
+    "scoreboardSetback": 2.5,
+    "RYOBIFronts": [
+      [
+        [
+          -11.48776107346728,
+          -126.86301606849058
+        ],
+        [
+          -20.860006097389007,
+          -124.84399519897555
+        ]
+      ],
+      [
+        [
+          11.48776107346728,
+          -126.86301606849058
+        ],
+        [
+          20.860006097389007,
+          -124.84399519897555
+        ]
+      ]
+    ],
+    "effectivePillarSeatIntersections": [],
+    "RYOBIBacks": [
+      [
+        [
+          -12.406248120104125,
+          -131.12661026028636
+        ],
+        [
+          -22.213441788788394,
+          -131.12661026028636
+        ]
+      ],
+      [
+        [
+          12.406248120104125,
+          -131.12661026028636
+        ],
+        [
+          22.213441788788394,
+          -131.12661026028636
+        ]
+      ]
+    ],
+    "narrowOutfieldVoms": [
+      {
+        "p": [
+          -22.25,
+          -124.55
+        ],
+        "u": [
+          -0.17075488993627308,
+          -0.9853135376938912
+        ],
+        "w": 2.4,
+        "L": 4.96,
+        "T": 0.0,
+        "y": 8.314,
+        "roof": 12.7,
+        "top": 10.6,
+        "sides": [],
+        "wall": {
+          "t0": 9.6,
+          "t1": 11.6,
+          "roof": 12.7,
+          "open": true
+        },
+        "bridge": true,
+        "batterEye": true
+      },
+      {
+        "p": [
+          22.25,
+          -124.55
+        ],
+        "u": [
+          0.17075488993627308,
+          -0.9853135376938912
+        ],
+        "w": 2.4,
+        "L": 4.96,
+        "T": 0.0,
+        "y": 8.314,
+        "roof": 12.7,
+        "top": 10.6,
+        "sides": [],
+        "wall": {
+          "t0": 9.6,
+          "t1": 11.6,
+          "roof": 12.7,
+          "open": true
+        },
+        "bridge": true,
+        "batterEye": true
+      }
+    ],
+    "narrowEntriesAddedStairs": 0,
+    "narrowMatchesExistingFShape": true,
+    "sharedOutfieldConcourseHeight": 10.6,
+    "upperWallSolidSectionWidthRange": [
+      6.235,
+      12.594
+    ],
+    "scoreboardCurve": {
+      "radius": 125.0,
+      "falloff": 0.012,
+      "wallBehind": 0.4,
+      "bandAngle": 31.0
+    },
+    "C3EndFence": "continuous fascia/glass/rail, 90-degree returns",
+    "D4EndFence": "same paint material as front; shared mitered corner vertices",
+    "additionalBalconyCeilingPlate": "removed; no extra box wall beside D end",
+    "roofTransverseSeams": {
+      "shiftMeters": 0,
+      "gridOriginZ": 81,
+      "cablePitchMetres": 8.5,
+      "bowBetweenCablesMeters": 0.5,
+      "bowDirection": "outward from grid center on both halves",
+      "fittingsFollowSeams": true,
+      "checkedDirections": [
+        "home",
+        "outfield",
+        "first",
+        "third"
+      ]
+    },
+    "scoreboardBottom": 13.8,
+    "scoreboardTop": 21.3,
+    "scoreboardVerticalMove": 0.4,
+    "lowerDisplayBottom": 8.4,
+    "RYOBIAdvertisementTops": [
+      13.3,
+      13.3
+    ]
+  },
+  "limitations": [
+    "Photographic dimensions, not a survey",
+    "F11 tunnel interior termination simplified",
+    "G layout and IDs are user-defined; not an official seating ledger"
+  ],
+  "photoReview": {
+    "official1FPanorama": "https://my.matterport.com/show/?m=hKaQSvco93D",
+    "scanYear": 2023,
+    "locations": [
+      1053,
+      1054,
+      1260,
+      288
+    ],
+    "currentRenderViews": [
+      "roof-home.png",
+      "roof-outfield.png",
+      "roof-first.png",
+      "roof-third.png",
+      "roof-field-angle.png",
+      "roof-upper-right.png",
+      "roof-upper-left.png",
+      "roof-light-bank-close.png",
+      "roof-equipment-cage-close.png",
+      "roof-play.png"
+    ],
+    "unmeasuredDimensions": "Photographic estimates, not survey dimensions",
+    "scope": "revision 11: uniform drawing-based 8.5m cable grid; crosswise strokes omitted for wall-side 5/7/9/11/13 bays in four wings; photo-based fabric sag, four suspended light banks and one equipment cage",
+    "userReference": "Final instruction: actual-photo sag, curvature and pitch; wall-nearest five bays then seven and nine made by omitting crosswise strokes rather than compressing the grid",
+    "diagnosticViews": [
+      "roof-orthographic.png"
+    ]
+  },
+  "parapetCornerTests": {
+    "closedMesh": true,
+    "cornerRays": 3,
+    "passed": true
+  },
+  "additionalBalconyCeilingPlate": "removed per final user instruction",
+  "rearOutfieldCeiling": {
+    "samples": 688,
+    "rows": "17 onward, central outfield behind pillars, abs(x)<64.5",
+    "missing": []
+  },
+  "wallJoins": {
+    "sharedFace": true,
+    "levelUnderside": 13.8,
+    "joinedEnds": 2,
+    "steps": 0
+  },
+  "screenAndPanelAlignment": {
+    "name": "scoreboard-and-RYOBI-follow-balcony-datum",
+    "bottom": 13.800000190734863,
+    "target": 13.8,
+    "RYOBITops": [
+      13.3,
+      13.3
+    ],
+    "distance": 0,
+    "heightError": 0
+  },
+  "unlitMaterialRegression": {
+    "name": "RYOBI-and-A02-fence-have-no-self-light",
+    "samples": 4,
+    "issues": [],
+    "distance": 0,
+    "heightError": 0
+  },
+  "renderStates": {
+    "roof-home": {
+      "house": 1,
+      "part": null
+    },
+    "roof-outfield": {
+      "house": 1,
+      "part": null
+    },
+    "roof-first": {
+      "house": 1,
+      "part": null
+    },
+    "roof-third": {
+      "house": 1,
+      "part": null
+    },
+    "roof-field-angle": {
+      "house": 1,
+      "part": null
+    },
+    "roof-upper-right": {
+      "house": 1,
+      "part": null
+    },
+    "roof-upper-left": {
+      "house": 1,
+      "part": null
+    },
+    "roof-light-bank-close": {
+      "house": 1,
+      "part": null
+    },
+    "roof-equipment-cage-close": {
+      "house": 1,
+      "part": null
+    },
+    "roof-play": {
+      "house": 0,
+      "part": "chorus"
+    }
+  },
+  "removedBackstopBand": {
+    "removed": true,
+    "centreFloorAfter": 1.3619999885559082
+  },
+  "concertFloor": {
+    "material": "matte teal-green rubber sheets",
+    "baseSRGB": [
+      0.12,
+      0.43,
+      0.36
+    ],
+    "sheetMetres": [
+      2,
+      8
+    ],
+    "modes": [
+      "end",
+      "360"
+    ],
+    "actualGroundCheck": {
+      "name": "concert-rubber-floor-walk-support",
+      "distance": 0,
+      "heightError": 0,
+      "samples": [
+        {
+          "point": [
+            0,
+            124
+          ],
+          "top": 0.01999999955296522
+        },
+        {
+          "point": [
+            25,
+            106
+          ],
+          "top": 0.019999999552965164
+        },
+        {
+          "point": [
+            -25,
+            106
+          ],
+          "top": 0.01999999955296522
+        },
+        {
+          "point": [
+            48,
+            75
+          ],
+          "top": 0.019999999552965164
+        },
+        {
+          "point": [
+            -48,
+            75
+          ],
+          "top": 0.01999999955296522
+        }
+      ],
+      "bad": []
+    }
+  },
+  "backstopFloorInfill": {
+    "raisedEmptyTreads": [
+      {
+        "level": "A",
+        "row": 830,
+        "before": 0.974,
+        "after": 1.518
+      },
+      {
+        "level": "A",
+        "row": 855,
+        "before": 0.974,
+        "after": 1.518
+      },
+      {
+        "level": "A",
+        "row": 880,
+        "before": 0.958,
+        "after": 1.687
+      },
+      {
+        "level": "A",
+        "row": 905,
+        "before": 0.958,
+        "after": 1.687
+      },
+      {
+        "level": "A",
+        "row": 930,
+        "before": 0.974,
+        "after": 1.699
+      },
+      {
+        "level": "A",
+        "row": 955,
+        "before": 0.974,
+        "after": 1.699
+      },
+      {
+        "level": "A",
+        "row": 980,
+        "before": 0.979,
+        "after": 1.702
+      },
+      {
+        "level": "A",
+        "row": 1005,
+        "before": 0.979,
+        "after": 1.702
+      },
+      {
+        "level": "A",
+        "row": 1054,
+        "before": 0.885,
+        "after": 1.623
+      },
+      {
+        "level": "A",
+        "row": 1079,
+        "before": 1.027,
+        "after": 1.674
+      },
+      {
+        "level": "A",
+        "row": 1104,
+        "before": 1.027,
+        "after": 1.674
+      }
+    ],
+    "seatPositionsAndNumbersUnchanged": true,
+    "groundChecks": [
+      {
+        "name": "backstop-left-pockets-filled",
+        "distance": 0,
+        "heightError": 0,
+        "samples": [
+          {
+            "point": [
+              -8.2,
+              134.65
+            ],
+            "top": 1.6740000247955322,
+            "expected": 1.674
+          },
+          {
+            "point": [
+              -9.2,
+              135
+            ],
+            "top": 1.6740000247955322,
+            "expected": 1.674
+          },
+          {
+            "point": [
+              -10,
+              135.3
+            ],
+            "top": 1.6740000247955322,
+            "expected": 1.674
+          },
+          {
+            "point": [
+              -15.7,
+              131.2
+            ],
+            "top": 1.7020000219345093,
+            "expected": 1.702
+          },
+          {
+            "point": [
+              -16.2,
+              131.5
+            ],
+            "top": 1.7020000219345093,
+            "expected": 1.702
+          }
+        ],
+        "bad": []
+      },
+      {
+        "name": "backstop-right-pockets-filled",
+        "distance": 0,
+        "heightError": 0,
+        "samples": [
+          {
+            "point": [
+              8.2,
+              134.65
+            ],
+            "top": 1.6740000247955322,
+            "expected": 1.674
+          },
+          {
+            "point": [
+              9.2,
+              135
+            ],
+            "top": 1.6740000247955322,
+            "expected": 1.674
+          },
+          {
+            "point": [
+              10,
+              135.3
+            ],
+            "top": 1.6740000247955322,
+            "expected": 1.674
+          },
+          {
+            "point": [
+              15.7,
+              131.2
+            ],
+            "top": 1.7020000219345093,
+            "expected": 1.702
+          },
+          {
+            "point": [
+              16.2,
+              131.5
+            ],
+            "top": 1.7020000219345093,
+            "expected": 1.702
+          }
+        ],
+        "bad": []
+      }
+    ]
+  },
+  "upperVomitoryGuards": {
+    "nominalProjectionBefore": 1,
+    "nominalProjectionAfter": 0.5,
+    "changed": [
+      {
+        "entry": "14",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "14",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "13",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "13",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "12",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "12",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "11",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "11",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "10",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "10",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "9",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "9",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "8",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "8",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "7",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "7",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "6",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "6",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "5",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "5",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "4",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "4",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "3",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "3",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "2",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "2",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "1",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "1",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      }
+    ],
+    "allOtherDataUnchanged": true
+  },
+  "fourthFloorLights": {
+    "parapetSupportRays": 28,
+    "qualityCounts": [
+      10,
+      18
+    ],
+    "runtimeContact": {
+      "name": "4F-lights-touch-brackets-and-parapet",
+      "samples": [
+        {
+          "base": [
+            -82.38590748676489,
+            19.26,
+            50.04744171251884
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        },
+        {
+          "base": [
+            -82.52264605075435,
+            19.26,
+            81.712652955821
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        },
+        {
+          "base": [
+            -65.31439400324884,
+            19.26,
+            109.84019230630375
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        },
+        {
+          "base": [
+            -43.755204580917024,
+            19.26,
+            134.85722411898635
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        },
+        {
+          "base": [
+            -16.86676789491444,
+            19.26,
+            152.98165844453163
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        },
+        {
+          "base": [
+            16.17686358056638,
+            19.26,
+            153.06514395393071
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        },
+        {
+          "base": [
+            43.21685989558072,
+            19.26,
+            135.24489542140049
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        },
+        {
+          "base": [
+            64.88842292249203,
+            19.26,
+            110.3253462493485
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        },
+        {
+          "base": [
+            82.2812085056153,
+            19.26,
+            82.31252280716734
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        },
+        {
+          "base": [
+            82.51871836764575,
+            19.26,
+            50.64363877626657
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        }
+      ],
+      "bad": [],
+      "distance": 0,
+      "heightError": 0
+    }
+  },
+  "roofCanvasPlan": {
+    "document": "docs/TOKYO_DOME_REVISION11.ko.md",
+    "status": "implemented with photographic review and projection diagnostic",
+    "roofGeometryChanged": true,
+    "primaryCloseup": "https://www.tokyo-dome.co.jp/themes/common/img/dome/about/index-image-7.webp"
+  },
+  "roofLiner": {
+    "layout": {
+      "roof": {
+        "radius": 100.5,
+        "exponent": 1.53,
+        "grid": 8.5,
+        "core": 55.25,
+        "centreZ": 81,
+        "gridOriginZ": 81
+      },
+      "method": "uniform drawing-based 8.5m grid; omit crosswise strokes without local compression",
+      "wings": {
+        "home": [
+          {
+            "wing": "home",
+            "bays": 5,
+            "half": 21.25,
+            "axis": 89.25,
+            "axisIndex": 10,
+            "axisDimension": 1
+          },
+          {
+            "wing": "home",
+            "bays": 7,
+            "half": 29.75,
+            "axis": 80.75,
+            "axisIndex": 9,
+            "axisDimension": 1
+          },
+          {
+            "wing": "home",
+            "bays": 9,
+            "half": 38.25,
+            "axis": 72.25,
+            "axisIndex": 8,
+            "axisDimension": 1
+          },
+          {
+            "wing": "home",
+            "bays": 11,
+            "half": 46.75,
+            "axis": 63.75,
+            "axisIndex": 7,
+            "axisDimension": 1
+          },
+          {
+            "wing": "home",
+            "bays": 13,
+            "half": 55.25,
+            "axis": 55.25,
+            "axisIndex": 6,
+            "axisDimension": 1
+          }
+        ],
+        "outfield": [
+          {
+            "wing": "outfield",
+            "bays": 5,
+            "half": 21.25,
+            "axis": -89.25,
+            "axisIndex": -10,
+            "axisDimension": 1
+          },
+          {
+            "wing": "outfield",
+            "bays": 7,
+            "half": 29.75,
+            "axis": -80.75,
+            "axisIndex": -9,
+            "axisDimension": 1
+          },
+          {
+            "wing": "outfield",
+            "bays": 9,
+            "half": 38.25,
+            "axis": -72.25,
+            "axisIndex": -8,
+            "axisDimension": 1
+          },
+          {
+            "wing": "outfield",
+            "bays": 11,
+            "half": 46.75,
+            "axis": -63.75,
+            "axisIndex": -7,
+            "axisDimension": 1
+          },
+          {
+            "wing": "outfield",
+            "bays": 13,
+            "half": 55.25,
+            "axis": -55.25,
+            "axisIndex": -6,
+            "axisDimension": 1
+          }
+        ],
+        "first": [
+          {
+            "wing": "first",
+            "bays": 5,
+            "half": 21.25,
+            "axis": 89.25,
+            "axisIndex": 10,
+            "axisDimension": 0
+          },
+          {
+            "wing": "first",
+            "bays": 7,
+            "half": 29.75,
+            "axis": 80.75,
+            "axisIndex": 9,
+            "axisDimension": 0
+          },
+          {
+            "wing": "first",
+            "bays": 9,
+            "half": 38.25,
+            "axis": 72.25,
+            "axisIndex": 8,
+            "axisDimension": 0
+          },
+          {
+            "wing": "first",
+            "bays": 11,
+            "half": 46.75,
+            "axis": 63.75,
+            "axisIndex": 7,
+            "axisDimension": 0
+          },
+          {
+            "wing": "first",
+            "bays": 13,
+            "half": 55.25,
+            "axis": 55.25,
+            "axisIndex": 6,
+            "axisDimension": 0
+          }
+        ],
+        "third": [
+          {
+            "wing": "third",
+            "bays": 5,
+            "half": 21.25,
+            "axis": -89.25,
+            "axisIndex": -10,
+            "axisDimension": 0
+          },
+          {
+            "wing": "third",
+            "bays": 7,
+            "half": 29.75,
+            "axis": -80.75,
+            "axisIndex": -9,
+            "axisDimension": 0
+          },
+          {
+            "wing": "third",
+            "bays": 9,
+            "half": 38.25,
+            "axis": -72.25,
+            "axisIndex": -8,
+            "axisDimension": 0
+          },
+          {
+            "wing": "third",
+            "bays": 11,
+            "half": 46.75,
+            "axis": -63.75,
+            "axisIndex": -7,
+            "axisDimension": 0
+          },
+          {
+            "wing": "third",
+            "bays": 13,
+            "half": 55.25,
+            "axis": -55.25,
+            "axisIndex": -6,
+            "axisDimension": 0
+          }
+        ]
+      }
+    },
+    "uniformPitchMetres": 8.5,
+    "pitchSource": "Takenaka roof paper, Fig.2, cables @8.5m",
+    "noLocalCompression": true,
+    "method": "omit outer crosswise strokes at unchanged base-grid intersections",
+    "rowsFromWall": [
+      5,
+      7,
+      9,
+      11,
+      13
+    ],
+    "wings": 4,
+    "sagMetres": [
+      0.65,
+      0.12
+    ],
+    "crosswiseBowMetres": 0.5,
+    "roughness": 0.95,
+    "sourceList": "docs/references/tokyo-dome-review-11-sources.json",
+    "layoutCheck": "node scripts/verify-dome-roof.mjs",
+    "equipment": {
+      "lightingBanks": 4,
+      "lensesPerBank": 12,
+      "equipmentCages": 1,
+      "suspensionWires": 20,
+      "runtimeCheck": {
+        "name": "roof-equipment-suspended-below-cable-crossings",
+        "items": [
+          {
+            "kind": "two-row lighting bank",
+            "cell": [
+              -3,
+              -3
+            ],
+            "position": [
+              -25.5,
+              49.76392909608175,
+              55.5
+            ],
+            "anchors": [
+              [
+                -29.75,
+                51.26392909608175,
+                51.25
+              ],
+              [
+                -21.25,
+                52.64334029796536,
+                51.25
+              ],
+              [
+                -21.25,
+                54.7691474980009,
+                59.75
+              ],
+              [
+                -29.75,
+                53.49334029796536,
+                59.75
+              ]
+            ],
+            "mounts": [
+              [
+                -27.377668029706385,
+                49.56065609389594,
+                56.45075909503981
+              ],
+              [
+                -24.549240904960197,
+                49.56065609389594,
+                53.622331970293615
+              ],
+              [
+                -23.80489898635922,
+                50.32348649210176,
+                54.36667388889459
+              ],
+              [
+                -26.63332611110541,
+                50.32348649210176,
+                57.19510101364078
+              ]
+            ],
+            "lamps": 12
+          },
+          {
+            "kind": "two-row lighting bank",
+            "cell": [
+              -3,
+              3
+            ],
+            "position": [
+              -25.5,
+              55.713929096081756,
+              106.5
+            ],
+            "anchors": [
+              [
+                -29.75,
+                57.74334029796536,
+                102.25
+              ],
+              [
+                -21.25,
+                59.0191474980009,
+                102.25
+              ],
+              [
+                -21.25,
+                58.59334029796536,
+                110.75
+              ],
+              [
+                -29.75,
+                57.213929096081756,
+                110.75
+              ]
+            ],
+            "mounts": [
+              [
+                -24.55616077250904,
+                55.54541805736802,
+                108.38458789725523
+              ],
+              [
+                -27.384587897255226,
+                55.54541805736802,
+                105.55616077250903
+              ],
+              [
+                -26.612899857976974,
+                56.25181393792634,
+                104.78447273323079
+              ],
+              [
+                -23.784472733230785,
+                56.25181393792634,
+                107.61289985797697
+              ]
+            ],
+            "lamps": 12
+          },
+          {
+            "kind": "two-row lighting bank",
+            "cell": [
+              3,
+              -3
+            ],
+            "position": [
+              25.5,
+              49.76392909608175,
+              55.5
+            ],
+            "anchors": [
+              [
+                21.25,
+                52.64334029796536,
+                51.25
+              ],
+              [
+                29.75,
+                51.26392909608175,
+                51.25
+              ],
+              [
+                29.75,
+                53.49334029796536,
+                59.75
+              ],
+              [
+                21.25,
+                54.7691474980009,
+                59.75
+              ]
+            ],
+            "mounts": [
+              [
+                24.549240904960197,
+                49.56065609389594,
+                53.622331970293615
+              ],
+              [
+                27.377668029706385,
+                49.56065609389594,
+                56.45075909503981
+              ],
+              [
+                26.63332611110541,
+                50.32348649210176,
+                57.19510101364078
+              ],
+              [
+                23.80489898635922,
+                50.32348649210176,
+                54.36667388889459
+              ]
+            ],
+            "lamps": 12
+          },
+          {
+            "kind": "two-row lighting bank",
+            "cell": [
+              3,
+              3
+            ],
+            "position": [
+              25.5,
+              55.713929096081756,
+              106.5
+            ],
+            "anchors": [
+              [
+                21.25,
+                59.0191474980009,
+                102.25
+              ],
+              [
+                29.75,
+                57.74334029796536,
+                102.25
+              ],
+              [
+                29.75,
+                57.213929096081756,
+                110.75
+              ],
+              [
+                21.25,
+                58.59334029796536,
+                110.75
+              ]
+            ],
+            "mounts": [
+              [
+                27.384587897255226,
+                55.54541805736802,
+                105.55616077250903
+              ],
+              [
+                24.55616077250904,
+                55.54541805736802,
+                108.38458789725523
+              ],
+              [
+                23.784472733230785,
+                56.25181393792634,
+                107.61289985797697
+              ],
+              [
+                26.612899857976974,
+                56.25181393792634,
+                104.78447273323079
+              ]
+            ],
+            "lamps": 12
+          },
+          {
+            "kind": "equipment cage",
+            "cell": [
+              0,
+              0
+            ],
+            "position": [
+              0,
+              56.62436589992004,
+              81
+            ],
+            "anchors": [
+              [
+                -4.25,
+                59.12436589992004,
+                76.75
+              ],
+              [
+                4.25,
+                59.12436589992004,
+                76.75
+              ],
+              [
+                4.25,
+                59.97436589992004,
+                85.25
+              ],
+              [
+                -4.25,
+                59.97436589992004,
+                85.25
+              ]
+            ],
+            "mounts": [
+              [
+                -0.575,
+                57.04936589992004,
+                80.5
+              ],
+              [
+                0.575,
+                57.04936589992004,
+                80.5
+              ],
+              [
+                0.575,
+                57.04936589992004,
+                81.5
+              ],
+              [
+                -0.575,
+                57.04936589992004,
+                81.5
+              ]
+            ]
+          }
+        ],
+        "bad": [],
+        "distance": 0,
+        "heightError": 0
+      }
+    },
+    "projectionDiagnostic": {
+      "file": "roof-orthographic.png",
+      "projection": "orthographic, top down; current full app model",
+      "pitchMetres": 8.5,
+      "projectedRowCoordinates": [
+        {
+          "bays": 5,
+          "coordinate": 170.25,
+          "pixelY": 579.6363636363637
+        },
+        {
+          "bays": 7,
+          "coordinate": 161.75,
+          "pixelY": 554.909090909091
+        },
+        {
+          "bays": 9,
+          "coordinate": 153.25,
+          "pixelY": 530.1818181818182
+        },
+        {
+          "bays": 11,
+          "coordinate": 144.75,
+          "pixelY": 505.4545454545456
+        },
+        {
+          "bays": 13,
+          "coordinate": 136.25,
+          "pixelY": 480.72727272727286
+        }
+      ],
+      "pixelSpacing": [
+        24.727272727272748,
+        24.727272727272748,
+        24.727272727272634,
+        24.727272727272748
+      ]
+    },
+    "limits": "Grid pitch follows the drawing. Small fabric curves and equipment positions are photographic estimates; bay progression is user specified."
+  }
+}

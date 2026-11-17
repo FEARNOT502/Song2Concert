@@ -1,0 +1,64 @@
+{
+  "checkedOn": "2026-11-17",
+  "sources": [
+    {
+      "file": "ceiling-wide-2019.jpg",
+      "image": "https://stat.ameba.jp/user_images/20190904/20/dc2dan/8a/00/j/o0909068214575147222.jpg",
+      "page": "https://ameblo.jp/dc2dan/entry-12520515339.html",
+      "bytes": 58875,
+      "viewed": true
+    },
+    {
+      "file": "field-wide-2025.jpg",
+      "image": "https://www.sportsvideo.org/wp-content/uploads/2025/03/Stadium-scaled.jpg",
+      "page": "https://www.sportsvideo.org/2025/03/18/mlb-tokyo-series-2025-mlb-network-assists-fox-sports-marquee-sports-network-with-remote-productions-of-opening-series/",
+      "bytes": 421559,
+      "viewed": true
+    },
+    {
+      "file": "roof-close-2024.jpg",
+      "image": "https://i.daily.jp/baseball/2024/04/13/Images/f_17539833.jpg",
+      "page": "https://origin.daily.co.jp/baseball/2024/04/13/0017539029.shtml?ph=3",
+      "bytes": 77916,
+      "viewed": true
+    },
+    {
+      "file": "pole-side-2019.jpg",
+      "image": "https://stat.ameba.jp/user_images/20191118/23/wwwa-s/f5/a9/j/o1920108014643706597.jpg",
+      "page": "https://ameblo.jp/wwwa-s/entry-12546657429.html",
+      "bytes": 316442,
+      "viewed": true
+    },
+    {
+      "page": "https://www.tokyo-dome.co.jp/dome/about/",
+      "image": "https://www.tokyo-dome.co.jp/themes/common/img/dome/about/index-image-7.webp",
+      "viewed": true,
+      "use": "official inner liner closeup"
+    },
+    {
+      "page": "https://my.matterport.com/show/?m=1Re8wbYUNXW",
+      "viewed": true,
+      "locations": [
+        381,
+        444
+      ],
+      "use": "both upper seating viewpoints; previously downloaded panorama faces"
+    },
+    {
+      "page": "https://www.jstage.jst.go.jp/article/mls1989/1/1/1_1_14/_article/-char/ja",
+      "viewed": true,
+      "figure": "Figure 2 on PDF page 2",
+      "use": "existing roof envelope and cable orientation"
+    }
+  ],
+  "userConstraint": "Use actual Tokyo Dome geometry where supported, uniform drawing-based spacing, and remove crosswise strokes to leave wall-first 5/7/9 bays; add photographed hanging equipment.",
+  "limits": "Photos guide visible fabric shapes. Bay progression is user specified; seam pitch and sag are visual estimates.",
+  "userReferences": [
+    "Concert interior photo provided in the conversation: hanging bank, continuous longitudinal cables, scalloped crosswise seams and perimeter triangle."
+  ],
+  "drawingBasis": {
+    "page": "https://www.jstage.jst.go.jp/article/mls1989/1/1/1_1_14/_article/-char/ja",
+    "figure": "Figure 2 on PDF page 2",
+    "cablePitchMetres": 8.5
+  }
+}
