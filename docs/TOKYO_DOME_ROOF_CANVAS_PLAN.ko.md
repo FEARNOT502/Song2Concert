@@ -2,6 +2,8 @@
 
 적용 결과와 체크리스트는 [11차 검수](TOKYO_DOME_REVISION11.ko.md), 사진·도면 주소는 [자료 목록](references/tokyo-dome-review-11-sources.json)에 기록한다.
 
+삼각 패널의 반복 처짐과 물결 음영 제거는 [12차 수정](TOKYO_DOME_REVISION12.ko.md)에 기록한다. 삼각 영역 경계는 직선 케이블 기준으로 잡고, 처짐은 격자 쪽에서 전환을 끝낸다.
+
 ## 격자와 벽 연결
 
 [구조 자료 Fig.2](https://www.jstage.jst.go.jp/article/mls1989/1/1/1_1_14/_article/-char/ja)의 케이블 간격 8.5m를 지붕 전체에 일정하게 적용한다. 벽에서 가까운 가로 구간부터 5·7·9·11·13칸을 남긴다. 네 방향 모두 같은 격자의 바깥 선 구간을 생략하며, 벽 쪽 선의 좌표나 간격을 압축하지 않는다.

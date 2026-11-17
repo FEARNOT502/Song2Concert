@@ -4,6 +4,16 @@ const GRID=8.5;
 export const DOME_ROOF=Object.freeze({radius:100.5,exponent:1.53,grid:GRID,core:GRID*6.5,centreZ:81,gridOriginZ:81});
 export const ROOF_WINGS=['home','outfield','first','third'];
 
+// The four plain corner panels start at straight cable boundaries. End the
+// periodic cloth deformation on the grid side, before entering those panels.
+export function roofTriangleGLSL() {
+  const edge=DOME_ROOF.core.toFixed(4),start=(DOME_ROOF.core-3.5).toFixed(4);
+  return `float trianglePanel(vec2 c) {
+    return smoothstep(${start},${edge},abs(c.x))*smoothstep(${start},${edge},abs(c.y));
+  }
+  float roofSagWeight(vec2 c) { return 1.0-trianglePanel(c); }`;
+}
+
 export function roofFoldRows(wing='home') {
   const R=DOME_ROOF,axis=wing==='home'||wing==='outfield'?1:0;
   const sign=wing==='outfield'||wing==='third'?-1:1;

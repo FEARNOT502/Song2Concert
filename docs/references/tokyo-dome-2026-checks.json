@@ -1,5 +1,5 @@
 {
-  "revision": 11,
+  "revision": 12,
   "checkedOn": "2026-11-17",
   "dataSha256": "098188dc703543d5adedc8b57609ebe503453d2afda80971031b7586a1c2e506",
   "modelAudit": {
@@ -319,7 +319,7 @@
     "flights": 13
   },
   "walker": {
-    "checks": 201,
+    "checks": 202,
     "failed": []
   },
   "geometryRegressionTests": 7,
@@ -601,22 +601,23 @@
       288
     ],
     "currentRenderViews": [
-      "roof-home.png",
-      "roof-outfield.png",
-      "roof-first.png",
-      "roof-third.png",
-      "roof-field-angle.png",
+      "triangle-left-outfield.png",
+      "triangle-left-home.png",
+      "triangle-right-outfield.png",
+      "triangle-right-home.png",
+      "triangle-after.png",
       "roof-upper-right.png",
-      "roof-upper-left.png",
-      "roof-light-bank-close.png",
-      "roof-equipment-cage-close.png",
-      "roof-play.png"
+      "triangle-play.png"
     ],
     "unmeasuredDimensions": "Photographic estimates, not survey dimensions",
-    "scope": "revision 11: uniform drawing-based 8.5m cable grid; crosswise strokes omitted for wall-side 5/7/9/11/13 bays in four wings; photo-based fabric sag, four suspended light banks and one equipment cage",
+    "scope": "revision 12: remove periodic deformation and ripple shading from four plain triangle panels; straight panel boundaries; before and after shown at the same camera",
     "userReference": "Final instruction: actual-photo sag, curvature and pitch; wall-nearest five bays then seven and nine made by omitting crosswise strokes rather than compressing the grid",
     "diagnosticViews": [
       "roof-orthographic.png"
+    ],
+    "comparisonViews": [
+      "triangle-before.png",
+      "triangle-after.png"
     ]
   },
   "parapetCornerTests": {
@@ -655,23 +656,23 @@
     "heightError": 0
   },
   "renderStates": {
-    "roof-home": {
+    "triangle-left-outfield": {
       "house": 1,
       "part": null
     },
-    "roof-outfield": {
+    "triangle-left-home": {
       "house": 1,
       "part": null
     },
-    "roof-first": {
+    "triangle-right-outfield": {
       "house": 1,
       "part": null
     },
-    "roof-third": {
+    "triangle-right-home": {
       "house": 1,
       "part": null
     },
-    "roof-field-angle": {
+    "triangle-after": {
       "house": 1,
       "part": null
     },
@@ -679,19 +680,7 @@
       "house": 1,
       "part": null
     },
-    "roof-upper-left": {
-      "house": 1,
-      "part": null
-    },
-    "roof-light-bank-close": {
-      "house": 1,
-      "part": null
-    },
-    "roof-equipment-cage-close": {
-      "house": 1,
-      "part": null
-    },
-    "roof-play": {
+    "triangle-play": {
       "house": 0,
       "part": "chorus"
     }
@@ -1209,8 +1198,8 @@
     }
   },
   "roofCanvasPlan": {
-    "document": "docs/TOKYO_DOME_REVISION11.ko.md",
-    "status": "implemented with photographic review and projection diagnostic",
+    "document": "docs/TOKYO_DOME_REVISION12.ko.md",
+    "status": "plain triangle panels corrected and visually checked",
     "roofGeometryChanged": true,
     "primaryCloseup": "https://www.tokyo-dome.co.jp/themes/common/img/dome/about/index-image-7.webp"
   },
@@ -1752,6 +1741,19 @@
         24.727272727272748
       ]
     },
-    "limits": "Grid pitch follows the drawing. Small fabric curves and equipment positions are photographic estimates; bay progression is user specified."
+    "limits": "Grid pitch follows the drawing. Small fabric curves and equipment positions are photographic estimates; bay progression is user specified.",
+    "plainTrianglePanels": {
+      "periodicSagInside": 0,
+      "rippleShadingInside": false,
+      "boundary": "straight cable coordinates; independent of bowed seams",
+      "transition": "3.5m on grid side, completed at panel boundary",
+      "GPUCheck": {
+        "name": "four-triangle-panels-have-zero-periodic-sag-GPU",
+        "samples": 4096,
+        "bad": 0,
+        "distance": 0,
+        "heightError": 0
+      }
+    }
   }
 }

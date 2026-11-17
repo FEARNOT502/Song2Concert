@@ -11,7 +11,7 @@
 
 import * as THREE from 'three';
 import { joinedStrip, outfieldWallProfile, parapetLightMounts, UPPER_PARAPET_HEIGHT } from './dome-rails.js';
-import { DOME_ROOF, roofLineMaskGLSL } from './dome-roof.js';
+import { DOME_ROOF, roofLineMaskGLSL, roofTriangleGLSL } from './dome-roof.js';
 import { roofEquipment } from './dome-roof-equipment.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { APP, DEG, KELVIN, V3, clamp, lerp, prng, std, rubberSheetTex, glowMat, ringTint } from '../core.js';
@@ -92,10 +92,11 @@ export function membraneMaterial() {
     // on them — full with the house up, very faint during the show)
     sh.uniforms.uSky = m.userData.uSky = { value: 1 };
     m.userData.shader = sh;
-    const triGL = `${roofLineMaskGLSL()}\n      float crossZ(vec2 c) { float d = fract((c.x + ${HG}) / ${GL}) - 0.5; float side = sign(c.y) * smoothstep(0.0, ${GL} * 2.0, abs(c.y)); return c.y - ${CROSS_BOW.toFixed(2)} * side * (1.0 - 4.0*d*d); }
-      float bigTri(vec2 c, float zs, float e) { return smoothstep(${TRI_X.toFixed(4)} + e, ${TRI_X.toFixed(4)} + e + 0.2, abs(c.x)) * smoothstep(${TRI_Z.toFixed(4)} + e, ${TRI_Z.toFixed(4)} + e + 0.2, abs(zs)); }
-      // (the hang dies away over the first few metres into each triangle, so the row beside it meets it without a step)
-      float triHang(vec2 c) { return smoothstep(${TRI_X.toFixed(4)}, ${(TRI_X + 3.5).toFixed(4)}, abs(c.x)) * smoothstep(${TRI_Z.toFixed(4)}, ${(TRI_Z + 3.5).toFixed(4)}, abs(c.y)); }`;
+    const triGL = `${roofLineMaskGLSL()}
+      ${roofTriangleGLSL()}
+      float crossZ(vec2 c) { float d = fract((c.x + ${HG}) / ${GL}) - 0.5; float side = sign(c.y) * smoothstep(0.0, ${GL} * 2.0, abs(c.y)); return c.y - ${CROSS_BOW.toFixed(2)} * side * (1.0 - 4.0*d*d) * roofSagWeight(c); }
+      // Plain panel boundaries follow the straight cables, never a bowed seam.
+      float bigTri(vec2 c, float e) { return smoothstep(${TRI_X.toFixed(4)} + e, ${TRI_X.toFixed(4)} + e + 0.2, abs(c.x)) * smoothstep(${TRI_Z.toFixed(4)} + e, ${TRI_Z.toFixed(4)} + e + 0.2, abs(c.y)); }`;
     sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
         varying vec3 vWP; varying float vRho; attribute float aRho; ${triGL}`)
       // the fabric hangs between the straight cables, less and less out to the ring; the triangles lie flat
@@ -106,7 +107,7 @@ export function membraneMaterial() {
           // (in the mesh half the kink at the cable: the mesh is a metre or so fine, and a full kink smeared over
           // its triangles made the straight cables wobble, none made the seams' arcs wavy; the shading keeps it all)
           float ax = cos(3.14159 * dx); ax = 0.5 * ax * ax + 0.5 * (1.0 - 4.0 * dx * dx);
-          transformed.y -= (${SAG_A} * ax + ${SAG_B} * ax * (1.0 - 4.0 * dz * dz)) * (1.0 - smoothstep(0.84, 0.98, aRho)) * (1.0 - triHang(c));
+          transformed.y -= (${SAG_A} * ax + ${SAG_B} * ax * (1.0 - 4.0 * dz * dz)) * (1.0 - smoothstep(0.84, 0.98, aRho)) * roofSagWeight(c);
           vRho = aRho;
         }`)
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
@@ -125,7 +126,7 @@ export function membraneMaterial() {
         {
           vec2 c = vWP.xz - vec2(0.0, ${ZC.toFixed(1)});
           float dx = fract((c.x + ${HG}) / ${GL}) - 0.5, dz = fract((crossZ(c) + ${HG}) / ${GL}) - 0.5;
-          float k = (1.0 - smoothstep(0.84, 0.98, vRho)) * (1.0 - triHang(c)) * 8.0 / ${GL};
+          float k = (1.0 - smoothstep(0.84, 0.98, vRho)) * roofSagWeight(c) * 8.0 / ${GL};
           vec3 g = vec3((${SAG_A} + ${SAG_B} * (1.0 - 4.0 * dz * dz)) * dx, 0.0, ${SAG_B} * (1.0 - 4.0 * dx * dx) * dz) * k;
           normal = normalize(normal + mat3(viewMatrix) * g);
         }`)
@@ -139,7 +140,7 @@ export function membraneMaterial() {
           // distance (m) to the nearest straight cable, and to the nearest seam across
           float along = abs(fract((c.x + ${HG}) / ${GL} + 0.5) - 0.5) * ${GL};
           float across = abs(fract((zs + ${HG}) / ${GL} + 0.5) - 0.5) * ${GL};
-          float inTri = bigTri(c, zs, 0.3), net = 1.0 - inTri;
+          float inTri = bigTri(c, 0.0), net = 1.0 - inTri;
           vec2 keep=roofLineMask(c,fw,zs);
           // the cables: about 0.18 m across, near-black; never drawn under a pixel or so, but then only as dark
           // as their real width would make that pixel (with a floor, so from the far side they still read, thinly)
@@ -165,10 +166,10 @@ export function membraneMaterial() {
           // the fabric's widths, side by side between the cables: faint
           float seam = (1.0 - smoothstep(0.0, fwidth(fx * 4.0) * 1.5 + 0.02, abs(fract(fx * 4.0 + 0.5) - 0.5) * 2.0)) * net;
           // the big triangles' own widths: faint, square to the ring
-          float tv = (abs(c.x) - abs(zs)) / 1.41421 / 4.5;
+          float tv = (abs(c.x) - abs(c.y)) / 1.41421 / 4.5;
           float tseam = (1.0 - smoothstep(0.0, fwidth(tv) * 1.5 + 0.01, abs(fract(tv + 0.5) - 0.5) * 2.0)) * inTri;
           // each row of fabric: a soft shadow just past the seam it hangs from, pale through its middle; the triangles plain, a touch paler
-          float shade = mix((1.0 - 0.07 * 4.0 * dx * dx) * (1.0 - 0.12 * smoothstep(0.15, 0.5, abs(dz))), 1.07, inTri);
+          float shade = mix((1.0 - 0.07 * 4.0 * dx * dx) * (1.0 - 0.12 * smoothstep(0.15, 0.5, abs(dz))), 1.07, trianglePanel(c));
           // Fine fabric detail and the small circular fittings visible in
           // the interior photographs; these do not alter the grid.
           vec2 local=vec2(dx,dz)*${GL},cell=floor(vec2(c.x,zs)/${GL}+.5);
@@ -184,7 +185,7 @@ export function membraneMaterial() {
           totalEmissiveRadiance += uBounce * shade * lines * pale + diffuseColor.rgb * 0.7 * lit;
         }`);
   };
-  m.customProgramCacheKey = () => 'membrane20-uniform85m-trimmed-lines';
+  m.customProgramCacheKey = () => 'membrane21-plain-corner-panels';
   return m;
 }
 
