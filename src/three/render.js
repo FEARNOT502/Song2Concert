@@ -587,18 +587,19 @@ export class TAAPass extends Pass {
     this.hist = [null, null];
     this.valid = false;
     this.prevVP = new THREE.Matrix4();
+    this.jit = new THREE.Vector2();   // this frame's jitter, in uv
     const vs = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
     this.resolve = new FullScreenQuad(new THREE.ShaderMaterial({
       uniforms: {
         tCur: { value: null }, tHist: { value: null }, tDepth: { value: null },
         uInvProj: { value: new THREE.Matrix4() }, uCamWorld: { value: new THREE.Matrix4() }, uPrevVP: { value: new THREE.Matrix4() },
-        uTexel: { value: new THREE.Vector2(1, 1) }, uValid: { value: 0 },
+        uTexel: { value: new THREE.Vector2(1, 1) }, uValid: { value: 0 }, uJit: { value: new THREE.Vector2() },
       },
       vertexShader: vs,
       fragmentShader: /* glsl */`
         precision highp float;
         uniform sampler2D tCur, tHist, tDepth; uniform mat4 uInvProj, uCamWorld, uPrevVP;
-        uniform vec2 uTexel; uniform float uValid;
+        uniform vec2 uTexel, uJit; uniform float uValid;
         varying vec2 vUv;
         vec3 tm(vec3 c) { return c / (1.0 + max(c.r, max(c.g, c.b))); }
         vec3 toY(vec3 c) { return vec3(dot(c, vec3(0.25, 0.5, 0.25)), dot(c, vec3(0.5, 0.0, -0.5)), dot(c, vec3(-0.25, 0.5, -0.25))); }
@@ -624,16 +625,20 @@ export class TAAPass extends Pass {
           return m > 1.0 ? c + v / m : p;
         }
         void main() {
-          vec3 cur = toY(tm(texture2D(tCur, vUv).rgb));
+          // the frame was drawn nudged by the jitter: read it back where the
+          // unnudged frame would have put each point, so what is blended (and
+          // what the history is held to) stays still from frame to frame
+          vec2 uv = vUv - uJit;
+          vec3 cur = toY(tm(texture2D(tCur, uv).rgb));
           vec3 m1 = vec3(0.0), m2 = vec3(0.0), lo = vec3(1e9), hi = vec3(-1e9);
           for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
-            vec3 c = toY(tm(texture2D(tCur, vUv + vec2(float(x), float(y)) * uTexel).rgb));
+            vec3 c = toY(tm(texture2D(tCur, uv + vec2(float(x), float(y)) * uTexel).rgb));
             m1 += c; m2 += c * c; lo = min(lo, c); hi = max(hi, c);
           }
           vec3 mean = m1 / 9.0, sd = sqrt(max(m2 / 9.0 - mean * mean, 0.0));
           vec3 vlo = max(lo, mean - sd * 1.25), vhi = min(hi, mean + sd * 1.25);
-          float d = texture2D(tDepth, vUv).r;
-          vec4 v = uInvProj * vec4(vUv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+          float d = texture2D(tDepth, uv).r;
+          vec4 v = uInvProj * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
           vec4 w = uCamWorld * vec4(v.xyz / v.w, 1.0);
           vec4 pc = uPrevVP * w;
           vec2 puv = pc.xy / pc.w * 0.5 + 0.5;
@@ -643,7 +648,7 @@ export class TAAPass extends Pass {
           }
           vec3 h = clipBox(vlo, vhi, toY(history(puv)));
           // the new frame's share: a tenth when still, more as the pixel moves
-          float moved = length((puv - vUv) / uTexel);
+          float moved = length((puv - uv) / uTexel);
           float a = mix(0.1, 0.4, clamp(moved / 24.0, 0.0, 1.0));
           gl_FragColor = vec4(fromY(mix(h, cur, a)), 1.0);
         }`,
@@ -685,6 +690,7 @@ export class TAAPass extends Pass {
     R.uCamWorld.value.copy(p.camera.matrixWorld);
     R.uPrevVP.value.copy(this.prevVP);
     R.uValid.value = this.valid ? 1 : 0;
+    R.uJit.value.copy(this.jit);
     renderer.setRenderTarget(next);
     this.resolve.render(renderer);
     this.out.material.uniforms.tHist.value = next.texture;
@@ -899,6 +905,7 @@ export class Pipeline {
       this._proj.copy(cam.projectionMatrix);
       cam.projectionMatrix.elements[8] += (jx * 2) / rt.width;
       cam.projectionMatrix.elements[9] += (jy * 2) / rt.height;
+      this.taa.jit.set(jx / rt.width, jy / rt.height);
       cam.projectionMatrixInverse.copy(cam.projectionMatrix).invert();
     }
     this.composer.render();
