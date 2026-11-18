@@ -12,7 +12,7 @@ const [bundle] = await build({
   },
 });
 const [file] = bundle.output;
-if (bundle.output.length !== 1 || file?.type !== 'chunk') throw Error('Venue Lab requires one self-contained script');
+if (bundle.output.length !== 1 || file?.type !== 'chunk') throw Error('Venue Dev Lab requires one self-contained script');
 
 const tpl = await readFile(here('template.html'), 'utf8');
 const out = tpl.replace('/*SCRIPT*/', () => file.code.replace(/<\/script/gi, '<\\/script'));

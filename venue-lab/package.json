@@ -1,7 +1,7 @@
 {
   "name": "song2concert-venue-lab",
   "version": "1.0.0",
-  "description": "Song2Concert venue lab prototype (single-file artifact)",
+  "description": "Song2Concert Venue Dev Lab prototype (single-file artifact)",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
