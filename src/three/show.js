@@ -818,28 +818,23 @@ export function subLine(root, { x0, x1, z, gap = 0, pitch = 1.6, count = 2, fill
 // A delay tower on the floor: a lattice mast on a ballasted base, braced, a
 // head frame at the top carrying a line array aimed down the room (+z) at the
 // crowd behind it, and a pod of lights over it. Returns where the lights are.
-export function delayTower(root, { x, z, h, boxes = 16, width = 1.3, from }) {
+export function delayTower(root, { x, z, h, boxes = 16, width = 1.3, yaw = 0 }) {
   const M = mats();
   const steel = [];
+  const at = (dx, y, dz) => V3(x + dx * Math.cos(yaw) + dz * Math.sin(yaw), y, z - dx * Math.sin(yaw) + dz * Math.cos(yaw));
   latticeInto(steel, V3(x, 0, z), V3(x, h, z), 1.6, 0.07);
   // the outriggers to the ballast, four ways
   for (const [dx, dz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) latticeInto(steel, V3(x + dx * 3.2, 0.3, z + dz * 3.2), V3(x + dx * 0.6, h * 0.3, z + dz * 0.6), 0.4, 0.03);
-  // the head: a square roof of truss on the column's top, 7 m a side, with
-  // a skin over it, and the arrays hung under it: two, side by side, turned
-  // a little either way off the line out from the stage (`from`) to the
-  // house behind
-  const Hs = 3.5;
-  const C = [[-Hs, -Hs], [Hs, -Hs], [Hs, Hs], [-Hs, Hs]].map(([a, b]) => V3(x + a, h, z + b));
-  for (let i = 0; i < 4; i++) latticeInto(steel, C[i], C[(i + 1) % 4], 0.6, 0.04);
-  for (const c of C) latticeInto(steel, V3(x, h, z), c, 0.6, 0.04);
+  // the head: a short truss across the top, the array hung from its front
+  latticeInto(steel, at(-2, h, 0), at(2, h, 0), 0.8, 0.05);
+  latticeInto(steel, at(0, h, -0.8), at(0, h, 1.8), 0.8, 0.05);
   root.add(new THREE.Mesh(mergeGeometries(steel), M.trussBlack));
-  const skin = new THREE.Mesh(new THREE.BoxGeometry(2 * Hs + 0.6, 0.15, 2 * Hs + 0.6), std({ color: 0x0a0a0c, roughness: 0.85 }));
-  skin.position.set(x, h + 0.38, z); skin.userData.beamStop = true; root.add(skin);
   const base = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.3, 7.2), std({ color: 0x1a1b1e, roughness: 0.8 }));
   base.position.set(x, 0.15, z); root.add(base);
-  const out = Math.atan2(x - from.x, z - from.z);
-  for (const a of [out - 0.45, out + 0.45]) paHang(root, { x: x + Math.sin(a) * 2.8, y: h - 1.1, z: z + Math.cos(a) * 2.8, boxes, width, yaw: a, splay: 0.01, roofY: h - 0.3 });
-  return [-1.6, -0.55, 0.55, 1.6].map((d) => V3(x + d * Math.cos(out), h + 0.7, z - d * Math.sin(out)));
+  const drop = at(0, h - 1.1, 1.4);
+  const speaker = paHang(root, { x: drop.x, y: drop.y, z: drop.z, boxes, width, yaw, splay: 0.025, roofY: h - 0.4 });
+  speaker.name = 'Delay line array';
+  return [-1.6, -0.55, 0.55, 1.6].map((dx) => at(dx, h + .66, .18));
 }
 
 // A ground-supported set for a big stage: two lattice towers carrying a header
@@ -983,16 +978,57 @@ export function scaffoldMasking(root, { line, tops, bottomAt = () => 0, front = 
 
 // A standing floor packed the way a sold-out floor is: a jittered grid, about
 // 2.5 people a square metre, nobody inside `avoid`.
-export function packFloor({ x0, x1, z0, z1, spacing = 0.62, avoid = null, seed = 3, inside = null }) {
+function trimFloorGrid(grid, { cols, rows }) {
+  if (!grid.length) return;
+  const width = grid[0].length, depth = grid.length;
+  const trimAxis = (across) => {
+    const lines = across ? depth : width;
+    const length = across ? width : depth;
+    const minimum = across ? cols : rows;
+    let removed = false;
+    for (let line = 0; line < lines; line++) {
+      let start = 0;
+      for (let i = 0; i <= length; i++) {
+        if (i < length && (across ? grid[line][i] : grid[i][line])) continue;
+        if (i > start && i - start < minimum) {
+          for (let j = start; j < i; j++) {
+            if (across) grid[line][j] = null;
+            else grid[j][line] = null;
+          }
+          removed = true;
+        }
+        start = i + 1;
+      }
+    }
+    return removed;
+  };
+  let changed;
+  do {
+    const across = trimAxis(true);
+    const along = trimAxis(false);
+    changed = across || along;
+  } while (changed);
+}
+
+// A standing floor packed the way a sold-out floor is: a jittered grid, about
+// 2.5 people a square metre, nobody inside `avoid`.
+export function packFloor({ x0, x1, z0, z1, spacing = 0.62, avoid = null, seed = 3, inside = null, trim = null }) {
   const rnd = prng(seed);
-  const out = [];
+  const out = [], grid = [];
   for (let z = z0; z < z1; z += spacing * 0.92) {
+    const row = [];
     for (let x = x0; x < x1; x += spacing) {
       const px = x + (rnd() - 0.5) * spacing * 0.8, pz = z + (rnd() - 0.5) * spacing * 0.7;
-      if (avoid && avoid(px, pz)) continue;
-      if (inside && !inside(px, pz)) continue;
-      out.push({ x: px, y: 0, z: pz, h: 0.92 + rnd() * 0.14, full: true });
+      const open = !avoid?.(px, pz) && (!inside || inside(px, pz));
+      const person = open ? { x: px, y: 0, z: pz, h: 0.92 + rnd() * 0.14, full: true } : null;
+      if (trim) row.push(person);
+      else if (person) out.push(person);
     }
+    if (trim) grid.push(row);
+  }
+  if (trim) {
+    trimFloorGrid(grid, trim);
+    return grid.flat().filter(Boolean);
   }
   return out;
 }
@@ -1001,17 +1037,27 @@ export function packFloor({ x0, x1, z0, z1, spacing = 0.62, avoid = null, seed =
 // block { x0, x1, z0, z1 } filled with rows `pitch` apart and chairs `seat`
 // apart, all facing the stage (towards -z). The crowd stands at the chairs.
 // `keep(x, z)` drops chairs where something else stands (a runway, the desk).
-export function floorBlocks(blocks, { seat = 0.5, pitch = 0.9, seed = 5, occupancy = 0.97, keep = null } = {}) {
+export function floorBlocks(blocks, { seat = 0.5, pitch = 0.9, seed = 5, occupancy = 0.97, keep = null, trim = null } = {}) {
   const rnd = prng(seed);
   const people = [], chairs = [];
   for (const b of blocks) {
     const nx = Math.floor((b.x1 - b.x0) / seat), nz = Math.floor((b.z1 - b.z0) / pitch);
     const ox = b.x0 + (b.x1 - b.x0 - nx * seat) / 2 + seat / 2;
-    for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
-      const x = ox + i * seat, z = b.z0 + (j + 0.5) * pitch;
-      if (keep && !keep(x, z)) continue;
+    const grid = Array.from({ length: nz }, (_, j) => Array.from({ length: nx }, (_, i) => {
+      const x = ox + i * seat, z = b.z0 + (j + .5) * pitch;
+      if (keep && (!keep(x, z) || (trim && (!keep(x, z + .16) || !keep(x, z - .16))))) return null;
+      return { x, z };
+    }));
+    if (trim) trimFloorGrid(grid, trim);
+    for (const row of grid) for (const pt of row) {
+      if (!pt) continue;
+      const { x, z } = pt;
       chairs.push({ x, y: 0, z: z + 0.16, turn: Math.PI });
-      if (rnd() < occupancy) people.push({ x: x + (rnd() - 0.5) * 0.08, y: 0, z: z - 0.16 + (rnd() - 0.5) * 0.06, h: 0.92 + rnd() * 0.14, full: true, fblock: b });
+      if (rnd() < occupancy) {
+        const person = { x: x + (rnd() - .5) * .08, y: 0, z: z - .16 + (rnd() - .5) * .06, h: .92 + rnd() * .14, full: true, fblock: b };
+        if (trim && keep && !keep(person.x, person.z)) { person.x = x; person.z = z - .16; }
+        people.push(person);
+      }
     }
   }
   return { people, chairs };
