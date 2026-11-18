@@ -793,7 +793,7 @@ export function paWing(root, { x, z, h, bridge = null }) {
 // The floor's subwoofers: a row of cabinets along the front of the stage,
 // under the barrier line, broken where the runway leaves the stage; and the
 // front fills on the deck's lip, small boxes every few metres.
-export function subLine(root, { x0, x1, z, gap = 0, pitch = 1.6, count = 2, fills = null }) {
+export function subLine(root, { x0, x1, z, gap = 0, pitch = 1.6, count = 2, fills = null, dark = false }) {
   const M = mats();
   const cab = [], front = [];
   const w = 1.3, hh = 0.55, d = 1.0;
@@ -812,28 +812,37 @@ export function subLine(root, { x0, x1, z, gap = 0, pitch = 1.6, count = 2, fill
   }
   if (!cab.length) return;
   root.add(new THREE.Mesh(mergeGeometries(cab), M.cab));
-  root.add(new THREE.Mesh(mergeGeometries(front), M.grille));
+  root.add(new THREE.Mesh(mergeGeometries(front), dark ? M.grilleDark : M.grille));
 }
 
 // A delay tower on the floor: a lattice mast on a ballasted base, braced, a
-// head frame at the top carrying a line array aimed down the room (+z) at the
-// crowd behind it, and a pod of lights over it. Returns where the lights are.
-export function delayTower(root, { x, z, h, boxes = 16, width = 1.3, yaw = 0 }) {
+// square roof of truss on its top (7 m a side, skinned), and two line arrays
+// hung under the roof's front edge, turned a little either way off `yaw` (the
+// heading down the room to the crowd behind it), well clear of the mast. A
+// pod of lights stands on the roof. Returns where the lights are.
+export function delayTower(root, { x, z, h, boxes = 12, width = 1.3, yaw = 0 }) {
   const M = mats();
   const steel = [];
   const at = (dx, y, dz) => V3(x + dx * Math.cos(yaw) + dz * Math.sin(yaw), y, z - dx * Math.sin(yaw) + dz * Math.cos(yaw));
-  latticeInto(steel, V3(x, 0, z), V3(x, h, z), 1.6, 0.07);
+  latticeInto(steel, V3(x, 0, z), V3(x, h + 0.3, z), 1.6, 0.07);
   // the outriggers to the ballast, four ways
   for (const [dx, dz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) latticeInto(steel, V3(x + dx * 3.2, 0.3, z + dz * 3.2), V3(x + dx * 0.6, h * 0.3, z + dz * 0.6), 0.4, 0.03);
-  // the head: a short truss across the top, the array hung from its front
-  latticeInto(steel, at(-2, h, 0), at(2, h, 0), 0.8, 0.05);
-  latticeInto(steel, at(0, h, -0.8), at(0, h, 1.8), 0.8, 0.05);
+  // the roof: a square of truss, a cross through the mast's top, a skin over it
+  const Hs = 3.5;
+  const C = [[-Hs, -Hs], [Hs, -Hs], [Hs, Hs], [-Hs, Hs]].map(([a, b]) => at(a, h, b));
+  for (let i = 0; i < 4; i++) latticeInto(steel, C[i], C[(i + 1) % 4], 0.6, 0.04);
+  for (const c of C) latticeInto(steel, V3(x, h, z), c, 0.6, 0.04);
   root.add(new THREE.Mesh(mergeGeometries(steel), M.trussBlack));
+  const skin = new THREE.Mesh(new THREE.BoxGeometry(2 * Hs + 0.6, 0.15, 2 * Hs + 0.6), std({ color: 0x0a0a0c, roughness: 0.85 }));
+  skin.position.copy(at(0, h + 0.38, 0)); skin.rotation.y = yaw; skin.userData.beamStop = true; root.add(skin);
   const base = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.3, 7.2), std({ color: 0x1a1b1e, roughness: 0.8 }));
   base.position.set(x, 0.15, z); root.add(base);
-  const drop = at(0, h - 1.1, 1.4);
-  const speaker = paHang(root, { x: drop.x, y: drop.y, z: drop.z, boxes, width, yaw, splay: 0.025, roofY: h - 0.4 });
-  speaker.name = 'Delay line array';
+  // the pair: under the front edge, 2 m either side of the middle
+  for (const s of [-1, 1]) {
+    const p = at(s * 2, h - 0.75, Hs - 0.5);
+    const speaker = paHang(root, { x: p.x, y: p.y, z: p.z, boxes, width, yaw: yaw + s * 0.4, splay: 0.012, roofY: h - 0.3 });
+    speaker.name = 'Delay line array';
+  }
   return [-1.6, -0.55, 0.55, 1.6].map((dx) => at(dx, h + .66, .18));
 }
 

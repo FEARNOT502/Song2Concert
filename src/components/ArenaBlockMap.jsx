@@ -7,6 +7,8 @@
 import BlockMap, { ACCENT } from './BlockMap.jsx';
 import { SSA_BLOCKS } from '../three/venues/ssa-blocks.js';
 import { ARENA_OZ } from '../three/venues/arena.js';
+import { STAGE_Z } from '../three/stage-plan.js';
+import StagePlan from './StagePlan.jsx';
 
 // the levels, and the data's levels on each tab (the suites are on the 300 level's floor)
 export const ARENA_FLOORS = [
@@ -20,22 +22,8 @@ export const arenaBlockText = (n) => (/^S\d+$/.test(n) ? `SUITE ${Number(n.slice
 // (the door's number, and under it the block's letter where the door has several)
 const label = (n) => (/^S\d+$/.test(n) ? `S${Number(n.slice(1))}` : /^\d+[A-Z]$/.test(n) ? [n.slice(0, -1), n.slice(-1)] : n);
 
-// the stage as arena.js builds it (app z = data z + 45): the end stage's deck
-// (34 x 15 m), its runway to a cross and a square end stage on the floor; or
-// the round layout's long stage down the middle (10 x 40 m)
-function stage(mode) {
-  const st = { fill: ACCENT, opacity: 0.85 };
-  if (mode === '360') return <rect x={-5} y={-20} width={10} height={40} {...st} />;
-  const Z = (z) => z - ARENA_OZ;
-  return (
-    <g {...st}>
-      <rect x={-17} y={Z(7)} width={34} height={15} />
-      <rect x={-1.8} y={Z(22)} width={3.6} height={Z(46) - Z(22)} />
-      <rect x={-12} y={Z(38) - 1.8} width={24} height={3.6} />
-      <rect x={-3} y={Z(46)} width={6} height={6} />
-    </g>
-  );
-}
+// the stage as concert-production.js builds it (app z = data z + 45), from the same plan
+const stage = (mode) => <StagePlan id="arena" mode={mode} cz={STAGE_Z.arena[mode === '360' ? '360' : 'general']} dz={ARENA_OZ} fill={ACCENT} />;
 
 export default function ArenaBlockMap(props) {
   return <BlockMap data={SSA_BLOCKS} floors={ARENA_FLOORS} zc={ARENA_OZ} stage={stage} stageText={[0, 14.5 - ARENA_OZ]} font={FONT} label={label} hoverText={arenaBlockText} {...props} />;

@@ -5,6 +5,8 @@
 
 import BlockMap, { ACCENT } from './BlockMap.jsx';
 import { WB_BLOCKS } from '../three/venues/wb-blocks.js';
+import { STAGE_Z } from '../three/stage-plan.js';
+import StagePlan from './StagePlan.jsx';
 
 const ZC = 64;               // the app's z of the centre spot (data z 0)
 // the levels, and the data's levels on each tab
@@ -19,22 +21,8 @@ const FONT = { L3: 1.4, L4: 1.8 };
 const label = (n) => (n === 'L4' ? 'L4' : n.startsWith('B') ? String(Number(n.slice(1))) : n);
 const hoverText = (n) => (n.startsWith('B') ? `BOX ${Number(n.slice(1))}` : n === 'L4' ? 'LEVEL 4 BALCONY' : `BLOCK ${n}`);
 
-// the stage as stadium.js builds it (app z = data z + 64): across the west
-// end of the pitch, a runway and a walkway across it to an end stage; or a
-// round stage on the centre spot
-function stage(mode) {
-  const st = { fill: ACCENT, opacity: 0.85 };
-  if (mode === '360') return <circle cx={0} cy={0} r={9} {...st} />;
-  const Z = (z) => z - ZC;
-  return (
-    <g {...st}>
-      <rect x={-39} y={Z(7)} width={78} height={26} />
-      <rect x={-2.2} y={Z(33)} width={4.4} height={Z(84) - Z(33)} />
-      <rect x={-30} y={Z(50) - 2.6} width={60} height={5.2} />
-      <rect x={-5} y={Z(84)} width={10} height={10} />
-    </g>
-  );
-}
+// the stage as concert-production.js builds it (app z = data z + 64), from the same plan
+const stage = (mode) => <StagePlan id="stadium" mode={mode} cz={STAGE_Z.stadium[mode === '360' ? '360' : 'general']} dz={ZC} fill={ACCENT} />;
 
 export default function StadiumBlockMap(props) {
   return <BlockMap data={WB_BLOCKS} floors={STADIUM_FLOORS} zc={ZC} stage={stage} stageText={[0, 20 - ZC]} font={FONT} label={label} hoverText={hoverText} {...props} />;

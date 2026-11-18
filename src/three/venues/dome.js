@@ -19,6 +19,7 @@ import { DEG, KELVIN, MAX_ANISO, V3, clamp, lerp, std, rubberSheetTex, glowMat }
 import { stageSteps, wedge } from '../rig.js';
 import { wallStrip } from '../show.js';
 import { concertRoom } from '../concert-production.js';
+import { STAGE_Z } from '../stage-plan.js';
 import { buildStands, decodeSeats } from '../stands.js';
 import { TD_STANDS } from './td-data.js';
 
@@ -197,7 +198,7 @@ export function buildDome(ctx) {
   // the middle, the blocks either side of it
   const eye = V3(0, 1.6 + 1.0, 122);
   // (the end stage's; round, the field's middle: set below)
-  let STAGE = V3(0, DECK, 28);
+  let STAGE = V3(0, DECK, STAGE_Z.dome.general);
   const round = ctx.mode === '360';
   // The ballpark as the official seating map draws it: the field is the open
   // ground inside the 1st floor's front rows; home plate is behind FOH, the
@@ -340,6 +341,9 @@ export function buildDome(ctx) {
     pillars: TD_STANDS.pillars.map((p) => (isScr(p) || p.y1 >= 99 ? { ...p, ...(MV.colMoved.get(p) ?? {}), y1: underMV(p) ? MV.y1 + 0.3 : ringY(p.z + ZH) - 1.2 } : p)),
     signs: [], // User review: remove the black number plates fixed to columns.
   };
+  // the passages' and stairs' own light: full with the house, a third of it in the show
+  const standLitList = [];
+  const standLit = (m, e) => { m.emissiveIntensity = e; standLitList.push([m, e]); return m; };
   const stands = buildStands(TD, {
     // (the lightsticks' blocks: the real ones, as each seat is labelled; where
     // a level has no labels, by the stands' own aisles)
@@ -356,7 +360,7 @@ export function buildDome(ctx) {
     // block under it; E's as D's in front of it)
     sectorOver: { E: 'D' },
     // (the concrete a clean, neutral light grey, as the photographs show it: no warm cast of its own, little mottling)
-    offset: OFF, stage: STAGE, seed: 400, concreteTone: 0.64, concreteWarm: 0.0, concreteEven: 0.8, roofY: (x, z) => ringY(z + ZH) + 0.3,
+    offset: OFF, stage: STAGE, seed: 400, concreteTone: 0.47, concreteWarm: 0.0, concreteEven: 0.8, roofY: (x, z) => ringY(z + ZH) + 0.3,
     seatColors: { ...Object.fromEntries(['A', 'B', 'F', 'K', 'D', 'E'].map((level) => [level, SEAT_BLUE])), C: 0x24262b, G: 0x222428 },
     // Explicit photographed end/batter-eye exceptions are recorded in the data.
     crowd: !!q.crowd,
@@ -370,12 +374,15 @@ export function buildDome(ctx) {
     // not dark steel
     // (the balcony's own front rail from the data is not drawn: its glass front is, below, along rimCS)
     materials: {
-      rail: std({ color: 0xb7b9b8, roughness: 0.88, side: THREE.DoubleSide }),
-      wall: std({ color: 0xc3c5c4, roughness: 0.9, side: THREE.DoubleSide }),
-      interior: std({ color: 0xc4c7c5, roughness: 0.9, emissive: 0x787d7c, emissiveIntensity: 0.5 }),
-      ceiling: std({ color: 0xd3d5d2, roughness: 0.92, emissive: 0x818684, emissiveIntensity: 0.45 }),
-      stair: std({ color: 0xb1b4b2, roughness: 0.9, emissive: 0x626765, emissiveIntensity: 0.45 }),
-      floor: std({ color: 0xa7adab, roughness: 0.72, emissive: 0x5e6663, emissiveIntensity: 0.4, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }),
+      // (matte, a mid grey: the light grey these were glared white under the
+      // rig and the house, and the passages' own glow lit them from inside
+      // all through the show; that glow now goes down with the house)
+      rail: std({ color: 0x8c8e8d, roughness: 0.95, envMapIntensity: 0.3, side: THREE.DoubleSide }),
+      wall: std({ color: 0x929493, roughness: 0.95, envMapIntensity: 0.3, side: THREE.DoubleSide }),
+      interior: standLit(std({ color: 0x9a9d9b, roughness: 0.95, envMapIntensity: 0.3, emissive: 0x787d7c }), 0.32),
+      ceiling: standLit(std({ color: 0xa3a5a2, roughness: 0.95, envMapIntensity: 0.3, emissive: 0x818684 }), 0.28),
+      stair: standLit(std({ color: 0x8e918f, roughness: 0.95, envMapIntensity: 0.3, emissive: 0x626765 }), 0.28),
+      floor: standLit(std({ color: 0x858a88, roughness: 0.9, envMapIntensity: 0.3, emissive: 0x5e6663, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }), 0.25),
       levelStruct: { G: std({ color: 0x3b5144, roughness: 0.98 }) },
       levelRail: { C: new THREE.MeshBasicMaterial({ visible: false }) },
       tunnelMetal: std({ color: 0x596160, roughness: 1, metalness: 0, envMapIntensity: 0 }),
@@ -458,7 +465,7 @@ export function buildDome(ctx) {
         if(corners.includes(i)||i===P.length-1){add(i);acc=0;}
       }
     };
-    const paint=std({color:0xb7b9b8,roughness:.85}),fascia=std({color:0xd9d9d5,roughness:.8});
+    const paint=std({color:0x7e807f,roughness:.95,envMapIntensity:.3}),fascia=std({color:0x9a9b97,roughness:.92,envMapIntensity:.3});
     for(const level of ['D','C'])for(const profile of TD_STANDS.frontParapets?.[level]??[]){
       const P=profile.panel.pts.map(([x,z])=>({x,z:z+ZH})),Y=profile.panel.ys;
       const rail=profile.rail,R=rail.pts.map(([x,z])=>({x,z:z+ZH})),H=rail.ys;
@@ -471,7 +478,7 @@ export function buildDome(ctx) {
       posts(R,H.map(y=>y+(isC?.08:.52)),H.map(y=>y+(isC?.95:.9)),isC?.04:.045,isC?1.5:2.4,rail.corners);
     }
     if (steel.length) {
-      const m3 = new THREE.Mesh(mergeGeometries(steel.map((s) => (s.index ? s.toNonIndexed() : s))), std({ color: 0xc9ccd0, roughness: 0.28, metalness: 0.85, envMapIntensity: 0.8 }));
+      const m3 = new THREE.Mesh(mergeGeometries(steel.map((s) => (s.index ? s.toNonIndexed() : s))), std({ color: 0x9c9fa3, roughness: 0.55, metalness: 0.6, envMapIntensity: 0.25 }));
       m3.userData.noCollide = true; root.add(m3);
     }
     if (glass.length) {
@@ -1292,6 +1299,7 @@ export function buildDome(ctx) {
     houseUpdate(f) {
       houseGlow(f);
       for (const [mat, intensity] of roomLit) mat.emissiveIntensity = intensity * (.04 + .96 * f.house);
+      for (const [mat, intensity] of standLitList) mat.emissiveIntensity = intensity * (.3 + .7 * f.house);
       if (membrane.userData.uSky) membrane.userData.uSky.value = .06 + .94 * f.house;
       floodM.color.copy(KELVIN(5200)).multiplyScalar(.035 + 1.95 * f.house);
       floodGlow.forEach((lamp) => { lamp.intensity = .08 + 1.15 * f.house; });
