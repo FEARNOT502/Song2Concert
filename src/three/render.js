@@ -583,10 +583,21 @@ export class Pipeline {
     // dynamic resolution: the share of the screen's own density drawn
     this.scale = 1;
     this.scaleMin = 0.7;
+    // off ('high' on a computer): the GPU is still timed, the scale stays at 1
+    this.autoScale = true;
     this.sceneDpr = 1;          // drawn pixels per CSS pixel in the scene target
     this.gpu = new GpuTimer(r.getContext());
     this.gpuMs = NaN;
     this.adaptAt = 0; this.changedAt = 0; this.lastFrame = 0; this.intervalMs = NaN; this.calm = 0;
+  }
+  // the automatic render scale on or off; off, the scene goes back to full size
+  setAutoScale(on) {
+    this.autoScale = on;
+    if (on || Math.abs(this.scale - 1) < 1e-3) return;
+    this.scale = 1;
+    this.sceneDpr = this.renderer.getPixelRatio();
+    if (this.venuePass.full) this.venuePass.alloc(this.venuePass.full.w, this.venuePass.full.h);
+    this.gpu.reset();
   }
   setQuality(name) {
     this.qName = name;
@@ -650,11 +661,12 @@ export class Pipeline {
       const ms = S.reduce((a, b) => a + b, 0) / S.length;
       S.length = 0;
       this.gpuMs = ms;
+      if (!this.autoScale) return;
       if (ms > budget * 1.08) set(this.scale * Math.sqrt(budget / ms) - STEP * 0.5);
       else if (ms < budget * 0.72 && this.scale < 1 && now - this.changedAt > 2000) set(this.scale + STEP);
       return;
     }
-    if (!Number.isFinite(this.intervalMs) || now - this.changedAt < 1500) return;
+    if (!this.autoScale || !Number.isFinite(this.intervalMs) || now - this.changedAt < 1500) return;
     if (this.intervalMs > interval * 1.35) set(this.scale - STEP * 2);
     else if (this.intervalMs < interval * 1.1) { if (this.scale < 1 && ++this.calm >= 8) set(this.scale + STEP); }
     else this.calm = 0;

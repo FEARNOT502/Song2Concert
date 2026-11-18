@@ -96,6 +96,9 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
   function applyQuality() {
     pipe.setQuality(qName);
     pipe.q = { ...QUALITY[qName], dpr: strain >= 2 || qName === 'low' ? 1 : 3 };
+    // the render scale is not lowered in 'high': the picture stays sharp and
+    // the frame rate gives way instead (phones keep it)
+    pipe.setAutoScale(qName !== 'high');
     pipe.resize(size.w, size.h);
     applyPasses();
   }
@@ -461,7 +464,8 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     pipe.adapt(now, targetMs * 0.6, interval || vsync);
     // heavy: the CPU's share of the frame, or the GPU's once the resolution
     // has nothing left to give
-    const gpuLoad = pipe.scale <= pipe.scaleMin + 1e-3 && Number.isFinite(pipe.gpuMs) ? pipe.gpuMs : 0;
+    // (or at once, where the scale is held: 'high')
+    const gpuLoad = (!pipe.autoScale || pipe.scale <= pipe.scaleMin + 1e-3) && Number.isFinite(pipe.gpuMs) ? pipe.gpuMs : 0;
     const load = Math.max(frameBudget, gpuLoad);
     if (!heavy && load > targetMs * 0.78) heavy = true;
     else if (heavy && load < targetMs * 0.42) heavy = false;
