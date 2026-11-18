@@ -418,18 +418,37 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
   // the rooms whose rig plays a look per song; the rest keep their house style
   const LOOK_ROOMS = new Set(['arena', 'dome', 'stadium']);
 
-  let heavy = false, lastDrawn = -1e9, drawn = 0, frameBudget = 0, lastT = 0;
+  let heavy = false, drawn = 0, frameBudget = 0, lastT = 0;
+  // the screen's refresh period (from the gaps between animation frames) and
+  // when the next frame is due
+  let vsync = 1000 / 60, lastRaf = 0, due = 0;
 
   function tick(now) {
     raf = requestAnimationFrame(tick);
+    const gap = now - lastRaf;
+    lastRaf = now;
+    if (gap > 2 && gap < 100) vsync += (gap - vsync) * 0.05;
     if (!venue || paused || document.hidden) return;
     const targetMs = 1000 / (qName === 'low' ? 30 : 60);
     // walking is not throttled with the show: a halved rate reads as lag
     // stopped, nothing moves but the house lights: half the frames
     const still = !walker.moving && !walker.drag;
-    const interval = still && (heavy || strain > 0 || !playing) ? targetMs * 2 : targetMs;
-    if (now - lastDrawn < interval - 1) return;
-    lastDrawn = now;
+    let interval = still && (heavy || strain > 0 || !playing) ? targetMs * 2 : targetMs;
+    // A computer with room to spare draws at the screen's own rate: the GPU
+    // timer says a frame is cheap, the audio thread is not straining and the
+    // CPU is not pressed. Stopped and still, sixty is plenty. Where the GPU
+    // cannot be timed (outside Chromium, where the audio strain is not
+    // reported either) the caps above stay.
+    const free = qName === 'high' && strain === 0 && !heavy && pipe.gpu.ok && Number.isFinite(pipe.gpuMs) && pipe.gpuMs < targetMs * 0.6;
+    if (free) interval = still && !playing ? targetMs : 0;
+    // Paced on a schedule rather than on the gap since the last frame, so a
+    // rate that does not divide the screen's comes out right on average: on
+    // a 144 Hz screen sixty is every two and three refreshes in turn, not
+    // every third (48).
+    if (interval > 0) {
+      if (now < due - vsync * 0.5) return;
+      due = now - due > interval ? now + interval : due + interval;
+    } else due = now;
     drawn++;
     const started = performance.now();
     const t = clock.getElapsedTime();
@@ -439,7 +458,7 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     frameBudget += ((performance.now() - started) - frameBudget) * 0.05;
     // the GPU kept to a little over half a frame, so the card is not run flat
     // out for a picture that does not need it
-    pipe.adapt(now, targetMs * 0.6, interval);
+    pipe.adapt(now, targetMs * 0.6, interval || vsync);
     // heavy: the CPU's share of the frame, or the GPU's once the resolution
     // has nothing left to give
     const gpuLoad = pipe.scale <= pipe.scaleMin + 1e-3 && Number.isFinite(pipe.gpuMs) ? pipe.gpuMs : 0;
