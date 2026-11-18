@@ -1,7 +1,7 @@
 {
-  "revision": 8,
-  "checkedOn": "2026-11-16",
-  "dataSha256": "f036056233f4f9b1fff85a8cfdecd18bfdfc7a4e9541e47e73b7c3d476086369",
+  "revision": 14,
+  "checkedOn": "2026-11-17",
+  "dataSha256": "098188dc703543d5adedc8b57609ebe503453d2afda80971031b7586a1c2e506",
   "modelAudit": {
     "seats": {
       "A": 10384,
@@ -234,10 +234,92 @@
       "C3",
       "C4"
     ],
+    "filledBackstopFloor": [
+      {
+        "point": [
+          -8.2,
+          20.65
+        ],
+        "height": 1.674,
+        "block": "A27"
+      },
+      {
+        "point": [
+          -9.2,
+          21
+        ],
+        "height": 1.674,
+        "block": "A27"
+      },
+      {
+        "point": [
+          -10,
+          21.3
+        ],
+        "height": 1.674,
+        "block": "A27"
+      },
+      {
+        "point": [
+          -15.7,
+          17.2
+        ],
+        "height": 1.702,
+        "block": "A29"
+      },
+      {
+        "point": [
+          -16.2,
+          17.5
+        ],
+        "height": 1.702,
+        "block": "A29"
+      },
+      {
+        "point": [
+          8.2,
+          20.65
+        ],
+        "height": 1.674,
+        "block": "A23"
+      },
+      {
+        "point": [
+          9.2,
+          21
+        ],
+        "height": 1.674,
+        "block": "A23"
+      },
+      {
+        "point": [
+          10,
+          21.3
+        ],
+        "height": 1.674,
+        "block": "A23"
+      },
+      {
+        "point": [
+          15.7,
+          17.2
+        ],
+        "height": 1.702,
+        "block": "A21"
+      },
+      {
+        "point": [
+          16.2,
+          17.5
+        ],
+        "height": 1.702,
+        "block": "A21"
+      }
+    ],
     "flights": 13
   },
   "walker": {
-    "checks": 195,
+    "checks": 203,
     "failed": []
   },
   "geometryRegressionTests": 7,
@@ -482,7 +564,9 @@
     "D4EndFence": "same paint material as front; shared mitered corner vertices",
     "additionalBalconyCeilingPlate": "removed; no extra box wall beside D end",
     "roofTransverseSeams": {
-      "shiftMeters": 3.8769,
+      "shiftMeters": 0,
+      "gridOriginZ": 81,
+      "cablePitchMetres": 8.5,
       "bowBetweenCablesMeters": 0.5,
       "bowDirection": "outward from grid center on both halves",
       "fittingsFollowSeams": true,
@@ -517,19 +601,33 @@
       288
     ],
     "currentRenderViews": [
-      "join-left.png",
-      "join-right.png",
-      "screen-alignment.png",
-      "home-ledge.png",
-      "home-ledge-high.png",
-      "RYOBI-day.png",
-      "A02-day.png",
-      "RYOBI-play.png",
-      "A02-play.png"
+      "triangle-left-outfield.png",
+      "triangle-left-home.png",
+      "triangle-right-outfield.png",
+      "triangle-right-home.png",
+      "triangle-after.png",
+      "roof-upper-right.png",
+      "outfield-four-blocks.png",
+      "roof-thirteen-panels.png",
+      "roof-photo-layout.png",
+      "stand-light-day.png",
+      "stand-light-play.png",
+      "triangle-play.png",
+      "360-stand-light-day.png",
+      "360-stand-light-play.png",
+      "360-stand-wide-play.png"
     ],
     "unmeasuredDimensions": "Photographic estimates, not survey dimensions",
-    "scope": "revision 8: level balcony and raised scoreboard datum, removed backstop ledge, non-emitting RYOBI and A02 fence in house and playback modes",
-    "userReference": "2026-11-16 balcony wall junction and marked backstop band; instruction to align the long display bottom with the balcony"
+    "scope": "revision 14: user concert photo; thirteen vertical panel bays between triangle apices; triangle base about four outfield blocks; pale edges and round fittings; shared stand lights in general and 360 modes; diagnostic number/block overlays only",
+    "userReference": "Latest user concert photo: 13 vertical panels between the two triangle apices, plain triangular wings and roughly four outfield blocks at the base",
+    "diagnosticViews": [
+      "outfield-four-blocks.png",
+      "roof-thirteen-panels.png"
+    ],
+    "comparisonViews": [
+      "triangle-before.png",
+      "triangle-after.png"
+    ]
   },
   "parapetCornerTests": {
     "closedMesh": true,
@@ -567,45 +665,1800 @@
     "heightError": 0
   },
   "renderStates": {
-    "join-left": {
+    "triangle-left-outfield": {
       "house": 1,
-      "part": null
+      "part": null,
+      "mode": "general"
     },
-    "join-right": {
+    "triangle-left-home": {
       "house": 1,
-      "part": null
+      "part": null,
+      "mode": "general"
     },
-    "screen-alignment": {
+    "triangle-right-outfield": {
       "house": 1,
-      "part": null
+      "part": null,
+      "mode": "general"
     },
-    "home-ledge": {
+    "triangle-right-home": {
       "house": 1,
-      "part": null
+      "part": null,
+      "mode": "general"
     },
-    "home-ledge-high": {
+    "triangle-after": {
       "house": 1,
-      "part": null
+      "part": null,
+      "mode": "general"
     },
-    "RYOBI-day": {
+    "roof-upper-right": {
       "house": 1,
-      "part": null
+      "part": null,
+      "mode": "general"
     },
-    "A02-day": {
+    "outfield-four-blocks": {
       "house": 1,
-      "part": null
+      "part": null,
+      "mode": "general"
     },
-    "RYOBI-play": {
+    "roof-thirteen-panels": {
+      "house": 1,
+      "part": null,
+      "mode": "general"
+    },
+    "roof-photo-layout": {
+      "house": 1,
+      "part": null,
+      "mode": "general"
+    },
+    "stand-light-day": {
+      "house": 1,
+      "part": null,
+      "mode": "general"
+    },
+    "stand-light-play": {
       "house": 0,
-      "part": "chorus"
+      "part": "chorus",
+      "mode": "general"
     },
-    "A02-play": {
+    "triangle-play": {
       "house": 0,
-      "part": "chorus"
+      "part": "chorus",
+      "mode": "general"
+    },
+    "360-stand-light-day": {
+      "house": 1,
+      "part": null,
+      "mode": "360"
+    },
+    "360-stand-light-play": {
+      "house": 0,
+      "part": "chorus",
+      "mode": "360"
+    },
+    "360-stand-wide-play": {
+      "house": 0,
+      "part": "chorus",
+      "mode": "360"
     }
   },
   "removedBackstopBand": {
     "removed": true,
     "centreFloorAfter": 1.3619999885559082
+  },
+  "concertFloor": {
+    "material": "matte teal-green rubber sheets",
+    "baseSRGB": [
+      0.12,
+      0.43,
+      0.36
+    ],
+    "sheetMetres": [
+      2,
+      8
+    ],
+    "modes": [
+      "end",
+      "360"
+    ],
+    "actualGroundCheck": {
+      "name": "concert-rubber-floor-walk-support",
+      "distance": 0,
+      "heightError": 0,
+      "samples": [
+        {
+          "point": [
+            0,
+            124
+          ],
+          "top": 0.01999999955296522
+        },
+        {
+          "point": [
+            25,
+            106
+          ],
+          "top": 0.019999999552965164
+        },
+        {
+          "point": [
+            -25,
+            106
+          ],
+          "top": 0.01999999955296522
+        },
+        {
+          "point": [
+            48,
+            75
+          ],
+          "top": 0.019999999552965164
+        },
+        {
+          "point": [
+            -48,
+            75
+          ],
+          "top": 0.01999999955296522
+        }
+      ],
+      "bad": []
+    }
+  },
+  "backstopFloorInfill": {
+    "raisedEmptyTreads": [
+      {
+        "level": "A",
+        "row": 830,
+        "before": 0.974,
+        "after": 1.518
+      },
+      {
+        "level": "A",
+        "row": 855,
+        "before": 0.974,
+        "after": 1.518
+      },
+      {
+        "level": "A",
+        "row": 880,
+        "before": 0.958,
+        "after": 1.687
+      },
+      {
+        "level": "A",
+        "row": 905,
+        "before": 0.958,
+        "after": 1.687
+      },
+      {
+        "level": "A",
+        "row": 930,
+        "before": 0.974,
+        "after": 1.699
+      },
+      {
+        "level": "A",
+        "row": 955,
+        "before": 0.974,
+        "after": 1.699
+      },
+      {
+        "level": "A",
+        "row": 980,
+        "before": 0.979,
+        "after": 1.702
+      },
+      {
+        "level": "A",
+        "row": 1005,
+        "before": 0.979,
+        "after": 1.702
+      },
+      {
+        "level": "A",
+        "row": 1054,
+        "before": 0.885,
+        "after": 1.623
+      },
+      {
+        "level": "A",
+        "row": 1079,
+        "before": 1.027,
+        "after": 1.674
+      },
+      {
+        "level": "A",
+        "row": 1104,
+        "before": 1.027,
+        "after": 1.674
+      }
+    ],
+    "seatPositionsAndNumbersUnchanged": true,
+    "groundChecks": [
+      {
+        "name": "backstop-left-pockets-filled",
+        "distance": 0,
+        "heightError": 0,
+        "samples": [
+          {
+            "point": [
+              -8.2,
+              134.65
+            ],
+            "top": 1.6740000247955322,
+            "expected": 1.674
+          },
+          {
+            "point": [
+              -9.2,
+              135
+            ],
+            "top": 1.6740000247955322,
+            "expected": 1.674
+          },
+          {
+            "point": [
+              -10,
+              135.3
+            ],
+            "top": 1.6740000247955322,
+            "expected": 1.674
+          },
+          {
+            "point": [
+              -15.7,
+              131.2
+            ],
+            "top": 1.7020000219345093,
+            "expected": 1.702
+          },
+          {
+            "point": [
+              -16.2,
+              131.5
+            ],
+            "top": 1.7020000219345093,
+            "expected": 1.702
+          }
+        ],
+        "bad": []
+      },
+      {
+        "name": "backstop-right-pockets-filled",
+        "distance": 0,
+        "heightError": 0,
+        "samples": [
+          {
+            "point": [
+              8.2,
+              134.65
+            ],
+            "top": 1.6740000247955322,
+            "expected": 1.674
+          },
+          {
+            "point": [
+              9.2,
+              135
+            ],
+            "top": 1.6740000247955322,
+            "expected": 1.674
+          },
+          {
+            "point": [
+              10,
+              135.3
+            ],
+            "top": 1.6740000247955322,
+            "expected": 1.674
+          },
+          {
+            "point": [
+              15.7,
+              131.2
+            ],
+            "top": 1.7020000219345093,
+            "expected": 1.702
+          },
+          {
+            "point": [
+              16.2,
+              131.5
+            ],
+            "top": 1.7020000219345093,
+            "expected": 1.702
+          }
+        ],
+        "bad": []
+      }
+    ]
+  },
+  "upperVomitoryGuards": {
+    "nominalProjectionBefore": 1,
+    "nominalProjectionAfter": 0.5,
+    "changed": [
+      {
+        "entry": "14",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "14",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "13",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "13",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "12",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "12",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "11",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "11",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "10",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "10",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "9",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "9",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "8",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "8",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "7",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "7",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "6",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "6",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "5",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "5",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "4",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "4",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "3",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "3",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "2",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "2",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      },
+      {
+        "entry": "1",
+        "end": "t0",
+        "before": 25.4,
+        "after": 24.9
+      },
+      {
+        "entry": "1",
+        "end": "t1",
+        "before": 27.4,
+        "after": 26.9
+      }
+    ],
+    "allOtherDataUnchanged": true
+  },
+  "fourthFloorLights": {
+    "parapetSupportRays": 28,
+    "qualityCounts": [
+      10,
+      18
+    ],
+    "runtimeContact": {
+      "name": "4F-lights-touch-brackets-and-parapet",
+      "samples": [
+        {
+          "base": [
+            -82.38590748676489,
+            19.26,
+            50.04744171251884
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        },
+        {
+          "base": [
+            -82.52264605075435,
+            19.26,
+            81.712652955821
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        },
+        {
+          "base": [
+            -65.31439400324884,
+            19.26,
+            109.84019230630375
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        },
+        {
+          "base": [
+            -43.755204580917024,
+            19.26,
+            134.85722411898635
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        },
+        {
+          "base": [
+            -16.86676789491444,
+            19.26,
+            152.98165844453163
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        },
+        {
+          "base": [
+            16.17686358056638,
+            19.26,
+            153.06514395393071
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        },
+        {
+          "base": [
+            43.21685989558072,
+            19.26,
+            135.24489542140049
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        },
+        {
+          "base": [
+            64.88842292249203,
+            19.26,
+            110.3253462493485
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        },
+        {
+          "base": [
+            82.2812085056153,
+            19.26,
+            82.31252280716734
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        },
+        {
+          "base": [
+            82.51871836764575,
+            19.26,
+            50.64363877626657
+          ],
+          "fenceTop": 19.200000762939453,
+          "plateTop": 19.260000228881836
+        }
+      ],
+      "bad": [],
+      "distance": 0,
+      "heightError": 0
+    },
+    "modes": [
+      "general",
+      "360"
+    ],
+    "runtimeViews": {
+      "stand-light-day": {
+        "mode": "general",
+        "count": 10,
+        "headInstances": 46,
+        "headVisible": true,
+        "active": 0,
+        "mounts": [
+          {
+            "base": [
+              -82.38590748676489,
+              19.26,
+              50.04744171251884
+            ],
+            "bodyIndex": 0,
+            "clamp": 19.260000228881836,
+            "intensity": 0,
+            "beamIntensity": 0
+          },
+          {
+            "base": [
+              -82.52264605075435,
+              19.26,
+              81.712652955821
+            ],
+            "bodyIndex": 1,
+            "clamp": 19.260000228881836,
+            "intensity": 0,
+            "beamIntensity": 0
+          },
+          {
+            "base": [
+              -65.31439400324884,
+              19.26,
+              109.84019230630375
+            ],
+            "bodyIndex": 2,
+            "clamp": 19.260000228881836,
+            "intensity": 0,
+            "beamIntensity": 0
+          },
+          {
+            "base": [
+              -43.755204580917024,
+              19.26,
+              134.85722411898635
+            ],
+            "bodyIndex": 3,
+            "clamp": 19.260000228881836,
+            "intensity": 0,
+            "beamIntensity": 0
+          },
+          {
+            "base": [
+              -16.86676789491444,
+              19.26,
+              152.98165844453163
+            ],
+            "bodyIndex": 4,
+            "clamp": 19.260000228881836,
+            "intensity": 0,
+            "beamIntensity": 0
+          },
+          {
+            "base": [
+              16.17686358056638,
+              19.26,
+              153.06514395393071
+            ],
+            "bodyIndex": 5,
+            "clamp": 19.260000228881836,
+            "intensity": 0,
+            "beamIntensity": 0
+          },
+          {
+            "base": [
+              43.21685989558072,
+              19.26,
+              135.24489542140049
+            ],
+            "bodyIndex": 6,
+            "clamp": 19.260000228881836,
+            "intensity": 0,
+            "beamIntensity": 0
+          },
+          {
+            "base": [
+              64.88842292249203,
+              19.26,
+              110.3253462493485
+            ],
+            "bodyIndex": 7,
+            "clamp": 19.260000228881836,
+            "intensity": 0,
+            "beamIntensity": 0
+          },
+          {
+            "base": [
+              82.2812085056153,
+              19.26,
+              82.31252280716734
+            ],
+            "bodyIndex": 8,
+            "clamp": 19.260000228881836,
+            "intensity": 0,
+            "beamIntensity": 0
+          },
+          {
+            "base": [
+              82.51871836764575,
+              19.26,
+              50.64363877626657
+            ],
+            "bodyIndex": 9,
+            "clamp": 19.260000228881836,
+            "intensity": 0,
+            "beamIntensity": 0
+          }
+        ]
+      },
+      "stand-light-play": {
+        "mode": "general",
+        "count": 10,
+        "headInstances": 46,
+        "headVisible": true,
+        "active": 10,
+        "mounts": [
+          {
+            "base": [
+              -82.38590748676489,
+              19.26,
+              50.04744171251884
+            ],
+            "bodyIndex": 0,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          },
+          {
+            "base": [
+              -82.52264605075435,
+              19.26,
+              81.712652955821
+            ],
+            "bodyIndex": 1,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          },
+          {
+            "base": [
+              -65.31439400324884,
+              19.26,
+              109.84019230630375
+            ],
+            "bodyIndex": 2,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          },
+          {
+            "base": [
+              -43.755204580917024,
+              19.26,
+              134.85722411898635
+            ],
+            "bodyIndex": 3,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          },
+          {
+            "base": [
+              -16.86676789491444,
+              19.26,
+              152.98165844453163
+            ],
+            "bodyIndex": 4,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          },
+          {
+            "base": [
+              16.17686358056638,
+              19.26,
+              153.06514395393071
+            ],
+            "bodyIndex": 5,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          },
+          {
+            "base": [
+              43.21685989558072,
+              19.26,
+              135.24489542140049
+            ],
+            "bodyIndex": 6,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          },
+          {
+            "base": [
+              64.88842292249203,
+              19.26,
+              110.3253462493485
+            ],
+            "bodyIndex": 7,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          },
+          {
+            "base": [
+              82.2812085056153,
+              19.26,
+              82.31252280716734
+            ],
+            "bodyIndex": 8,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          },
+          {
+            "base": [
+              82.51871836764575,
+              19.26,
+              50.64363877626657
+            ],
+            "bodyIndex": 9,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          }
+        ]
+      },
+      "360-stand-light-day": {
+        "mode": "360",
+        "count": 10,
+        "headInstances": 18,
+        "headVisible": true,
+        "active": 0,
+        "mounts": [
+          {
+            "base": [
+              -82.38590748676489,
+              19.26,
+              50.04744171251884
+            ],
+            "bodyIndex": 0,
+            "clamp": 19.260000228881836,
+            "intensity": 0,
+            "beamIntensity": 0
+          },
+          {
+            "base": [
+              -82.52264605075435,
+              19.26,
+              81.712652955821
+            ],
+            "bodyIndex": 1,
+            "clamp": 19.260000228881836,
+            "intensity": 0,
+            "beamIntensity": 0
+          },
+          {
+            "base": [
+              -65.31439400324884,
+              19.26,
+              109.84019230630375
+            ],
+            "bodyIndex": 2,
+            "clamp": 19.260000228881836,
+            "intensity": 0,
+            "beamIntensity": 0
+          },
+          {
+            "base": [
+              -43.755204580917024,
+              19.26,
+              134.85722411898635
+            ],
+            "bodyIndex": 3,
+            "clamp": 19.260000228881836,
+            "intensity": 0,
+            "beamIntensity": 0
+          },
+          {
+            "base": [
+              -16.86676789491444,
+              19.26,
+              152.98165844453163
+            ],
+            "bodyIndex": 4,
+            "clamp": 19.260000228881836,
+            "intensity": 0,
+            "beamIntensity": 0
+          },
+          {
+            "base": [
+              16.17686358056638,
+              19.26,
+              153.06514395393071
+            ],
+            "bodyIndex": 5,
+            "clamp": 19.260000228881836,
+            "intensity": 0,
+            "beamIntensity": 0
+          },
+          {
+            "base": [
+              43.21685989558072,
+              19.26,
+              135.24489542140049
+            ],
+            "bodyIndex": 6,
+            "clamp": 19.260000228881836,
+            "intensity": 0,
+            "beamIntensity": 0
+          },
+          {
+            "base": [
+              64.88842292249203,
+              19.26,
+              110.3253462493485
+            ],
+            "bodyIndex": 7,
+            "clamp": 19.260000228881836,
+            "intensity": 0,
+            "beamIntensity": 0
+          },
+          {
+            "base": [
+              82.2812085056153,
+              19.26,
+              82.31252280716734
+            ],
+            "bodyIndex": 8,
+            "clamp": 19.260000228881836,
+            "intensity": 0,
+            "beamIntensity": 0
+          },
+          {
+            "base": [
+              82.51871836764575,
+              19.26,
+              50.64363877626657
+            ],
+            "bodyIndex": 9,
+            "clamp": 19.260000228881836,
+            "intensity": 0,
+            "beamIntensity": 0
+          }
+        ]
+      },
+      "360-stand-light-play": {
+        "mode": "360",
+        "count": 10,
+        "headInstances": 18,
+        "headVisible": true,
+        "active": 10,
+        "mounts": [
+          {
+            "base": [
+              -82.38590748676489,
+              19.26,
+              50.04744171251884
+            ],
+            "bodyIndex": 0,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          },
+          {
+            "base": [
+              -82.52264605075435,
+              19.26,
+              81.712652955821
+            ],
+            "bodyIndex": 1,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          },
+          {
+            "base": [
+              -65.31439400324884,
+              19.26,
+              109.84019230630375
+            ],
+            "bodyIndex": 2,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          },
+          {
+            "base": [
+              -43.755204580917024,
+              19.26,
+              134.85722411898635
+            ],
+            "bodyIndex": 3,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          },
+          {
+            "base": [
+              -16.86676789491444,
+              19.26,
+              152.98165844453163
+            ],
+            "bodyIndex": 4,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          },
+          {
+            "base": [
+              16.17686358056638,
+              19.26,
+              153.06514395393071
+            ],
+            "bodyIndex": 5,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          },
+          {
+            "base": [
+              43.21685989558072,
+              19.26,
+              135.24489542140049
+            ],
+            "bodyIndex": 6,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          },
+          {
+            "base": [
+              64.88842292249203,
+              19.26,
+              110.3253462493485
+            ],
+            "bodyIndex": 7,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          },
+          {
+            "base": [
+              82.2812085056153,
+              19.26,
+              82.31252280716734
+            ],
+            "bodyIndex": 8,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          },
+          {
+            "base": [
+              82.51871836764575,
+              19.26,
+              50.64363877626657
+            ],
+            "bodyIndex": 9,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          }
+        ]
+      },
+      "360-stand-wide-play": {
+        "mode": "360",
+        "count": 10,
+        "headInstances": 18,
+        "headVisible": true,
+        "active": 10,
+        "mounts": [
+          {
+            "base": [
+              -82.38590748676489,
+              19.26,
+              50.04744171251884
+            ],
+            "bodyIndex": 0,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          },
+          {
+            "base": [
+              -82.52264605075435,
+              19.26,
+              81.712652955821
+            ],
+            "bodyIndex": 1,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          },
+          {
+            "base": [
+              -65.31439400324884,
+              19.26,
+              109.84019230630375
+            ],
+            "bodyIndex": 2,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          },
+          {
+            "base": [
+              -43.755204580917024,
+              19.26,
+              134.85722411898635
+            ],
+            "bodyIndex": 3,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          },
+          {
+            "base": [
+              -16.86676789491444,
+              19.26,
+              152.98165844453163
+            ],
+            "bodyIndex": 4,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          },
+          {
+            "base": [
+              16.17686358056638,
+              19.26,
+              153.06514395393071
+            ],
+            "bodyIndex": 5,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          },
+          {
+            "base": [
+              43.21685989558072,
+              19.26,
+              135.24489542140049
+            ],
+            "bodyIndex": 6,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          },
+          {
+            "base": [
+              64.88842292249203,
+              19.26,
+              110.3253462493485
+            ],
+            "bodyIndex": 7,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          },
+          {
+            "base": [
+              82.2812085056153,
+              19.26,
+              82.31252280716734
+            ],
+            "bodyIndex": 8,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          },
+          {
+            "base": [
+              82.51871836764575,
+              19.26,
+              50.64363877626657
+            ],
+            "bodyIndex": 9,
+            "clamp": 19.260000228881836,
+            "intensity": 1.3,
+            "beamIntensity": 1.1700000000000002
+          }
+        ]
+      }
+    }
+  },
+  "roofCanvasPlan": {
+    "document": "docs/TOKYO_DOME_REVISION14.ko.md",
+    "status": "triangle footprint corrected to four outfield blocks; stand lights shared by both modes",
+    "roofGeometryChanged": true,
+    "primaryCloseup": "https://www.tokyo-dome.co.jp/themes/common/img/dome/about/index-image-7.webp"
+  },
+  "roofLiner": {
+    "layout": {
+      "roof": {
+        "radius": 100.5,
+        "exponent": 1.53,
+        "grid": 8.5,
+        "core": 55.25,
+        "triangleX": 55.25,
+        "triangleZ": 46.75,
+        "centreZ": 81,
+        "gridOriginZ": 81
+      },
+      "method": "uniform drawing-based 8.5m grid; omit crosswise strokes without local compression",
+      "wings": {
+        "home": [
+          {
+            "wing": "home",
+            "bays": 5,
+            "half": 21.25,
+            "axis": 89.25,
+            "axisIndex": 10,
+            "axisDimension": 1
+          },
+          {
+            "wing": "home",
+            "bays": 7,
+            "half": 29.75,
+            "axis": 80.75,
+            "axisIndex": 9,
+            "axisDimension": 1
+          },
+          {
+            "wing": "home",
+            "bays": 9,
+            "half": 38.25,
+            "axis": 72.25,
+            "axisIndex": 8,
+            "axisDimension": 1
+          },
+          {
+            "wing": "home",
+            "bays": 11,
+            "half": 46.75,
+            "axis": 63.75,
+            "axisIndex": 7,
+            "axisDimension": 1
+          },
+          {
+            "wing": "home",
+            "bays": 13,
+            "half": 55.25,
+            "axis": 55.25,
+            "axisIndex": 6,
+            "axisDimension": 1
+          }
+        ],
+        "outfield": [
+          {
+            "wing": "outfield",
+            "bays": 5,
+            "half": 21.25,
+            "axis": -89.25,
+            "axisIndex": -10,
+            "axisDimension": 1
+          },
+          {
+            "wing": "outfield",
+            "bays": 7,
+            "half": 29.75,
+            "axis": -80.75,
+            "axisIndex": -9,
+            "axisDimension": 1
+          },
+          {
+            "wing": "outfield",
+            "bays": 9,
+            "half": 38.25,
+            "axis": -72.25,
+            "axisIndex": -8,
+            "axisDimension": 1
+          },
+          {
+            "wing": "outfield",
+            "bays": 11,
+            "half": 46.75,
+            "axis": -63.75,
+            "axisIndex": -7,
+            "axisDimension": 1
+          },
+          {
+            "wing": "outfield",
+            "bays": 13,
+            "half": 55.25,
+            "axis": -55.25,
+            "axisIndex": -6,
+            "axisDimension": 1
+          }
+        ],
+        "first": [
+          {
+            "wing": "first",
+            "bays": 5,
+            "half": 21.25,
+            "axis": 89.25,
+            "axisIndex": 10,
+            "axisDimension": 0
+          },
+          {
+            "wing": "first",
+            "bays": 7,
+            "half": 29.75,
+            "axis": 80.75,
+            "axisIndex": 9,
+            "axisDimension": 0
+          },
+          {
+            "wing": "first",
+            "bays": 9,
+            "half": 38.25,
+            "axis": 72.25,
+            "axisIndex": 8,
+            "axisDimension": 0
+          },
+          {
+            "wing": "first",
+            "bays": 11,
+            "half": 46.75,
+            "axis": 63.75,
+            "axisIndex": 7,
+            "axisDimension": 0
+          },
+          {
+            "wing": "first",
+            "bays": 13,
+            "half": 55.25,
+            "axis": 55.25,
+            "axisIndex": 6,
+            "axisDimension": 0
+          }
+        ],
+        "third": [
+          {
+            "wing": "third",
+            "bays": 5,
+            "half": 21.25,
+            "axis": -89.25,
+            "axisIndex": -10,
+            "axisDimension": 0
+          },
+          {
+            "wing": "third",
+            "bays": 7,
+            "half": 29.75,
+            "axis": -80.75,
+            "axisIndex": -9,
+            "axisDimension": 0
+          },
+          {
+            "wing": "third",
+            "bays": 9,
+            "half": 38.25,
+            "axis": -72.25,
+            "axisIndex": -8,
+            "axisDimension": 0
+          },
+          {
+            "wing": "third",
+            "bays": 11,
+            "half": 46.75,
+            "axis": -63.75,
+            "axisIndex": -7,
+            "axisDimension": 0
+          },
+          {
+            "wing": "third",
+            "bays": 13,
+            "half": 55.25,
+            "axis": -55.25,
+            "axisIndex": -6,
+            "axisDimension": 0
+          }
+        ]
+      }
+    },
+    "uniformPitchMetres": 8.5,
+    "pitchSource": "Takenaka roof paper, Fig.2, cables @8.5m",
+    "noLocalCompression": true,
+    "method": "omit outer crosswise strokes at unchanged base-grid intersections",
+    "rowsFromWall": [
+      5,
+      7,
+      9,
+      11,
+      13
+    ],
+    "wings": 4,
+    "sagMetres": [
+      0.65,
+      0.12
+    ],
+    "crosswiseBowMetres": 0.5,
+    "roughness": 0.95,
+    "sourceList": "docs/references/tokyo-dome-review-14-sources.json",
+    "layoutCheck": "node scripts/verify-dome-roof.mjs",
+    "equipment": {
+      "lightingBanks": 4,
+      "lensesPerBank": 12,
+      "equipmentCages": 1,
+      "suspensionWires": 20,
+      "runtimeCheck": {
+        "name": "roof-equipment-suspended-below-cable-crossings",
+        "items": [
+          {
+            "kind": "two-row lighting bank",
+            "cell": [
+              -3,
+              -3
+            ],
+            "position": [
+              -25.5,
+              49.76392909608175,
+              55.5
+            ],
+            "anchors": [
+              [
+                -29.75,
+                51.26392909608175,
+                51.25
+              ],
+              [
+                -21.25,
+                52.64334029796536,
+                51.25
+              ],
+              [
+                -21.25,
+                54.7691474980009,
+                59.75
+              ],
+              [
+                -29.75,
+                53.49334029796536,
+                59.75
+              ]
+            ],
+            "mounts": [
+              [
+                -27.377668029706385,
+                49.56065609389594,
+                56.45075909503981
+              ],
+              [
+                -24.549240904960197,
+                49.56065609389594,
+                53.622331970293615
+              ],
+              [
+                -23.80489898635922,
+                50.32348649210176,
+                54.36667388889459
+              ],
+              [
+                -26.63332611110541,
+                50.32348649210176,
+                57.19510101364078
+              ]
+            ],
+            "lamps": 12
+          },
+          {
+            "kind": "two-row lighting bank",
+            "cell": [
+              -3,
+              3
+            ],
+            "position": [
+              -25.5,
+              55.713929096081756,
+              106.5
+            ],
+            "anchors": [
+              [
+                -29.75,
+                57.74334029796536,
+                102.25
+              ],
+              [
+                -21.25,
+                59.0191474980009,
+                102.25
+              ],
+              [
+                -21.25,
+                58.59334029796536,
+                110.75
+              ],
+              [
+                -29.75,
+                57.213929096081756,
+                110.75
+              ]
+            ],
+            "mounts": [
+              [
+                -24.55616077250904,
+                55.54541805736802,
+                108.38458789725523
+              ],
+              [
+                -27.384587897255226,
+                55.54541805736802,
+                105.55616077250903
+              ],
+              [
+                -26.612899857976974,
+                56.25181393792634,
+                104.78447273323079
+              ],
+              [
+                -23.784472733230785,
+                56.25181393792634,
+                107.61289985797697
+              ]
+            ],
+            "lamps": 12
+          },
+          {
+            "kind": "two-row lighting bank",
+            "cell": [
+              3,
+              -3
+            ],
+            "position": [
+              25.5,
+              49.76392909608175,
+              55.5
+            ],
+            "anchors": [
+              [
+                21.25,
+                52.64334029796536,
+                51.25
+              ],
+              [
+                29.75,
+                51.26392909608175,
+                51.25
+              ],
+              [
+                29.75,
+                53.49334029796536,
+                59.75
+              ],
+              [
+                21.25,
+                54.7691474980009,
+                59.75
+              ]
+            ],
+            "mounts": [
+              [
+                24.549240904960197,
+                49.56065609389594,
+                53.622331970293615
+              ],
+              [
+                27.377668029706385,
+                49.56065609389594,
+                56.45075909503981
+              ],
+              [
+                26.63332611110541,
+                50.32348649210176,
+                57.19510101364078
+              ],
+              [
+                23.80489898635922,
+                50.32348649210176,
+                54.36667388889459
+              ]
+            ],
+            "lamps": 12
+          },
+          {
+            "kind": "two-row lighting bank",
+            "cell": [
+              3,
+              3
+            ],
+            "position": [
+              25.5,
+              55.713929096081756,
+              106.5
+            ],
+            "anchors": [
+              [
+                21.25,
+                59.0191474980009,
+                102.25
+              ],
+              [
+                29.75,
+                57.74334029796536,
+                102.25
+              ],
+              [
+                29.75,
+                57.213929096081756,
+                110.75
+              ],
+              [
+                21.25,
+                58.59334029796536,
+                110.75
+              ]
+            ],
+            "mounts": [
+              [
+                27.384587897255226,
+                55.54541805736802,
+                105.55616077250903
+              ],
+              [
+                24.55616077250904,
+                55.54541805736802,
+                108.38458789725523
+              ],
+              [
+                23.784472733230785,
+                56.25181393792634,
+                107.61289985797697
+              ],
+              [
+                26.612899857976974,
+                56.25181393792634,
+                104.78447273323079
+              ]
+            ],
+            "lamps": 12
+          },
+          {
+            "kind": "equipment cage",
+            "cell": [
+              0,
+              0
+            ],
+            "position": [
+              0,
+              56.62436589992004,
+              81
+            ],
+            "anchors": [
+              [
+                -4.25,
+                59.12436589992004,
+                76.75
+              ],
+              [
+                4.25,
+                59.12436589992004,
+                76.75
+              ],
+              [
+                4.25,
+                59.97436589992004,
+                85.25
+              ],
+              [
+                -4.25,
+                59.97436589992004,
+                85.25
+              ]
+            ],
+            "mounts": [
+              [
+                -0.575,
+                57.04936589992004,
+                80.5
+              ],
+              [
+                0.575,
+                57.04936589992004,
+                80.5
+              ],
+              [
+                0.575,
+                57.04936589992004,
+                81.5
+              ],
+              [
+                -0.575,
+                57.04936589992004,
+                81.5
+              ]
+            ]
+          }
+        ],
+        "bad": [],
+        "distance": 0,
+        "heightError": 0
+      }
+    },
+    "projectionDiagnostic": {
+      "file": "roof-orthographic.png",
+      "projection": "orthographic, top down; current full app model",
+      "pitchMetres": 8.5,
+      "projectedRowCoordinates": [
+        {
+          "bays": 5,
+          "coordinate": 170.25,
+          "pixelY": 579.6363636363637
+        },
+        {
+          "bays": 7,
+          "coordinate": 161.75,
+          "pixelY": 554.909090909091
+        },
+        {
+          "bays": 9,
+          "coordinate": 153.25,
+          "pixelY": 530.1818181818182
+        },
+        {
+          "bays": 11,
+          "coordinate": 144.75,
+          "pixelY": 505.4545454545456
+        },
+        {
+          "bays": 13,
+          "coordinate": 136.25,
+          "pixelY": 480.72727272727286
+        }
+      ],
+      "pixelSpacing": [
+        24.727272727272748,
+        24.727272727272748,
+        24.727272727272634,
+        24.727272727272748
+      ]
+    },
+    "limits": "Grid pitch follows the drawing. Small fabric curves and equipment positions are photographic estimates; bay progression is user specified.",
+    "plainTrianglePanels": {
+      "periodicSagInside": 0,
+      "rippleShadingInside": false,
+      "boundary": "both cable half-lines meet at each apex and continue to the outer ring, independent of ordinary stroke omissions",
+      "transition": "3.5m on grid side, completed at panel boundary",
+      "GPUCheck": {
+        "name": "four-triangle-panels-have-zero-periodic-sag-GPU",
+        "samples": 4096,
+        "bad": 0,
+        "distance": 0,
+        "heightError": 0
+      },
+      "apexCoordinatesRelativeToRoofCentre": [
+        [
+          -55.25,
+          -46.75
+        ],
+        [
+          -55.25,
+          46.75
+        ],
+        [
+          55.25,
+          -46.75
+        ],
+        [
+          55.25,
+          46.75
+        ]
+      ],
+      "interiorGrid": false,
+      "colourShadingExtendsOutsidePanel": false,
+      "boundaryGPUCheck": {
+        "name": "four-triangle-apices-and-both-edges-complete-GPU",
+        "apices": 4,
+        "edgeSamples": 504,
+        "interiorSamples": 4,
+        "bad": 0,
+        "distance": 0,
+        "heightError": 0
+      },
+      "baseChordMetres": 34.5223206148,
+      "outfieldBlocks": [
+        [
+          "F02",
+          "F03",
+          "F04",
+          "F05"
+        ],
+        [
+          "F16",
+          "F17",
+          "F18",
+          "F19"
+        ]
+      ],
+      "verticalPanelCount": 13,
+      "rangeSource": "user reference: four outfield blocks; existing actual interior photographs; photographic scale estimate"
+    }
   }
 }

@@ -1,5 +1,34 @@
 import * as THREE from 'three';
 
+export const UPPER_PARAPET_HEIGHT = 0.6;
+
+// Beam fixtures sit on the actual 4F parapet, between its two returns.
+// The old rim outline predates the current D front and leaves them in air.
+export function parapetLightMounts(data, count, offsetZ = 114) {
+  const runs = [];
+  let length = 0;
+  for (const { panel } of data.frontParapets.D) {
+    const start = panel.corners[0], end = panel.corners.at(-1);
+    for (let i = start; i < end; i++) {
+      const a = panel.pts[i], b = panel.pts[i + 1], L = Math.hypot(b[0]-a[0], b[1]-a[1]);
+      if (L < 1e-6) continue;
+      runs.push({ a, b, y0:panel.ys[i], y1:panel.ys[i+1], start:length, length:L });
+      length += L;
+    }
+  }
+  return Array.from({ length:count }, (_, i) => {
+    const distance = (i + 0.5) / count * length;
+    const r = runs.find(r => distance <= r.start + r.length) ?? runs.at(-1);
+    const t = (distance-r.start)/r.length;
+    return {
+      x:r.a[0]+(r.b[0]-r.a[0])*t,
+      y:r.y0+(r.y1-r.y0)*t+UPPER_PARAPET_HEIGHT,
+      z:r.a[1]+(r.b[1]-r.a[1])*t+offsetZ,
+      yaw:Math.atan2(-(r.b[1]-r.a[1]),r.b[0]-r.a[0]),
+    };
+  });
+}
+
 // A single face through the balcony walls and the screen backing, with
 // their common horizontal soffit at the balcony fascia's underside.
 export function outfieldWallProfile(data) {

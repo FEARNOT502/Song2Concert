@@ -76,7 +76,7 @@ def _bands(rows_loc, hw, tmax):
     return out
 
 
-def _vom(data, L, v):
+def _vom(data, L, v, parapet=PAR):
     p, u, w, loc, wld, st = _frame(v)
     hw = v['w'] / 2
     rows = L['rows']
@@ -111,14 +111,15 @@ def _vom(data, L, v):
         if rows[k]['y0'] < roof - 0.01: new = new.difference(mouth)
         rows[k]['polys'] = [_out(wld(q)) for q in _polys(new)]
     # the rows' tops beside the pit and over its mouth, for the parapet: one even slope from the front row's
-    # top to the top of the row over the mouth, never less than PAR - 0.05 over a tread beside it
+    # top to the top of the row over the mouth, keeping the specified
+    # projection above the adjacent treads without lowering the passage.
     fr = [k for k in bands if bands[k][0](hw) < Lc - 0.05 and bands[k][1](hw) > 0.0]
-    h_front = min(rows[k]['y'] for k in fr) + PAR
-    h_back = rows[k_roof]['y'] + PAR
+    h_front = min(rows[k]['y'] for k in fr) + parapet
+    h_back = rows[k_roof]['y'] + parapet
     t0, t1 = h_front, h_back
     for k in fr:
         tf = max(0.0, float(min(bands[k][0](hw), bands[k][0](-hw))))
-        need = rows[k]['y'] + PAR - 0.05
+        need = rows[k]['y'] + parapet - 0.05
         at = t0 + (t1 - t0) * tf / Lc
         if at < need: t0 += (need - at) / max(1e-6, 1 - tf / Lc)
     sides = []
@@ -741,7 +742,7 @@ def apply(data):
     E = next(l for l in data['levels'] if l['name'] == 'E')
     turned = _square(E)
     print('tidy: E vomitories squared to their rows, turned', turned)
-    done = [(v,) + _vom(data, E, v)[1:] for v in E['voms']]
+    done = [(v,) + _vom(data, E, v, parapet=0.5)[1:] for v in E['voms']]
     n = _seats(E, done)
     moved = _aisle_columns(data)
     heads = _head_columns(data)

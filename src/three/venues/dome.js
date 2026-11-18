@@ -10,9 +10,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import * as THREE from 'three';
-import { joinedStrip, outfieldWallProfile } from './dome-rails.js';
+import { joinedStrip, outfieldWallProfile, UPPER_PARAPET_HEIGHT } from './dome-rails.js';
+import { DOME_ROOF, roofLineMaskGLSL, roofTriangleGLSL } from './dome-roof.js';
+import { roofEquipment } from './dome-roof-equipment.js';
+import { addDomeStandLights, updateDomeStandLights } from './dome-stand-lights.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { APP, DEG, KELVIN, V3, clamp, lerp, prng, std, floorPanelTex, glowMat, ringTint } from '../core.js';
+import { APP, DEG, KELVIN, V3, clamp, lerp, prng, std, rubberSheetTex, glowMat, ringTint } from '../core.js';
 import { lightPoints } from '../people.js';
 import { hoists, micStand, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
 import { bigCrowd, bigScreens, crossThrust, diagonalTowers, roundBlocks, roundStage, delayTower, fixtureRow, flashOnCrowd, flashUnits, floorChairs, fohPosition, fromRow, groundRoof, paCorner, paHang, paPair, paWing, runBlinders, runShow, runStrobes, scaffoldMasking, screenHang, section, stageRing, subLine, thinRow, wallStrip } from '../show.js';
@@ -59,8 +62,8 @@ export function getDomeSeatCatalog() {
 }
 
 export function membraneMaterial() {
-  // The roof from inside, as the photographs show it: cables each way, 14 from one big triangle's side to the next, the
-  // same distance apart, none on either centre line, with a
+  // The roof from inside: thirteen longitudinal panel bays between the
+  // two outfield triangle tips, on an evenly spaced cable grid, with a
   // clamp at each crossing; the fabric between them sewn in widths.
   // On each of the four diagonals the net stops at one crossing: past it, out to
   // the ring, one big plain triangle, its point at that crossing, its two short
@@ -76,24 +79,23 @@ export function membraneMaterial() {
   // a pale lamp either side of it; and from the crown out to each big triangle's
   // point a staircase of pale lit strips along the cables, step by step down the
   // diagonal. The colour a warm grey-white; by day warmer, lit through.
-  const TRI_X = 50.4, TRI_Z = 50.4, GRID = 2 * TRI_X / 13;
+  const TRI_X = DOME_ROOF.triangleX, GRID = DOME_ROOF.grid;
   // One world-space grid covers the complete dome, including all four wings.
-  const ZC = 81 + GRID / 2, CROSS_BOW = .5;
+  const ZC = DOME_ROOF.gridOriginZ, CROSS_BOW = .5;
   const LAYER = '1.6';               // metres between the inner liner and the outer skin
   const GL = GRID.toFixed(4), HG = (GRID / 2).toFixed(4);
   // how far the fabric hangs between the straight cables, and how much each row bellies between its seams (m)
-  const SAG_A = '0.85', SAG_B = '0.22';
-  const m = std({ color: 0xe5ddcf, roughness: 0.92, side: THREE.BackSide });
+  const SAG_A = '0.65', SAG_B = '0.12';
+  const m = std({ color: 0xe4e0d6, roughness: 0.95, side: THREE.BackSide });
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uBounce = { value: new THREE.Color(0) };
     // (how bright the lit strips and the small lamps on the roof read: daylight through the fabric and the house's own light
     // on them — full with the house up, very faint during the show)
     sh.uniforms.uSky = m.userData.uSky = { value: 1 };
     m.userData.shader = sh;
-    const triGL = `float crossZ(vec2 c) { float d = fract((c.x + ${HG}) / ${GL}) - 0.5; float side = sign(c.y) * smoothstep(0.0, ${GL} * 2.0, abs(c.y)); return c.y - ${CROSS_BOW.toFixed(2)} * side * (1.0 - 4.0*d*d); }
-      float bigTri(vec2 c, float zs, float e) { return smoothstep(${TRI_X.toFixed(1)} + e, ${TRI_X.toFixed(1)} + e + 0.2, abs(c.x)) * smoothstep(${TRI_Z.toFixed(1)} + e, ${TRI_Z.toFixed(1)} + e + 0.2, abs(zs)); }
-      // (the hang dies away over the first few metres into each triangle, so the row beside it meets it without a step)
-      float triHang(vec2 c) { return smoothstep(${TRI_X.toFixed(1)}, ${(TRI_X + 3.5).toFixed(1)}, abs(c.x)) * smoothstep(${TRI_Z.toFixed(1)}, ${(TRI_Z + 3.5).toFixed(1)}, abs(c.y)); }`;
+    const triGL = `${roofLineMaskGLSL()}
+      ${roofTriangleGLSL()}
+      float crossZ(vec2 c) { float d = fract((c.x + ${HG}) / ${GL}) - 0.5; float side = sign(c.y) * smoothstep(0.0, ${GL} * 2.0, abs(c.y)); return c.y - ${CROSS_BOW.toFixed(2)} * side * (1.0 - 4.0*d*d) * roofSagWeight(c); }`;
     sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
         varying vec3 vWP; varying float vRho; attribute float aRho; ${triGL}`)
       // the fabric hangs between the straight cables, less and less out to the ring; the triangles lie flat
@@ -104,7 +106,7 @@ export function membraneMaterial() {
           // (in the mesh half the kink at the cable: the mesh is a metre or so fine, and a full kink smeared over
           // its triangles made the straight cables wobble, none made the seams' arcs wavy; the shading keeps it all)
           float ax = cos(3.14159 * dx); ax = 0.5 * ax * ax + 0.5 * (1.0 - 4.0 * dx * dx);
-          transformed.y -= (${SAG_A} * ax + ${SAG_B} * ax * (1.0 - 4.0 * dz * dz)) * (1.0 - smoothstep(0.84, 0.98, aRho)) * (1.0 - triHang(c));
+          transformed.y -= (${SAG_A} * ax + ${SAG_B} * ax * (1.0 - 4.0 * dz * dz)) * (1.0 - smoothstep(0.84, 0.98, aRho)) * roofSagWeight(c);
           vRho = aRho;
         }`)
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
@@ -114,8 +116,8 @@ export function membraneMaterial() {
         float stripAt(vec2 c, vec2 fw, float w0, float w1) {
           vec2 a = abs(c) / ${GL};
           float Lb = floor(a.y) + 0.5, La = floor(a.x) + 0.5;
-          float sB = step(Lb - 1.0, a.x) * step(a.x, Lb) * step(Lb, 6.6) * smoothstep(w0, w0 + fw.y, (a.y - Lb) * ${GL}) * (1.0 - smoothstep(w1, w1 + fw.y, (a.y - Lb) * ${GL}));
-          float sA = step(La, a.y) * step(a.y, La + 1.0) * step(La, 5.6) * smoothstep(w0, w0 + fw.x, (a.x - La) * ${GL}) * (1.0 - smoothstep(w1, w1 + fw.x, (a.x - La) * ${GL}));
+          float sB = step(Lb, a.x) * step(a.x, Lb + 1.0) * step(Lb, ${(DOME_ROOF.triangleZ / GRID + .1).toFixed(1)}) * smoothstep(w0, w0 + fw.y, (a.y - Lb) * ${GL}) * (1.0 - smoothstep(w1, w1 + fw.y, (a.y - Lb) * ${GL}));
+          float sA = step(La - 1.0, a.y) * step(a.y, La) * step(La, ${(DOME_ROOF.triangleX / GRID - 1 + .1).toFixed(1)}) * smoothstep(w0, w0 + fw.x, (a.x - La) * ${GL}) * (1.0 - smoothstep(w1, w1 + fw.x, (a.x - La) * ${GL}));
           return max(sA, sB);
         }`)
       // (the hang's slope, so the light falls on it as on the real thing: the normal faces into the house, down)
@@ -123,7 +125,7 @@ export function membraneMaterial() {
         {
           vec2 c = vWP.xz - vec2(0.0, ${ZC.toFixed(1)});
           float dx = fract((c.x + ${HG}) / ${GL}) - 0.5, dz = fract((crossZ(c) + ${HG}) / ${GL}) - 0.5;
-          float k = (1.0 - smoothstep(0.84, 0.98, vRho)) * (1.0 - triHang(c)) * 8.0 / ${GL};
+          float k = (1.0 - smoothstep(0.84, 0.98, vRho)) * roofSagWeight(c) * 8.0 / ${GL};
           vec3 g = vec3((${SAG_A} + ${SAG_B} * (1.0 - 4.0 * dz * dz)) * dx, 0.0, ${SAG_B} * (1.0 - 4.0 * dx * dx) * dz) * k;
           normal = normalize(normal + mat3(viewMatrix) * g);
         }`)
@@ -137,21 +139,23 @@ export function membraneMaterial() {
           // distance (m) to the nearest straight cable, and to the nearest seam across
           float along = abs(fract((c.x + ${HG}) / ${GL} + 0.5) - 0.5) * ${GL};
           float across = abs(fract((zs + ${HG}) / ${GL} + 0.5) - 0.5) * ${GL};
-          float inTri = bigTri(c, zs, 0.3), net = 1.0 - inTri;
+          float inTri = triangleInterior(c, max(fw.x,fw.y)), net = 1.0 - inTri;
+          float panelBoundary = triangleBoundary(c,fw);
+          vec2 keep=roofLineMask(c,fw,zs);
           // the cables: about 0.18 m across, near-black; never drawn under a pixel or so, but then only as dark
           // as their real width would make that pixel (with a floor, so from the far side they still read, thinly)
           float hw = max(0.09, fw.x * 0.6);
           float kA = 0.78 * max(0.09 / hw, 0.42);
-          float aLine = (1.0 - smoothstep(hw, hw + fw.x, along)) * net;
+          float aLine = (1.0 - smoothstep(hw, hw + fw.x, along)) * net * keep.x;
           // the seams across: thinner and grey; but the two that bound each big triangle are cables, as dark
-          float edgeB = step(${TRI_X.toFixed(1)}, abs(c.x));
+          float edgeB = step(${TRI_X.toFixed(4)}, abs(c.x));
           float rb = mix(0.05, 0.09, edgeB), xw = max(rb, fw.y * 0.6);
           float kB = mix(0.42, 0.78, edgeB) * max(rb / xw, mix(0.3, 0.42, edgeB));
-          float bLine = (1.0 - smoothstep(xw, xw + fw.y, across)) * net;
+          float bLine = (1.0 - smoothstep(xw, xw + fw.y, across)) * net * keep.y;
           // the fitting at each crossing (dark, a little wider than the cable), and its pale lamp either side
           float cover = min(1.0, 0.25 / max(fw.x, fw.y));
-          float clampD = (1.0 - smoothstep(0.26, 0.26 + fw.x, along)) * (1.0 - smoothstep(0.2, 0.2 + fw.y, across)) * net * cover;
-          float lamp = (1.0 - smoothstep(0.17, 0.17 + max(fw.x, fw.y), length(vec2(along - 0.55, across)))) * net * cover * cover;
+          float clampD = (1.0 - smoothstep(0.26, 0.26 + fw.x, along)) * (1.0 - smoothstep(0.2, 0.2 + fw.y, across)) * net * cover * min(keep.x,keep.y);
+          float lamp = (1.0 - smoothstep(0.17, 0.17 + max(fw.x, fw.y), length(vec2(along - 0.55, across)))) * net * cover * cover * min(keep.x,keep.y);
           // the staircase of lit strips down each diagonal, from the crown to the triangle's point, beside the cables
           // (each is a slot in the inner liner, beside a cable, through which the outer skin shows, the daylight in it: the
           // outer skin is ${LAYER} m above, so what shows through a slot moves with where it is seen from — square on, the
@@ -162,18 +166,26 @@ export function membraneMaterial() {
           // the fabric's widths, side by side between the cables: faint
           float seam = (1.0 - smoothstep(0.0, fwidth(fx * 4.0) * 1.5 + 0.02, abs(fract(fx * 4.0 + 0.5) - 0.5) * 2.0)) * net;
           // the big triangles' own widths: faint, square to the ring
-          float tv = (abs(c.x) - abs(zs)) / 1.41421 / 4.5;
+          float tv = (abs(c.x) - abs(c.y)) / 1.41421 / 4.5;
           float tseam = (1.0 - smoothstep(0.0, fwidth(tv) * 1.5 + 0.01, abs(fract(tv + 0.5) - 0.5) * 2.0)) * inTri;
           // each row of fabric: a soft shadow just past the seam it hangs from, pale through its middle; the triangles plain, a touch paler
           float shade = mix((1.0 - 0.07 * 4.0 * dx * dx) * (1.0 - 0.12 * smoothstep(0.15, 0.5, abs(dz))), 1.07, inTri);
+          // Fine fabric detail and the small circular fittings visible in
+          // the interior photographs; these do not alter the grid.
+          vec2 local=vec2(dx,dz)*${GL},cell=floor(vec2(c.x,zs)/${GL}+.5);
+          float aa=max(fw.x,fw.y),radius=mix(.075,.20,step(2.5,mod(abs(cell.x)+abs(cell.y),4.0)));
+          float roundPart=(1.0-smoothstep(radius,radius+aa,length(local)))*min(1.0,radius/aa)*net;
+          float triFittings=triangleFittings(c,aa)*inTri;
+          float triEdge=triangleEdgeStrip(c,fw)*inTri;
+          float weave=(sin(c.x*170.0)+sin(c.y*190.0))*.0025*(1.0-smoothstep(.01,.04,aa));
           // (every line the same in the fabric's own colour and in what the show throws on it: dark or lit, they stay sharp)
-          float lines = (1.0 - kA * aLine) * (1.0 - kB * bLine * (1.0 - aLine)) * (1.0 - 0.55 * clampD) * (1.0 - 0.06 * seam) * (1.0 - 0.06 * tseam);
-          float lit = max(0.35 * lamp, 0.45 * strip) * (1.0 - aLine) * uSky, pale = 1.0 + lit;
-          diffuseColor.rgb *= shade * lines * pale;
+          float lines = (1.0 - kA * aLine) * (1.0 - kB * bLine * (1.0 - aLine)) * (1.0 - 0.55 * clampD) * (1.0 - 0.06 * seam) * (1.0 - 0.06 * tseam)*(1.0-.65*roundPart)*(1.0-.78*panelBoundary);
+          float lit = max(max(0.35 * lamp, 0.45 * strip) * (1.0 - aLine),max(.45*triEdge,.7*triFittings)) * uSky, pale = 1.0 + lit;
+          diffuseColor.rgb *= (shade+weave) * lines * pale;
           totalEmissiveRadiance += uBounce * shade * lines * pale + diffuseColor.rgb * 0.7 * lit;
         }`);
   };
-  m.customProgramCacheKey = () => 'membrane16';
+  m.customProgramCacheKey = () => 'membrane25-thirteen-panel-staircase';
   return m;
 }
 
@@ -212,7 +224,8 @@ export function buildDome(ctx) {
   fieldGeo.rotateX(-Math.PI / 2);
   const fuv = fieldGeo.attributes.uv; const fpos = fieldGeo.attributes.position;
   for (let i = 0; i < fuv.count; i++) fuv.setXY(i, fpos.getX(i) / 16, fpos.getZ(i) / 16);
-  const field = new THREE.Mesh(fieldGeo, std({ ...floorPanelTex({ key: 'domefloor', tone: 0.1 }), roughness: 0.8 }));
+  const field = new THREE.Mesh(fieldGeo, std({ ...rubberSheetTex(), roughness: 1, envMapIntensity: 0.15 }));
+  field.name = 'Dome concert rubber floor';
   field.position.y = 0.02; field.receiveShadow = true; root.add(field);
 
   // ── the roof's geometry, from the drawings of it ──
@@ -224,7 +237,7 @@ export function buildDome(ctx) {
   // centre-field corner; the air holds the membrane 25 m over the ring's
   // plane, its crown 60.7 m up, 20 m in from the centre towards home. The
   // building's wall stands 5 m out from the ring.
-  const ZC = ZH - 33, RA = 100.5, NE = 1.53, RISE = 25, DOME_WALL = 1.09;
+  const ZC = DOME_ROOF.centreZ, RA = DOME_ROOF.radius, NE = DOME_ROOF.exponent, RISE = 25, DOME_WALL = 1.09;
   const ringY = (z) => 34.7 + 0.1 * (z - ZC);
   const norm = (x, z) => (Math.abs(x / RA) ** NE + Math.abs((z - ZC) / RA) ** NE) ** (1 / NE);
   const roofAt = (x, z) => ringY(z) + RISE * (1 - Math.min(1, norm(x, z)) ** 2);
@@ -450,7 +463,7 @@ export function buildDome(ctx) {
       const P=profile.panel.pts.map(([x,z])=>({x,z:z+ZH})),Y=profile.panel.ys;
       const rail=profile.rail,R=rail.pts.map(([x,z])=>({x,z:z+ZH})),H=rail.ys;
       const isC=level==='C';
-      const g=joinedStrip(P,Y.map(y=>y+(isC?.08:.6)),Y.map(y=>isC?TD_STANDS.rimCY-1.2:y-.06),isC?.08:.22);
+      const g=joinedStrip(P,Y.map(y=>y+(isC?.08:UPPER_PARAPET_HEIGHT)),Y.map(y=>isC?TD_STANDS.rimCY-1.2:y-.06),isC?.08:.22);
       const mesh=new THREE.Mesh(g,isC?fascia:paint);mesh.receiveShadow=true;mesh.name=level+' front and right-angle return fascia';root.add(mesh);
       if(isC)glass.push(joinedStrip(R,H.map(y=>y+.93),H.map(y=>y+.08),.012));
       if(!isC)tube(R,H.map(y=>y+.54),.024);
@@ -1023,9 +1036,8 @@ export function buildDome(ctx) {
     g.computeVertexNormals();
     root.add(new THREE.Mesh(g, membrane));
   }
-  // Nothing hangs from the membrane (as the photographs show it: no light
-  // gondolas, no loudspeakers on it); the house light comes from round the
-  // ring, over the top of the stands, aimed down and in at the field.
+  // The main house light comes from the ring over the stands. The smaller
+  // interior banks and equipment cages hang from cable intersections.
   // Leave space for the backs of the flood banks and catwalk where the
   // upper-tier wall runs inside the compression ring.
   const floodRing = Math.min(0.988, ...TD_STANDS.upperWall.flatMap(({ pts, ret }) =>
@@ -1086,6 +1098,7 @@ export function buildDome(ctx) {
     root.add(new THREE.Mesh(mergeGeometries(body), std({ color: 0x3a3c40, roughness: 0.6, metalness: 0.4 })));
     root.add(new THREE.Mesh(mergeGeometries(faces), floodM));
   }
+  root.add(roofEquipment({roofAt,grid:Number(DOME_ROOF.grid.toFixed(4)),originZ:DOME_ROOF.gridOriginZ,lensMaterial:floodM}));
   // the ring beam's support frame round the edge, 5 m deep, roofed at the
   // ring; the outer wall under it
   {
@@ -1342,29 +1355,14 @@ export function buildDome(ctx) {
   // the delay towers on the field, either side of the runway, past the
   // cross: for the back of the field and the stands behind home
   for (const [x, z] of DT) towerLights.push(...delayTower(root, { x, z, h: 26, boxes: 16, width: 1.3, from: V3(0, 0, 0) }));
-  const spots = [], beams = [], washes = [], ups = [], ring2 = [], bst = [];
+  const spots = [], beams = [], washes = [], ups = [], bst = [];
+  const ring2=addDomeStandLights({rig,root,data:TD_STANDS,quality:q,offsetZ:ZH,roofCentreZ:ZC});
   spots.push(...fixtureRow(q, 14, (i) => ({ fx: rig.add({ kind: 'spot', pos: V3(-26 + i * 4, LT - 0.7, BZ[3]), length: 70, angle: 0.08 }), group: 0 })));
   beams.push(...fixtureRow(q, 14, (i) => ({ fx: rig.add({ kind: 'beam', pos: V3(-26 + i * 4, LT - 0.7, BZ[2]), length: 90, beamGain: 1.2 }), group: 1 })));
   washes.push(...fixtureRow(q, 10, (i) => ({ fx: rig.add({ kind: 'wash', pos: V3(-27 + i * 6, LT - 0.7, BZ[1]), length: 35, beamGain: 0.4, flareGain: 0.15 }), group: 2 })));
   // the lights on the delay towers' heads, sweeping the field and the stands
   const tw = fixtureRow(q, towerLights.length, (i) => ({ fx: rig.add({ pos: towerLights[i], kind: 'beam', length: 70, beamGain: 0.9 }), group: 5 }));
   ups.push(...fixtureRow(q, 12, (i) => ({ fx: rig.add({ kind: 'beam', pos: V3(-26 + i * (52 / 11), DECK, RW0 - 0.2), hang: 'up', length: 70 }), group: 3 })));
-  // the ring: beams along the 2nd-floor front, pole to pole, pointing in
-  {
-    const edge = TD_STANDS.rim.map(([x, z]) => ({ x, z: z + ZH }));
-    edge.sort((p, q2) => Math.atan2(p.x, p.z - ZH) - Math.atan2(q2.x, q2.z - ZH));
-    const len = [0];
-    for (let i = 1; i < edge.length; i++) len.push(len[i - 1] + Math.hypot(edge[i].x - edge[i - 1].x, edge[i].z - edge[i - 1].z));
-    const N2 = (q.rig ?? 1) < 1 ? 10 : 18;
-    for (let i = 0, j = 0; i < N2; i++) {
-      const want = (i + 0.5) / N2 * len[len.length - 1];
-      while (j < len.length - 2 && len[j + 1] < want) j++;
-      const t = (want - len[j]) / (len[j + 1] - len[j]);
-      const pos = V3(lerp(edge[j].x, edge[j + 1].x, t), TD_STANDS.rimY - 1.6, lerp(edge[j].z, edge[j + 1].z, t));
-      const a = Math.atan2(pos.x, pos.z - ZC);
-      ring2.push({ fx: rig.add({ kind: 'beam', pos, hang: 'up', length: 110, beamGain: 0.9, flareGain: 0.6 }), i, n: N2, group: 4, a });
-    }
-  }
   // blinders under the front truss and on the wing towers' faces; strobes
   // along the foot of the wall and under the middle truss
   const bu = [], bt = [];
@@ -1560,13 +1558,7 @@ export function buildDome(ctx) {
       runShow(rig, ups, f, { house: V3(0, 40, 50), stage: STAGE, up: true });
       washes.forEach(({ fx }) => { fx.angle = 0.3; });
       // the ring converges on the long stage in the chorus, spreads to the roof otherwise
-      const sec = f.sec || section(f.bar);
-      ring2.forEach(({ fx, i, a }) => {
-        const tgt = sec === 'chorus' ? V3(Math.sin(f.t * 0.8 + i) * 22, 26, CZ + XD / 2 + Math.cos(f.t * 0.8 + i) * 3) : V3(Math.sin(a) * 30, 56, ZC + Math.cos(a) * 30);
-        fx.dir.lerp(tgt.sub(fx.pos).normalize(), Math.min(1, f.dt * 2)).normalize();
-        fx.color.copy(i % 2 ? f.pal.a : f.pal.c);
-        fx.intensity = (sec === 'chorus' ? 0.9 + 0.4 * f.kick : sec === 'pre' ? 0.5 : 0.18) * show;
-      });
+      updateDomeStandLights(ring2,{...f,sec:f.sec||section(f.bar)},CZ+XD/2,ZC);
       // (idle, at half what it was: it glared off the deck)
       front1.intensity = 90000 * show;
       stageWash.color.copy(f.pal.a); stageWash.intensity = (12000 + 14000 * f.energy + 6000 * f.kick) * show;
@@ -1620,6 +1612,7 @@ export function buildDome(ctx) {
     // (the outfield's pair as high as the outfield stand they play to; home's to the 2nd floor)
     for (const [x, z] of DTR) towerLights.push(...delayTower(root, { x, z, h: z < STAGE.z ? 20 : 30, boxes: z < STAGE.z ? 14 : 18, width: 1.3, from: STAGE }));
     const rig = ctx.rig({ finish: 'black' });
+    const ring2=addDomeStandLights({rig,root,data:TD_STANDS,quality:q,offsetZ:ZH,roofCentreZ:ZC});
     const tw = fixtureRow(q, towerLights.length, (i) => ({ fx: rig.add({ pos: towerLights[i], kind: 'beam', length: 70, beamGain: 0.9 }), group: 5 }));
     // (well back from the runway's end, towards home)
     const feye = V3(0, 1.6 + 1.0, STAGE.z + 60);
@@ -1661,6 +1654,7 @@ export function buildDome(ctx) {
         const show = 1 - f.house;
         const [bl, sb] = RC.run(f, { follow: 90000, wash: 12000 });
         runShow(rig, tw, f, { house: V3(0, 30, STAGE.z), stage: RC.stage, span: 60 });
+        updateDomeStandLights(ring2,{...f,sec:f.sec||section(f.bar)},STAGE.z,ZC);
         floodM.color.copy(KELVIN(5200)).multiplyScalar(0.03 + 2.6 * f.house);
         for (const [m, e] of roomLit) m.emissiveIntensity = e * (0.04 + 0.96 * f.house);
         if (membrane.userData.uSky) membrane.userData.uSky.value = 0.06 + 0.94 * f.house;

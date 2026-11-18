@@ -60,6 +60,62 @@ def carve_headroom(data,ceiling):
   g=g.difference(cut)
  return polys(g)
 
+def _backstop_floor(data):
+ """Close the home-side floor to the padding at the adjacent tread height.
+
+ The sightline lift skipped unoccupied front treads, leaving deep pockets
+ beside A24/A26. Fill those to the first occupied tread, then close the
+ small plan gap left by smoothing the padded fence. This is floor infill,
+ not the former raised concrete cap at the top of the 2.2m padding.
+ """
+ A=next(l for l in data['levels'] if l['name']=='A')
+ zone=box(-30,8,30,23)
+ seats=np.frombuffer(base64.b64decode(A['seats']),'<i2').reshape(-1,4)
+ occupied=set(seats[:,2]);rows={r['r']:r for r in A['rows']}
+ for r in A['rows']:
+  if r['r'] in occupied or r['y']>=1.3:continue
+  g=geom([r]);next_row=rows.get(r['r']+1)
+  if not g.intersects(zone) or not next_row or next_row['r'] not in occupied:continue
+  if not 1.3<next_row['y']<1.9 or g.distance(geom([next_row]))>.03:continue
+  r['y']=next_row['y'];A['hs'][r['r']]=r['y']
+
+ # Match the renderer's half-metre fence samples and home-side smoothing.
+ src=np.asarray(data['fence'][0][0],dtype=float);pts=[];acc=0.
+ for a,b in zip(src,np.roll(src,-1,axis=0)):
+  L=np.linalg.norm(b-a)
+  if L<1e-8:continue
+  t=acc
+  while t<L:
+   pts.append(a+(b-a)*t/L);t+=.5
+  acc=max(0.,np.ceil((L-acc)/.5)*.5+acc-L)
+ raw=np.asarray(pts);smooth=raw.copy();N=len(raw)
+ for i,p in enumerate(raw):
+  phi=abs(np.degrees(np.arctan2(p[0],-p[1])))
+  weight=np.clip((55-(180-phi))/10,0,1)
+  if weight<=0:continue
+  ks=np.arange(-12,13);weights=13-np.abs(ks)
+  mean=np.average(raw[(i+ks)%N],axis=0,weights=weights)
+  smooth[i]=p+(mean-p)*weight
+ fence=Polygon(smooth).buffer(0);line=LineString([*smooth,smooth[0]])
+ footprints=geom(A['rows'])
+ gap=line.buffer(1.1).intersection(zone).difference(fence.buffer(-.02)).difference(footprints)
+ front=[];previous=None
+ for r in sorted(A['rows'],key=lambda r:r['r']):
+  first=previous is None or r['y']<previous-.05;previous=r['y']
+  if not first:continue
+  g=geom([r])
+  if not g.intersects(zone.buffer(2)):continue
+  angles=[np.arctan2(x,z+60) for p in pieces(g) for x,z in p.exterior.coords]
+  front.append((r['y'],min(angles),max(angles)))
+ front.sort(key=lambda q:(q[1]+q[2])/2)
+ # Carry the block/aisle boundaries straight across the missing floor.
+ # Nearest-distance bands make the change in tread height look serrated.
+ boundaries=[-np.pi/2]+[(a[2]+b[1])/2 for a,b in zip(front,front[1:])]+[np.pi/2]
+ for (y,_,_),a,b in zip(front,boundaries,boundaries[1:]):
+  arc=[(O+np.array([np.sin(t),np.cos(t)])*250).tolist() for t in np.linspace(a,b,12)]
+  patch=gap.intersection(Polygon([O.tolist()]+arc))
+  if not patch.is_empty:data['floors'].append({'y':y,'y0':0.,'polys':polys(patch),'backstopInfill':True})
+
 def finish(data):
  # The old A front extension was empty apron, not numbered seating. Recess
  # that unoccupied strip for the attached excite rear tread. Seat support
@@ -69,6 +125,7 @@ def finish(data):
   A=next(l for l in data['levels'] if l['name']=='A')
   for row in A['rows']:row['polys']=polys(geom([row]).difference(cut))
   A['rows']=[r for r in A['rows'] if r['polys']]
+ _backstop_floor(data)
  for c in data['pillars']:
   if c.get('vom') or c.get('aisle') or c['z']<-79:c.update(r=.4,rx=.3,rz=.4)
  room=data['rooms'];infield=geom([f for f in data['floors'] if abs(f['y']-10.6)<.02]).intersection(box(-150,-78,150,100))

@@ -196,11 +196,24 @@ def verify(path):
         assert np.max(np.abs((gs[ia,:2]/G['seatScale']-q.mean(0))@normal))<.045,'home rear rows are not collinear'
     assert not data.get('signs'),'column number plates remain'
     assert not any(abs(w[4]-13.3)<.02 and abs(w[5]-17.3)<.02 for w in data['rooms']['thinWalls']),'legacy jagged balcony end caps remain'
+    # The empty front treads beside the backstop must meet the lowest
+    # occupied tread in their block, rather than fall into a deep pocket.
+    al=np.frombuffer(base64.b64decode(A['labels']),'<i2').reshape(-1,3)
+    surfaces=[(r['y'],unary_union([Polygon(p[0],p[1:]) for p in r['polys']])) for r in A['rows']+data['floors'] if r['y']<3]
+    backstop=[]
+    for sign,blocks in [(-1,('A27','A29')),(1,('A23','A21'))]:
+        for x,z,b in [(8.2,20.65,blocks[0]),(9.2,21,blocks[0]),(10,21.3,blocks[0]),(15.7,17.2,blocks[1]),(16.2,17.5,blocks[1])]:
+            q=Point(x*sign,z);actual_top=max([y for y,g in surfaces if g.covers(q)] or [-1])
+            expected=min(A['hs'][s[2]] for s in aa[al[:,0]==names.index(b)])
+            assert abs(actual_top-expected)<.01,('backstop floor depression',b,x*sign,z,actual_top,expected)
+            backstop.append({'point':[x*sign,z],'height':actual_top,'block':b})
+    assert all(Polygon(p[0],p[1:]).is_valid for f in data['floors'] for p in f['polys']),'invalid floor infill'
     duplicates=[(block,row) for (block,row),nums in actual.items() if len(nums)!=len(set(nums))]
     result={'seats':totals,'exciteReview':excite_review,'pdfBlocks':len(real),'pdfRows':sum(len(b['rows']) for b in real.values()),
             'intervalMismatches':mismatches,'duplicateRows':duplicates,'invalidRows':invalid,
             'unsupportedSeats':unsupported,'overlappingSeats':near,'pillarSeatIntersections':shaft_hits,
             'concourses':[r['id'] for r in data.get('concourseRoutes',[])],
+            'filledBackstopFloor':backstop,
             'flights':len(data.get('flights',[]))+len(data.get('accessFlights',[]))}
     print(json.dumps(result,ensure_ascii=False,indent=2))
     assert not mismatches and not duplicates,'seat numbering mismatch'
