@@ -9,7 +9,7 @@ from shapely.strtree import STRtree
 from shapely.prepared import prep
 def _mp(polys): return unary_union([Polygon(p[0],p[1:]).buffer(0) for p in polys if len(p[0])>=3])
 def gaps(d,step=0.25,min_gap=0.3):
-    walls=list(d['rooms']['walls'])+list(d['rooms']['thinWalls'])
+    walls=list(d['rooms']['walls'])+list(d['rooms']['thinWalls'])+list(d['rooms'].get('ceilingWalls', []))
     for L in d['levels']: walls+=L['walls']
     WL=[LineString([(w[0],w[1]),(w[2],w[3])]) for w in walls]; WT=STRtree(WL)
     solids=[]
@@ -49,12 +49,13 @@ def gaps(d,step=0.25,min_gap=0.3):
                         if any(G_.contains(q) and y0<=y<=y1 for G_,y0,y1 in skip): continue
                         iv=[(walls[i][4],walls[i][5]) for i in WT.query(q.buffer(0.2)) if WL[i].distance(q)<0.2]
                         iv+=[(y0,y1) for y0,y1,G_ in solids if y1>y and y0<top and (G_.contains(pout) or G_.contains(q))]
-                        iv.sort(); cur=y+0.15; best=(0.0,None)
+                        iv.sort(); cur=y+0.15; limit=top-0.15; best=(0.0,None)
                         for lo,hi in iv:
+                            if lo>=limit: break
                             if lo>cur+0.05 and lo-cur>best[0]: best=(lo-cur,(cur,lo))
                             cur=max(cur,hi)
-                            if cur>=top-0.15: break
-                        if cur<top-0.15 and top-0.15-cur>best[0]: best=(top-0.15-cur,(cur,top-0.15))
+                            if cur>=limit: break
+                        if cur<limit and limit-cur>best[0]: best=(limit-cur,(cur,limit))
                         if best[0]>min_gap:
                             h=min(step,L_)/2
                             out.append({'y':y,'a':(p-u*h).tolist(),'b':(p+u*h).tolist(),'lo':best[1][0],'hi':best[1][1],'n':n.tolist()})

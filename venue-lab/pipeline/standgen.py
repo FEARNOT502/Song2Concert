@@ -517,16 +517,38 @@ def _chains(vals):
     if len(cur)>1: out.append(cur)
     return out
 
-def _emit(G,chains,out,inset=0.06):
+def _straighten_chain(points, tolerance):
+    """Fit straight plan runs while keeping the endpoints and the height samples."""
+    anchors=cv2.approxPolyDP(points.reshape(-1,1,2),tolerance,False)[:,0,:]
+    indices=[0]
+    for anchor in anchors[1:-1]:
+        matches=np.flatnonzero(np.all(points[indices[-1]+1:]==anchor,axis=1))
+        if len(matches):
+            indices.append(indices[-1]+1+matches[0])
+    indices.append(len(points)-1)
+    fitted=points.copy()
+    for i,j in zip(indices,indices[1:]):
+        a,b=points[i],points[j]
+        d=b-a
+        length2=d@d
+        if length2>1e-6:
+            t=np.clip((points[i:j+1]-a)@d/length2,0,1)
+            fitted[i:j+1]=a+t[:,None]*d
+    return fitted
+
+def _emit(G,chains,out,inset=0.06,straighten=0.0):
     """Chains of (point_px, lo, hi, inward_px) -> merged wall panels
     [x0,z0,x1,z1,lo,hi] whose front faces the room (see buildStands)."""
     for ch in chains:
         if len(ch)<2: continue
+        points=[p+nin*inset/G.res for p,_,_,nin in ch]
+        if straighten:
+            points=_straighten_chain(np.array(points,np.float32),straighten/G.res)
         segs=[]
-        for (p,lo,hi,nin),(q,lo2,hi2,nin2) in zip(ch[:-1],ch[1:]):
+        for p,q,(_,lo,hi,nin),(_,lo2,hi2,nin2) in zip(points,points[1:],ch,ch[1:]):
             l_=min(lo,lo2); h_=max(hi,hi2)
-            if h_-l_<0.05: continue
-            segs.append([p+nin*inset/G.res,q+nin2*inset/G.res,l_,h_,(nin+nin2)/2])
+            if h_-l_<0.05 or (straighten and np.hypot(*(q-p))*G.res<0.01): continue
+            segs.append([p,q,l_,h_,(nin+nin2)/2])
         # merge straight runs of equal height
         merged=[]
         for s in segs:
@@ -546,7 +568,7 @@ def _emit(G,chains,out,inset=0.06):
 
 DEBUG={}
 DOORLOG=[]
-def enclose(G, rooms, levels, slabs, flights, lamp_step=6.0, door_w=1.8, door_h=2.5, roof=None):
+def enclose(G, rooms, levels, slabs, flights, lamp_step=6.0, door_w=1.8, door_h=2.5, roof=None, separate_ceiling=False):
     """Close the concourses in. Each room: {'mask','y','cl','own':[Level],
     'doors':[(x,z)]}. The part of the room open to the bowl (inside the back of
     its own stands, with nothing over it) stays open; the rest gets a ceiling
@@ -558,9 +580,13 @@ def enclose(G, rooms, levels, slabs, flights, lamp_step=6.0, door_w=1.8, door_h=
     solids=[level_solid(l) for l in levels]+[(np.where(m,y0,np.nan).astype(np.float32),np.where(m,y1,np.nan).astype(np.float32)) for m,y0,y1 in slabs]
     gy,gx=np.mgrid[0:G.H,0:G.W]
     res={'walls':[],'thinWalls':[],'ceils':[],'lit':[],'lamps':[],'soffits':[]}
+    ceiling_edges=res.setdefault('ceilingWalls', []) if separate_ceiling else res['walls']
     roomtop_all=np.full((G.H,G.W),-np.inf,np.float32)
     for R_ in rooms:
         y=R_['y']; cl=R_.get('cl',3.8); Hk=y+cl; A=R_['mask'].copy()
+        wall_fit=R_.get('wall_fit',0.0)
+        ceiling_fit=R_.get('ceiling_fit',0.0)
+        ceiling_overlap=R_.get('ceiling_overlap',0.3)
         # what stands on the floor here, and what is overhead
         rise=np.full((G.H,G.W),-np.inf,np.float32); over=np.full((G.H,G.W),np.inf,np.float32); overtop=np.full((G.H,G.W),np.inf,np.float32)
         for bot,top in solids:
@@ -590,7 +616,7 @@ def enclose(G, rooms, levels, slabs, flights, lamp_step=6.0, door_w=1.8, door_h=
             nb=3600; bi=((th+np.pi)/(2*np.pi)*nb).astype(int)%nb
             on=l.hull>0; rb=np.zeros(nb); np.maximum.at(rb,bi[on],rr[on])
             inbowl|=(rb[bi]>0)&(rr<=rb[bi]+0.05)
-        low=A&(over<Hk+1.0)
+        low=A&(over<(Hk if separate_ceiling else Hk+1.0))
         # open: a gap in the room's own stands (a tunnel mouth, a walkway): no
         # rows of theirs over it, whatever higher tier overhangs it
         ownrows=np.zeros_like(A)
@@ -651,7 +677,7 @@ def enclose(G, rooms, levels, slabs, flights, lamp_step=6.0, door_w=1.8, door_h=
                                     break
                             vals.append(None if seg is None else (P[i],seg[0],seg[1],seg[2]))
                         ch+=_chains(vals)
-                _emit(G,ch,res['walls'],inset=0.03)
+                _emit(G,ch,ceiling_edges,inset=0.0 if separate_ceiling else 0.03,straighten=ceiling_fit)
         # doors, as points
         doors=np.array(R_.get('doors',[]),float).reshape(-1,2)
         def cls(px,py):
@@ -698,10 +724,10 @@ def enclose(G, rooms, levels, slabs, flights, lamp_step=6.0, door_w=1.8, door_h=
                     seg=None
                     if land[i]: seg=None
                     elif kind=='open':
-                        if ceil[ai]: seg=(y+door_h+0.2,Hk+0.3)       # a lintel over the way out to the bowl
+                        if ceil[ai]: seg=(y+door_h+0.2,Hk+ceiling_overlap)
                     elif kind in ('out','walk'):
                         lo=max(y,float(rise[bo])) if np.isfinite(rise[bo]) else y
-                        hi=top_a+(0.3 if ceil[ai] else 0.0)
+                        hi=top_a+(ceiling_overlap if ceil[ai] else 0.0)
                         ob=float(over[bo])
                         if lo<ob<hi: hi=ob
                         if isdoor[i] and abs(lo-y)<0.45: lo=max(lo,y+door_h)
@@ -744,8 +770,8 @@ def enclose(G, rooms, levels, slabs, flights, lamp_step=6.0, door_w=1.8, door_h=
                         mx,mz=(x0+x1)/2,(z0+z1)/2; cx_,cz_=f['x']+ux*L/2,f['z']+uz*L/2
                         if -(z1-z0)*(cx_-mx)+(x1-x0)*(cz_-mz)<0: x0,z0,x1,z1=x1,z1,x0,z0
                         res['thinWalls'].append([round(x0,2),round(z0,2),round(x1,2),round(z1,2),round(Hk-0.02,2),round(top,2)])
-        _emit(G,chains_wall,res['walls'])
-        _emit(G,chains_step,res['walls'],inset=0.0)
+        _emit(G,chains_wall,res['walls'],straighten=wall_fit)
+        _emit(G,chains_step,ceiling_edges,inset=0.0,straighten=ceiling_fit)
         # lights: a lattice over the enclosed floor, kept off the walls
         inner=cv2.erode(encl.astype(np.uint8),disk(1.0/G.res))>0
         dist=cv2.distanceTransform(encl.astype(np.uint8),cv2.DIST_L2,5)
@@ -1228,7 +1254,7 @@ def tunnels_out(tunnels):
              'deck': t['deck'], 'deckY': t['deckY'], 'closed': bool(t.get('closed')), 'covered': bool(t.get('covered')), 'sides': t.get('sides'),
              **{k: t[k] for k in ('T', 'sidesAsWalls') if k in t}} for t in tunnels]
 
-def front_parapet(G, l, front, eps=0.05, minlen=1.0, b0=0, within=None):
+def front_parapet(G, l, front, eps=0.05, minlen=1.0, b0=0, within=None, setback=0.0):
     """The parapet along a tier's front, traced whole: the front line (the
     depth's zero level) wherever the front row stands behind it, drawn as one
     run at one height (the front row's, plus `front[1]`), from `front[0]`
@@ -1236,7 +1262,8 @@ def front_parapet(G, l, front, eps=0.05, minlen=1.0, b0=0, within=None):
     piece off the raster's outline, which leaves it broken wherever the row
     behind a piece is not the front row, and stepped. `b0`, `within`: a
     section whose front row is row b0 (its rows numbered on from another's),
-    only within that mask."""
+    only within that mask. `setback` mounts a guard on the tread behind the
+    riser, clear of the raster edge."""
     from skimage import measure
     near = cv2.dilate((l.band == b0).astype(np.uint8), disk(0.6 / G.res)) > 0
     if within is not None: near &= within
@@ -1253,7 +1280,7 @@ def front_parapet(G, l, front, eps=0.05, minlen=1.0, b0=0, within=None):
     else: yb = float(front[0])
     yt = h + front[1]
     out = []
-    for c in measure.find_contours(f, 0.0, mask=msk):
+    for c in measure.find_contours(f, setback, mask=msk):
         if len(c) < 3: continue
         P = np.c_[c[:, 1] + x0_, c[:, 0] + y0_].astype(np.float32)
         closed = np.hypot(*(P[0] - P[-1])) < 1e-3
@@ -1265,6 +1292,22 @@ def front_parapet(G, l, front, eps=0.05, minlen=1.0, b0=0, within=None):
         for i in range(n):
             j = (i + 1) % len(q)
             out.append([round(float(X[i]), 2), round(float(Z[i]), 2), round(float(X[j]), 2), round(float(Z[j]), 2), round(yb, 2), round(yt, 2)])
+    return out
+
+def fit_guard_ends(guards, treads):
+    """Seat each guard's end posts on the finished front tread."""
+    from shapely.geometry import LineString, Point, Polygon
+    from shapely.ops import nearest_points, unary_union
+    tread=unary_union([Polygon(p[0],p[1:]).buffer(0) for p in treads]).buffer(0.015)
+    out=[]
+    for x0,z0,x1,z1,lo,hi in guards:
+        a,b=Point(x0,z0),Point(x1,z1)
+        if not (tread.covers(a) and tread.covers(b)):
+            support=LineString([a,b]).intersection(tread)
+            if support.is_empty: continue
+            a,b=nearest_points(a,support)[1],nearest_points(b,support)[1]
+        if a.distance(b)>=0.05:
+            out.append([round(a.x,2),round(a.y,2),round(b.x,2),round(b.y,2),lo,hi])
     return out
 
 def lay_seats(l, mask):

@@ -1006,11 +1006,13 @@ export function smoothRing(ring, { sig = 2.5, tol = 0.08 } = {}) {
 // A partition with thickness: the panel [x0, z0, x1, z1, ya0, ya1, yb0, yb1] (its bottom and top at each end)
 // as a solid box `T` thick towards its right (running x0,z0 -> x1,z1), a face each side, the top and the two ends
 // (every face its own flat normal).
-export function thickPanel(P, N, [x0, z0, x1, z1, ya0, ya1, yb0, yb1], T) {
+export function thickPanel(P, N, [x0, z0, x1, z1, ya0, ya1, yb0, yb1], T, joins = []) {
   const dx = x1 - x0, dz = z1 - z0, l = Math.hypot(dx, dz) || 1;
   const nx = (dz / l) * T, nz = (-dx / l) * T;
   const a0 = [x0, ya0, z0], a1 = [x0, ya1, z0], b0 = [x1, yb0, z1], b1 = [x1, yb1, z1];
-  const o = (v) => [v[0] + nx, v[1], v[2] + nz];
+  const [start, end] = joins;
+  const offset = (v, join = [nx, nz]) => [v[0] + join[0], v[1], v[2] + join[1]];
+  const aa0 = offset(a0, start), aa1 = offset(a1, start), bb0 = offset(b0, end), bb1 = offset(b1, end);
   const quad = (p, q, r, s_) => {
     // flat normal facing away from the box's middle (the outer face's normal is the panel's right, the inner its left)
     const e1 = [q[0] - p[0], q[1] - p[1], q[2] - p[2]], e2 = [s_[0] - p[0], s_[1] - p[1], s_[2] - p[2]];
@@ -1021,10 +1023,30 @@ export function thickPanel(P, N, [x0, z0, x1, z1, ya0, ya1, yb0, yb1], T) {
     for (const v of [p, q, r, p, r, s_]) { P.push(...v); N.push(n[0] / m, n[1] / m, n[2] / m); }
   };
   quad(a0, b0, b1, a1);                              // the face towards the pit
-  quad(o(a0), o(b0), o(b1), o(a1));                  // the outer face
-  quad(a1, b1, o(b1), o(a1));                        // the top
-  quad(a0, a1, o(a1), o(a0));                        // the ends
-  quad(b0, b1, o(b1), o(b0));
+  quad(aa0, bb0, bb1, aa1);                          // the outer face
+  quad(a1, b1, bb1, aa1);                            // the top
+  if (!start) quad(a0, a1, aa1, aa0);                // free ends
+  if (!end) quad(b0, b1, bb1, bb0);
+}
+
+function slopeWallJoins(walls) {
+  const key = (r, i) => r.slice(i, i + 2).concat(r.slice(4 + i, 6 + i), r[8], r[9]).join(',');
+  const ends = new Map(walls.map((r) => [key(r, 2), r]));
+  const joins = new Map();
+  const right = ([x0, z0, x1, z1]) => {
+    const l = Math.hypot(x1 - x0, z1 - z0);
+    return [(z1 - z0) / l, (x0 - x1) / l];
+  };
+  for (const r of walls) {
+    const k = key(r, 0), prev = ends.get(k);
+    if (!prev || prev === r) continue;
+    const [ax, az] = right(prev), [bx, bz] = right(r);
+    const d = 1 + ax * bx + az * bz;
+    if (d < 0.6) continue;
+    const t = (r[8] ?? 0.25) / d;
+    joins.set(k, [(ax + bx) * t, (az + bz) * t]);
+  }
+  return (r) => [joins.get(key(r, 0)), joins.get(key(r, 2))];
 }
 
 // A thin steel fence along a run [x0, z0, x1, z1, ya0, ya1, yb0, yb1] (its bottom and its top at each end, as `slopedRuns` lays
@@ -1058,6 +1080,22 @@ export function fenceRun(P, N, [x0, z0, x1, z1, ya0, ya1, yb0, yb1], { gap = 1.5
     beam([x, ya0 + (yb0 - ya0) * t - sink, z], [x, ya1 + (yb1 - ya1) * t, z], post, post);
   }
   for (const f of at) beam([x0, ya0 + (ya1 - ya0) * f, z0], [x1, yb0 + (yb1 - yb0) * f, z1], f > 0.9 ? post : bar, f > 0.9 ? 0.04 : bar);
+}
+
+function guardMesh(P, [x0, z0, x1, z1, ya0, ya1, yb0, yb1], bay) {
+  const dx = x1 - x0, dz = z1 - z0, length = Math.hypot(dx, dz);
+  const bays = Math.max(1, Math.ceil(length / bay));
+  const columns = bays * Math.max(1, Math.round(length / bays / 0.095));
+  const rows = Math.max(1, Math.round((ya1 - ya0) * 0.84 / 0.095));
+  for (let i = 1; i < columns; i++) {
+    const t = i / columns, x = x0 + dx * t, z = z0 + dz * t;
+    const base = ya0 + (yb0 - ya0) * t, height = ya1 + (yb1 - ya1) * t - base;
+    P.push(x, base + height * 0.13, z, x, base + height * 0.97, z);
+  }
+  for (let i = 1; i < rows; i++) {
+    const t = 0.13 + 0.84 * i / rows;
+    P.push(x0, ya0 + (ya1 - ya0) * t, z0, x1, yb0 + (yb1 - yb0) * t, z1);
+  }
 }
 
 // Thin vertical panels laid end to end (a rail, a wall round a curve) each
@@ -1103,17 +1141,36 @@ export function buildRooms(R, { ox, oz, shapeOf, structMat, wallMat, lit: M }) {
   // stands over the room) stays a sheet, as does `R.thinWalls`, the walls of
   // the narrow tunnels and the stairs' shafts.
   const T = R.thick ?? 0, MIN_THICK = 1.2;
+  const ceilingEdges = R.ceilingWalls;
   const runs = smoothRuns(R.walls, 0.1);
   const hk = (s) => `${Math.round(s[4] * 50)},${Math.round(s[5] * 50)}`;
   const pk = (x, z) => `${Math.round(x * 50)},${Math.round(z * 50)}`;
   const nOf = (s) => { const dx = s[2] - s[0], dz = s[3] - s[1], l = Math.hypot(dx, dz) || 1; return [-dz / l, dx / l]; };
   const starts = new Map(), ends = new Map();
-  runs.forEach((s) => { starts.set(`${hk(s)}|${pk(s[0], s[1])}`, s); ends.set(`${hk(s)}|${pk(s[2], s[3])}`, s); });
+  const returnsAtStart = new Map(), returnsAtEnd = new Map();
+  // The lining can step in height while the same wall continues in plan.
+  const addReturn = (map, key, s) => map.set(key, map.has(key) ? null : s);
+  for (const s of runs) {
+    const a = pk(s[0], s[1]), b = pk(s[2], s[3]);
+    starts.set(`${hk(s)}|${a}`, s);
+    ends.set(`${hk(s)}|${b}`, s);
+    if (ceilingEdges && s[5] - s[4] >= MIN_THICK) {
+      addReturn(returnsAtStart, a, s);
+      addReturn(returnsAtEnd, b, s);
+    }
+  }
+  const adjacent = (s, point, sameHeight, returns) => {
+    const exact = sameHeight.get(`${hk(s)}|${point}`);
+    if (exact) return exact;
+    const other = returns.get(point);
+    if (other && Math.min(s[5], other[5]) > Math.max(s[4], other[4])) return other;
+    return null;
+  };
   // the offset at a join: along the bisector, or null where there is no join to mitre (a free end, or a corner too sharp)
   const mitre = (n, o) => {
     if (!o) return null;
     const m = nOf(o), dot = n[0] * m[0] + n[1] * m[1];
-    if (dot < 0.2) return null;
+    if (dot < (ceilingEdges ? -0.4 : 0.2)) return null;
     const bx = n[0] + m[0], bz = n[1] + m[1], bl = Math.hypot(bx, bz) || 1, k = 1 / Math.max(0.5, (bx / bl) * n[0] + (bz / bl) * n[1]);
     return [(bx / bl) * k, (bz / bl) * k];
   };
@@ -1124,14 +1181,24 @@ export function buildRooms(R, { ox, oz, shapeOf, structMat, wallMat, lit: M }) {
       quad(outP, outN, x1, z1, x0, z0, y0, y1);
       continue;
     }
-    const n = nOf(s), h = hk(s);
-    const m0 = mitre(n, ends.get(`${h}|${pk(x0, z0)}`)), m1 = mitre(n, starts.get(`${h}|${pk(x1, z1)}`));
+    const n = nOf(s);
+    const previous = adjacent(s, pk(x0, z0), ends, returnsAtEnd);
+    const next = adjacent(s, pk(x1, z1), starts, returnsAtStart);
+    const m0 = mitre(n, previous), m1 = mitre(n, next);
     const [ax, az] = m0 ?? n, [bx, bz] = m1 ?? n;
     const ix0 = x0 + ax * T, iz0 = z0 + az * T, ix1 = x1 + bx * T, iz1 = z1 + bz * T;
     quad(inP, inN, ix0, iz0, ix1, iz1, y0, y1);
     quad(outP, outN, x1, z1, x0, z0, y0, y1);
-    if (!m0) quad(inP, inN, x0, z0, ix0, iz0, y0, y1);
-    if (!m1) quad(inP, inN, ix1, iz1, x1, z1, y0, y1);
+    const jamb = (x, z, ix, iz, joined) => {
+      if (!joined) {
+        quad(inP, inN, x, z, ix, iz, y0, y1);
+        return;
+      }
+      if (ceilingEdges && joined[4] > y0) quad(inP, inN, x, z, ix, iz, y0, joined[4]);
+      if (ceilingEdges && joined[5] < y1) quad(inP, inN, x, z, ix, iz, joined[5], y1);
+    };
+    jamb(x0, z0, ix0, iz0, m0 && previous);
+    jamb(ix1, iz1, x1, z1, m1 && next);
     const A = [x0, z0], B = [x1, z1], C = [ix1, iz1], D = [ix0, iz0];
     cap(outP, outN, A, B, C, D, y1, 1);
     cap(inP, inN, A, B, C, D, y0, -1);
@@ -1141,7 +1208,23 @@ export function buildRooms(R, { ox, oz, shapeOf, structMat, wallMat, lit: M }) {
     quad(outP, outN, x1, z1, x0, z0, y0, y1);
   }
   const mk = (P, N) => { const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(N.length === P.length && N !== P ? weldNormals(P, N) : N, 3)); return geo; };
-  if (inP.length) { g.add(new THREE.Mesh(mk(inP, inN), inMat)); g.add(new THREE.Mesh(mk(outP, outN), outMat)); }
+  if (inP.length) {
+    const inside = new THREE.Mesh(mk(inP, inN), inMat);
+    const outside = new THREE.Mesh(mk(outP, outN), outMat);
+    inside.name = 'Concourse interior walls';
+    outside.name = 'Concourse exterior walls';
+    g.add(inside, outside);
+  }
+  if (ceilingEdges?.length) {
+    const P = [], N = [];
+    for (const [x0, z0, x1, z1, y0, y1] of smoothRuns(ceilingEdges, 0.1)) {
+      quad(P, N, x0, z0, x1, z1, y0, y1);
+      quad(P, N, x1, z1, x0, z0, y0, y1);
+    }
+    const lining = new THREE.Mesh(mk(P, N), ceilMat);
+    lining.name = 'Concourse ceiling risers';
+    g.add(lining);
+  }
   // horizontal sheets, facing up or down
   const sheet = (polys, y, down) => {
     const geo = new THREE.ShapeGeometry(shapeOf(polys), 1);
@@ -1158,7 +1241,12 @@ export function buildRooms(R, { ox, oz, shapeOf, structMat, wallMat, lit: M }) {
   for (const c of R.ceils) for (const polys of c.polys) { under.push(sheet(polys, c.y, true)); over.push(sheet(polys, c.y + 0.02, false)); }
   for (const s of R.soffits) for (const polys of s.polys) under.push(sheet(polys, s.y, true));
   for (const f of R.lit) for (const polys of f.polys) litF.push(sheet(polys, f.y + 0.012, false));
-  if (under.length) { const m = new THREE.Mesh(mergeGeometries(under), ceilMat); m.userData.noCollide = true; g.add(m); }
+  if (under.length) {
+    const m = new THREE.Mesh(mergeGeometries(under), ceilMat);
+    m.name = 'Concourse ceilings';
+    m.userData.noCollide = true;
+    g.add(m);
+  }
   if (over.length) { const m = new THREE.Mesh(mergeGeometries(over), structMat); m.userData.noCollide = true; g.add(m); }
   if (litF.length) { const m = new THREE.Mesh(mergeGeometries(litF), floorLit); m.receiveShadow = true; g.add(m); }
   // the lights: long fittings, along the way
@@ -1450,7 +1538,7 @@ export function buildStands(data, {
 
   const people = [], aisleLights = [], seatSpots = [];
   const levelBlocks = [];
-  const fenceP = [], fenceN = [];
+  const fenceP = [], fenceN = [], guardP = [], guardN = [], guardWire = [];
   const solid = [], floors = [], stairs = [], mouthFloors = [];
   const voms = { pit: [], cap: [], tunnel: [], floor: [], ceil: [], lamps: [], signs: [] };
   for (const L of data.levels) {
@@ -1483,6 +1571,16 @@ export function buildStands(data, {
       const p = vomParts(v, ox, oz, !!data.structureRevision);
       voms.pit.push(...p.pit); voms.cap.push(...p.cap); voms.tunnel.push(...p.tunnel);
       voms.floor.push(...p.floor); voms.ceil.push(...p.ceil); voms.lamps.push(...p.lamps); voms.signs.push(...p.signs);
+      if (v.handrails && v.wall) {
+        const [ux, uz] = v.u, length = v.L - 0.35;
+        const { t0, t1 } = v.wall;
+        for (const side of [-1, 1]) {
+          const s = side * (v.w / 2 - 0.175);
+          const x = v.p[0] + ox - uz * s, z = v.p[1] + oz + ux * s;
+          fenceRun(fenceP, fenceN, [x, z, x + ux * length, z + uz * length, t0 + 0.06, t0 + 0.28, t1 + 0.06, t1 + 0.28],
+            { gap: 1.25, post: 0.039, sink: 0.07, at: [0.98] });
+        }
+      }
     }
     // a level can have its own front (a VIP balcony's dark mesh), and the
     // low partitions between its boxes
@@ -1496,6 +1594,12 @@ export function buildStands(data, {
     }
     // thin steel fences (the end faces of a floor corner's funnel): posts and bars, see-through
     for (const [x0, z0, x1, z1, ya0, ya1, yb0, yb1] of slopedRuns(L.fences ?? [])) fenceRun(fenceP, fenceN, [x0 + ox, z0 + oz, x1 + ox, z1 + oz, ya0, ya1, yb0, yb1]);
+    const bay = 1.45;
+    for (const [x0, z0, x1, z1, y0, y1, end0 = y0, end1 = y1] of L.frontGuards ?? []) {
+      const run = [x0 + ox, z0 + oz, x1 + ox, z1 + oz, y0, y1, end0, end1];
+      fenceRun(guardP, guardN, run, { gap: bay, post: 0.042, bar: 0.027, sink: 0.07, at: [0.13, 0.97] });
+      guardMesh(guardWire, run, bay);
+    }
     if ((own || frontMat) && panels.own[0].length) { g.add(new THREE.Mesh(mkPanels(panels.own), own ?? frontMat)); panels.own = [[], []]; }
     // the partitions beside a gate's pit and its stairs' cuts: solid, `gateRailT` thick
     if (L.gateRails?.length) {
@@ -1517,9 +1621,10 @@ export function buildStands(data, {
     // face square across it ('front': in the level's front finish), a funnel's side over its stepped rows ('struct')
     if (L.slopeWalls?.length) {
       const by = { front: [[], []], struct: [[], []] };
+      const wallJoins = slopeWallJoins(L.slopeWalls);
       for (const r of L.slopeWalls) {
         const k = r[9] === 'front' && frontMat ? 'front' : 'struct';
-        thickPanel(by[k][0], by[k][1], [r[0] + ox, r[1] + oz, r[2] + ox, r[3] + oz, r[4], r[5], r[6], r[7]], r[8] ?? 0.25);
+        thickPanel(by[k][0], by[k][1], [r[0] + ox, r[1] + oz, r[2] + ox, r[3] + oz, r[4], r[5], r[6], r[7]], r[8] ?? 0.25, wallJoins(r));
       }
       for (const [k, [sp, sn]] of Object.entries(by)) {
         if (!sp.length) continue;
@@ -1634,12 +1739,21 @@ export function buildStands(data, {
   }
   if (panels.wall[0].length) g.add(new THREE.Mesh(mkPanels(panels.wall), wallMat));
   if (panels.rail[0].length) g.add(new THREE.Mesh(mkPanels(panels.rail), railMat));
-  if (fenceP.length) {
+  for (const [positions, normals, material] of [[fenceP, fenceN, materials.fence], [guardP, guardN, materials.frontGuard]]) {
+    if (!positions.length) continue;
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(fenceP, 3));
-    geo.setAttribute('normal', new THREE.Float32BufferAttribute(fenceN, 3));
-    // (thin steel: a venue's own colour, materials.fence, else the rails')
-    const m = new THREE.Mesh(geo, materials.fence ?? railMat); m.receiveShadow = true; g.add(m);
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    const m = new THREE.Mesh(geo, material ?? railMat); m.receiveShadow = true; g.add(m);
+  }
+  if (guardWire.length) {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(guardWire, 3));
+    const wire = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({
+      color: materials.frontGuard?.color ?? railMat.color, transparent: true, opacity: 0.48, depthWrite: false,
+    }));
+    wire.userData.noCollide = true;
+    g.add(wire);
   }
   if (panels.mouth[0].length) g.add(new THREE.Mesh(mkPanels(panels.mouth), lit.mouthMat));
   if (data.rooms) g.add(buildRooms(data.rooms, { ox, oz, shapeOf, structMat, wallMat, lit }));

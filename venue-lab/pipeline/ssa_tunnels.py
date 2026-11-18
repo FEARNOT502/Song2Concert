@@ -316,7 +316,7 @@ def corner_funnels(G, l, trenches, corners, clear=0.3, shift_max=1.0, band=1.6, 
         norm = [ln['n'] for ln in ring]
         nr = len(rear)                                                             # (the back face: between the rear's last and the fan's)
         out.append({'name': t['name'], 'poly': np.array(poly), 'path': path, 'normals': norm, 'mask': mask, 'cut': cut, 'pocket': pocket, 'zone': zone > 0, 'a_back': a_back,
-                    'back_seg': (np.array(V[nr - 1]), np.array(V[nr])), 'back_n': np.array(axis['n']),
+                    'back_idx': nr, 'back_seg': (np.array(V[nr - 1]), np.array(V[nr])), 'back_n': np.array(axis['n']),
                     'shifts': [round(s_, 2) for s_ in shifts]})
     return out
 
@@ -348,12 +348,14 @@ def funnel_fences(G, l, f, floor=None, height=1.1, ds=0.25, depths=(0.15, 0.3, 0
     return segs
 
 
-def clip_rows(rows, polys):
+def clip_rows(rows, polys, clearance=0.0):
     """The rows' outlines (`Level.rows_out`) with the funnels' open floor (`polys`: their outlines) taken out: the stand's edge there
     is the face's own straight line, not the raster's steps."""
     from shapely.geometry import Polygon
     from shapely.ops import unary_union
     hole = unary_union([Polygon(p) for p in polys])
+    if clearance:
+        hole = hole.buffer(clearance, join_style='mitre')
     rd = lambda c: [[round(float(x), 2), round(float(z), 2)] for x, z in c]
     out = []
     for r in rows:

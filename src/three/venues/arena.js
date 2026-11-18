@@ -15,6 +15,7 @@ import { ampStack, chainInto, drumKit, guitar, hoists, keyboardRig, ledScreen, m
 import { bigCrowd, bigScreens, crossThrust, fixtureRow, flashOnCrowd, flashUnits, floorBlocks, floorChairs, fohPosition, fromRow, maskingDrapes, packFloor, paCorner, paHang, paPair, runBlinders, runShow, runStrobes, screenHang, stageRing, stageSet, subLine, thinRow, wallStrip } from '../show.js';
 import { buildStands, decodeSeats } from '../stands.js';
 import { SSA_STANDS } from './ssa-data.js';
+import { arenaAcousticWalls, arenaCeiling, arenaFloor, arenaLounge, arenaMovingBlockJoint } from './arena-interior.js';
 
 export function buildArena(ctx) {
   return ctx.mode === '360' ? arenaRound(ctx) : arenaEnd(ctx);
@@ -109,62 +110,29 @@ function arenaRoom(ctx, { stage, sold }) {
     },
     sectorMin: 0.2, sectorWhole: 0.12, round: ctx.mode === '360',
     offset: V3(0, 0, OZ), stage, seed: 200, roofY: H,
-    // The finishes as the arena's own photograph shows them (house lights
-    // up; its whites burnt out, so a little under them), all matt: light grey concrete, new and even; blue-grey seats, the 300
-    // level's wine red; the aisles' steps white, the thin steel yellow; every
-    // level's front (the fascia facing the floor and the parapet on it) a
-    // white panel band; the vomitories' door frames green.
+    // The house-light photographs show grey concrete, blue-grey seats, wine-red
+    // seats at level 300, yellow aisle handrails and green door frames.
     concreteTone: 0.38, concreteEven: 0.6,
     seatColors: { 200: 0x30343e, 300: 0x7a2b35, 400: 0x30343e, 500: 0x30343e, '300S': 0x2a1d17 },
     materials: {
       struct: matt(0xffffff, { ...withRepeat(concreteTex({ key: 'ssaconc', tone: 0.38, even: 0.6 }), 1 / 3, 1 / 3), roughnessMap: null, roughness: 1 }),
       step: matt(0x828381),
-      // (the rails here are solid: parapets, the aisles' cheeks, the bowls' walls; the yellow is the thin steel's)
       rail: matt(0x9d9d9a, { side: THREE.DoubleSide }),
       fence: std({ color: 0xc29a2e, roughness: 0.5, metalness: 0.3, side: THREE.DoubleSide }),
+      frontGuard: std({ color: 0x303436, roughness: 0.72, metalness: 0.2, side: THREE.DoubleSide }),
       wall: matt(0x8a8c92, { side: THREE.DoubleSide }),
+      interior: matt(0x928e86, { emissive: 0x76726b, emissiveIntensity: 0.52 }),
+      ceiling: matt(0x48494b, { emissive: 0x454647, emissiveIntensity: 0.43 }),
       doorFrame: std({ color: 0x3f6b53, roughness: 0.6, metalness: 0.1 }),
       levelFront: Object.fromEntries(['200', '300', '400', '500'].map((lv) => [lv, FRONT])),
       // the suites' balconies behind glass
       // (a soft sheen, not a mirror: glossy, the ceiling's downlights stood in it as two suns)
-      levelRail: { '300S': new THREE.MeshPhysicalMaterial({ color: 0xa8bcc6, roughness: 0.35, metalness: 0, specularIntensity: 0.4, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false }) },
+      levelRail: { '300S': new THREE.MeshPhysicalMaterial({ color: 0x8b9aa2, roughness: 0.28, metalness: 0.02, specularIntensity: 0.52, transparent: true, opacity: 0.38, side: THREE.DoubleSide, depthWrite: false }) },
     },
     crowd: !!q.crowd,
     sold,
   });
   root.add(stands.group);
-
-  // ── the 300 level's ends ──
-  // Each three-row balcony stops short of the corners. The data has the
-  // partitions between its boxes but nothing at its two ends, so the last
-  // seats stood open to the void over the 200s. A wall closes each end, along
-  // the end of its rows from the front rail back into the rear wall, from the
-  // balcony's floor up to the 400 level's underside.
-  {
-    const L3 = SSA_STANDS.levels.find((l) => l.name === '300');
-    const L4 = SSA_STANDS.levels.find((l) => l.name === '400');
-    const bot = L3.rows[0].y0, top = L4.rows[0].y0, T = 0.25;
-    const walls = [];
-    for (const zs of [-1, 1]) for (const xs of [-1, 1]) {
-      const pts = [];
-      for (const r of L3.rows) for (const p of r.polys) for (const [x, z] of p[0]) if (Math.sign(x) === xs && Math.sign(z) === zs) pts.push([x, z]);
-      const mx = Math.max(...pts.map(([x]) => Math.abs(x)));
-      const end = pts.filter(([x]) => Math.abs(x) > mx - 1.2).sort((a, b) => Math.abs(a[1]) - Math.abs(b[1]));
-      const [f, b] = [end[0], end[end.length - 1]];
-      // along the end, a little past the front rail and on into the rear wall;
-      // set out by half its thickness, so its inner face is the end of the rows
-      const dx = b[0] - f[0], dz = b[1] - f[1], len = Math.hypot(dx, dz), ux = dx / len, uz = dz / len;
-      // the side away from the seats: the normal that points out along x
-      const k = Math.sign(uz) === xs ? 1 : -1, nx = uz * k, nz = -ux * k;
-      const cx = (f[0] + b[0]) / 2 + nx * T / 2 + ux * 0.1, cz = (f[1] + b[1]) / 2 + nz * T / 2 + uz * 0.1;
-      const g = new THREE.BoxGeometry(T, top - bot, len + 0.6);
-      g.rotateY(Math.atan2(dx, dz)); g.translate(cx, (bot + top) / 2, cz + OZ);
-      walls.push(g.toNonIndexed());
-    }
-    const wm = new THREE.Mesh(mergeGeometries(walls), std({ color: 0x2c2d31, roughness: 0.75 }));
-    wm.receiveShadow = true; wm.castShadow = true;
-    root.add(wm);
-  }
 
   // ── the suites on the 3rd floor, along the left side ──
   // behind the 200s' back: a row of rooms, each behind a glass front with its
@@ -174,11 +142,18 @@ function arenaRoom(ctx, { stage, sold }) {
   // 200 concourse at each end (the data's flights and floor)
   const SU = SSA_STANDS.suites;
   if (SU) {
-    const g = [], glassG = [], lit = [], ox = 0, oz = OZ;
-    const box = (out, x0, x1, y0, y1, z0, z1) => { const b = new THREE.BoxGeometry(Math.abs(x1 - x0), y1 - y0, Math.abs(z1 - z0)); b.translate((x0 + x1) / 2 + ox, (y0 + y1) / 2, (z0 + z1) / 2 + oz); out.push(b.toNonIndexed()); };
+    const g = [], glassG = [], lit = [], trim = [], fascia = [];
+    const box = (out, x0, x1, y0, y1, z0, z1) => {
+      if (y1 - y0 < 0.001 || Math.abs(z1 - z0) < 0.001) return;
+      const b = new THREE.BoxGeometry(Math.abs(x1 - x0), y1 - y0, Math.abs(z1 - z0));
+      b.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2 + OZ);
+      out.push(b.toNonIndexed());
+      b.dispose();
+    };
     const z0 = SU.boxes[0][0], z1 = SU.boxes[SU.boxes.length - 1][1];
     const zc = SU.boxes.map((b) => (b[0] + b[1]) / 2);       // each room's door, at its middle
     const dw = SU.doorW / 2, dh = SU.doorH;
+    const yFront = SSA_STANDS.levels.find((l) => l.name === '300S').h0, railY = yFront + 1.1;
     // a wall across x from y0 to y1 along z0..z1, with the doors' openings (from `sill` up, `dh` high) left in it
     const wall = (out, xa, xb, y0, y1, sill) => {
       let z = z0 - 0.3;
@@ -197,10 +172,22 @@ function arenaRoom(ctx, { stage, sold }) {
     box(g, SU.xc0 - 0.25, SU.xc0, SU.y - 0.45, SU.yc + 0.5, z0 - 0.3, z1 + 0.3);   // the corridor's outer wall
     for (const zz of [z0, ...SU.boxes.map((b) => b[1])]) box(g, SU.xr, SU.xg, SU.y, SU.yc, zz - 0.1, zz + 0.1);   // walls between the rooms
     for (const [za, zb] of [[z0 - 0.3, z0], [z1, z1 + 0.3]]) box(g, SU.xr - 0.3, SU.xf, SU.y - 0.45, SU.yc + 0.5, za, zb);   // the run's ends
-    // the glass fronts (a door to each balcony), their mullions, the lit back wall of each room, the corridor's lamps
+    // Continuous concrete fascia and dark rail profiles under the house lights.
+    box(fascia, SU.xf - 0.025, SU.xf + 0.055, yFront - 0.45, yFront + 0.035, z0, z1);
+    box(fascia, SU.xf - 0.16, SU.xf + 0.035, SU.yc - 0.13, SU.yc + 0.23, z0, z1);
+    for (const y of [yFront + 0.04, railY]) box(trim, SU.xf - 0.088, SU.xf - 0.012, y - 0.03, y + 0.03, z0, z1);
     wall(glassG, SU.xg - 0.02, SU.xg + 0.02, SU.y, SU.yc, SU.y);
     for (const [za, zb, n] of SU.boxes) {
       const c = (za + zb) / 2, m = n > 8 ? 4 : 3;
+      box(trim, SU.xg - 0.05, SU.xg + 0.05, SU.y + dh, SU.y + dh + 0.055, c - dw, c + dw);
+      for (const z of [c - dw, c + dw]) box(trim, SU.xg - 0.06, SU.xg + 0.06, SU.y, SU.yc, z - 0.025, z + 0.025);
+      for (const [a, b] of [[za, c - dw], [c + dw, zb]]) {
+        box(trim, SU.xg - 0.045, SU.xg + 0.045, SU.y, SU.y + 0.18, a, b);
+      }
+      box(trim, SU.xg - 0.055, SU.xg + 0.055, SU.yc - 0.11, SU.yc, za, zb);
+      for (const z of [za, c]) {
+        box(trim, SU.xf - 0.084, SU.xf - 0.015, yFront, railY, z - 0.025, z + 0.025);
+      }
       for (let k = 1; k < m; k++) {
         const zz = za + (zb - za) * k / m;
         if (Math.abs(zz - c) < dw + 0.15) continue;
@@ -208,51 +195,41 @@ function arenaRoom(ctx, { stage, sold }) {
       }
       box(lit, SU.xr + 0.02, SU.xr + 0.06, SU.y + 0.4, SU.yc - 0.3, za + 0.3, c - dw - 0.2);
       box(lit, SU.xr + 0.02, SU.xr + 0.06, SU.y + 0.4, SU.yc - 0.3, c + dw + 0.2, zb - 0.3);
+      box(lit, SU.xg + 0.48, SU.xg + 0.70, SU.yc - 0.058, SU.yc, c - 0.12, c + 0.12);
     }
+    box(trim, SU.xf - 0.084, SU.xf - 0.015, yFront, railY, z1 - 0.025, z1 + 0.025);
     for (let z = z0 + 3; z < z1 - 2; z += 6) box(lit, SU.xc0 + 0.5, SU.xc1 - 0.5, SU.yc - 0.04, SU.yc, z - 0.6, z + 0.6);
     for (const c of zc) box(lit, SU.xc1 - 0.05, SU.xc1, SU.y + dh + 0.1, SU.y + dh + 0.3, c - dw, c + dw);   // a lit panel over each room's door
-    root.add(new THREE.Mesh(mergeGeometries(g), std({ color: 0x2c2d31, roughness: 0.7 })));
-    root.add(new THREE.Mesh(mergeGeometries(glassG), new THREE.MeshPhysicalMaterial({ color: 0x3e4c55, roughness: 0.35, metalness: 0, specularIntensity: 0.4, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false })));
-    root.add(new THREE.Mesh(mergeGeometries(lit), std({ color: 0x1a1612, emissive: 0xc79a6a, emissiveIntensity: 0.35 })));
+    for (const [name, parts, material] of [
+      ['Suite structure', g, matt(0x3c3a36)],
+      ['Suite concrete fascia', fascia, FRONT],
+      ['Suite mullions and rail caps', trim, std({ color: 0x303439, roughness: 0.53, metalness: 0.21 })],
+      ['Suite glazing', glassG, new THREE.MeshPhysicalMaterial({ color: 0x495861, roughness: 0.31, specularIntensity: 0.62, transparent: true, opacity: 0.67, side: THREE.DoubleSide, depthWrite: false })],
+      ['Suite interior lighting', lit, std({ color: 0x241d15, emissive: 0xc79a6a, emissiveIntensity: 0.35 })],
+    ]) {
+      const mesh = new THREE.Mesh(mergeGeometries(parts), material);
+      mesh.name = name;
+      root.add(mesh);
+      for (const part of parts) part.dispose();
+    }
   }
 
-  // ── the building: floor, roof and its steel ──
   const X0 = -76, X1 = 76, Z0 = OZ - 70, Z1 = OZ + 70;
-  // (covered for a concert: dark grey sheets over the concrete)
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(X1 - X0, Z1 - Z0), std({ ...withRepeat(concreteTex({ key: 'arenafloor', tone: 0.1, even: 0.8 }), (X1 - X0) / 4, (Z1 - Z0) / 4), color: 0x55575c, roughness: 0.92 }));
-  floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, (Z0 + Z1) / 2); floor.receiveShadow = true;
-  root.add(floor);
-  // The ceiling: the arena's movable one, lowered for arena mode to about
-  // 30 m over the floor (43 m in stadium mode). It is in panels, each raised
-  // and lowered on its own, with the hooks the shows rig from along the seams
-  // between them; the dark void over the seams, the downlights in the panels.
-  const roofPlane = new THREE.Mesh(new THREE.PlaneGeometry(X1 - X0, Z1 - Z0), std({ color: 0x08080a, roughness: 0.95, side: THREE.DoubleSide }));
-  roofPlane.rotation.x = Math.PI / 2; roofPlane.position.set(0, H + 3, (Z0 + Z1) / 2); root.add(roofPlane);
-  const roofParts = [], hooks = [];
-  const PX = 8, PZ = 8, GAP = 0.8;
-  for (let i = 0; i < PX; i++) for (let j = 0; j < PZ; j++) {
-    const x0 = X0 + (X1 - X0) * i / PX, x1 = X0 + (X1 - X0) * (i + 1) / PX, z0 = Z0 + (Z1 - Z0) * j / PZ, z1 = Z0 + (Z1 - Z0) * (j + 1) / PZ;
-    const b = new THREE.BoxGeometry(x1 - x0 - GAP, 0.5, z1 - z0 - GAP); b.translate((x0 + x1) / 2, H + 0.25, (z0 + z1) / 2); roofParts.push(b.toNonIndexed());
-  }
-  for (let i = 1; i < PX; i++) for (let j = 0; j <= PZ * 3; j++) {
-    const x = X0 + (X1 - X0) * i / PX, z = Z0 + (Z1 - Z0) * j / (PZ * 3);
-    const b = new THREE.BoxGeometry(0.25, 0.7, 0.25); b.translate(x, H - 0.1, z); hooks.push(b.toNonIndexed());
-  }
-  const roofSlab = new THREE.Mesh(mergeGeometries(roofParts), std({ color: 0x1a1b1f, roughness: 0.85 }));
-  roofSlab.userData.beamStop = true; root.add(roofSlab);
-  root.add(new THREE.Mesh(mergeGeometries(hooks), std({ color: 0x2a2c32, metalness: 0.6, roughness: 0.5 })));
-  // the downlights in the ceiling's panels, in rows over the floor and stands
-  const houseFix = [];
-  for (let z = Z0 + 8; z <= Z1 - 6; z += 9) for (let x = -63; x <= 63; x += 9) {
-    houseFix.push(pipe.flares.add(V3(x, H - 0.05, z), KELVIN(4200), 0.9, 0));
-  }
+  const envelope = { x0: X0, x1: X1, z0: Z0, z1: Z1, oz: OZ, y: H };
+  arenaFloor(root, SSA_STANDS.tunnels, envelope);
+  const ceiling = arenaCeiling(root, pipe, envelope);
+  const houseFix = ceiling.lights;
+  houseFix.push(...arenaAcousticWalls(root, SSA_STANDS.rooms.acousticWalls, SSA_STANDS.frames, OZ, pipe));
+  arenaMovingBlockJoint(root, SSA_STANDS.rooms.walls, OZ, H);
+  const updateLounge = arenaLounge(root, OZ, SU.y);
+  const updateInterior = (house) => { ceiling.update(house); updateLounge(house); };
   const house = [];
   // the house lights: the ceiling's downlights, shining down, not onto it
   for (const [x, z] of [[-24, 20], [24, 20], [-24, 60], [24, 60], [0, 40], [0, 80]]) {
     const l = new THREE.SpotLight(KELVIN(4200), 0, 140, 1.4, 0.3, 2); l.position.set(x, H - 0.6, z); l.target.position.set(x, 0, z);
     l.userData.offWhenDark = 'house'; root.add(l, l.target); house.push(l);
   }
-  return { root, stands, H, OZ, X0, X1, Z0, Z1, houseFix, house };
+  return { root, stands, H, OZ, X0, X1, Z0, Z1, houseFix, house, updateInterior };
 }
 
 // The end stage (GENERAL): the set at the north end, masking behind it, a
@@ -269,7 +246,7 @@ function arenaEnd(ctx) {
   const { MZ, MX, SX, SZF } = END_MASK;
 
   // nobody behind the masking
-  const { root, stands, H, OZ, X0, X1, Z0, Z1, houseFix, house } = arenaRoom(ctx, { stage: STAGE, sold: arenaEndSold });
+  const { root, stands, H, OZ, X0, X1, Z0, Z1, houseFix, house, updateInterior } = arenaRoom(ctx, { stage: STAGE, sold: arenaEndSold });
   // the set stands on the deck; the building's stands carry on round it
   stageSet(root, { w: 30, h: 17, z: 1.8 + SZ, deck: DECK, towerX: 15.8, backdropW: 32, backdropH: 16, wingX: 18.5, wingW: 6, wingH: 11 });
   // masking across the building behind the stage, wall to wall and floor to
@@ -440,6 +417,7 @@ function arenaEnd(ctx) {
     envIntensity: 0.6,
     update(f) {
       stands.update(f);
+      updateInterior(f.house);
       const show = 1 - f.house;
       runShow(rig, spots, f, { house: V3(0, 1, 42), stage: STAGE, span: 34 });
       runShow(rig, beams, f, { house: V3(0, 12, 60), stage: STAGE, span: 44 });
@@ -475,7 +453,7 @@ function arenaRound(ctx) {
   const OZ = 45;
   const C = V3(0, DECK, OZ);                    // the stage's middle: the floor's
   const SW = 10, SD = 40;                       // the stage, its long side down the room
-  const { root, stands, H, X0, X1, Z0, Z1, houseFix, house } = arenaRoom(ctx, { stage: C, sold: () => true });
+  const { root, stands, H, X0, X1, Z0, Z1, houseFix, house, updateInterior } = arenaRoom(ctx, { stage: C, sold: () => true });
   // FOH, and the listener there: out on the floor to the south
   const eye = V3(0, 1.6 + 0.9, OZ + 34);
 
@@ -639,6 +617,7 @@ function arenaRound(ctx) {
     envIntensity: 0.6,
     update(f) {
       stands.update(f);
+      updateInterior(f.house);
       const show = 1 - f.house;
       for (const sd of sides) {
         runShow(rig, sd.spots, f, { house: sd.low, stage: C, span: 30 });
