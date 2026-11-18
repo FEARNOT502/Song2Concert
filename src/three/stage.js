@@ -105,8 +105,6 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     const on = fx && strain < 2;
     pipe.bloom.enabled = on && pipe.q.bloom;
     pipe.volOn = on;
-    pipe.setTaa(on);
-    pipe.aoOn = on;
   }
 
   // ── venue ──────────────────────────────────────────────────────────────────
@@ -153,7 +151,6 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     envRT?.dispose(); envRT = null;
     pipe.beams.clear(); pipe.haze.clear(); pipe.flares.clear(); pipe.mask.clear();
     pipe.scene.remove(pipe.flares.mesh);
-    pipe.taa.reset();
     pointMats = []; lightMats = []; fogMats = []; dimLights = [];
   }
 

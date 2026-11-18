@@ -344,78 +344,9 @@ export class ScreenMask {
 // composite → bloom → lens + tone → screen (no film grain: it read as noise)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// the i-th term of the Halton sequence in base b (0..1): TAA's jitter
-function halton(i, b) {
-  let f = 1, r = 0;
-  while (i > 0) { f /= b; r += f * (i % b); i = Math.floor(i / b); }
-  return r;
-}
-
 export const QUALITY = {
-  // taa: temporal anti-aliasing (TAAPass; the scene is then drawn without
-  // MSAA, the jitter does its work); ao: screen-space ambient occlusion
-  high: { dpr: 3, msaa: 4, vol: 0.5, steps: 12, shadows: true, shadowSize: 2048, crowd: 1, rig: 1, bloom: true, grain: false, taa: true, ao: true },
-  low: { dpr: 1, msaa: 0, vol: 0.33, steps: 6, shadows: false, shadowSize: 512, crowd: 0.4, rig: 0.5, bloom: true, grain: false, taa: false, ao: false },
-};
-
-// Screen-space ambient occlusion from the scene's own depth (no second draw of
-// the scene): each pixel's position and normal are rebuilt from the depth, and
-// a few points around it within `uRadius` metres are tested for whether they
-// stand above its surface. The sample pattern turns every frame, so with TAA
-// the noise of eight samples averages out; a depth-aware blur in the
-// composite takes the rest. Far off, where the radius is under a pixel, it
-// does nothing.
-const AO_SHADER = {
-  uniforms: {
-    tDepth: { value: null }, uProjInv: { value: new THREE.Matrix4() }, uProj: { value: new THREE.Matrix4() },
-    uDepthTexel: { value: new THREE.Vector2(1, 1) }, uRes: { value: new THREE.Vector2(1, 1) },
-    uRadius: { value: 0.9 }, uIntensity: { value: 1.25 }, uFrame: { value: 0 },
-  },
-  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
-  fragmentShader: /* glsl */`
-    precision highp float;
-    uniform sampler2D tDepth; uniform mat4 uProjInv, uProj; uniform vec2 uDepthTexel, uRes;
-    uniform float uRadius, uIntensity, uFrame;
-    varying vec2 vUv;
-    vec3 viewPos(vec2 uv) {
-      float d = texture2D(tDepth, uv).r;
-      vec4 v = uProjInv * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
-      return v.xyz / v.w;
-    }
-    void main() {
-      float d = texture2D(tDepth, vUv).r;
-      if (d >= 0.99999) { gl_FragColor = vec4(1.0); return; }
-      vec3 p = viewPos(vUv);
-      // the normal from the nearer neighbour on each axis, so an edge does not
-      // bend it towards the surface behind
-      vec3 l = viewPos(vUv - vec2(uDepthTexel.x, 0.0)), r = viewPos(vUv + vec2(uDepthTexel.x, 0.0));
-      vec3 b = viewPos(vUv - vec2(0.0, uDepthTexel.y)), t = viewPos(vUv + vec2(0.0, uDepthTexel.y));
-      vec3 dx = abs(r.z - p.z) < abs(p.z - l.z) ? r - p : p - l;
-      vec3 dy = abs(t.z - p.z) < abs(p.z - b.z) ? t - p : p - b;
-      vec3 n = normalize(cross(dx, dy));
-      if (dot(n, p) > 0.0) n = -n;
-      // the radius on screen, in AO pixels: nothing to do when it is under one
-      float rpx = uRadius * uProj[1][1] * 0.5 * uRes.y / max(0.1, -p.z);
-      if (rpx < 1.0) { gl_FragColor = vec4(1.0); return; }
-      rpx = min(rpx, 48.0);
-      // interleaved gradient noise, turned a little each frame
-      float ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy + 5.588238 * uFrame, vec2(0.06711056, 0.00583715))));
-      float occ = 0.0;
-      const int N = 8;
-      for (int i = 0; i < N; i++) {
-        float fi = float(i);
-        float a = (fi + ign) * 2.39996323;
-        float rr = sqrt((fi + 0.5) / float(N)) * rpx;
-        vec2 suv = vUv + vec2(cos(a), sin(a)) * rr / uRes;
-        if (suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0) continue;
-        vec3 v = viewPos(suv) - p;
-        float dist = length(v);
-        float fall = 1.0 - smoothstep(0.5 * uRadius, uRadius, dist);
-        occ += max(0.0, dot(n, v) / max(dist, 1e-3) - 0.12) * fall;
-      }
-      float ao = clamp(1.0 - occ / float(N) * uIntensity, 0.0, 1.0);
-      gl_FragColor = vec4(ao, ao, ao, 1.0);
-    }`,
+  high: { dpr: 3, msaa: 4, vol: 0.5, steps: 12, shadows: true, shadowSize: 2048, crowd: 1, rig: 1, bloom: true, grain: false },
+  low: { dpr: 1, msaa: 0, vol: 0.33, steps: 6, shadows: false, shadowSize: 512, crowd: 0.4, rig: 0.5, bloom: true, grain: false },
 };
 
 export class VenuePass extends Pass {
@@ -425,49 +356,22 @@ export class VenuePass extends Pass {
     this.needsSwap = true;
     this.sceneRT = null;
     this.volRT = null;
-    this.aoRT = null;
-    this.ao = new FullScreenQuad(new THREE.ShaderMaterial({ ...AO_SHADER, uniforms: THREE.UniformsUtils.clone(AO_SHADER.uniforms), depthTest: false, depthWrite: false }));
     this.comp = new FullScreenQuad(new THREE.ShaderMaterial({
-      uniforms: {
-        tScene: { value: null }, tVol: { value: null }, uVolTexel: { value: new THREE.Vector2() },
-        tAO: { value: null }, tDepth: { value: null }, uAOTexel: { value: new THREE.Vector2(1, 1) }, uAO: { value: 0 },
-        uNear: { value: 0.1 }, uFar: { value: 2000 },
-      },
+      uniforms: { tScene: { value: null }, tVol: { value: null }, uVolTexel: { value: new THREE.Vector2() } },
       vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
       // A glint off a glossy surface under a stage light can overflow a half
       // float to Inf (or a degenerate normal give NaN); the bloom's blur would
       // spread it into a black block per mip. Stop it here: NaN to black, the
       // rest held far above white but well inside half-float range.
       fragmentShader: /* glsl */`
-        uniform sampler2D tScene, tVol, tAO, tDepth; uniform vec2 uVolTexel, uAOTexel; uniform float uAO;
-        uniform float uNear, uFar;
-        varying vec2 vUv;
+        uniform sampler2D tScene, tVol; uniform vec2 uVolTexel; varying vec2 vUv;
         vec3 sane(vec3 c) {
           return vec3(c.r < 4096.0 ? max(c.r, 0.0) : (c.r > 0.0 ? 4096.0 : 0.0),
                       c.g < 4096.0 ? max(c.g, 0.0) : (c.g > 0.0 ? 4096.0 : 0.0),
                       c.b < 4096.0 ? max(c.b, 0.0) : (c.b > 0.0 ? 4096.0 : 0.0));
         }
-        float linz(float d) { return uNear * uFar / (uFar - d * (uFar - uNear)); }
-        // the occlusion, blurred across the surface but not across an edge
-        float occlusion() {
-          float z0 = linz(texture2D(tDepth, vUv).r);
-          float sum = texture2D(tAO, vUv).r, ws = 1.0;
-          for (int i = 0; i < 4; i++) {
-            vec2 o = vec2(i < 2 ? -1.5 : 1.5, (i == 0 || i == 2) ? -1.5 : 1.5) * uAOTexel;
-            float z = linz(texture2D(tDepth, vUv + o).r);
-            float w = max(0.0, 1.0 - abs(z - z0) / (0.04 * z0 + 0.05));
-            sum += texture2D(tAO, vUv + o).r * w; ws += w;
-          }
-          return sum / ws;
-        }
         void main() {
           vec3 s = sane(texture2D(tScene, vUv).rgb);
-          // ambient occlusion darkens the lit surfaces, not what gives light:
-          // the screens, the sticks and the lamps (over 1) keep their level
-          if (uAO > 0.5) {
-            float lum = max(s.r, max(s.g, s.b));
-            s *= mix(occlusion(), 1.0, smoothstep(0.8, 2.5, lum));
-          }
           vec2 o = uVolTexel * 0.75;
           vec3 v = texture2D(tVol, vUv).rgb * 0.36
                  + (texture2D(tVol, vUv + vec2(o.x, o.y)).rgb + texture2D(tVol, vUv + vec2(-o.x, o.y)).rgb
@@ -485,45 +389,19 @@ export class VenuePass extends Pass {
     const q = this.pipe.q;
     this.full = { w: fw, h: fh };
     const w = Math.max(1, Math.round(fw * this.pipe.scale)), h = Math.max(1, Math.round(fh * this.pipe.scale));
-    this.sceneRT?.dispose(); this.volRT?.dispose(); this.aoRT?.dispose();
-    this.sceneRT = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: q.taa && this.pipe.taaOn ? 0 : q.msaa });
+    this.sceneRT?.dispose(); this.volRT?.dispose();
+    this.sceneRT = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: q.msaa });
     this.sceneRT.depthTexture = new THREE.DepthTexture(w, h);
     this.sceneRT.depthTexture.type = THREE.UnsignedIntType;
     const vw = Math.max(1, Math.round(w * q.vol)), vh = Math.max(1, Math.round(h * q.vol));
     this.volRT = new THREE.WebGLRenderTarget(vw, vh, { type: THREE.HalfFloatType, depthBuffer: false });
     this.comp.material.uniforms.uVolTexel.value.set(1 / vw, 1 / vh);
-    // the occlusion at half the scene's resolution
-    const aw = Math.max(1, Math.round(w / 2)), ah = Math.max(1, Math.round(h / 2));
-    this.aoRT = new THREE.WebGLRenderTarget(aw, ah, { type: THREE.UnsignedByteType, depthBuffer: false });
-    const A = this.ao.material.uniforms;
-    A.uRes.value.set(aw, ah); A.uDepthTexel.value.set(1 / w, 1 / h);
-    this.comp.material.uniforms.uAOTexel.value.set(1 / aw, 1 / ah);
-    this.pipe.taa?.reset();
-  }
-  // the occlusion for this frame into aoRT (when it is on), and the composite
-  // told whether to use it
-  renderAO(renderer) {
-    const p = this.pipe, C = this.comp.material.uniforms;
-    const on = p.aoOn && p.q.ao;
-    C.uAO.value = on ? 1 : 0;
-    if (!on) return;
-    const A = this.ao.material.uniforms;
-    A.tDepth.value = this.sceneRT.depthTexture;
-    A.uProj.value.copy(p.camera.projectionMatrix);
-    A.uProjInv.value.copy(p.camera.projectionMatrixInverse);
-    A.uFrame.value = p.taaOn && p.q.taa ? p.frameIdx % 64 : 0;
-    renderer.setRenderTarget(this.aoRT);
-    this.ao.render(renderer);
-    C.tAO.value = this.aoRT.texture;
-    C.tDepth.value = this.sceneRT.depthTexture;
-    C.uNear.value = p.camera.near; C.uFar.value = p.camera.far;
   }
   setSize(w, h) { this.alloc(w, h); }
   render(renderer, writeBuffer) {
     const p = this.pipe;
     renderer.setRenderTarget(this.sceneRT);
     renderer.render(p.scene, p.camera);
-    this.renderAO(renderer);
     // light shafts and haze off: the volume target stays black and adds nothing
     if (!p.volOn) {
       const cc = renderer.getClearColor(new THREE.Color()), ca = renderer.getClearAlpha();
@@ -567,139 +445,7 @@ export class VenuePass extends Pass {
     renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
     this.comp.render(renderer);
   }
-  dispose() { this.sceneRT?.dispose(); this.volRT?.dispose(); this.aoRT?.dispose(); this.comp.dispose(); this.ao.dispose(); this.ao.material.dispose(); }
-}
-
-// Temporal anti-aliasing. The scene is drawn with the projection nudged by a
-// sub-pixel each frame (Pipeline.render); this pass takes each pixel back to
-// where it was last frame through the depth and the camera's last matrices,
-// and blends the new frame into that history. The history is held to the
-// colours around the pixel now (a variance box in YCoCg), so a crowd that
-// moves or a light that changes does not leave a ghost; it is read with a
-// Catmull-Rom filter and the result lightly sharpened, so the averaging
-// smooths edges without softening the picture. The blend is done on a
-// tonemapped copy, so a bright highlight does not dominate its neighbours.
-export class TAAPass extends Pass {
-  constructor(pipe) {
-    super();
-    this.pipe = pipe;
-    this.needsSwap = true;
-    this.hist = [null, null];
-    this.valid = false;
-    this.prevVP = new THREE.Matrix4();
-    this.jit = new THREE.Vector2();   // this frame's jitter, in uv
-    const vs = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
-    this.resolve = new FullScreenQuad(new THREE.ShaderMaterial({
-      uniforms: {
-        tCur: { value: null }, tHist: { value: null }, tDepth: { value: null },
-        uInvProj: { value: new THREE.Matrix4() }, uCamWorld: { value: new THREE.Matrix4() }, uPrevVP: { value: new THREE.Matrix4() },
-        uTexel: { value: new THREE.Vector2(1, 1) }, uValid: { value: 0 }, uJit: { value: new THREE.Vector2() },
-      },
-      vertexShader: vs,
-      fragmentShader: /* glsl */`
-        precision highp float;
-        uniform sampler2D tCur, tHist, tDepth; uniform mat4 uInvProj, uCamWorld, uPrevVP;
-        uniform vec2 uTexel, uJit; uniform float uValid;
-        varying vec2 vUv;
-        vec3 tm(vec3 c) { return c / (1.0 + max(c.r, max(c.g, c.b))); }
-        vec3 toY(vec3 c) { return vec3(dot(c, vec3(0.25, 0.5, 0.25)), dot(c, vec3(0.5, 0.0, -0.5)), dot(c, vec3(-0.25, 0.5, -0.25))); }
-        vec3 fromY(vec3 y) { return vec3(y.x + y.y - y.z, y.x + y.z, y.x - y.y - y.z); }
-        vec3 history(vec2 uv) {
-          // Catmull-Rom in five taps (the corners dropped)
-          vec2 sp = uv / uTexel, tc = floor(sp - 0.5) + 0.5, f = sp - tc;
-          vec2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f)), w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
-          vec2 w2 = f * (0.5 + f * (2.0 - 1.5 * f)), w3 = f * f * (-0.5 + 0.5 * f);
-          vec2 w12 = w1 + w2, t12 = (tc + w2 / w12) * uTexel, t0 = (tc - 1.0) * uTexel, t3 = (tc + 2.0) * uTexel;
-          vec3 r = texture2D(tHist, vec2(t12.x, t0.y)).rgb * (w12.x * w0.y)
-                 + texture2D(tHist, vec2(t0.x, t12.y)).rgb * (w0.x * w12.y)
-                 + texture2D(tHist, t12).rgb * (w12.x * w12.y)
-                 + texture2D(tHist, vec2(t3.x, t12.y)).rgb * (w3.x * w12.y)
-                 + texture2D(tHist, vec2(t12.x, t3.y)).rgb * (w12.x * w3.y);
-          float ws = w12.x * w0.y + w0.x * w12.y + w12.x * w12.y + w3.x * w12.y + w12.x * w3.y;
-          return max(r / ws, vec3(0.0));
-        }
-        vec3 clipBox(vec3 lo, vec3 hi, vec3 p) {
-          vec3 c = 0.5 * (hi + lo), e = 0.5 * (hi - lo) + 1e-4, v = p - c;
-          vec3 u = abs(v / e);
-          float m = max(u.x, max(u.y, u.z));
-          return m > 1.0 ? c + v / m : p;
-        }
-        void main() {
-          // the frame was drawn nudged by the jitter: read it back where the
-          // unnudged frame would have put each point, so what is blended (and
-          // what the history is held to) stays still from frame to frame
-          vec2 uv = vUv - uJit;
-          vec3 cur = toY(tm(texture2D(tCur, uv).rgb));
-          vec3 m1 = vec3(0.0), m2 = vec3(0.0), lo = vec3(1e9), hi = vec3(-1e9);
-          for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
-            vec3 c = toY(tm(texture2D(tCur, uv + vec2(float(x), float(y)) * uTexel).rgb));
-            m1 += c; m2 += c * c; lo = min(lo, c); hi = max(hi, c);
-          }
-          vec3 mean = m1 / 9.0, sd = sqrt(max(m2 / 9.0 - mean * mean, 0.0));
-          vec3 vlo = max(lo, mean - sd * 1.25), vhi = min(hi, mean + sd * 1.25);
-          float d = texture2D(tDepth, uv).r;
-          vec4 v = uInvProj * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
-          vec4 w = uCamWorld * vec4(v.xyz / v.w, 1.0);
-          vec4 pc = uPrevVP * w;
-          vec2 puv = pc.xy / pc.w * 0.5 + 0.5;
-          if (uValid < 0.5 || pc.w <= 0.0 || puv.x < 0.0 || puv.x > 1.0 || puv.y < 0.0 || puv.y > 1.0) {
-            gl_FragColor = vec4(fromY(cur), 1.0);
-            return;
-          }
-          vec3 h = clipBox(vlo, vhi, toY(history(puv)));
-          // the new frame's share: a tenth when still, more as the pixel moves
-          float moved = length((puv - uv) / uTexel);
-          float a = mix(0.1, 0.4, clamp(moved / 24.0, 0.0, 1.0));
-          gl_FragColor = vec4(fromY(mix(h, cur, a)), 1.0);
-        }`,
-      depthTest: false, depthWrite: false,
-    }));
-    // out of the tonemapped history, lightly sharpened, back to linear
-    this.out = new FullScreenQuad(new THREE.ShaderMaterial({
-      uniforms: { tHist: { value: null }, uTexel: { value: new THREE.Vector2(1, 1) }, uSharp: { value: 0.22 } },
-      vertexShader: vs,
-      fragmentShader: /* glsl */`
-        uniform sampler2D tHist; uniform vec2 uTexel; uniform float uSharp; varying vec2 vUv;
-        void main() {
-          vec3 c = texture2D(tHist, vUv).rgb;
-          vec3 n = texture2D(tHist, vUv + vec2(0.0, uTexel.y)).rgb, s = texture2D(tHist, vUv - vec2(0.0, uTexel.y)).rgb;
-          vec3 e = texture2D(tHist, vUv + vec2(uTexel.x, 0.0)).rgb, w = texture2D(tHist, vUv - vec2(uTexel.x, 0.0)).rgb;
-          vec3 lo = min(c, min(min(n, s), min(e, w))), hi = max(c, max(max(n, s), max(e, w)));
-          c = clamp(c + (c - 0.25 * (n + s + e + w)) * uSharp, lo, hi);
-          float m = max(c.r, max(c.g, c.b));
-          gl_FragColor = vec4(c / max(1e-4, 1.0 - min(m, 0.9995)), 1.0);
-        }`,
-      depthTest: false, depthWrite: false,
-    }));
-  }
-  reset() { this.valid = false; }
-  setSize(w, h) {
-    for (const t of this.hist) t?.dispose();
-    this.hist = [0, 1].map(() => new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, depthBuffer: false }));
-    this.resolve.material.uniforms.uTexel.value.set(1 / w, 1 / h);
-    this.out.material.uniforms.uTexel.value.set(1 / w, 1 / h);
-    this.valid = false;
-  }
-  render(renderer, writeBuffer, readBuffer) {
-    const p = this.pipe, R = this.resolve.material.uniforms;
-    const [prev, next] = this.hist;
-    R.tCur.value = readBuffer.texture;
-    R.tHist.value = prev.texture;
-    R.tDepth.value = p.venuePass.sceneRT.depthTexture;
-    R.uInvProj.value.copy(p.camera.projectionMatrixInverse);
-    R.uCamWorld.value.copy(p.camera.matrixWorld);
-    R.uPrevVP.value.copy(this.prevVP);
-    R.uValid.value = this.valid ? 1 : 0;
-    R.uJit.value.copy(this.jit);
-    renderer.setRenderTarget(next);
-    this.resolve.render(renderer);
-    this.out.material.uniforms.tHist.value = next.texture;
-    renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
-    this.out.render(renderer);
-    this.hist = [next, prev];
-    this.valid = true;
-  }
-  dispose() { for (const t of this.hist) t?.dispose(); for (const q of [this.resolve, this.out]) { q.material.dispose(); q.dispose(); } }
+  dispose() { this.sceneRT?.dispose(); this.volRT?.dispose(); this.comp.dispose(); }
 }
 
 export const FINAL_SHADER = {
@@ -828,18 +574,10 @@ export class Pipeline {
     this.volOn = true;          // the light shafts and the haze
     this.size = { w: 1, h: 1 };
     this.composer = new EffectComposer(r, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false }));
-    // the costly passes the stage can drop (with volOn): TAA and the occlusion
-    this.taaOn = true;
-    this.aoOn = true;
     this.venuePass = new VenuePass(this);
-    this.taa = new TAAPass(this);
     this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.6, 0.6, 0.9);
     this.final = new FinalPass();
-    this.frameIdx = 0;
-    this._lastCam = new THREE.Vector3(1e9, 0, 0);
-    this._proj = new THREE.Matrix4();
     this.composer.addPass(this.venuePass);
-    this.composer.addPass(this.taa);
     this.composer.addPass(this.bloom);
     this.composer.addPass(this.final);
     // dynamic resolution: the share of the screen's own density drawn
@@ -849,13 +587,6 @@ export class Pipeline {
     this.gpu = new GpuTimer(r.getContext());
     this.gpuMs = NaN;
     this.adaptAt = 0; this.changedAt = 0; this.lastFrame = 0; this.intervalMs = NaN; this.calm = 0;
-  }
-  // TAA on or off (the stage's effects switch); without it the scene goes back
-  // to MSAA, so its target is made again
-  setTaa(on) {
-    if (this.taaOn === on) return;
-    this.taaOn = on;
-    if (this.venuePass.full) this.venuePass.alloc(this.venuePass.full.w, this.venuePass.full.h);
   }
   setQuality(name) {
     this.qName = name;
@@ -888,32 +619,7 @@ export class Pipeline {
     this.flares.sync();
     this.gpu.poll();
     this.gpu.begin();
-    this.frameIdx++;
-    const cam = this.camera;
-    const taa = this.taaOn && this.q.taa;
-    this.taa.enabled = taa;
-    if (taa) {
-      // a jump (a new seat, a new room) starts the history over
-      cam.updateMatrixWorld();
-      if (cam.position.distanceToSquared(this._lastCam) > 16) this.taa.reset();
-      this._lastCam.copy(cam.position);
-      // the sub-pixel nudge: Halton (2, 3) over eight frames, in the scene
-      // target's own pixels, taken out again once the frame is drawn
-      const i = (this.frameIdx % 8) + 1;
-      const jx = halton(i, 2) - 0.5, jy = halton(i, 3) - 0.5;
-      const rt = this.venuePass.sceneRT;
-      this._proj.copy(cam.projectionMatrix);
-      cam.projectionMatrix.elements[8] += (jx * 2) / rt.width;
-      cam.projectionMatrix.elements[9] += (jy * 2) / rt.height;
-      this.taa.jit.set(jx / rt.width, jy / rt.height);
-      cam.projectionMatrixInverse.copy(cam.projectionMatrix).invert();
-    }
     this.composer.render();
-    if (taa) {
-      cam.projectionMatrix.copy(this._proj);
-      cam.projectionMatrixInverse.copy(this._proj).invert();
-      this.taa.prevVP.multiplyMatrices(this._proj, cam.matrixWorldInverse);
-    }
     this.gpu.end();
   }
   // Dynamic resolution. Called after each drawn frame with the frame time the
@@ -956,7 +662,6 @@ export class Pipeline {
   dispose() {
     this.gpu.dispose();
     this.venuePass.dispose();
-    this.taa.dispose();
     this.bloom.dispose();
     this.composer.dispose();
     for (const f of [this.beams, this.haze, this.flares]) { f.mesh.geometry.dispose(); f.mesh.material.dispose(); }
