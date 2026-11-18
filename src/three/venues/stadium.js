@@ -809,7 +809,7 @@ export function buildStadium(ctx) {
     fog: new THREE.FogExp2(0x090708, 0.0015),
     hazeDensity: 0.0005, beamGain: 0.45, hazeAmb: new THREE.Color(0x060405), hazeAmbDist: 400,
     bloom: { strength: 0.7, radius: 0.7, threshold: 1.15 },
-    grade: { exposure: 1.2, vignette: 0.38, ca: 0.005, grain: 0.04, sat: 1.08, lift: [0.004, 0.005, 0.01] },
+    grade: { exposure: 1.2, vignette: 0.38, ca: 0.002, grain: 0.04, sat: 1.08, lift: [0.004, 0.005, 0.01] },
     env: { w: 300, h: 60, d: 320, eye, wall: 0x0a0a10, floor: 0x0a0a0c, ambient: 0x06070c, emitters: [
       { w: WW, h: WH, pos: V3(0, Y0 + WH / 2, WZ + 0.2), normal: V3(0, 0, 1), screen: true, power: 1.5, aspect: WW / WH },
       { w: 300, h: 300, pos: V3(0, 58, ZC), normal: V3(0, -1, 0), color: 0x18100c, power: 1 },
@@ -902,7 +902,7 @@ export function buildStadium(ctx) {
       fog: new THREE.FogExp2(0x090708, 0.0015),
       hazeDensity: 0.0005, beamGain: 0.45, hazeAmb: new THREE.Color(0x060405), hazeAmbDist: 400,
       bloom: { strength: 0.7, radius: 0.7, threshold: 1.15 },
-      grade: { exposure: 1.2, vignette: 0.38, ca: 0.005, grain: 0.04, sat: 1.08, lift: [0.004, 0.005, 0.01] },
+      grade: { exposure: 1.2, vignette: 0.38, ca: 0.002, grain: 0.04, sat: 1.08, lift: [0.004, 0.005, 0.01] },
       env: { w: 300, h: 60, d: 320, eye: feye, wall: 0x0a0a10, floor: 0x0a0a0c, ambient: 0x06070c, emitters: [
         { w: RC.BW, h: RC.BH, pos: V3(0, RC.BY, ZC + RC.BW / 2), normal: V3(0, 0, 1), screen: true, power: 1.5, aspect: RC.BW / RC.BH },
         { w: 300, h: 300, pos: V3(0, 58, ZC), normal: V3(0, -1, 0), color: 0x18100c, power: 1 },

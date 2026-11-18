@@ -202,7 +202,7 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     const b = v.bloom || {};
     pipe.bloom.strength = b.strength ?? 0.6; pipe.bloom.radius = b.radius ?? 0.6; pipe.bloom.threshold = b.threshold ?? 0.9;
     const G = pipe.final.material.uniforms, g = v.grade || {};
-    G.uExposure.value = g.exposure ?? 1; G.uVignette.value = g.vignette ?? 0.35; G.uCA.value = g.ca ?? 0.004;
+    G.uExposure.value = g.exposure ?? 1; G.uVignette.value = g.vignette ?? 0.35; G.uCA.value = g.ca ?? 0.002;
     G.uGrain.value = pipe.q.grain ? (g.grain ?? 0.035) : 0; G.uSat.value = g.sat ?? 1.05;
     G.uLift.value.setRGB(...(g.lift || [0, 0, 0]));
     pipe.haze.uniforms.uDensity.value = v.hazeDensity ?? 0.02;

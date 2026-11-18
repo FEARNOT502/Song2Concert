@@ -241,7 +241,7 @@ export function buildConcertHall(ctx) {
     fog: new THREE.FogExp2(0x0a0706, 0.004),
     hazeDensity: 0.0008, beamGain: 0.2, hazeAmb: new THREE.Color(0x020201),
     bloom: { strength: 0.35, radius: 0.5, threshold: 1.1 },
-    grade: { exposure: 1.15, vignette: 0.32, ca: 0.003, grain: 0.03, sat: 0.96, lift: [0.008, 0.006, 0.004] },
+    grade: { exposure: 1.15, vignette: 0.32, ca: 0.002, grain: 0.03, sat: 0.96, lift: [0.008, 0.006, 0.004] },
     env: { w: HW * 2, h: HH, d: Z1 - Z0, eye, wall: 0x3a2818, floor: 0x3a2014, ambient: 0x0c0806, emitters: [
       { w: 18, h: 10, pos: V3(0, DECK + 0.1, 3), normal: V3(0, 1, 0), color: KELVIN(3400), power: 2.2 },
       { w: SW, h: SH, pos: V3(0, 9.7, -8), normal: V3(0, 0, 1), screen: true, power: 1, aspect },

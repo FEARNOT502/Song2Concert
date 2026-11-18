@@ -248,7 +248,7 @@ export function buildClub(ctx) {
     fog: new THREE.FogExp2(0x050506, 0.02),
     hazeDensity: 0.0022, beamGain: 0.45, hazeAmb: new THREE.Color(0x030305), hazeAmbDist: 40,
     bloom: { strength: 0.55, radius: 0.55, threshold: 1.0 },
-    grade: { exposure: 1.25, vignette: 0.45, ca: 0.005, grain: 0.045, sat: 1.08, lift: [0.006, 0.005, 0.008] },
+    grade: { exposure: 1.25, vignette: 0.45, ca: 0.002, grain: 0.045, sat: 1.08, lift: [0.006, 0.005, 0.008] },
     env: { w: W, h: H, d: D, eye, wall: 0x0c0a0e, floor: 0x060606, emitters: [
       { w: SW, h: SH, pos: V3(0, screen.position.y, 0.3), normal: V3(0, 0, 1), screen: true, power: 1.2, aspect },
       { w: 5.6, h: 1.2, pos: V3(-1, 2, 15.8), normal: V3(0, 0, -1), color: KELVIN(2600), power: 2 },

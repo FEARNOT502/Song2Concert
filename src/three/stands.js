@@ -14,7 +14,7 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { DEG, TEX, V3, concreteTex, glowMat, lerp, prng, std, withRepeat } from './core.js';
+import { DEG, MAX_ANISO, TEX, V3, concreteTex, glowMat, lerp, prng, std, withRepeat } from './core.js';
 import { mats } from './rig.js';
 
 // A stadium seat, folded up: the shell's back and its seat pan as thin plates
@@ -516,7 +516,7 @@ export function vomSignTexture(label, bg = '#15181f', fg = '#f2f2ee', aisle = fa
     g.fillText(label, 128, 50);
   }
   const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; t.userData.shared = true;
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = MAX_ANISO; t.userData.shared = true;
   TEX.set(key, t);
   return t;
 }
@@ -532,7 +532,7 @@ export function signSheet(list, ox, oz, bg = '#15181f', fg = '#f2f2ee') {
   g2.fillStyle = bg; g2.fillRect(0, 0, c.width, c.height);
   labels.forEach((label, i) => drawAisleSign(g2, (i % cols) * cw, Math.floor(i / cols) * ch, cw, ch, label, bg, fg));
   const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = MAX_ANISO;
   const P = [], U = [];
   for (const s of list) {
     const i = labels.indexOf(s.label);

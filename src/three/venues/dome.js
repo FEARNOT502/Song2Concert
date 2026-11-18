@@ -15,7 +15,7 @@ import { DOME_ROOF, roofLineMaskGLSL, roofTriangleGLSL } from './dome-roof.js';
 import { roofEquipment } from './dome-roof-equipment.js';
 import { addDomeStandLights, updateDomeStandLights } from './dome-stand-lights.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { APP, DEG, KELVIN, V3, clamp, lerp, prng, std, rubberSheetTex, glowMat, ringTint } from '../core.js';
+import { APP, DEG, KELVIN, MAX_ANISO, V3, clamp, lerp, prng, std, rubberSheetTex, glowMat, ringTint } from '../core.js';
 import { lightPoints } from '../people.js';
 import { hoists, micStand, shadowSpot, stageDeck, stageSteps, truss, wedge } from '../rig.js';
 import { bigCrowd, bigScreens, crossThrust, diagonalTowers, roundBlocks, roundStage, delayTower, fixtureRow, flashOnCrowd, flashUnits, floorChairs, fohPosition, fromRow, groundRoof, paCorner, paHang, paPair, paWing, runBlinders, runShow, runStrobes, scaffoldMasking, screenHang, section, stageRing, subLine, thinRow, wallStrip } from '../show.js';
@@ -1169,7 +1169,7 @@ export function buildDome(ctx) {
       g.fillStyle = '#060807'; g.fillRect(0, 0, 1024, 160);
       g.fillStyle = '#3ddc84'; g.font = 'bold 112px Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
       g.fillText('TOKYO DOME', 512, 84);
-      const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+      const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = MAX_ANISO;
       const sign = new THREE.Mesh(new THREE.PlaneGeometry(16, 2.5), new THREE.MeshBasicMaterial({ map: tex, toneMapped: true }));
       const i = len.findIndex((v) => v >= mid), p = pts[i], q = pts[i + 1], o = out(p, -0.2);
       sign.position.set(o.x, y1 + 1.75, o.z); sign.rotation.y = Math.atan2(-(q.z - p.z), q.x - p.x);
@@ -1542,7 +1542,7 @@ export function buildDome(ctx) {
     fog: new THREE.FogExp2(0x07070b, 0.002),
     hazeDensity: 0.0011, beamGain: 0.5, hazeAmb: new THREE.Color(0x05050a), hazeAmbDist: 260,
     bloom: { strength: 0.75, radius: 0.7, threshold: 1.15 },
-    grade: { exposure: 1.2, vignette: 0.4, ca: 0.005, grain: 0.04, sat: 1.1, lift: [0.004, 0.004, 0.009] },
+    grade: { exposure: 1.2, vignette: 0.4, ca: 0.002, grain: 0.04, sat: 1.1, lift: [0.004, 0.004, 0.009] },
     env: { w: 236, h: 56, d: 236, eye, wall: 0x0c0c12, floor: 0x0a0a0c, emitters: [
       { w: WW, h: WH, pos: V3(0, WY, WZ + 0.4), normal: V3(0, 0, 1), screen: true, power: 1.5, aspect: WW / WH },
       { w: 200, h: 200, pos: V3(0, 55, 52), normal: V3(0, -1, 0), color: 0x202028, power: 1 },
@@ -1643,7 +1643,7 @@ export function buildDome(ctx) {
       fog: new THREE.FogExp2(0x07070b, 0.002),
       hazeDensity: 0.0011, beamGain: 0.5, hazeAmb: new THREE.Color(0x05050a), hazeAmbDist: 260,
       bloom: { strength: 0.75, radius: 0.7, threshold: 1.15 },
-      grade: { exposure: 1.2, vignette: 0.4, ca: 0.005, grain: 0.04, sat: 1.1, lift: [0.004, 0.004, 0.009] },
+      grade: { exposure: 1.2, vignette: 0.4, ca: 0.002, grain: 0.04, sat: 1.1, lift: [0.004, 0.004, 0.009] },
       env: { w: 236, h: 56, d: 236, eye: feye, wall: 0x0c0c12, floor: 0x0a0a0c, emitters: [
         { w: RC.BW, h: RC.BH, pos: V3(0, RC.BY, STAGE.z + RC.BW / 2), normal: V3(0, 0, 1), screen: true, power: 1.5, aspect: RC.BW / RC.BH },
         { w: 200, h: 200, pos: V3(0, 55, 52), normal: V3(0, -1, 0), color: 0x202028, power: 1 },

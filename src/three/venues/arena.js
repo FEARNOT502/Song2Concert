@@ -411,7 +411,7 @@ function arenaEnd(ctx) {
     fog: new THREE.FogExp2(0x060508, 0.0045),
     hazeDensity: 0.0016, beamGain: 0.55, hazeAmb: new THREE.Color(0x040306), hazeAmbDist: 160,
     bloom: { strength: 0.7, radius: 0.65, threshold: 1.15 },
-    grade: { exposure: 1.2, vignette: 0.4, ca: 0.005, grain: 0.04, sat: 1.08, lift: [0.004, 0.004, 0.008] },
+    grade: { exposure: 1.2, vignette: 0.4, ca: 0.002, grain: 0.04, sat: 1.08, lift: [0.004, 0.004, 0.008] },
     env: { w: X1 - X0, h: H, d: Z1 - Z0, eye, wall: 0x0a0a10, floor: 0x050507, emitters: [
       { w: WW, h: WH, pos: V3(0, DECK + 1.2 + WH / 2, 2 + SZ), normal: V3(0, 0, 1), screen: true, power: 1.5, aspect: WW / WH },
       { w: 30, h: 1, pos: V3(0, RIG, 12 + SZ), normal: V3(0, -1, 0), color: APP.accent, power: 4 },
@@ -613,7 +613,7 @@ function arenaRound(ctx) {
     fog: new THREE.FogExp2(0x060508, 0.0045),
     hazeDensity: 0.0016, beamGain: 0.55, hazeAmb: new THREE.Color(0x040306), hazeAmbDist: 160,
     bloom: { strength: 0.7, radius: 0.65, threshold: 1.15 },
-    grade: { exposure: 1.2, vignette: 0.4, ca: 0.005, grain: 0.04, sat: 1.08, lift: [0.004, 0.004, 0.008] },
+    grade: { exposure: 1.2, vignette: 0.4, ca: 0.002, grain: 0.04, sat: 1.08, lift: [0.004, 0.004, 0.008] },
     env: { w: X1 - X0, h: H, d: Z1 - Z0, eye, wall: 0x0a0a10, floor: 0x050507, emitters: cubes.map((g) => (
       { w: BL, h: BH, pos: V3(BW / 2, CY, g.position.z), normal: V3(1, 0, 0), screen: true, power: 1.2, aspect: BL / BH })) },
     envIntensity: 0.6,
