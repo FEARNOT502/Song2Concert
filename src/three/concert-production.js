@@ -303,8 +303,11 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
   if (!round) {
     const front = L.front, back = L.back, r = L.w / 2;
     screen({ z: L.wallZ, bottom, w: mainW, h: mainH, bright: arena ? 1.65 : 1.85, light: true });
-    // the arena's IMAG columns are portrait (3:4): the sleeve over its title
-    const wings = arena ? { x: 26.6, z: 14.1, bottom: 7.6, w: 8.4, h: 11.2, yaw: .26 }
+    // the arena's IMAG columns are portrait (3:4): the sleeve over its title;
+    // turned to the masking's angle and stood a metre in front of it along
+    // their whole width (the masking runs from z 8.2 at x 16 to 15 at x 31),
+    // low enough that the main hangs do not cross their tops from FOH
+    const wings = arena ? { x: 24.5, z: 16.8, bottom: 5.2, w: 8.4, h: 11.2, yaw: .3 }
       : dome ? { x: 32.2, z: L.wallZ + 1.5, bottom: 5.2, w: 14.3, h: 14.5, yaw: .07 } : null;
     if (wings) for (const side of [-1, 1]) {
       screen({ ...wings, x: side * wings.x, yaw: side * wings.yaw });
