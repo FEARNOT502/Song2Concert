@@ -43,14 +43,13 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
   } catch {
     return null; // no WebGL — Scene falls back to a plain backdrop
   }
-  const qName = quality === 'low' ? 'low' : 'high';
+  let qName = quality === 'low' ? 'low' : 'high';
   // Device pixel ratio is the single biggest lever on GPU cost, and this scene
   // shares a machine with a convolution reverb and five audio worklets.
   // On a computer the scene is drawn at the screen's own density — at 1.35 a
   // high-density display was upscaled and everything far off went soft — and
   // the dynamic resolution (Pipeline.adapt) takes it down when the GPU is
   // pressed, rather than every screen paying for the worst one.
-  const baseDpr = qName === 'low' ? 1 : 3;
   let fx = !!effects;
   let strain = 0;
 
@@ -82,6 +81,7 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
   const pal = art.palette ? clonePal(art.palette) : null;
   let size = { w: 1, h: 1 };
   let raf = 0, running = false;
+  let paused = false;
   const clock = new THREE.Clock();
   // per-venue lists, collected once rather than found by a traversal each frame
   let pointMats = [], lightMats = [], fogMats = [];
@@ -95,7 +95,7 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
 
   function applyQuality() {
     pipe.setQuality(qName);
-    pipe.q = { ...QUALITY[qName], dpr: strain >= 2 ? 1 : baseDpr };
+    pipe.q = { ...QUALITY[qName], dpr: strain >= 2 || qName === 'low' ? 1 : 3 };
     pipe.resize(size.w, size.h);
     applyPasses();
   }
@@ -418,12 +418,12 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
   // the rooms whose rig plays a look per song; the rest keep their house style
   const LOOK_ROOMS = new Set(['arena', 'dome', 'stadium']);
 
-  const targetMs = 1000 / (qName === 'low' ? 30 : 60);
   let heavy = false, lastDrawn = -1e9, drawn = 0, frameBudget = 0, lastT = 0;
 
   function tick(now) {
     raf = requestAnimationFrame(tick);
-    if (!venue || document.hidden) return;
+    if (!venue || paused || document.hidden) return;
+    const targetMs = 1000 / (qName === 'low' ? 30 : 60);
     // walking is not throttled with the show: a halved rate reads as lag
     // stopped, nothing moves but the house lights: half the frames
     const still = !walker.moving && !walker.drag;
@@ -468,7 +468,7 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
   document.fonts?.ready?.then(() => { if (running) art.refresh(); });
 
   return {
-    setVenue(id, mode = 'general') { if (id !== venueId || mode !== venueMode || !venue) setVenue(id, mode); },
+    setVenue(id, mode = 'general') { if (id !== venueId || mode !== venueMode || !venue) return setVenue(id, mode); },
     setPulse: (p) => { pulse = p; },
     setPulseRef: (ref) => { pulseRef = ref || null; },
     // () => AnalyserNode | null — read for the kick, never connected to
@@ -477,6 +477,17 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     setSongMap: (map, get) => { songMap = map || null; songClock = typeof get === 'function' ? get : null; },
     setArt: (want) => { art.set(want); },
     setPlaying: (on) => { playing = !!on; houseTarget = playing ? 0 : 1; },
+    setHouseLights(level, immediate = false) {
+      houseTarget = clamp(level);
+      if (immediate) house = houseTarget;
+    },
+    setQuality(quality) {
+      const next = quality === 'low' ? 'low' : 'high';
+      if (next === qName) return;
+      qName = next;
+      applyQuality();
+      if (venueId) return setVenue(venueId);
+    },
     setCrowdLight: (mode) => { crowdLight = mode === 'flash' ? 'flash' : 'stick'; },
     setSeat(seat) {
       pendingSeat = seat || null;
@@ -526,7 +537,11 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     },
     stats: () => ({ drawn, heavy, strain, effects: fx, frameMs: +frameBudget.toFixed(2), gpuMs: Number.isFinite(pipe.gpuMs) ? +pipe.gpuMs.toFixed(2) : null, scale: pipe.scale, dpr: pipe.renderer.getPixelRatio(), sceneDpr: +pipe.sceneDpr.toFixed(3), venue: venueId, mode: venueMode, walker: walker.feet.toArray().map((v) => +v.toFixed(2)) }),
     // for tests and the walk-through: the walker and the pipeline
-    debug: { walker, pipe, art, beat },
+    debug: {
+      walker, pipe, art, beat,
+      setPaused(value) { paused = value; },
+      drawFrame(dt = 0.016) { if (venue) frame(dt, clock.getElapsedTime()); },
+    },
     dispose() {
       running = false;
       buildGen++;

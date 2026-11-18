@@ -108,14 +108,17 @@ export function arenaMovingBlockJoint(root, walls, oz, y) {
   addParts(root, 'Moving block seals', seals, std({ color: 0x313335, roughness: 0.92 }));
 }
 
+export const ARENA_LOUNGE = { front: 55.1, half: 35.5, ceiling: 2.56, cap: 0.21 };
+
 export function arenaLounge(root, oz, level) {
   const shell = [], trim = [], glass = [], shades = [], lights = [];
   // The operator's 3F plan places the continuous window opposite the suites,
   // along the main-arena face of the moving block.
-  const xf = 55.1, xb = 61.8, half = 35.5, ceiling = level + 2.56;
+  const { front: xf, half, cap } = ARENA_LOUNGE;
+  const xb = 61.8, ceiling = level + ARENA_LOUNGE.ceiling;
   const sill = level + 0.83, head = ceiling - 0.48;
   box(shell, xb - xf, 0.27, 2 * half, (xf + xb) / 2, level - 0.135, oz);
-  box(shell, xb - xf, 0.21, 2 * half, (xf + xb) / 2, ceiling + 0.105, oz);
+  box(shell, xb - xf, cap, 2 * half, (xf + xb) / 2, ceiling + cap / 2, oz);
   box(shell, 0.19, ceiling - level, 2 * half, xb, (ceiling + level) / 2, oz);
   for (const side of [-1, 1]) box(shell, xb - xf, ceiling - level, 0.19, (xf + xb) / 2, (ceiling + level) / 2, oz + side * half);
   box(shell, 0.23, sill - level, 2 * half, xf, (sill + level) / 2, oz);

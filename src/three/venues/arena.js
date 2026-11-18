@@ -15,6 +15,7 @@ import { ampStack, chainInto, drumKit, guitar, hoists, keyboardRig, ledScreen, m
 import { bigCrowd, bigScreens, crossThrust, fixtureRow, flashOnCrowd, flashUnits, floorBlocks, floorChairs, fohPosition, fromRow, maskingDrapes, packFloor, paCorner, paHang, paPair, runBlinders, runShow, runStrobes, screenHang, stageRing, stageSet, subLine, thinRow, wallStrip } from '../show.js';
 import { buildStands, decodeSeats } from '../stands.js';
 import { SSA_STANDS } from './ssa-data.js';
+import { fitArena200 } from './arena-200.js';
 import { arenaAcousticWalls, arenaCeiling, arenaFloor, arenaLounge, arenaMovingBlockJoint } from './arena-interior.js';
 
 export function buildArena(ctx) {
@@ -73,6 +74,7 @@ export function getArenaSeatCatalog(mode = 'general') {
 // (matt, as precast panels and concrete are: no sheen for the ceiling's downlights to stand in)
 const matt = (color, o = {}) => std({ color, roughness: 1, metalness: 0, envMapIntensity: 0.2, ...o });
 const FRONT = matt(0xa4a4a1, { side: THREE.DoubleSide });
+const ARENA_STANDS = fitArena200(SSA_STANDS);
 
 function arenaRoom(ctx, { stage, sold }) {
   const { pipe, q } = ctx;
@@ -92,7 +94,7 @@ function arenaRoom(ctx, { stage, sold }) {
   // (pipeline/ssa_seats.py, ssa_labels.py); the north end's front blocks,
   // under the stage on the map, as the south end's turned round.
   const OZ = ARENA_OZ;                 // the floor's centre, in this room's coordinates
-  const stands = buildStands(SSA_STANDS, {
+  const stands = buildStands(ARENA_STANDS, {
     // (the lightsticks' blocks by the stands' own aisles)
     byAisle: true,
     // (by the aisles even now the seats are labelled with their doors' blocks: a door's seats are not one block)

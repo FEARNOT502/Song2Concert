@@ -1708,6 +1708,7 @@ export function buildStands(data, {
       b.translate(cx + ox, (y0 + (y0 + (y1 - y0) * (i + 1) / n)) / 2, cz + oz);
       (f.open ? solid : stairs).push(b.toNonIndexed());
     }
+    if (f.sideWalls === false) continue;
     for (const s of [-1, 1]) {
       const px = -dz * s * (w / 2 + 0.02), pz = dx * s * (w / 2 + 0.02);
       if (!f.open) {

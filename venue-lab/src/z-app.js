@@ -1,3 +1,10 @@
+import * as THREE from 'three';
+import { appPalette, clamp, COVERS, drawCover, extractPalette, V3 } from '../../src/three/core.js';
+import { createStage } from '../../src/three/stage.js';
+import { VENUE_BUILDERS } from '../../src/three/venues/index.js';
+import { modeOf, ROUND_VENUES } from '../../src/useVenueModes.js';
+import { Tags, sleeveCanvas, typeSleeve } from './y-tags.js';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // the app: venue switching, the beat, the palette, the look-around, the UI
 // ─────────────────────────────────────────────────────────────────────────────
@@ -7,25 +14,10 @@ const INFO = {
   theater: { name: 'Theater', type: 'PROSCENIUM · MUSICAL', ref: '블루스퀘어 신한카드홀 기반', seats: '1,766', seat: 'Stalls, row 9', dist: '14 m', rt: '1.28', vol: '15,000', warm: '1.01', refl: '+16' },
   concerthall: { name: 'Concert Hall', type: 'VINEYARD', ref: '롯데콘서트홀 기반', seats: '2,036', seat: 'Terrace block', dist: '13 m', rt: '2.02', vol: '22,000', warm: '1.20', refl: '+12' },
   arena: { name: 'Arena', type: 'ARENA · END STAGE', ref: '사이타마 슈퍼 아레나 기반', seats: '22,500', seat: 'FOH, floor', dist: '36 m', rt: '2.64', vol: '400,000', warm: '1.14', refl: '+44' },
-  inspire: { name: 'Inspire', type: 'ARENA · T-STAGE', ref: '인스파이어 아레나 기반', seats: '15,000', seat: 'FOH, floor', dist: '44 m', rt: '2.30', vol: '310,000', warm: '1.10', refl: '+38' },
-  kspo: { name: 'KSPO DOME', type: 'ARENA · T-STAGE', ref: 'KSPO DOME 기반', seats: '14,594', seat: 'FOH, floor', dist: '34 m', rt: '2.20', vol: '260,000', warm: '1.08', refl: '+34' },
   dome: { name: 'Dome', type: 'DOMED STADIUM', ref: '도쿄 돔 기반', seats: '45,000', seat: 'FOH, field', dist: '56 m', rt: '3.63', vol: '1,240,000', warm: '1.50', refl: '+84' },
   stadium: { name: 'Stadium', type: 'OPEN STADIUM', ref: '웸블리 스타디움 기반', seats: '90,000', seat: 'FOH, pitch', dist: '66 m', rt: '2.15', vol: '1,139,100', warm: '1.18', refl: '+112' },
 };
-const ORDER = ['club', 'theater', 'concerthall', 'arena', 'inspire', 'kspo', 'dome', 'stadium'];
-const RETRACT = { inspire: '100번대 가변석', kspo: '1층 가변석' };
-const BUILDERS = {
-  club: typeof buildClub === 'function' ? buildClub : null,
-  theater: typeof buildTheater === 'function' ? buildTheater : null,
-  concerthall: typeof buildConcertHall === 'function' ? buildConcertHall : null,
-  arena: typeof buildArena === 'function' ? buildArena : null,
-  inspire: typeof buildInspire === 'function' ? buildInspire : null,
-  kspo: typeof buildKspo === 'function' ? buildKspo : null,
-  dome: typeof buildDome === 'function' ? buildDome : null,
-  stadium: typeof buildStadium === 'function' ? buildStadium : null,
-};
-// the venues this build has the sources for, in order
-const VENUES = ORDER.filter((id) => BUILDERS[id]);
+const VENUES = Object.keys(VENUE_BUILDERS);
 
 // ── the beat: a simulated track with a real song's shape, or a real file ──
 class Beat {
@@ -103,253 +95,154 @@ class Beat {
   }
 }
 
-// ── album art ──
 const Art = {
-  id: 'blueRoom', canvas: null, meta: COVERS.blueRoom, palette: null, cache: new Map(), coverTex: null,
+  id: 'blueRoom', meta: COVERS.blueRoom, palette: null, src: null,
   set(canvas, meta, id) {
-    for (const t of this.cache.values()) t.dispose();
-    this.cache.clear();
-    this.coverTex?.dispose();
-    this.canvas = canvas; this.meta = meta; this.id = id;
+    this.src = canvas.toDataURL('image/jpeg', 0.93);
+    this.meta = meta;
+    this.id = id;
     this.palette = extractPalette(canvas);
-    this.coverTex = new THREE.CanvasTexture(canvas);
-    this.coverTex.colorSpace = THREE.SRGBColorSpace;
-  },
-  texture(aspect) {
-    const k = aspect.toFixed(3);
-    if (!this.cache.has(k)) this.cache.set(k, screenContent(this.canvas, this.meta, aspect));
-    return this.cache.get(k);
   },
 };
 
-function disposeTree(root) {
-  root.traverse((o) => {
-    if (o.isInstancedMesh) o.dispose();
-    o.geometry?.dispose();
-    const ms = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
-    for (const m of ms) {
-      for (const k of Object.keys(m)) { const v = m[k]; if (v && v.isTexture && !v.userData.shared && !isArtTex(v)) v.dispose(); }
-      m.dispose();
-    }
-    if (o.isLight && o.shadow?.map) o.shadow.map.dispose();
-  });
-}
-const isArtTex = (t) => t === Art.coverTex || [...Art.cache.values()].includes(t);
-
 const App = {
-  pipe: null, venue: null, venueId: 'club', ctx: null, retract: false,
-  quality: 'high', house: 0, houseTarget: 0, mode: 'app', crowdLight: 'stick',
-  pal: null, palTarget: null,
-  beat: new Beat(),
-  frames: 0, fps: 60, building: false, timeOffset: 0,
+  stage: null, venueId: VENUES[0], layouts: {}, quality: 'high',
+  mode: 'app', crowdLight: 'stick', houseTarget: 0, fps: 0,
+  beat: new Beat(), building: false, _paused: false,
+
+  get pipe() { return this.stage.debug.pipe; },
+  get walker() { return this.stage.debug.walker; },
+  get venue() { return { root: this.walker.root }; },
+  get paused() { return this._paused; },
+  set paused(value) {
+    this._paused = !!value;
+    this.stage.debug.setPaused(this._paused);
+  },
 
   async init() {
     const canvas = document.getElementById('stage');
-    this.pipe = new Pipeline(canvas);
-    this.walker = new Walker(canvas);
-    const q = new URLSearchParams(location.search);
-    if (q.get('q') === 'low' || (window.matchMedia?.('(max-width: 720px)').matches && q.get('q') !== 'high')) this.quality = 'low';
-    this.pipe.setQuality(this.quality);
-    const resize = () => this.pipe.resize(canvas.clientWidth, canvas.clientHeight);
+    const query = new URLSearchParams(location.search);
+    if (query.get('q') === 'low' || (matchMedia('(max-width: 720px)').matches && query.get('q') !== 'high')) this.quality = 'low';
+    this.stage = createStage(canvas, { quality: this.quality });
+    if (!this.stage) throw new Error('WebGL을 사용할 수 없습니다');
+    const resize = () => this.stage.resize(canvas.clientWidth, canvas.clientHeight);
     new ResizeObserver(resize).observe(canvas);
     resize();
-    try { await Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 2500))]); } catch { /* fonts are optional */ }
+
     Art.set(drawCover('blueRoom'), COVERS.blueRoom, 'blueRoom');
-    this.pal = appPalette(); this.palTarget = appPalette();
     UI.init(this);
-    const id = (location.hash || '').slice(1);
-    await this.setVenue(VENUES.includes(id) ? id : 'club');
-    let last = performance.now();
+    this.applyArt();
+    this.syncPlayback();
+    this.stage.start();
+
+    const id = location.hash.slice(1);
+    const venue = VENUES.includes(id) ? id : VENUES[0];
+    this.layouts[venue] = query.get('layout');
+    await this.setVenue(venue);
+
+    let last = performance.now(), sample = last, drawn = this.stage.stats().drawn;
     const loop = (now) => {
       requestAnimationFrame(loop);
-      const dt = Math.min(0.1, (now - last) / 1000); last = now;
-      if (document.hidden || this.paused) return;
-      this.frame(dt, now / 1000);
+      const dt = Math.min(0.1, (now - last) / 1000);
+      last = now;
+      if (this.paused || document.hidden) return;
+      this.updatePulse(dt);
+      if (now - sample >= 500) {
+        const next = this.stage.stats().drawn;
+        this.fps = (next - drawn) * 1000 / (now - sample);
+        UI.fps(this.fps);
+        drawn = next;
+        sample = now;
+      }
     };
     requestAnimationFrame(loop);
   },
 
-  ctxFor() {
-    const pipe = this.pipe;
-    const screens = [];
-    const rigs = [];
-    const cu = crowdUniforms();
-    return {
-      pipe, q: pipe.q, cu, screens, rigs, retract: this.retract,
-      art: { texture: (aspect) => Art.texture(aspect), cover: () => Art.coverTex },
-      addScreen: (group, aspect, kind = 'main') => {
-        screens.push({ group, aspect, kind, haze: [] });
-        if (kind !== 'ribbon' && group.userData.face) pipe.mask.add(group.userData.face);
-      },
-      screenHaze: (group, items, offsets) => { const s = screens.find((x) => x.group === group); if (s) s.haze.push(...items.map((h, i) => ({ h, o: offsets[i] }))); },
-      rig: (opts) => { const r = new Rig(pipe, opts); rigs.push(r); return r; },
-    };
+  async build(load) {
+    if (this.building) return;
+    this.building = true;
+    UI.loading(true, INFO[this.venueId].name);
+    try {
+      await load();
+      UI.loading(false);
+    } catch (error) {
+      console.error(error);
+      UI.loading(true, `오류: ${error.message}`);
+    } finally {
+      this.building = false;
+    }
   },
 
   async setVenue(id) {
-    if (!BUILDERS[id]) return;
-    this.building = true;
-    UI.loading(true, INFO[id].name);
-    await this.fade(0, 180);
-    const pipe = this.pipe;
-    if (this.venue) {
-      pipe.scene.remove(this.venue.root);
-      disposeTree(this.venue.root);
-      this.envRT?.dispose(); this.envRT = null;
-    }
-    pipe.beams.clear(); pipe.haze.clear(); pipe.flares.clear(); pipe.mask.clear();
-    pipe.scene.remove(pipe.flares.mesh);
-    await new Promise((r) => setTimeout(r, 16));
-    const ctx = this.ctxFor();
-    const v = BUILDERS[id](ctx);
-    for (const r of ctx.rigs) v.root.add(r.build());
-    dropDegenerateTriangles(v.root);
-    pipe.scene.add(v.root);
-    pipe.scene.add(pipe.flares.mesh);
-    pipe.scene.background = v.background || new THREE.Color(0);
-    pipe.scene.fog = v.fog || null;
-    const cam = pipe.camera;
-    cam.fov = v.camera.fov; cam.near = v.camera.near ?? 0.1; cam.far = v.camera.far ?? 2000;
-    cam.updateProjectionMatrix();
-    this.venue = v; this.ctx = ctx; this.venueId = id;
-    this.walker.setVenue(v.root, v.camera.pos, v.camera.target);
-    this.applyCamera();
-    const b = v.bloom || {};
-    pipe.bloom.strength = b.strength ?? 0.6; pipe.bloom.radius = b.radius ?? 0.6; pipe.bloom.threshold = b.threshold ?? 0.9;
-    const G = pipe.final.material.uniforms, g = v.grade || {};
-    G.uExposure.value = g.exposure ?? 1; G.uVignette.value = g.vignette ?? 0.35; G.uCA.value = g.ca ?? 0.004;
-    G.uGrain.value = pipe.q.grain ? (g.grain ?? 0.035) : 0; G.uSat.value = g.sat ?? 1.05;
-    G.uLift.value.setRGB(...(g.lift || [0, 0, 0]));
-    pipe.haze.uniforms.uDensity.value = v.hazeDensity ?? 0.02;
-    pipe.beams.uniforms.uGain.value = v.beamGain ?? 1;
-    pipe.haze.uniforms.uAmb.value.copy(v.hazeAmb || new THREE.Color(0));
-    pipe.haze.uniforms.uAmbDist.value = v.hazeAmbDist ?? 80;
-    this.applyArt();
-    location.hash = id;
+    if (!VENUES.includes(id) || this.building) return;
+    this.venueId = id;
+    if (location.hash.slice(1) !== id) location.hash = id;
     UI.venue(id);
-    try { await pipe.renderer.compileAsync(pipe.scene, cam); } catch { /* compile on first frame instead */ }
-    this.frame(0.016, performance.now() / 1000);
-    this.building = false;
-    UI.loading(false);
-    this.fade(1, 420);
-    this.frames = 0;
+    await this.build(() => this.stage.setVenue(id, modeOf(this.layouts, id)));
   },
 
-  fade(to, ms) {
-    const U = this.pipe.final.material.uniforms.uFade;
-    const from = U.value, t0 = performance.now();
-    return new Promise((res) => {
-      const step = () => {
-        const k = clamp((performance.now() - t0) / ms);
-        U.value = from + (to - from) * k * k * (3 - 2 * k);
-        if (k < 1) requestAnimationFrame(step); else res();
-      };
-      if (ms <= 0) { U.value = to; res(); } else step();
-    });
+  async setLayout(layout) {
+    if (this.building) return;
+    this.layouts[this.venueId] = layout;
+    await this.setVenue(this.venueId);
   },
 
-  // screens, their light, their haze, and the reflections, from the current art
-  applyArt() {
-    const v = this.venue, ctx = this.ctx;
-    if (!v) return;
-    for (const s of ctx.screens) {
-      const face = s.group.userData.face;
-      const tex = s.kind === 'main' ? Art.texture(s.aspect) : Art.coverTex;
-      if (face) face.material.uniforms.tArt.value = tex;
-      const img = s.kind === 'main' ? tex.image : Art.canvas;
-      const avg = regionColor(img, 0, 0, 1, 1);
-      s.avg = avg;
-      if (s.group.userData.rect) s.group.userData.rect.color.copy(avg).multiplyScalar(1 / Math.max(0.05, Math.max(avg.r, avg.g, avg.b)));
-      s.lum = Math.max(avg.r, avg.g, avg.b);
-      for (const { h, o } of s.haze) h.color.copy(regionColor(img, 0.5 + o[0] * 0.5 - 0.2, 0.5 - o[1] * 0.5 - 0.2, 0.5 + o[0] * 0.5 + 0.2, 0.5 - o[1] * 0.5 + 0.2));
-    }
-    this.rebuildEnv();
+  async setQuality(quality) {
+    if (this.building || quality === this.quality) return;
+    this.quality = quality;
+    UI.pressed('#seg-quality', quality);
+    await this.build(() => this.stage.setQuality(quality));
   },
 
-  rebuildEnv() {
-    const v = this.venue;
-    if (!v?.env) return;
-    const spec = { ...v.env, emitters: (v.env.emitters || []).map((e) => (e.screen ? { ...e, map: Art.texture(e.aspect || 16 / 9) } : e)) };
-    this.envRT?.dispose();
-    this.envRT = buildEnvironment(this.pipe, spec);
-    this.pipe.scene.environment = this.envRT.texture;
-    this.pipe.scene.environmentIntensity = v.envIntensity ?? 0.6;
+  setHouse(level, immediate = false) {
+    this.houseTarget = clamp(level);
+    this.stage.setHouseLights(this.houseTarget, immediate);
+    UI.pressed('#seg-lights', this.houseTarget > 0.5 ? 'house' : 'show');
+  },
+
+  setCrowdLight(mode) {
+    this.crowdLight = mode;
+    this.stage.setCrowdLight(mode);
+    UI.pressed('#seg-crowd', mode);
+  },
+
+  syncPlayback() {
+    this.stage.setPlaying(this.beat.playing);
+    this.stage.setHouseLights(this.houseTarget);
+  },
+
+  updatePulse(dt) {
+    this.beat.update(dt);
+    this.stage.setPulse(clamp(this.beat.energy * 0.5 + this.beat.kick * 0.5));
   },
 
   setMode(mode) {
     this.mode = mode;
-    this.palTarget = mode === 'art' ? Art.palette : appPalette();
-    UI.tone(this);
-  },
-
-  // Picking a sleeve is asking to see it: the lighting takes its colours at
-  // once. 'App' puts the design system's amber back.
-  setCover(canvas, meta, id, { tone = true } = {}) {
-    Art.set(canvas, meta, id);
-    if (tone) this.mode = 'art';
-    this.palTarget = this.mode === 'art' ? Art.palette : appPalette();
     this.applyArt();
     UI.tone(this);
   },
 
-  applyCamera() {
-    const v = this.venue;
-    if (!v) return;
-    const cam = this.pipe.camera;
-    // a portrait screen keeps at least ~56 degrees across, so the stage is
-    // still in the room rather than a keyhole onto the screen
-    const minH = 56 * DEG;
-    const fov = Math.min(100, Math.max(v.camera.fov, 2 * Math.atan(Math.tan(minH / 2) / cam.aspect) / DEG));
-    if (Math.abs(cam.fov - fov) > 0.01) { cam.fov = fov; cam.updateProjectionMatrix(); }
-    if (this.debugCam) { cam.position.copy(this.debugCam.pos); cam.lookAt(this.debugCam.tgt); return; }
-    this.walker.update(this.walkDt || 0, cam);
+  setCover(canvas, meta, id, { tone = true } = {}) {
+    Art.set(canvas, meta, id);
+    if (tone) this.mode = 'art';
+    this.applyArt();
+    UI.tone(this);
   },
 
-  frame(dt, now) {
-    const v = this.venue;
-    if (!v) return;
-    const pipe = this.pipe;
-    this.beat.update(dt);
-    const t = this.beat.clock + this.timeOffset;
-    this.house += (this.houseTarget - this.house) * Math.min(1, dt * 1.4);
-    for (const k of ['a', 'b', 'c', 'd']) this.pal[k].lerp(this.palTarget[k], Math.min(1, dt * 2.2));
-    this.walkDt = dt;
-    this.applyCamera();
-    const B = this.beat;
-    const f = { t, dt, kick: B.kick, snare: B.snare, hat: B.hat, energy: B.energy, bar: B.bar, beat: B.beat, house: this.house, pal: this.pal, cam: pipe.camera.position };
-    const cu = this.ctx.cu;
-    cu.uTime.value = t; cu.uKick.value = B.kick * (1 - this.house); cu.uEnergy.value = B.energy * (1 - this.house * 0.8);
-    cu.uFlick.value = B.kick * (1 - this.house);
-    v.update(f);
-    for (const r of this.ctx.rigs) r.update(1, pipe.camera.position);
-    const pulse = clamp(B.kick * 0.6 + B.energy * 0.3) * (1 - this.house);
-    for (const s of this.ctx.screens) {
-      const face = s.group.userData.face;
-      if (face) { const U = face.material.uniforms; U.uTime.value = t; U.uPulse.value = pulse; U.uHouse.value = this.house; for (const k of ['uTint', 'uTint2']) if (U[k]) U[k].value.copy(k === 'uTint' ? this.pal.a : this.pal.b); }
-      const rect = s.group.userData.rect;
-      if (rect) rect.intensity = (s.lum ?? 0.3) * (face?.material.uniforms.uBright.value ?? 1) * (s.group.userData.lightPower ?? 1) * (0.9 + 0.2 * pulse) * (1 - 0.45 * this.house) * 1.6;
-      for (const { h } of s.haze) h.power = (s.group.userData.hazePower ?? 20) * (0.85 + 0.3 * pulse) * (1 - 0.6 * this.house);
-      if (s.group.userData.bezel) ringTint(s.group.userData.bezel.color, this.pal.a).multiplyScalar(0.7 + pulse * 0.6);
-    }
-    // lightstick / phone points take the palette; the crowd's own lights
-    // follow the stick/torch switch and dim when the house lights come up
-    const mode = this.crowdLight === 'flash' ? 1 : 0;
-    pipe.scene.traverseVisible((o) => {
-      if (o.userData.crowdLights) { o.material.uniforms.uMode.value = mode; o.material.uniforms.uHouse.value = this.house; }
-      if (o.isPoints && o.material.uniforms?.uPal) {
-        const P = o.material.uniforms.uPal.value;
-        ['a', 'b', 'c', 'd'].forEach((k, i) => P[i].set(this.pal[k].r, this.pal[k].g, this.pal[k].b));
-        o.material.uniforms.uScale.value = (pipe.size.h * pipe.renderer.getPixelRatio() * 0.5) / Math.tan(pipe.camera.fov * 0.5 * DEG);
-      }
-      if (o.material?.uniforms?.fogDensity && pipe.scene.fog) {
-        o.material.uniforms.fogDensity.value = pipe.scene.fog.density ?? 0;
-        o.material.uniforms.fogColor.value.copy(pipe.scene.fog.color);
-      }
-    });
-    pipe.render(t);
-    this.frames++;
-    this.fps += ((dt > 0 ? 1 / dt : 60) - this.fps) * 0.05;
-    if (this.frames % 20 === 0) UI.fps(this.fps);
+  applyArt() {
+    this.stage.setArt({ coverSrc: Art.src, title: Art.meta.title, artist: Art.meta.artist, tone: this.mode });
+  },
+
+  setCamera(eye, target) {
+    const home = this.walker.home;
+    this.walker.home = { eye, target };
+    this.walker.reset();
+    this.walker.home = home;
+  },
+
+  frame(dt) {
+    this.updatePulse(dt);
+    this.stage.debug.drawFrame(dt);
   },
 };
 
@@ -362,28 +255,15 @@ const UI = {
     VENUES.forEach((id) => {
       const b = document.createElement('button');
       b.type = 'button'; b.id = `tab-${id}`; b.dataset.id = id; b.textContent = INFO[id].name;
-      b.disabled = !BUILDERS[id];
       b.addEventListener('click', () => { if (!app.building && app.venueId !== id) app.setVenue(id); });
       tabs.appendChild(b);
     });
     const seg = (sel, fn) => $(sel).querySelectorAll('button').forEach((b) => b.addEventListener('click', () => fn(b.dataset.v)));
-    seg('#seg-lights', (v) => { app.houseTarget = v === 'house' ? 1 : 0; this.pressed('#seg-lights', v); });
-    seg('#seg-quality', async (v) => {
-      if (app.building || app.quality === v) return;
-      app.quality = v; this.pressed('#seg-quality', v);
-      app.pipe.setQuality(v);
-      await app.setVenue(app.venueId);
-    });
+    seg('#seg-lights', (v) => app.setHouse(v === 'house' ? 1 : 0));
+    seg('#seg-quality', (v) => app.setQuality(v));
+    seg('#seg-layout', (v) => app.setLayout(v));
     seg('#seg-tone', (v) => app.setMode(v));
-    seg('#seg-crowd', (v) => { app.crowdLight = v; this.pressed('#seg-crowd', v); });
-    // Inspire's 100s: out, or folded away for a bigger floor (the room is rebuilt)
-    seg('#seg-retract', async (v) => {
-      const r = v === 'in';
-      if (app.building || app.retract === r) return;
-      app.retract = r; this.pressed('#seg-retract', v);
-      await app.setVenue(app.venueId);
-    });
-    this.pressed('#seg-retract', app.retract ? 'in' : 'out');
+    seg('#seg-crowd', (v) => app.setCrowdLight(v));
     this.pressed('#seg-crowd', app.crowdLight);
     this.pressed('#seg-quality', app.quality);
     this.pressed('#seg-lights', 'show');
@@ -429,7 +309,7 @@ const UI = {
       if (!file) return;
       $('#beat-label').textContent = '음원을 읽는 중…';
       const tags = Tags.read(file).catch(() => null);
-      try { await app.beat.attach(file); $('#beat-toggle').textContent = '음원 멈추기'; } catch { $('#beat-label').textContent = '이 파일은 브라우저가 디코드하지 못합니다. MP3·WAV·FLAC을 올려 주세요'; return; }
+      try { await app.beat.attach(file); app.syncPlayback(); $('#beat-toggle').textContent = '음원 멈추기'; } catch { $('#beat-label').textContent = '이 파일은 브라우저가 디코드하지 못합니다. MP3·WAV·FLAC을 올려 주세요'; return; }
       const t = await tags;
       const title = t?.title || file.name.replace(/\.[^.]+$/, ''), artist = t?.artist || '';
       let sleeve = null;
@@ -442,19 +322,25 @@ const UI = {
     });
     $('#beat-toggle').addEventListener('click', () => {
       const B = app.beat;
-      if (B.audio) { const on = B.toggleAudio(); $('#beat-toggle').textContent = on ? '음원 멈추기' : '음원 재생'; return; }
+      if (B.audio) {
+        B.playing = B.toggleAudio();
+        app.syncPlayback();
+        $('#beat-toggle').textContent = B.playing ? '음원 멈추기' : '음원 재생';
+        return;
+      }
       B.playing = !B.playing;
+      app.syncPlayback();
       $('#beat-toggle').setAttribute('aria-pressed', String(B.playing));
       $('#beat-toggle').textContent = B.playing ? '비트 멈추기' : '비트 재생';
     });
     $('#tone-toggle').addEventListener('click', () => { document.body.classList.toggle('tone-open'); });
     window.addEventListener('keydown', (e) => {
-      if (e.target.closest?.('input')) return;
+      if (e.target.closest?.('input, select, textarea')) return;
       const i = VENUES.indexOf(app.venueId);
       if (e.key === 'ArrowRight' && !app.building) app.setVenue(VENUES[(i + 1) % VENUES.length]);
       if (e.key === 'ArrowLeft' && !app.building) app.setVenue(VENUES[(i + VENUES.length - 1) % VENUES.length]);
-      if (e.key === 'h' || e.key === 'H') { app.houseTarget = app.houseTarget ? 0 : 1; this.pressed('#seg-lights', app.houseTarget ? 'house' : 'show'); }
-      if (e.key === ' ') { e.preventDefault(); $('#beat-toggle').click(); }
+      if (e.key === 'h' || e.key === 'H') app.setHouse(app.houseTarget ? 0 : 1);
+      if (e.key === ' ' && !e.target.closest?.('button')) { e.preventDefault(); $('#beat-toggle').click(); }
     });
     this.tone(app);
   },
@@ -488,10 +374,12 @@ const UI = {
     $('#v-vol').textContent = I.vol;
     $('#v-warm').textContent = I.warm;
     $('#v-refl').textContent = I.refl;
-    $('#crowd-row').hidden = !['arena', 'inspire', 'kspo', 'dome', 'stadium'].includes(id);
-    // the telescopic seats: Inspire's 100s, KSPO DOME's 1st floor
-    $('#retract-row').hidden = !RETRACT[id];
-    if (RETRACT[id]) { $('#retract-label').textContent = RETRACT[id]; $('#seg-retract').setAttribute('aria-label', RETRACT[id]); }
+    const round = ROUND_VENUES.includes(id);
+    $('#crowd-row').hidden = !round;
+    $('#seg-layout').hidden = !round && id !== 'theater';
+    $('#seg-layout [data-v="360"]').hidden = !round;
+    $('#seg-layout [data-v="op"]').hidden = id !== 'theater';
+    this.pressed('#seg-layout', modeOf(App.layouts, id));
   },
   tone(app) {
     this.pressed('#seg-tone', app.mode);
@@ -520,14 +408,17 @@ window.__app = App; window.__art = Art; window.__tags = { Tags, sleeveCanvas };
 window.__pal = (id) => { const p = extractPalette(drawCover(id)); return { kind: p.kind, cols: ["a", "b", "c", "d"].map((k) => p[k].getHexString()) }; };
 window.__info = () => ({ walk: [App.walker.feet.x, App.walker.feet.y, App.walker.feet.z, App.walker.eyeH].map((v) => +v.toFixed(2)), bvh: !!App.walker.bvh, venue: App.venueId, fps: Math.round(App.fps), beams: App.pipe.beams.geo.instanceCount, calls: App.pipe.renderer.info.render.calls, tris: App.pipe.renderer.info.render.triangles, progs: App.pipe.renderer.info.programs?.length });
 window.__set = async (o = {}) => {
-  if (o.house !== undefined) { App.houseTarget = +o.house; App.house = +o.house; }
+  if (o.layout) await App.setLayout(o.layout);
+  if (o.quality) await App.setQuality(o.quality);
+  if (o.house !== undefined) App.setHouse(+o.house, true);
   if (o.cover) App.setCover(drawCover(o.cover), COVERS[o.cover], o.cover, { tone: o.mode !== 'app' });
   if (o.mode) App.setMode(o.mode);
-  if (o.mode === 'art') for (const k of ['a', 'b', 'c', 'd']) App.pal[k].copy(App.palTarget[k]);
   if (o.t !== undefined) { App.beat.clock = +o.t; App.beat.energy = App.beat.sectionEnergy(Math.floor(+o.t * App.beat.bpm / 240)); }
-  if (o.cam) { const c = String(o.cam).split(',').map(Number); App.debugCam = { pos: V3(c[0], c[1], c[2]), tgt: V3(c[3], c[4], c[5]) }; App.applyCamera(); }
-  if (o.light) { App.crowdLight = o.light; UI.pressed('#seg-crowd', o.light); }
-  if (o.retract !== undefined && !!+o.retract !== !!App.retract) { App.retract = !!+o.retract; UI.pressed('#seg-retract', App.retract ? 'in' : 'out'); await App.setVenue(App.venueId); }
+  if (o.cam) {
+    const c = String(o.cam).split(',').map(Number);
+    if (c.length === 6 && c.every(Number.isFinite)) App.setCamera(V3(...c.slice(0, 3)), V3(...c.slice(3)));
+  }
+  if (o.light) App.setCrowdLight(o.light);
   if (o.yaw !== undefined) App.walker.yaw += +o.yaw;
   if (o.pitch !== undefined) App.walker.pitch += +o.pitch;
   // to: "x,z;x,z" walks to each point in turn (stops early if stuck)
@@ -559,7 +450,6 @@ window.__set = async (o = {}) => {
     for (let t = 0; t < 1; t += 1 / 30) App.walker.update(1 / 30, App.pipe.camera);
   }
   App.beat.playing = o.freeze ? false : App.beat.playing;
-  if (o.quality && o.quality !== App.quality) { App.quality = o.quality; App.pipe.setQuality(o.quality); UI.pressed('#seg-quality', o.quality); await App.setVenue(App.venueId); }
   if (o.hidesil) App.venue.root.traverse((m) => { if (m.geometry?.isInstancedBufferGeometry) m.visible = false; });
   if (o.hidepts) App.venue.root.traverse((m) => { if (m.isPoints) m.visible = false; });
   if (o.noui) document.querySelectorAll('.top,.rail,.hint').forEach((e) => { e.style.display = 'none'; });
@@ -578,7 +468,11 @@ App.init().then(() => {
   let n = 0;
   const wait = () => { if (++n > 3) window.__ready = true; else requestAnimationFrame(wait); };
   requestAnimationFrame(wait);
-}).catch((e) => { console.error(e); document.getElementById('loading-name').textContent = `오류: ${e.message}`; });
+}).catch((e) => {
+  console.error(e);
+  document.getElementById('loading').hidden = false;
+  document.getElementById('loading-name').textContent = `오류: ${e.message}`;
+});
 
 // debug: what a ray from `o` along `d` runs into first, and what it is
 window.__rayHits = (root, o, d, far = 60) => {

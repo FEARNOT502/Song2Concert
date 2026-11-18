@@ -1,40 +1,31 @@
-# Venue lab
+# Venue Lab
 
-The single-page prototype published as the Song2Concert venue-lab artifact.
-Every venue is built here first, then ported into the app's `src/three`.
-
-Tokyo Dome's current remodel targets the app renderer in `src/three/venues/dome.js`.
-Its generated data is shared with this lab, but the lab renderer is an older
-prototype. See the [Dome generation and verification notes](../docs/TOKYO_DOME_REMODEL_NOTES.ko.md)
-before regenerating or copying renderer files.
-
-The Theater remodel also targets the app renderer directly. Its official-plan
-seat catalogue and floor/row/seat picker are documented in
-[Theater remodel notes](../docs/THEATER_REMODEL.ko.md). The lab Theater is an older
-prototype; do not overwrite the app's remodeled Theater with the lab generator.
+The standalone Venue Lab uses the same stage renderer, venue builders, and
+models as Song2Concert. It shows Club, Theater, Concert Hall, Arena, Dome, and
+Stadium. Arena, Dome, and Stadium offer general and 360 layouts. Theater also
+offers its orchestra-pit layout.
 
 ## Build and view
 
+Run from the repository root:
+
 ```sh
-cd venue-lab
-npm install
-node build.mjs          # src/*.js + template.html -> out/venue-lab.html, out/test.html
+npm ci
+node venue-lab/build.mjs
 ```
 
-Open `out/test.html` in a browser (it loads three.js from jsDelivr), e.g.
-`out/test.html?inspire#inspire`. `out/venue-lab.html` is the artifact body
-(the artifact host wraps it in a document).
+Open `venue-lab/out/test.html` directly in a WebGL-capable browser. For example,
+`test.html?q=low&layout=360#arena` opens Arena with the center-stage layout.
+`out/venue-lab.html` is the HTML fragment for an artifact host. Both outputs
+bundle the renderer and geometry with the page.
 
 ## Files
 
-- `src/` — the prototype, concatenated in file-name order by `build.mjs`.
-  `*-data.js` are the generated stands (`i0` SSA, `j0` Tokyo Dome, `k0` Wembley,
-  `g0` Lotte hall, `n0` Inspire, `o0` KSPO DOME).
+- `template.html` defines the Lab controls. `src/z-app.js` connects them to
+  `../src/three/stage.js`. The venue list comes from the app's builder registry.
+- `src/` also holds archived prototype renderers used by the data tooling.
 - `pipeline/` — the Python that generates the stands (numpy, scipy, opencv,
-  scikit-image). Run the generators from inside `pipeline/`, then
-  `python3 pipeline/mkdata.py insp` (from `venue-lab/`) rewrites the data file.
-  `insp_build.py` (Inspire) and `kspo_build.py` (KSPO DOME) regenerate those two
-  from the inputs here; `python3 pipeline/mkdata.py insp kspo`.
+  scikit-image). Run the generators from inside `pipeline/`.
   The Tokyo Dome, SSA and Wembley generators also read large intermediate
   files (`*.pkl`, plan images) that are not in the repo.
   SSA (arena mode, end stage 2) starts from the official seat map:
@@ -50,22 +41,20 @@ Open `out/test.html` in a browser (it loads three.js from jsDelivr), e.g.
   (each seat's block, row and number; blocks named by their doors) and
   `python3 ssa_blockmap.py` (the picker's plan, `src/three/venues/ssa-blocks.js`).
   `python3 pipeline/mkdata.py ssa` (from `venue-lab/`) rewrites
-  `src/i0-ssa-data.js` (the app's `ssa-data.js` is the same with `export`).
+  the archived `src/i0-ssa-data.js`. The Lab renders the app's
+  `../src/three/venues/ssa-data.js`.
   `SSA_DOORS_OUT=<file>` also writes the doors' list. (`ssa_north.py`, which
   made the north end the south's mirror, is no longer run: the north end is the
   list's own.)
-- `gen.mjs` — ports `src/` to ES modules: `node gen.mjs gen-out`, then copy the
-  changed files into `../src/three/` (Inspire and KSPO DOME are lab-only and not ported).
+- `gen.mjs` is the archived prototype-to-module converter.
 
 ## Checks
 
-Uses Chromium through `playwright-core`; set the browser path in each script
-(`executablePath`) to your local Chrome/Chromium.
+Run from `venue-lab/` after building. Set `CHROME` to the path to Chromium.
 
-- `node shot.mjs out/venue-lab.html shots/x inspire 1280 720 "house=1"` — screenshot
-  (`cam=x,y,z,tx,ty,tz`, `retract=1`, `house=0..1`).
-- `node reachtest.mjs inspire 12,60,0.5 1.0` then
-  `python3 reachcheck.py inspire pipeline/insp_stands.json 36` — every seat reachable on foot.
-- `node uitest.mjs` — Inspire tab and the 100s retract toggle.
-- `node tour.mjs <venue> <outdir> '[{"name":"v","q":"house=1&cam=x,y,z,tx,ty,tz"}]'` — several
-  views in one load; `node probe.mjs <venue> <cam> <px,py;…>` — what a pixel shows.
+- `node uitest.mjs` opens the standalone HTML offline and verifies all six
+  venues and their optional layouts.
+- `node shot.mjs out/venue-lab.html shots/x arena 1280 720 "house=1&layout=360"`
+  captures a screenshot. Use `cam=x,y,z,tx,ty,tz` to set the view.
+- `node tour.mjs <venue> <outdir> '[{"name":"v","q":"house=1&cam=x,y,z,tx,ty,tz"}]'`
+  captures several views in one load.

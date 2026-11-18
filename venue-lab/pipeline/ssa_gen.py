@@ -1074,6 +1074,8 @@ for _it in range(3):
         _patch.append([round(a_[0],2),round(a_[1],2),round(b_[0],2),round(b_[1],2),round(g_['lo']-0.15,2),round(g_['hi']+0.15,2)])
     data['rooms']['walls']+=cut_doors(merge_runs(_patch),DOORLIST)
 print('concourses closed: %d gaps walled up (%.1f m); left open: %d'%(_n,_n*0.25,len(SCL.gaps(data))))
+from ssa_gate_treads import clear_corner_passages
+clear_corner_passages(data)
 json.dump(data,open('ssa_stands.json','w'),separators=(',',':'))
 print('json KB',os.path.getsize('ssa_stands.json')//1024,round(time.time()-T0,1))
 pickle.dump((c200,c300,c400,c500),open('ssa_conc.pkl','wb'))

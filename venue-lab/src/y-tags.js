@@ -4,7 +4,7 @@
 // WAV/AIFF (an ID3 chunk or RIFF INFO). Nothing leaves the page.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const Tags = {
+export const Tags = {
   ascii(b, o, n) { let s = ''; for (let i = 0; i < n && o + i < b.length; i++) s += String.fromCharCode(b[o + i]); return s; },
   be32(b, o) { return ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0; },
   le32(b, o) { return (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0; },
@@ -235,7 +235,7 @@ const Tags = {
 
 // The embedded sleeve as a square canvas, decoded from memory — no blob: URL
 // for the sandbox to refuse. Falls back to a data: URL through an <img>.
-async function sleeveCanvas(pic, S = 1024) {
+export async function sleeveCanvas(pic, S = 1024) {
   const blob = new Blob([pic.bytes], { type: pic.mime });
   let src = null;
   try { src = await createImageBitmap(blob); } catch {
@@ -255,7 +255,7 @@ async function sleeveCanvas(pic, S = 1024) {
 
 // A track with no picture still gets a sleeve: its title set in type over a
 // colour taken from the title itself, so every song lights differently.
-function typeSleeve(title, artist, S = 1024) {
+export function typeSleeve(title, artist, S = 1024) {
   let h = 2166136261;
   for (const ch of `${title}|${artist}`) h = Math.imul(h ^ ch.codePointAt(0), 16777619);
   const hue = (h >>> 0) % 360, hue2 = (hue + 40 + ((h >>> 9) % 80)) % 360;

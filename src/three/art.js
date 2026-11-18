@@ -96,14 +96,14 @@ export function createArt(onChange, { W = 2048 } = {}) {
     async set(want) {
       this.want = want;
       const token = ++this.token;
-      const { coverId = null, coverSrc = null, title = null, artist = null } = want || {};
+      const { coverId = null, coverSrc = null, title = null, artist = null, tone = 'art' } = want || {};
       const meta = title
         ? { title, artist: artist && artist !== '—' ? artist : '', label: 'NOW PLAYING' }
         : { title: '', artist: '', label: '' };
       if (coverSrc) {
         try {
           const c = await loadSleeve(coverSrc, W / 2);
-          if (token === this.token) this.install(c, meta, true);
+          if (token === this.token) this.install(c, meta, tone === 'art');
           return;
         } catch { /* an unreadable picture: fall through to the drawn sleeve */ }
       }
