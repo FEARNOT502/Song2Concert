@@ -535,7 +535,7 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
       raf = requestAnimationFrame(tick);
       if (venueId && !venue) setVenue(venueId);
     },
-    stats: () => ({ drawn, heavy, strain, effects: fx, frameMs: +frameBudget.toFixed(2), gpuMs: Number.isFinite(pipe.gpuMs) ? +pipe.gpuMs.toFixed(2) : null, scale: pipe.scale, dpr: pipe.renderer.getPixelRatio(), sceneDpr: +pipe.sceneDpr.toFixed(3), venue: venueId, mode: venueMode, walker: walker.feet.toArray().map((v) => +v.toFixed(2)) }),
+    stats: () => ({ drawn, heavy, strain, effects: fx, quality: qName, size: [Math.round(size.w), Math.round(size.h)], buffer: [pipe.renderer.domElement.width, pipe.renderer.domElement.height], deviceDpr: window.devicePixelRatio || 1, frameMs: +frameBudget.toFixed(2), gpuMs: Number.isFinite(pipe.gpuMs) ? +pipe.gpuMs.toFixed(2) : null, scale: pipe.scale, dpr: pipe.renderer.getPixelRatio(), sceneDpr: +pipe.sceneDpr.toFixed(3), venue: venueId, mode: venueMode, walker: walker.feet.toArray().map((v) => +v.toFixed(2)) }),
     // for tests and the walk-through: the walker and the pipeline
     debug: {
       walker, pipe, art, beat,

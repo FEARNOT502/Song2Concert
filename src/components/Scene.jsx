@@ -33,6 +33,49 @@ function LoadingCover({ venueId, mode, done }) {
   );
 }
 
+// ?debug in the address: what the renderer is doing now, in a corner (the
+// quality it picked, whether the audio's strain or the GPU's load has taken
+// resolution or effects away, the frame rate), and the stage on the console
+// as window.__stage. Nothing of it is built without the flag.
+const DEBUG = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('debug');
+
+function DebugStats({ stageRef }) {
+  const [s, setS] = useState(null);
+  useEffect(() => {
+    let last = null;
+    const id = setInterval(() => {
+      const st = stageRef.current?.stats?.();
+      if (!st) return;
+      const now = performance.now();
+      const fps = last ? ((st.drawn - last.drawn) * 1000) / (now - last.t) : 0;
+      last = { drawn: st.drawn, t: now };
+      setS({ ...st, fps });
+    }, 500);
+    return () => clearInterval(id);
+  }, [stageRef]);
+  if (!s) return null;
+  const warn = (on) => (on ? 'text-[#ff9a5a]' : '');
+  const row = (k, v, bad = false) => (
+    <div key={k} className="flex justify-between gap-4"><span className="opacity-60">{k}</span><span className={warn(bad)}>{v}</span></div>
+  );
+  return (
+    <div className="pointer-events-none fixed left-1/2 top-[76px] z-[1000] -translate-x-1/2 rounded bg-black/75 px-3 py-2 font-mono text-[11px] leading-[1.45] text-white/90" style={{ minWidth: 220 }}>
+      {row('fps', s.fps.toFixed(0))}
+      {row('quality', s.quality, s.quality === 'low')}
+      {row('strain (audio)', s.strain, s.strain > 0)}
+      {row('effects', s.effects ? 'on' : 'off', !s.effects)}
+      {row('scale (auto res)', s.scale.toFixed(2), s.scale < 1)}
+      {row('dpr / device', `${s.dpr} / ${s.deviceDpr}`, s.dpr < s.deviceDpr)}
+      {row('scene dpr', s.sceneDpr.toFixed(2))}
+      {row('canvas', `${s.size[0]}×${s.size[1]} → ${s.buffer[0]}×${s.buffer[1]}`)}
+      {row('gpu ms', s.gpuMs == null ? 'n/a' : s.gpuMs.toFixed(1))}
+      {row('cpu ms', s.frameMs.toFixed(1))}
+      {row('heavy', s.heavy ? 'yes' : 'no', s.heavy)}
+      {row('venue', `${s.venue}${s.mode && s.mode !== 'general' ? ` ${s.mode}` : ''}`)}
+    </div>
+  );
+}
+
 function Scene({
   venueId, venueMode = 'general', coverId, coverSrc, pulse = 0, pulseRef = null, title, artist,
   strain = 0, effects = true, playing = false, crowdLight = 'stick', analyser = null,
@@ -65,7 +108,7 @@ function Scene({
     else { setOk(false); setLoading(null); }
     if (apiRef) apiRef.current = stage;
     // in development, the stage is reachable from the console (and the checks)
-    if (import.meta.env.DEV && stage) window.__stage = stage;
+    if ((import.meta.env.DEV || DEBUG) && stage) window.__stage = stage;
 
     const ro = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect;
@@ -120,6 +163,7 @@ function Scene({
         aria-label="공연장 3D 장면. 드래그해서 둘러보고 W A S D로 걸어 다닐 수 있습니다."
       />
       {ok && <LoadingCover venueId={loading?.id || venueId} mode={loading ? loading.mode : venueMode} done={!loading} />}
+      {ok && DEBUG && <DebugStats stageRef={stageRef} />}
       {!ok && (
         <StageArt
           rect={box}
