@@ -79,7 +79,10 @@ function showEdgeDistance(ring, x, z) {
 // (deckGridTex: 1.22 m), a faint satin sheen; the sides black cloth.
 function deckMaterials() {
   const top = std({ ...withRepeat(deckGridTex(), 1, 1), color: 0xffffff, roughness: 1, metalness: 0, envMapIntensity: .55 });
-  return [top, mats().fabric];
+  // (the skirts black velour: dead matte, so the front keys aimed at the
+  // runway's end do not light its face up grey)
+  const skirt = std({ color: 0x020202, roughness: 1, envMapIntensity: .15 });
+  return [top, skirt];
 }
 
 function showDeck(root, ring, h, gap, footprints, mat, base = 0) {
