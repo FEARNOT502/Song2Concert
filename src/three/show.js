@@ -811,7 +811,7 @@ export function subLine(root, { x0, x1, z, gap = 0, pitch = 1.6, count = 2, fill
     }
   }
   if (!cab.length) return;
-  root.add(new THREE.Mesh(mergeGeometries(cab), M.cab));
+  root.add(new THREE.Mesh(mergeGeometries(cab), dark ? M.cabDark : M.cab));
   root.add(new THREE.Mesh(mergeGeometries(front), dark ? M.grilleDark : M.grille));
 }
 

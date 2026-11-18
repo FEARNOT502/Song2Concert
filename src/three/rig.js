@@ -49,6 +49,7 @@ export function mats() {
   // light hung over it)
   MATS.grille = std({ ...grilleTex(), roughnessMap: null, color: 0xffffff, roughness: 0.95, metalness: 0, envMapIntensity: 0.3 });
   // (a touring sub's black cloth front, for the concert floors)
+  MATS.cabDark = std({ color: 0x040405, roughness: 0.92, metalness: 0, envMapIntensity: 0.15 });
   MATS.grilleDark = std({ ...grilleTex(), roughnessMap: null, color: 0x1e1e21, roughness: 0.95, metalness: 0, envMapIntensity: 0.15 });
   MATS.cab.envMapIntensity = 0.4;
   MATS.rubber = std({ color: 0x050505, roughness: 0.9 });
