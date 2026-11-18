@@ -1,4 +1,4 @@
-# Venue lab — status after round 12
+# Venue Dev Lab — status after round 12
 
 Artifact: https://claude.ai/artifact/GAJY8f6CQP3od9iFZ2c9nk
 

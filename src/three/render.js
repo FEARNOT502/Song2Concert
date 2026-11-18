@@ -451,7 +451,7 @@ export class VenuePass extends Pass {
 export const FINAL_SHADER = {
   uniforms: {
     tDiffuse: { value: null }, uExposure: { value: 1 }, uTime: { value: 0 }, uVignette: { value: 0.35 },
-    uCA: { value: 0.004 }, uGrain: { value: 0.035 }, uSat: { value: 1.05 }, uRes: { value: new THREE.Vector2(1, 1) },
+    uCA: { value: 0.002 }, uGrain: { value: 0.035 }, uSat: { value: 1.05 }, uRes: { value: new THREE.Vector2(1, 1) },
     uLift: { value: new THREE.Color(0, 0, 0) }, uGain: { value: new THREE.Color(1, 1, 1) }, uFade: { value: 1 },
   },
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
@@ -553,7 +553,7 @@ export class Pipeline {
   constructor(canvas) {
     const r = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', alpha: false, stencil: false });
     this.renderer = r;
-    setMaxAniso(Math.min(8, r.capabilities.getMaxAnisotropy()));
+    setMaxAniso(Math.min(16, r.capabilities.getMaxAnisotropy()));
     r.shadowMap.enabled = true;
     r.shadowMap.type = THREE.PCFSoftShadowMap;
     r.toneMapping = THREE.NoToneMapping;

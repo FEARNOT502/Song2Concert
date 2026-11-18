@@ -1,6 +1,6 @@
-# Venue Lab
+# Venue Dev Lab
 
-The standalone Venue Lab uses the same stage renderer, venue builders, and
+The standalone Venue Dev Lab uses the same stage renderer, venue builders, and
 models as Song2Concert. It shows Club, Theater, Concert Hall, Arena, Dome, and
 Stadium. Arena, Dome, and Stadium offer general and 360 layouts. Theater also
 offers its orchestra-pit layout.

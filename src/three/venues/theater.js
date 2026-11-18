@@ -337,7 +337,7 @@ export function buildTheater(ctx) {
     fog: new THREE.FogExp2(0x050304, 0.008),
     hazeDensity: 0.0014, beamGain: 0.3, hazeAmb: new THREE.Color(0x030202), hazeAmbDist: 90,
     bloom: { strength: 0.55, radius: 0.6, threshold: 1.1 },
-    grade: { exposure: 1.25, vignette: 0.42, ca: 0.004, grain: 0.04, sat: 1.06, lift: [0.01, 0.006, 0.006] },
+    grade: { exposure: 1.25, vignette: 0.42, ca: 0.002, grain: 0.04, sat: 1.06, lift: [0.01, 0.006, 0.006] },
     env: { w: W, h: H, d: D, eye, wall: 0x1a0d08, floor: 0x0c0405, emitters: [
       { w: SW, h: SH, pos: V3(0, screen.position.y, -6), normal: V3(0, 0, 1), screen: true, power: 1.4, aspect },
       { w: 12, h: 3, pos: V3(0, DECK + 0.5, 1), normal: V3(0, 1, 0), color: tung, power: 3 },
