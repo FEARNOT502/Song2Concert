@@ -48,6 +48,9 @@ export function mats() {
   // with the mesh's own roughness and a little metal it lit up white under a
   // light hung over it)
   MATS.grille = std({ ...grilleTex(), roughnessMap: null, color: 0xffffff, roughness: 0.95, metalness: 0, envMapIntensity: 0.3 });
+  // (a touring sub's black cloth front, for the concert floors)
+  MATS.cabDark = std({ color: 0x040405, roughness: 0.92, metalness: 0, envMapIntensity: 0.15 });
+  MATS.grilleDark = std({ ...grilleTex(), roughnessMap: null, color: 0x1e1e21, roughness: 0.95, metalness: 0, envMapIntensity: 0.15 });
   MATS.cab.envMapIntensity = 0.4;
   MATS.rubber = std({ color: 0x050505, roughness: 0.9 });
   MATS.chrome = std({ color: 0xd8d8dc, metalness: 1, roughness: 0.18 });
@@ -341,6 +344,11 @@ export function lineArray({ boxes = 12, width = 1.3, depth = 0.7, height = 0.38,
   const M = mats();
   const cab = [], front = [], rig = [];
   let y = 0, angle = 0, z = 0;
+  // The splay opens down the hang (a J); a long hang's total curve is held
+  // to ~50°, as a real array's is: left to grow, a 20-box hang curled back
+  // over itself and up through whatever it hung beside.
+  const raw = (boxes - 1) * splay + splay * 0.22 * (boxes - 1) * (boxes - 2) / 2;
+  const k = raw > 0.85 ? 0.85 / raw : 1;
   const bar = new THREE.BoxGeometry(width * 1.1, 0.12, depth * 1.2); bar.translate(0, 0.15, 0); rig.push(bar);
   for (let i = 0; i < boxes; i++) {
     const m = new THREE.Matrix4().makeRotationX(angle).setPosition(0, y - height / 2, z);
@@ -349,7 +357,7 @@ export function lineArray({ boxes = 12, width = 1.3, depth = 0.7, height = 0.38,
     for (const s of [-1, 1]) { const r = new THREE.BoxGeometry(0.03, height * 0.9, depth * 0.8); r.translate(s * (width / 2 + 0.015), 0, -0.05); r.applyMatrix4(m); rig.push(r); }
     y -= Math.cos(angle) * height;
     z -= Math.sin(angle) * height;
-    angle += splay + i * splay * 0.22;
+    angle += (splay + i * splay * 0.22) * k;
   }
   const g = new THREE.Group();
   g.add(new THREE.Mesh(mergeGeometries(cab), M.cab));

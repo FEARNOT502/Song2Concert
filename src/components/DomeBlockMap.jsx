@@ -7,6 +7,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { TD_BLOCKS } from '../three/venues/td-blocks.js';
+import { STAGE_Z } from '../three/stage-plan.js';
+import StagePlan from './StagePlan.jsx';
 
 const ACCENT = '#ff9745';
 // the floors, and the levels of the stands on each
@@ -31,21 +33,12 @@ const box = (() => {
 })();
 const fieldZ = (() => { const zs = TD_BLOCKS.field.map((p) => p[1]); return (Math.min(...zs) + Math.max(...zs)) / 2; })();
 
-// the stage as dome.js builds it (app z = data z + 114): across the outfield
-// with a runway down the field, crossed by a walkway, to an end stage; or a
-// centre stage in the middle of the field
+// the stage as concert-production.js builds it (app z = data z + 114), from the
+// same plan: the end stage in front of the centre-field fence, or the round
+// stage in the middle of the field (dome.js centres it on the field the same way)
 function Stage({ mode }) {
-  const st = { fill: ACCENT, opacity: 0.85 };
-  if (mode === '360') return <rect x={-8} y={fieldZ - 20} width={16} height={40} {...st} />;
-  const Z = (z) => z - 114;
-  return (
-    <g {...st}>
-      <rect x={-36} y={Z(18)} width={72} height={20} />
-      <rect x={-2.2} y={Z(38)} width={4.4} height={Z(91.2) - Z(38)} />
-      <rect x={-15} y={Z(57) - 2.6} width={30} height={5.2} />
-      <rect x={-5} y={Z(91.2)} width={10} height={10} />
-    </g>
-  );
+  const round = mode === '360';
+  return <StagePlan id="dome" mode={mode} cz={round ? fieldZ + 114 : STAGE_Z.dome.general} dz={114} fill={ACCENT} />;
 }
 
 export default function DomeBlockMap({ mode = 'general', selected = null, seat = null, onPick = null }) {

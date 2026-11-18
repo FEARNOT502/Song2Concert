@@ -224,6 +224,23 @@ export function stageTex({ S = 1024, seed = 21 } = {}) {
   }, { normal: 1.5 });
 }
 
+// ── touring stage deck: black, a white grid on its panel joints ──
+// The tile is 2.44 m square (the deck's UVs are metres / 2.44): four 1.22 m
+// panels, their joints a thin white line, the black a faint satin finish,
+// scuffed only a little. No tape.
+export function deckGridTex({ S = 1024, seed = 23 } = {}) {
+  const n = valueNoise(seed), n2 = valueNoise(seed + 1);
+  const line = 0.0045, aa = 0.0016;
+  return pbrSet('deck-grid', S, (u, v) => {
+    const du = Math.min(u % 0.5, 0.5 - (u % 0.5)), dv = Math.min(v % 0.5, 0.5 - (v % 0.5));
+    const g = 1 - smooth(line, line + aa, Math.min(du, dv));
+    const wear = smooth(0.62, 0.85, fbm(n, u * 4, v * 4, 4, 4, 4));
+    const base = 0.016 + 0.008 * fbm(n2, u * 6, v * 6, 6, 6, 3) + wear * 0.012;
+    const c = base + g * (0.6 - base);
+    return [c, c, c * 1.02, 0.5 - g * 0.04, 0.4 + wear * 0.18 + g * 0.2];
+  }, { normal: 0.8 });
+}
+
 // ── concrete ──
 export function concreteTex({ key = 'concrete', S = 512, tone = 0.32, seed = 31, warm = 0, even = 0 } = {}) {
   // (`even` 0..1: how far the mottling and the stains are taken out — clean, new-looking concrete)
@@ -729,9 +746,12 @@ export function screenContent(cover, meta, aspect, { W = 2048, frame = true, acc
   // of the wall covers neither. The title wraps to two lines and is cut short
   // with … after that; nothing is squeezed to fit.
   const wide = aspect >= 2.4;
-  const s = wide ? H * 0.78 : Math.min(H * 0.52, W * 0.5);
+  // a portrait wall (an arena's IMAG columns): the sleeve across most of its
+  // width at the top, the type under it
+  const tall = aspect < 0.95;
+  const s = wide ? H * 0.78 : tall ? Math.min(W * 0.8, H * 0.58) : Math.min(H * 0.52, W * 0.5);
   const MONO = '"JetBrains Mono", ui-monospace, monospace', SANS = '"Inter Tight", system-ui, sans-serif';
-  const fs = { label: s * (wide ? 0.07 : 0.062), title: s * (wide ? 0.18 : 0.19), artist: s * (wide ? 0.088 : 0.085) };
+  const fs = { label: s * (wide ? 0.07 : 0.062), title: s * (wide ? 0.18 : tall ? 0.15 : 0.19), artist: s * (wide ? 0.088 : tall ? 0.075 : 0.085) };
   const maxW = wide ? W - (W / 2 + H * 0.22) - s * 0.08 : W * 0.86;
   g.font = `300 ${Math.round(fs.title)}px ${SANS}`;
   const title = wrapText(g, meta.title || '', maxW, 2);

@@ -14,6 +14,7 @@ import { DEG, KELVIN, V3, std, concreteTex, withRepeat } from '../core.js';
 import { wedge } from '../rig.js';
 
 import { concertRoom } from '../concert-production.js';
+import { STAGE_Z } from '../stage-plan.js';
 import { buildStands, decodeSeats } from '../stands.js';
 import { SSA_STANDS } from './ssa-data.js';
 import { fitArena200 } from './arena-200.js';
@@ -21,7 +22,7 @@ import { arenaAcousticWalls, arenaCeiling, arenaFloor, arenaLounge, arenaMovingB
 
 export function buildArena(ctx) {
   const round = ctx.mode === '360';
-  const center = V3(0, 0, round ? ARENA_OZ : 15.2);
+  const center = V3(0, 0, STAGE_Z.arena[round ? '360' : 'general']);
   const room = arenaRoom(ctx, { stage: center, sold: round ? () => true : arenaEndSold });
   return concertRoom(ctx, 'arena', { ...room, center, eye: V3(0, 2.5, 81.4), mask: endMaskZ });
 }

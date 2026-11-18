@@ -1,30 +1,14 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { KELVIN, V3, clamp, lerp, ringTint, stageTex, std, withRepeat } from './core.js';
+import { KELVIN, V3, clamp, deckGridTex, lerp, ringTint, std, withRepeat } from './core.js';
 import { lightPoints } from './people.js';
-import { chainInto, drumKit, hoists, latticeInto, ledScreen, mats, micStand, stageDeck, stageSteps, truss } from './rig.js';
+import { chainInto, hoists, latticeInto, ledScreen, mats, stageSteps, truss } from './rig.js';
 import {
   bigCrowd, blockGrid, delayTower, flashOnCrowd, flashUnits, floorBlocks, floorChairs, fohPosition, groundRoof,
   maskingDrapes, packFloor, paHang, runBlinders, runShow, runStrobes, screenHang, section, subLine,
 } from './show.js';
+import { AXES as SHOW_AXES, CONCERT_LAYOUTS, DIAGONALS as SHOW_DIAGONALS, stagePlan } from './stage-plan.js';
 
-const CONCERT_LAYOUTS = {
-  arena: {
-    general: { code: 'AG1', deck: 2.1, runway: 1.45, gap: 3.4, thrustGap: 2.65, front: 23, back: 6, w: 39, rig: 23.5, wallZ: 9.15, wall: [37, 14.7, 4.6], tip: 48, reach: 67 },
-    360: { code: 'AR1', deck: 1.55, gap: 3, rig: 24.8, wall: [18, 7.3, 12], reach: 62 },
-  },
-  dome: {
-    general: { code: 'DG1', deck: 2.5, runway: 1.65, gap: 4.2, thrustGap: 3, front: 38, back: 16, w: 77, rig: 29.5, wallZ: 19.6, wall: [45, 18.4, 4.9], tip: 92, reach: 112 },
-    360: { code: 'DR1', deck: 1.7, gap: 3.65, thrustGap: 3.1, rig: 34.5, wall: [27, 10.5, 17], reach: 120 },
-  },
-  stadium: {
-    general: { code: 'SG2', deck: 2.9, runway: 1.85, gap: 4.7, thrustGap: 3.2, front: 36, back: 12, w: 84, rig: 36, wallZ: 14, wall: [75, 25, 4.9], tip: 86, reach: 150 },
-    360: { code: 'SR3', deck: 1.85, gap: 3.9, thrustGap: 3.25, rig: 35.5, wall: [24, 9.6, 20], reach: 156 },
-  },
-};
-
-const SHOW_AXES = [0, Math.PI / 2, Math.PI, -Math.PI / 2];
-const SHOW_DIAGONALS = SHOW_AXES.map((yaw) => yaw + Math.PI / 4);
 const showXZ = (center, yaw, dist, across = 0, y = 0) =>
   V3(center.x + Math.sin(yaw) * dist + Math.cos(yaw) * across, y, center.z + Math.cos(yaw) * dist - Math.sin(yaw) * across);
 
@@ -91,15 +75,23 @@ function showEdgeDistance(ring, x, z) {
   return Math.sqrt(d);
 }
 
-function showDeck(root, ring, h, gap, footprints, base = 0) {
+// The deck's finish: black touring panels with their joints a white grid
+// (deckGridTex: 1.22 m), a faint satin sheen; the sides black cloth.
+function deckMaterials() {
+  const top = std({ ...withRepeat(deckGridTex(), 1, 1), color: 0xffffff, roughness: 1, metalness: 0, envMapIntensity: .55 });
+  // (the skirts black velour: dead matte, so the front keys aimed at the
+  // runway's end do not light its face up grey)
+  const skirt = std({ color: 0x020202, roughness: 1, envMapIntensity: .15 });
+  return [top, skirt];
+}
+
+function showDeck(root, ring, h, gap, footprints, mat, base = 0) {
   const contour = new THREE.Shape(ring.map((p) => new THREE.Vector2(p.x, p.z)));
   const geo = new THREE.ExtrudeGeometry(contour, { depth: h - base, bevelEnabled: false, curveSegments: 1 });
   const uv = geo.attributes.uv;
   for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / 2.44, uv.getY(i) / 2.44);
   geo.rotateX(Math.PI / 2); geo.translate(0, h, 0);
-  const tex = stageTex();
-  const mat = std({ ...withRepeat(tex, 1, 1), roughnessMap: null, roughness: 0.88, metalness: 0 });
-  const mesh = new THREE.Mesh(geo, [mat, mats().fabric]);
+  const mesh = new THREE.Mesh(geo, mat);
   mesh.receiveShadow = true;
   root.add(mesh);
   const bounds = new THREE.Box3().setFromPoints(ring);
@@ -107,19 +99,14 @@ function showDeck(root, ring, h, gap, footprints, base = 0) {
   return mesh;
 }
 
-function showRamp(root, ring, fromH, toH, gap, footprints) {
-  const mesh = showDeck(root, ring, fromH, gap, footprints);
+function showRamp(root, ring, fromH, toH, gap, footprints, mat) {
+  const mesh = showDeck(root, ring, fromH, gap, footprints, mat);
   const { min, max } = footprints[footprints.length - 1].bounds;
   const pos = mesh.geometry.attributes.position;
   for (let i = 0; i < pos.count; i++) {
     if (pos.getY(i) > .01) pos.setY(i, lerp(fromH, toH, (pos.getZ(i) - min.z) / (max.z - min.z)));
   }
   mesh.geometry.computeVertexNormals();
-}
-
-function showRect(center, yaw, from, to, half, offset = 0) {
-  return [[from, -half], [from, half], [to, half], [to, -half]]
-    .map(([dist, across]) => showXZ(center, yaw, dist, offset + across));
 }
 
 function showBeam(root, a, b, size = 0.8) {
@@ -136,6 +123,7 @@ function showScreen(ctx, root, screens, { x = 0, z, bottom, w, h, yaw = 0, doubl
   group.add(rear);
   group.position.set(x, bottom + h / 2, z);
   group.rotation.y = yaw;
+  group.name = 'LED screen';
   root.add(group);
   for (const dir of double ? [1, -1] : [1]) {
     const panel = ledScreen({ w, h, tex: ctx.art.texture(w / h), pitch: .005, bright, frame: 0, light, lightPower: 1.25 });
@@ -150,7 +138,7 @@ function showScreen(ctx, root, screens, { x = 0, z, bottom, w, h, yaw = 0, doubl
 
 function showSubLine(root, pos, yaw, opts) {
   const group = new THREE.Group();
-  subLine(group, { z: 0, ...opts });
+  subLine(group, { z: 0, count: 3, dark: true, ...opts });
   group.position.copy(pos);
   group.rotation.y = yaw;
   group.name = 'Subwoofers and front fill';
@@ -158,36 +146,111 @@ function showSubLine(root, pos, yaw, opts) {
 }
 
 function showPA(root, config, name) {
-  const array = paHang(root, name === 'Flown subwoofer array' ? { ...config, height: .53 } : config);
+  const array = paHang(root, name.includes('subwoofer') ? { ...config, height: .53 } : config);
   array.name = name;
+  return array;
 }
 
-function showLEDs(root, runs) {
-  const lightBars = Array.from({ length: 8 }, (_, i) => ({ parts: [], index: i, mat: new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }) }));
-  for (const { a, b, size = 0.13, shift = 0 } of runs) {
-    const d = b.clone().sub(a);
-    const n = Math.max(1, Math.ceil(d.length() / 2.1));
-    const rot = new THREE.Quaternion().setFromUnitVectors(V3(1), d.clone().normalize());
-    const segment = d.length() / n;
-    for (let i = 0; i < n; i++) {
-      const geo = new THREE.BoxGeometry(segment * .84, size, size);
-      geo.applyMatrix4(new THREE.Matrix4().compose(a.clone().addScaledVector(d, (i + .5) / n), rot, V3(1, 1, 1)));
-      lightBars[(i + shift) % lightBars.length].parts.push(geo);
-    }
+// ── LED strips ──
+// Every run is one unbroken bar (no gaps between pieces); its vertices carry
+// how far along their run they are (metres), so the shader can lay a
+// gradient along the deck's edge and move it.
+const LED_SIZE = .12;
+function ledGeometry(runs) {
+  const parts = [];
+  for (const { a, b, size = LED_SIZE, t0 = 0 } of runs) {
+    const d = b.clone().sub(a), len = d.length();
+    if (len < .05) continue;
+    const geo = new THREE.BoxGeometry(len + size, size, size);
+    const pos = geo.attributes.position;
+    const along = new Float32Array(pos.count);
+    for (let i = 0; i < pos.count; i++) along[i] = t0 + pos.getX(i) + len / 2;
+    geo.setAttribute('aT', new THREE.BufferAttribute(along, 1));
+    geo.applyMatrix4(new THREE.Matrix4().compose(a.clone().addScaledVector(d, .5), new THREE.Quaternion().setFromUnitVectors(V3(1), d.normalize()), V3(1, 1, 1)));
+    parts.push(geo);
   }
-  lightBars.forEach(({ parts, mat }) => {
-    if (!parts.length) return;
-    const mesh = new THREE.Mesh(mergeGeometries(parts), mat);
+  return parts.length ? mergeGeometries(parts) : null;
+}
+
+// Runs round a deck's outline, just under its lip and a hair proud of its
+// face. Where another deck as high carries on past an edge, that edge's run
+// lies inside it and is not seen: what shows is one line round the whole set.
+function deckEdgeRuns(ring, yAt, out, t = 0) {
+  let area = 0;
+  for (let i = 0; i < ring.length; i++) { const a = ring[i], b = ring[(i + 1) % ring.length]; area += a.x * b.z - b.x * a.z; }
+  const s = area > 0 ? 1 : -1;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i], b = ring[(i + 1) % ring.length];
+    const dx = b.x - a.x, dz = b.z - a.z, len = Math.hypot(dx, dz);
+    if (len < .05) continue;
+    const nx = s * dz / len * .06, nz = -s * dx / len * .06;
+    out.push({ a: V3(a.x + nx, yAt(a) - .09, a.z + nz), b: V3(b.x + nx, yAt(b) - .09, b.z + nz), t0: t });
+    t += len;
+  }
+  return t;
+}
+
+function ledStrips(root, runs) {
+  const geo = ledGeometry(runs);
+  const U = {
+    uA: { value: new THREE.Color() }, uB: { value: new THREE.Color() }, uC: { value: new THREE.Color() },
+    uPhase: { value: 0 }, uClock: { value: 0 }, uFlow: { value: 0 }, uChase: { value: 0 }, uLevel: { value: .04 }, uMix: { value: 0 },
+  };
+  const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
+  mat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, U);
+    sh.vertexShader = 'attribute float aT;\nvarying float vT;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vT = aT;');
+    sh.fragmentShader = 'uniform vec3 uA, uB, uC;\nuniform float uPhase, uClock, uFlow, uChase, uLevel, uMix;\nvarying float vT;\n' +
+      sh.fragmentShader.replace('vec4 diffuseColor = vec4( diffuse, opacity );', /* glsl */`
+        // three palette colours round a loop, laid along the strip and moving
+        float p = fract(vT * 0.035 - uPhase) * 3.0;
+        vec3 grad = p < 1.0 ? mix(uA, uB, smoothstep(0.0, 1.0, p))
+                  : p < 2.0 ? mix(uB, uC, smoothstep(0.0, 1.0, p - 1.0))
+                  : mix(uC, uA, smoothstep(0.0, 1.0, p - 2.0));
+        vec3 solid = mix(uA, uB, uMix);
+        float ch = 0.5 + 0.5 * cos(vT * 0.21 - uClock * 6.5);
+        vec3 led = mix(solid, grad, uFlow) * uLevel * mix(1.0, 0.25 + 1.2 * ch * ch, uChase);
+        vec4 diffuseColor = vec4(led, opacity);`);
+  };
+  mat.customProgramCacheKey = () => 'concert-led-strip';
+  if (geo) {
+    const mesh = new THREE.Mesh(geo, mat);
     mesh.userData.noCollide = true;
+    mesh.name = 'LED strips';
     root.add(mesh);
-  });
-  return lightBars;
+  }
+  // the looks by the song's part: verse one colour fading to the next, the
+  // build a slow flow, the chorus the palette running round with a chase,
+  // the break nearly out; eased between, so a change of part glides
+  const now = { flow: 0, speed: .03, chase: 0, level: .1 };
+  const _a = new THREE.Color(), _b = new THREE.Color(), _c = new THREE.Color();
+  return (f, sec, show) => {
+    const high = sec === 'chorus', quiet = sec === 'break', pre = sec === 'pre';
+    const want = quiet ? { flow: 0, speed: .02, chase: 0, level: .09 + .03 * Math.sin(f.t * 1.3) }
+      : high ? { flow: 1, speed: .16, chase: .75, level: .62 + .45 * f.kick }
+        : pre ? { flow: 1, speed: .055, chase: .2, level: .34 + .2 * clamp(f.energy) + .15 * f.kick }
+          : { flow: 0, speed: .03, chase: 0, level: .3 + .14 * f.kick };
+    const k = Math.min(1, (f.dt || .016) * 2.5);
+    for (const key of ['flow', 'speed', 'chase']) now[key] += (want[key] - now[key]) * k;
+    now.level += (want.level - now.level) * Math.min(1, (f.dt || .016) * 8);
+    U.uA.value.copy(ringTint(_a, f.pal.a));
+    U.uB.value.copy(ringTint(_b, f.pal.b));
+    U.uC.value.copy(ringTint(_c, f.pal.c || f.pal.a));
+    // (the gradient's phase accumulates, so a change of speed does not jump it)
+    U.uPhase.value = (U.uPhase.value + (f.dt || .016) * now.speed) % 1;
+    U.uClock.value = f.t % 1000;
+    U.uFlow.value = now.flow;
+    U.uChase.value = now.chase;
+    U.uMix.value = .5 + .5 * Math.sin(f.t * .35);
+    U.uLevel.value = .035 + now.level * show;
+  };
 }
 
 function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, onFloor, ceiling, houseSources, houseUpdate }) {
   const round = ctx.mode === '360';
-  const L = CONCERT_LAYOUTS[room][ctx.mode];
-  const arena = room === 'arena', dome = room === 'dome';
+  const plan = stagePlan(room, ctx.mode, center.z);
+  const L = plan.L;
+  const arena = room === 'arena', dome = room === 'dome', stadium = room === 'stadium';
   const { pipe, cu, q } = ctx;
   const production = new THREE.Group();
   production.name = L.code;
@@ -196,8 +259,25 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
   const rig = ctx.rig({ finish: 'black' });
   const mainW = L.wall[0], mainH = L.wall[1], bottom = L.wall[2];
   const h = L.deck, rw = L.runway || h;
-  const run = (yaw, a, b, half, gap = L.thrustGap || L.gap, across = 0, y = rw) =>
-    showDeck(production, showRect(center, yaw, a, b, half, across), y, gap, footprints);
+  const P = ([x, z], y = 0) => V3(x, y, z);
+
+  // ── the decks, their stairs, and the LED strip round them ──
+  const deckMat = deckMaterials();
+  let ledT = 0;
+  for (const d of plan.decks) {
+    const ring = d.ring.map((p) => P(p));
+    if (d.ramp) showRamp(production, ring, d.ramp[0], d.ramp[1], d.gap, footprints, deckMat);
+    else showDeck(production, ring, d.h, d.gap, footprints, deckMat, d.base);
+    const { min, max } = footprints[footprints.length - 1].bounds;
+    const yAt = d.ramp ? (p) => lerp(d.ramp[0], d.ramp[1], (p.z - min.z) / (max.z - min.z)) : () => d.h;
+    ledT = deckEdgeRuns(ring, yAt, rails, ledT) + 10;
+  }
+  for (const s of plan.steps) {
+    production.add(stageSteps(s));
+    const ring = s.ring.map((p) => P(p));
+    footprints.push({ ring, gap: .9, bounds: new THREE.Box3().setFromPoints(ring) });
+  }
+  const bar = (a, b, size = LED_SIZE) => { rails.push({ a, b, size, t0: ledT }); ledT += a.distanceTo(b) + 10; };
 
   const row = (a, b, count, kind, yaw, focus, { up = false, gain = 0.58, lift = 1 } = {}) => {
     const n = Math.max(2, (q.rig ?? 1) >= 1 ? count : Math.ceil(count * .6));
@@ -211,9 +291,8 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
     const house = showXZ(center, yaw, L.reach * .55, 0, L.rig * .39);
     fixtureRows.push({ fixtures, options: { house, stage, up, lift, span: L.reach * .48, strobe: kind === 'beam' || kind === 'spot' } });
   };
-  const bar = (a, b, size, shift) => rails.push({ a, b, size, shift });
-  const lip = (fromX, toX, z, y, size, shift) => bar(V3(fromX, y - .09, z + .055), V3(toX, y - .09, z + .055), size, shift);
   const screen = (config) => showScreen(ctx, production, screens, config);
+  // a delay tower: a roofed mast with a pair of arrays under its roof
   const delay = (p, y, yaw, boxes) => {
     delays.push(p);
     const head = delayTower(production, { x: p.x, z: p.z, h: y, boxes, width: dome ? 1.3 : 1.5, yaw });
@@ -222,53 +301,13 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
 
   let frontTarget = center;
   if (!round) {
-    const front = L.front, back = L.back;
-    run(0, back - center.z, front - center.z, L.w / 2, L.gap, 0, h);
-    const r = L.w / 2;
-    lip(-r + .8, r - .8, front, h, arena ? .09 : .14, 3);
-    for (const side of [-1, 1]) production.add(stageSteps({ x: side * (L.w / 2 - 2.1), z: front + Math.ceil(h / .2) * .28, h, width: arena ? 1.4 : 2, dir: [0, -1] }));
-    if (room === 'stadium') {
-      const r = 24, half = 3.3, turn = L.tip - r - half;
-      const arc = (rad) => Array.from({ length: 49 }, (_, i) => V3(rad * Math.cos(i * Math.PI / 48), 0, turn + rad * Math.sin(i * Math.PI / 48)));
-      const outer = arc(r + half), inner = arc(r - half).reverse();
-      showDeck(production, [...outer, ...inner], rw, L.thrustGap, footprints);
-      // Brief raised spans along the straight arms connect the inside and
-      // outside ground sections beneath the catwalk.
-      for (const side of [-1, 1]) {
-        const bridge = (a, b) => showRect(center, 0, a - center.z, b - center.z, half, side * r);
-        showDeck(production, bridge(front, 41), rw, L.thrustGap, footprints);
-        showRamp(production, bridge(41, 46), rw, 2.45, L.thrustGap, footprints);
-        showDeck(production, bridge(46, 50), 2.45, L.thrustGap, footprints, 2.14);
-        showRamp(production, bridge(50, 55), 2.45, rw, L.thrustGap, footprints);
-        showDeck(production, bridge(55, turn), rw, L.thrustGap, footprints);
-      }
-      for (const r of [outer, inner]) for (let i = 1; i < r.length; i++) {
-        if (i % 4 === 0 || i === 1 || i === r.length - 1) bar(r[i - 1].clone().setY(rw - .08), r[i].clone().setY(rw - .08), .105, i % 8);
-      }
-    } else {
-      const cross = arena ? L.tip - 5.6 : 57, depth = 5.6;
-      run(0, front - center.z, cross - center.z, arena ? 2.1 : 2.6);
-      run(0, cross - center.z, cross + depth - center.z, arena ? 12.7 : 26);
-      const wing = arena ? 12.7 : 26;
-      for (const side of [-1, 1]) {
-        lip(side * 2.75, side * (wing - .2), cross + depth, rw, .12, side < 0 ? 1 : 5);
-        bar(V3(side * (wing + .05), rw - .09, cross + .15), V3(side * (wing + .05), rw - .09, cross + depth), .10, 4);
-      }
-      if (dome) {
-        run(0, cross + depth - center.z, L.tip - 11 - center.z, 2.6);
-        run(0, L.tip - 11 - center.z, L.tip - center.z, 6);
-        lip(-5.9, 5.9, L.tip, rw, .12, 2);
-      }
-    }
-    if (room === 'stadium') {
-      for (const x of [-24, 24]) production.add(stageSteps({ x, z: front + Math.ceil((h - rw) / .2) * .28, h, y0: rw, width: 3, dir: [0, -1] }));
-    } else {
-      const n = Math.ceil((h - rw) / .2);
-      production.add(stageSteps({ x: 0, z: front + n * .28, h, y0: rw, width: arena ? 2 : 2.7, dir: [0, -1] }));
-    }
-
+    const front = L.front, back = L.back, r = L.w / 2;
     screen({ z: L.wallZ, bottom, w: mainW, h: mainH, bright: arena ? 1.65 : 1.85, light: true });
-    const wings = arena ? { x: 26.6, z: 14.1, bottom: 9.3, w: 12, h: 9.2, yaw: .26 }
+    // the arena's IMAG columns are portrait (3:4): the sleeve over its title;
+    // turned to the masking's angle and stood a metre in front of it along
+    // their whole width (the masking runs from z 8.2 at x 16 to 15 at x 31),
+    // low enough that the main hangs do not cross their tops from FOH
+    const wings = arena ? { x: 24.5, z: 16.8, bottom: 5.2, w: 8.4, h: 11.2, yaw: .3 }
       : dome ? { x: 32.2, z: L.wallZ + 1.5, bottom: 5.2, w: 14.3, h: 14.5, yaw: .07 } : null;
     if (wings) for (const side of [-1, 1]) {
       screen({ ...wings, x: side * wings.x, yaw: side * wings.yaw });
@@ -277,6 +316,8 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
     screenHang(production, { y: bottom + mainH, z: L.wallZ, w: mainW, topY: arena ? ceiling : L.rig - .4, size: .7, n: arena ? 5 : 7 });
     const trussZ = [L.wallZ - .4, lerp(back, front, .61), front - .8];
     const roofTx = dome ? r + 1.1 : r - 1.25;
+    // the outriggers off the roof's front corners carry the PA past the deck's ends
+    const outX = r + (arena ? 0 : 13.2);
     if (!arena) {
       groundRoof(production, { tx: roofTx, zs: trussZ, top: L.rig });
       maskingDrapes(production, { a: [-r - 2, trussZ[0] - .75], b: [r + 2, trussZ[0] - .75], top: L.rig, bottomAt: () => 0 });
@@ -286,56 +327,63 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
       showBeam(production, V3(-r, fy, z), V3(r, fy, z), .7);
       production.add(hoists([-r + 2, -r * .36, r * .36, r - 2], fy, z, arena ? ceiling : L.rig - .45));
       row(V3(-r + 1, fy - .35, z), V3(r - 1, fy - .35, z), (arena ? 10 : 14) + i * 2, ['wash', 'beam', 'spot'][i], 0, center);
-      bar(V3(-r + .8, fy - .25, z + .38), V3(r - .8, fy - .25, z + .38), arena ? .09 : .14, i * 2);
+      bar(V3(-r + .8, fy - .25, z + .38), V3(r - .8, fy - .25, z + .38), arena ? .09 : .14);
     });
     row(V3(-r + 2, fy - .36, front + .16), V3(r - 2, fy - .36, front + .16), arena ? 8 : 12, 'par', 0, center, { gain: .12, lift: .72 });
     for (const side of [-1, 1]) {
-      const x = side * (r + (arena ? .9 : 3.6)), z = front - .8;
+      const z = front - .8;
+      // (the arena's hangs clear of the downstage truss's end; the open-air
+      // rooms' on the outrigger, past the roof's corner tower)
+      const x = side * (r + (arena ? 1.7 : 3.6));
       if (!arena) {
-        showBeam(production, V3(side * roofTx, L.rig, z), V3(side * (r + 8.4), L.rig, z), 1.15);
-        bar(V3(side * (roofTx + .82), 3, z + .65), V3(side * (roofTx + .82), L.rig - 1, z + .65), .19, side > 0 ? 2 : 0);
+        showBeam(production, V3(side * roofTx, L.rig, z), V3(side * outX, L.rig, z), 1.15);
+        // the corner tower's LED: up its face to the house
+        bar(V3(side * roofTx, 3, z + 1.0), V3(side * roofTx, L.rig - 1, z + 1.0), .19);
       }
-      showPA(production, { x, y: L.rig - 1.6, z, boxes: arena ? 16 : 21, width: arena ? 1.23 : 1.57, yaw: side * .12, roofY: arena ? ceiling : L.rig - .2 }, 'Main line array');
-      showPA(production, { x: side * (r + (arena ? .2 : 1.8)), y: L.rig - 2.4, z: z - 2.3, boxes: arena ? 7 : 10, depth: 1.04, roofY: arena ? ceiling : L.rig, splay: .006 }, 'Flown subwoofer array');
-      showPA(production, { x: x + side * (arena ? 9.9 : 3.1), y: L.rig - 1.8, z, boxes: arena ? 13 : 16, width: 1.2, yaw: side * .86, roofY: arena ? ceiling : L.rig }, 'Side fill');
-      if (arena) showPA(production, { x: side * 15, y: 24, z: 63, boxes: 9, width: 1.05, yaw: side * .09, roofY: ceiling }, 'Rear delay hang');
-      else delay(V3(side * (dome ? 25 : 27), 0, dome ? 103 : 105), dome ? 21 : 29, side * .1, dome ? 14 : 18);
-      const lipX = side * (arena ? 2.14 : dome ? 2.65 : 27.35);
-      if (room === 'stadium') {
-        for (const [a, b, ya, yb] of [[front, 41, rw, rw], [41, 46, rw, 2.45], [46, 50, 2.45, 2.45], [50, 55, 2.45, rw], [55, L.tip - 27.3, rw, rw]]) {
-          bar(V3(lipX, ya - .08, a), V3(lipX, yb - .08, b), .1, side > 0 ? 3 : 1);
-        }
-      } else bar(V3(lipX, rw - .08, front + .16), V3(lipX, rw - .08, arena ? L.tip - 5.6 : 57), .1, side > 0 ? 3 : 1);
+      const hangTop = arena ? ceiling : L.rig - .2;
+      showPA(production, { x, y: L.rig - 1.6, z, boxes: arena ? 16 : 21, width: arena ? 1.23 : 1.57, yaw: side * .12, roofY: hangTop }, 'Main line array');
+      // (the flown subs behind the mains: the arena's from the ceiling, the
+      // others' under the roof's side beam)
+      showPA(production, { x: arena ? x : side * (roofTx + .65), y: L.rig - 2.4, z: z - 2.6, boxes: arena ? 8 : 12, depth: 1.04, roofY: arena ? ceiling : L.rig, splay: .006 }, 'Flown subwoofer array');
+      showPA(production, { x: x + side * (arena ? 4.2 : 3.4), y: L.rig - 1.8, z: z - .4, boxes: arena ? 13 : 16, width: 1.2, yaw: side * .7, roofY: arena ? ceiling : L.rig }, 'Side fill');
+      showPA(production, { x: x + side * (arena ? 8.4 : 7.4), y: L.rig - 1.9, z: z - 1, boxes: arena ? 10 : 13, width: 1.1, yaw: side * 1.2, roofY: arena ? ceiling : L.rig }, 'Outfill (270)');
+      if (arena) {
+        showPA(production, { x: side * 15, y: 24, z: 63, boxes: 9, width: 1.05, yaw: side * .09, roofY: ceiling }, 'Rear delay hang');
+        showPA(production, { x: side * 24.5, y: 23.4, z: 44, boxes: 8, width: 1.05, yaw: side * .42, roofY: ceiling }, 'Side delay hang');
+      } else {
+        // (the dome's, on the infield, raised to reach the upper stands)
+        delay(V3(side * (dome ? 25 : 27), 0, dome ? 103 : 105), dome ? 26 : 29, side * .1, dome ? 12 : 14);
+      }
     }
     const fill = { xs: [-.85, -.64, -.41, -.18, .18, .41, .64, .85].map((e) => e * r), y: h, z: -1.35 };
-    if (room === 'stadium') {
+    if (stadium) {
       for (const [x0, x1] of [[-r + 2.8, -28.4], [-19.6, 19.6], [28.4, r - 2.8]]) {
-        showSubLine(production, V3(0, 0, front + 1.05), 0, { x0, x1, pitch: 1.65, count: 2, fills: { ...fill, xs: fill.xs.filter((x) => x >= x0 && x <= x1) } });
+        showSubLine(production, V3(0, 0, front + 1.05), 0, { x0, x1, pitch: 1.65, fills: { ...fill, xs: fill.xs.filter((x) => x >= x0 && x <= x1) } });
       }
-    } else showSubLine(production, V3(0, 0, front + 1.05), 0, { x0: -r + 2.8, x1: r - 2.8, gap: 4, pitch: arena ? 1.8 : 1.65, count: 2, fills: fill });
+    } else showSubLine(production, V3(0, 0, front + 1.05), 0, { x0: -r + 2.8, x1: r - 2.8, gap: arena ? 3.6 : 4, pitch: arena ? 1.8 : 1.65, fills: fill });
     row(V3(-r + 3, h + .12, front - .8), V3(r - 3, h + .12, front - .8), arena ? 8 : 14, 'beam', 0, center, { up: true, gain: .46 });
     frontTarget = V3(0, rw + .55, L.tip - 2.4);
   } else if (arena) {
-    run(0, -22, 22, 6.15);
     const dz = 24, tx = 11.25, top = L.rig;
     for (const side of [-1, 1]) {
       const x = side * tx;
-      bar(V3(side * 6.2, h - .08, center.z - 22), V3(side * 6.2, h - .08, center.z + 22), .095, side > 0 ? 2 : 5);
       showBeam(production, V3(x, top, center.z - dz), V3(x, top, center.z + dz), .75);
       row(V3(x, top - .46, center.z - dz + 2), V3(x, top - .46, center.z + dz - 2), 15, 'beam', side * Math.PI / 2, center);
-      bar(V3(x + side * .4, top - .25, center.z - dz), V3(x + side * .4, top - .25, center.z + dz), .10, side > 0 ? 3 : 0);
+      bar(V3(x + side * .4, top - .25, center.z - dz), V3(x + side * .4, top - .25, center.z + dz), .10);
       for (const z of [-dz, -15, 0, 15, dz]) production.add(hoists([x], top, center.z + z, ceiling));
       for (const z of [-13, 13]) {
-        showPA(production, { x: x + side * .4, y: top - .85, z: center.z + z, boxes: 13, yaw: side * Math.PI / 2, roofY: top }, 'Long-side line array');
-        showPA(production, { x: x - side * .4, y: top - 1.4, z: center.z + z - 1.6, boxes: 6, width: 1.0, depth: 1.0, yaw: side * Math.PI / 2, splay: .006, roofY: top }, 'Flown subwoofer array');
+        showPA(production, { x: x + side * .4, y: top - .85, z: center.z + z, boxes: 14, yaw: side * Math.PI / 2, roofY: top }, 'Long-side line array');
+        showPA(production, { x: x - side * .4, y: top - 1.4, z: center.z + z - 1.6, boxes: 7, width: 1.0, depth: 1.0, yaw: side * Math.PI / 2, splay: .006, roofY: top }, 'Flown subwoofer array');
       }
+      // the corners, off the truss ends to the ceiling: the diagonals
+      for (const s of [-1, 1]) showPA(production, { x: side * (tx + 2.2), y: top - .9, z: center.z + s * (dz + 1.6), boxes: 10, width: 1.05, yaw: Math.atan2(side, s), roofY: ceiling }, 'Corner line array');
     }
     for (const dist of [-dz, -17.8, -3.2, 3.2, 17.8, dz]) {
       const z = center.z + dist;
       showBeam(production, V3(-tx, top, z), V3(tx, top, z), .65);
       if (Math.abs(dist) !== dz) continue;
       row(V3(-tx, top - .45, z), V3(tx, top - .45, z), 8, 'spot', dist < 0 ? Math.PI : 0, center);
-      for (const side of [-1, 1]) showPA(production, { x: side * 6.8, y: top - 1, z, boxes: 11, width: 1.1, yaw: dist < 0 ? Math.PI : 0, roofY: top }, 'End line array');
+      for (const side of [-1, 1]) showPA(production, { x: side * 6.8, y: top - 1, z, boxes: 12, width: 1.1, yaw: dist < 0 ? Math.PI : 0, roofY: top }, 'End line array');
     }
     const bw = 10, centerGap = 10.45;
     for (const s of [-1, 1]) {
@@ -351,66 +399,81 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
     }
     for (const yaw of SHOW_AXES) {
       const long = Math.abs(Math.sin(yaw)) > .5;
-      showSubLine(production, showXZ(center, yaw, long ? 6.85 : 22.8), yaw, { x0: long ? -17.5 : -4.5, x1: long ? 17.5 : 4.5, pitch: 2.2, count: long ? 2 : 1, fills: { xs: long ? [-15, -8, 0, 8, 15] : [-4, 0, 4], y: h, z: -.95 } });
+      showSubLine(production, showXZ(center, yaw, long ? 6.85 : 22.8), yaw, { x0: long ? -17.5 : -4.5, x1: long ? 17.5 : 4.5, pitch: 2.2, count: long ? 3 : 2, fills: { xs: long ? [-15, -8, 0, 8, 15] : [-4, 0, 4], y: h, z: -.95 } });
     }
-    for (const s of [-1, 1]) production.add(stageSteps({ x: -2.4, z: center.z + s * (22 + Math.ceil(h / .2) * .28), h, dir: [0, -s] }));
   } else {
-    const yawArms = dome ? SHOW_AXES : SHOW_DIAGONALS;
-    const outer = dome ? 15.7 : 15;
-    const core = SHOW_AXES.flatMap((yaw) => [yaw + Math.PI / 8, yaw + Math.PI * 3 / 8]).map((yaw) => showXZ(center, yaw, outer));
-    showDeck(production, core, h, L.gap, footprints);
-    const join = outer * Math.cos(Math.PI / 8);
-    for (const [i, yaw] of yawArms.entries()) {
-      const tip = dome ? (i % 2 ? 34 : 40) : 36.8;
-      run(yaw, join, tip, dome ? 3.15 : 3.5);
-      if (!dome) run(yaw, tip - .15, tip + 4, 5.15, L.thrustGap, 0, h + .075);
-      for (const side of [-1, 1]) bar(showXZ(center, yaw, join + .7, side * (dome ? 3.2 : 3.56), h - .12), showXZ(center, yaw, tip - .5, side * (dome ? 3.2 : 3.56), h - .12), .1, i * 2);
-      const end = tip + (dome ? .05 : 4.05), half = dome ? 3.08 : 5.08;
-      bar(showXZ(center, yaw, end, -half, h - .07), showXZ(center, yaw, end, half, h - .07), .12, i * 2 + 3);
-    }
+    // The round stage's roof stands on masts out among the crowd, clear of
+    // the screens and the PA: the dome's one on each diagonal, 28 m out; the
+    // stadium's a pair at each runway's end, either side of its platform.
+    // Girders from the middle out to them carry the screens (a fin down each
+    // diagonal); beams between the masts close the roof's square, and the
+    // PA hangs off it facing out, clear of both.
+    const top = L.rig;
     const steel = [], chains = [];
     const lead = dome ? 2.8 : 3.4;
+    const mastSize = dome ? 1.5 : 1.7;
+    const mastRad = dome ? L.mast : 38.8;
+    for (const m of plan.masts) {
+      const p = P(m);
+      latticeInto(steel, p, p.clone().setY(top + .6), mastSize, .078);
+      const half = mastSize / 2 + .5;
+      const ring = [[-half, -half], [half, -half], [half, half], [-half, half]].map(([a, b]) => V3(p.x + a, 0, p.z + b));
+      footprints.push({ ring, gap: 1, bounds: new THREE.Box3().setFromPoints(ring) });
+      // two LED bars up its audience-side face
+      const out = V3(p.x - center.x, 0, p.z - center.z).normalize();
+      const side = V3(out.z, 0, -out.x);
+      for (const s of [-1, 1]) {
+        const at = p.clone().addScaledVector(out, mastSize / 2 + .1).addScaledVector(side, s * (mastSize / 2 - .18));
+        bar(at.clone().setY(.4), at.clone().setY(top - .9), dome ? .145 : .17);
+      }
+    }
+    // the perimeter: mast to mast round the square
+    const corners = dome ? SHOW_DIAGONALS.map((yaw) => showXZ(center, yaw, mastRad, 0, top))
+      : SHOW_DIAGONALS.flatMap((yaw) => [showXZ(center, yaw, mastRad, -6.3, top), showXZ(center, yaw, mastRad, 6.3, top)]);
+    for (let i = 0; i < corners.length; i++) {
+      const a = corners[i], b = corners[(i + 1) % corners.length];
+      showBeam(production, a, b, dome ? 1.0 : 1.2);
+    }
     for (const [i, yaw] of SHOW_DIAGONALS.entries()) {
-      const mast = dome ? showXZ(center, yaw, 21.7) : showXZ(center, yaw, 21.2, 5.25);
+      // the girder out along the diagonal, to the mast (and on past it a little for the subs)
+      const girderEnd = showXZ(center, yaw, mastRad + (dome ? 2.2 : 0), 0, top);
+      showBeam(production, center.clone().setY(top), girderEnd, dome ? 1.25 : 1.5);
       if (dome) {
-        // Equipment shoulders carry the longer screen's pick points while
-        // leaving the four main runways as continuous performer paths.
-        run(yaw, join, 24.4, 2.55, L.gap, 0, h);
-      } else run(yaw, 17.2, 25.2, 2.4, L.gap, 5.35, h - .12);
-      const yBase = dome ? h : h - .12;
-      const shoe = new THREE.Mesh(new THREE.BoxGeometry(2.1, .28, 2.1), mats().cab);
-      shoe.position.copy(mast).y = yBase + .14; production.add(shoe);
-      latticeInto(steel, mast.clone().setY(yBase + .12), mast.clone().setY(L.rig), dome ? 1.5 : 1.7, .078);
-      const joinRoof = showXZ(center, yaw, 21.2, 0, L.rig);
-      const roofTip = showXZ(center, yaw, lead + mainW + .9, 0, L.rig);
-      showBeam(production, center.clone().setY(L.rig), roofTip, dome ? 1.25 : 1.5);
-      if (!dome) showBeam(production, mast.clone().setY(L.rig), joinRoof, 1.0);
-      latticeInto(steel, mast.clone().setY(L.rig - 5.7), roofTip, .57, .045);
+        // knee braces from the mast up under the girder
+        latticeInto(steel, showXZ(center, yaw, mastRad, 0, top - 4.5), showXZ(center, yaw, mastRad - 4.5, 0, top - .6), .5, .035);
+      }
+      // the screen: a double-faced fin under the girder
       const xScreen = showXZ(center, yaw, lead + mainW / 2);
       screen({ x: xScreen.x, z: xScreen.z, bottom, w: mainW, h: mainH, yaw: yaw - Math.PI / 2, double: true, bright: 1.83 });
       for (const d of [lead + 2.3, lead + mainW - 2.3]) {
         const pick = showXZ(center, yaw, d);
-        chainInto(chains, pick.x, bottom + mainH, pick.z, L.rig - .5, { motor: false });
+        chainInto(chains, pick.x, bottom + mainH, pick.z, top - .5, { motor: false });
       }
-      const edge = mast.clone().addScaledVector(showXZ(V3(), yaw, 0, .83), 1);
-      bar(edge.clone().setY(h + 1.5), edge.clone().setY(L.rig - .9), dome ? .145 : .17, i * 2);
-      const neg = mast.clone().addScaledVector(showXZ(V3(), yaw, 0, -.83), 1);
-      bar(neg.clone().setY(h + 1.5), neg.clone().setY(L.rig - .9), .15, i * 2 + 3);
-      row(showXZ(center, yaw, 4.4, .82, L.rig - .7), showXZ(center, yaw, lead + mainW - 1, .82, L.rig - .7), dome ? 8 : 10, 'beam', yaw + .6, center);
-      row(showXZ(center, yaw, 4.4, -.82, L.rig - .7), showXZ(center, yaw, lead + mainW - 1, -.82, L.rig - .7), dome ? 6 : 8, 'spot', yaw - .6, center);
-      for (const side of [-1, 1]) {
-        const pa = mast.clone().add(showXZ(V3(), yaw, .3, side * 1.7));
-        showBeam(production, mast.clone().setY(L.rig - .45), pa.clone().setY(L.rig - .45), .6);
-        showPA(production, { x: pa.x, z: pa.z, y: L.rig - 1.7, boxes: dome ? 15 : 18, width: dome ? 1.3 : 1.5, yaw: yaw + side * .53, roofY: L.rig - .5 }, side > 0 ? 'Main sector array' : 'Side sector array');
+      row(showXZ(center, yaw, 4.4, .82, top - .7), showXZ(center, yaw, mastRad - 3, .82, top - .7), dome ? 9 : 12, 'beam', yaw + .6, center);
+      row(showXZ(center, yaw, 4.4, -.82, top - .7), showXZ(center, yaw, mastRad - 3, -.82, top - .7), dome ? 7 : 9, 'spot', yaw - .6, center);
+      // the main hangs: a pair at the girder's end, splayed out to either side
+      if (dome) {
+        showBeam(production, showXZ(center, yaw, mastRad + .6, -3.1, top - .45), showXZ(center, yaw, mastRad + .6, 3.1, top - .45), .6);
+        for (const s of [-1, 1]) showPA(production, { ...xz(showXZ(center, yaw, mastRad + .6, s * 2.4)), y: top - 1.7, boxes: 14, width: 1.3, yaw: yaw + s * .5, roofY: top - .75 }, s > 0 ? 'Main sector array' : 'Side sector array');
+        showPA(production, { ...xz(showXZ(center, yaw, mastRad + 1.8)), y: top - 2.6, boxes: 7, width: 1.18, depth: 1.05, yaw, roofY: top - .6, splay: .008 }, 'Flown subwoofer array');
+      } else {
+        for (const s of [-1, 1]) showPA(production, { ...xz(showXZ(center, yaw, mastRad + .3, s * 3.2)), y: top - 1.7, boxes: 16, width: 1.5, yaw: yaw + s * .3, roofY: top - .6 }, s > 0 ? 'Main sector array' : 'Side sector array');
+        showPA(production, { ...xz(showXZ(center, yaw, mastRad - 1.7)), y: top - 2.6, boxes: 8, width: 1.18, depth: 1.05, yaw, roofY: top - .75, splay: .008 }, 'Flown subwoofer array');
       }
-      const sub = mast.clone().add(showXZ(V3(), yaw, -1.4));
-      showPA(production, { x: sub.x, z: sub.z, y: L.rig - 3.0, boxes: dome ? 6 : 8, width: 1.18, depth: 1.05, yaw, roofY: L.rig - 1.1, splay: .008 }, 'Flown subwoofer array');
+      // the ground subs and front fills round the centre
       const ySub = dome ? yaw : yaw + Math.PI / 4;
-      const p = showXZ(center, ySub, dome ? outer - .25 : outer - .4);
-      showSubLine(production, p, ySub, { x0: -6.9, x1: 6.9, pitch: 1.7, gap: dome ? 0 : 2, count: 2, fills: { xs: [-5.5, -2.2, 2.2, 5.5], y: h, z: -2 } });
+      const p = showXZ(center, ySub, dome ? 15.7 - .25 : 15 - .4);
+      showSubLine(production, p, ySub, { x0: -6.9, x1: 6.9, pitch: 1.7, gap: dome ? 0 : 2, fills: { xs: [-5.5, -2.2, 2.2, 5.5], y: h, z: -2 } });
       const zSide = Math.sign(Math.cos(yaw));
       const d = V3(Math.sign(Math.sin(yaw)) * (dome ? (zSide > 0 ? 23 : 32) : 37), 0, center.z + zSide * (dome ? 37 : 46));
-      if (onFloor(d.x, d.z)) delay(d, dome ? (zSide > 0 ? 23 : 19) : 28, Math.atan2(d.x, d.z - center.z), dome ? 13 : 17);
+      // (the dome's infield pair raised to reach the upper stands)
+      if (onFloor(d.x, d.z)) delay(d, dome ? (zSide > 0 ? 28 : 19) : 28, Math.atan2(d.x, d.z - center.z), dome ? 12 : 14);
+    }
+    // the sides: an array off the middle of each perimeter beam, down the axis
+    for (const yaw of SHOW_AXES) {
+      const rad = dome ? mastRad * Math.SQRT1_2 : (mastRad + 6.3) * Math.SQRT1_2;
+      showPA(production, { ...xz(showXZ(center, yaw, rad + .2)), y: top - 1.5, boxes: dome ? 13 : 16, width: dome ? 1.25 : 1.4, yaw, roofY: top - .55 }, 'Side line array');
+      showPA(production, { ...xz(showXZ(center, yaw, rad + .2, 2.2)), y: top - 2.4, boxes: 6, width: 1.18, depth: 1.05, yaw, roofY: top - .55, splay: .008 }, 'Flown subwoofer array');
     }
     production.add(new THREE.Mesh(mergeGeometries(steel), mats().trussBlack), new THREE.Mesh(mergeGeometries(chains), mats().chain));
   }
@@ -435,15 +498,7 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
     production.add(key, key.target);
     washes.push(key);
   }
-  const mic = micStand({});
-  mic.position.copy(center).y = h;
-  production.add(mic);
-  const kit = drumKit({ shell: 0x20232b });
-  kit.position.copy(center).add(V3(0, h + .25, round ? -3.7 : -2.7));
-  const riser = stageDeck({ w: 4.5, d: 2.6, h: .25, z: kit.position.z, lip: false });
-  riser.position.y = h;
-  production.add(riser, kit);
-  const cueLeds = showLEDs(production, rails);
+  const runLeds = ledStrips(production, rails);
 
   // Distance from the stage, its speaker line and the delay tower bases.
   const clearStage = (x, z, pad = 0) => !footprints.some(({ ring, gap, bounds }) => {
@@ -457,16 +512,22 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
 
   const { x0, x1, z0, z1 } = floorBounds;
   let ground;
-  if (room === 'stadium') {
+  if (stadium) {
     ground = packFloor({ ...floorBounds, spacing: .64, inside: keep, seed: 177, trim: { cols: 4, rows: 4 } });
   } else {
     const xs = arena ? [[x0, -14.9], [-13.5, -1], [1, 13.5], [14.9, x1]] : [];
     const zs = [];
-    if (dome) for (let x = .7, limit = Math.min(-x0, x1); x < limit; x += 9.3) {
-      const end = Math.min(x + 8, limit);
-      xs.push([-end, -x], [x, end]);
+    if (dome) {
+      // (the end stage's columns start beside the runway, so the ground either
+      // side of it, from the deck's front to the end stage, is seated too)
+      const limit = Math.min(-x0, x1);
+      for (let x = round ? .7 : 2.6 + L.thrustGap + .2; x < limit; x += 9.3) {
+        const end = Math.min(x + 8, limit);
+        xs.push([-end, -x], [x, end]);
+      }
     }
-    for (let z = z0; z < z1; z += 13) zs.push([z, Math.min(z + 11.4, z1)]);
+    const start = dome && !round ? L.front + L.gap + .2 : z0;
+    for (let z = start; z < z1; z += dome ? 10.4 : 13) zs.push([z, Math.min(z + (dome ? 9.2 : 11.4), z1)]);
     const floor = floorBlocks(blockGrid(zs, xs), { keep, seed: arena ? 31 : 55, trim: { cols: 6, rows: 4 } });
     if (round) for (const chair of floor.chairs) chair.turn = Math.atan2(-chair.x, center.z - chair.z);
     root.add(floorChairs(floor.chairs));
@@ -502,9 +563,9 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
   const blinders = flashUnits(rig, production, units);
   const strobes = flashUnits(rig, production, units.map((u) => ({ ...u, pos: u.pos.clone().addScaledVector(u.dir, .15).add(V3(.7, .2, 0)) })), { kind: 'strobe' });
   return {
-    stageTarget: focus, camera: { pos: eye, target: focus, fov: arena ? 56 : 59, near: .16, far: room === 'stadium' ? 1800 : 700 },
+    stageTarget: focus, camera: { pos: eye, target: focus, fov: arena ? 56 : 59, near: .16, far: stadium ? 1800 : 700 },
     hazeDensity: arena ? .00125 : dome ? .00085 : .00043, beamGain: arena ? .55 : .62,
-    env: { w: room === 'stadium' ? 300 : dome ? 235 : 138, h: ceiling || 58, d: room === 'stadium' ? 320 : dome ? 236 : 126, eye, wall: 0x0a0a10, floor: 0x0a0a0c, emitters: screens.slice(0, round ? 8 : 3).map(({ w, h, pos, normal }) => ({ w, h, pos, normal, screen: true, power: 1.4, aspect: w / h })) },
+    env: { w: stadium ? 300 : dome ? 235 : 138, h: ceiling || 58, d: stadium ? 320 : dome ? 236 : 126, eye, wall: 0x0a0a10, floor: 0x0a0a0c, emitters: screens.slice(0, round ? 8 : 3).map(({ w, h, pos, normal }) => ({ w, h, pos, normal, screen: true, power: 1.4, aspect: w / h })) },
     update(f) {
       stands.update(f);
       const show = 1 - f.house;
@@ -514,11 +575,7 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
       for (const { fixtures, options } of fixtureRows) runShow(rig, fixtures, f, options);
       const bl = runBlinders(blinders, f);
       const st = runStrobes(strobes, f);
-      for (const { mat, index } of cueLeds) {
-        const chase = Math.pow(.5 + .5 * Math.cos(index / 8 * Math.PI * 2 - f.t * (high ? 7 : 2.2)), 2);
-        const k = quiet ? .13 : high ? .35 + .61 * chase + .37 * f.kick : .21 + .33 * chase + .20 * f.snare;
-        ringTint(mat.color, index < 4 ? f.pal.a : f.pal.b).multiplyScalar(.035 + k * show);
-      }
+      runLeds(f, sec, show);
       const keyPower = arena ? 13500 : dome ? 32500 : 43500;
       washes.forEach((l, i) => {
         l.color.copy(KELVIN(4600)).lerp(i % 2 ? f.pal.b : f.pal.a, high ? .37 : .18);
@@ -535,3 +592,5 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
     },
   };
 }
+
+const xz = (p) => ({ x: p.x, z: p.z });

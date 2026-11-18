@@ -11,6 +11,7 @@ import { lightPoints } from '../people.js';
 import { holdAtDistance, ledScreen, prismInto, rodInto, truss, wedge } from '../rig.js';
 
 import { concertRoom } from '../concert-production.js';
+import { STAGE_Z } from '../stage-plan.js';
 import { buildStands, decodeSeats } from '../stands.js';
 import { WB_STANDS } from './wb-data.js';
 
@@ -132,7 +133,7 @@ export function buildStadium(ctx) {
   const ZC = 64;
   // (round, the stage on the centre spot)
   const round = ctx.mode === '360';
-  const STAGE = round ? V3(0, DECK, ZC) : V3(0, DECK, 20);
+  const STAGE = V3(0, DECK, STAGE_Z.stadium[round ? '360' : 'general']);
   const OFF = V3(0, 0, ZC);
   root.add(nightSky(cu));
   const rnd = prng(199);
