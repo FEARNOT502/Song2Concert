@@ -25,7 +25,7 @@ function satinInstrument(material) {
 export function loadConcertModels() {
   if (!modelsPromise) {
     const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
-    const url = import.meta.env.BASE_URL + 'assets/concert-equipment.glb?v=2';
+    const url = import.meta.env.BASE_URL + 'assets/concert-equipment.glb?v=3';
     modelsPromise = loader.loadAsync(url).then(({ scene }) => {
       const models = new Map();
       scene.updateMatrixWorld(true);
