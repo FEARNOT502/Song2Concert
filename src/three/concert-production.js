@@ -42,17 +42,63 @@ export function concertRoom(ctx, id, room) {
     onFloor = (x, z) => showContains(field, x, z) && showEdgeDistance(field, x, z) > (dome ? 2.5 : 3.5);
     if (!dome) houseSources = [[-70, 20], [70, 20], [-70, 110], [70, 110], [0, -10], [0, 150]].map(([x, z]) => V3(x, room.roofY - 2, z));
   }
-  const show = concertProduction(ctx, root, id, { center, eye, stands, floorBounds, onFloor, ceiling: room.H, houseSources, houseUpdate });
+  // (the arena's fill in the house lights' own colour: with the cool default
+  // the walls went from warm where the downlights reach to slate blue above)
+  const fill = arena ? { sky: KELVIN(4200).multiplyScalar(.5), ground: new THREE.Color(0x2b2724) } : null;
+  const show = concertProduction(ctx, root, id, { center, eye, stands, floorBounds, onFloor, ceiling: room.H, houseSources, houseUpdate, fill });
   return {
     root, eye, ...show, round, seatNear: stands.seatNear, seats: stands.seats,
     background: new THREE.Color(arena ? 0 : dome ? 0x050506 : 0x020306),
     fog: new THREE.FogExp2(arena ? 0x060508 : dome ? 0x07060a : 0x090708, arena ? .0037 : dome ? .0025 : .00165),
     hazeAmb: new THREE.Color(arena ? 0x040306 : dome ? 0x060507 : 0x060405),
     hazeAmbDist: arena ? 160 : dome ? 230 : 400,
-    bloom: { strength: .63, radius: .65, threshold: 1.18 },
+    // (house up, the threshold over what the house lights make of the white
+    // fronts and aisles near them: they glared, and read as reflections)
+    bloom: { strength: .63, radius: .65, threshold: 1.18, house: arena || dome ? 1.6 : null },
     grade: { exposure: arena ? 1.16 : 1.2, vignette: .29, ca: .003, grain: .025, sat: 1.04, lift: [.004, .005, .009] },
     envIntensity: arena ? .6 : dome ? .55 : .5,
+    // the paint and concrete's specular sheen, scaled (core.js matteFinishes)
+    matteSpec: arena || dome ? .15 : null,
   };
+}
+
+// The dome's floor round its centre stage, in blocks set out from the stage
+// rather than from the field's edge: the first column either side of the
+// runways along z, and the first row either side of those along x, start
+// just clear of the runway (its gap and `pad`). Past each runway's stairs the
+// middle column (or row) is seated too. A grid laid out from the field's edge
+// left a sliver beside each runway that the trim took away, and a block's
+// width of bare floor went with it.
+function roundFloorBlocks(c, { x0, x1, z0, z1 }, footprints, { pitch = [9.3, 10.4], size = [8, 9.2], pad = .2 } = {}) {
+  // what stands on the line through the middle along `axis`: how far either
+  // side of it the runway keeps the floor clear, and how far out along it the
+  // last of the stage (the runways' stairs) reaches
+  const span = (axis) => {
+    let clear = 0, reach = 0;
+    for (const { gap, bounds: b } of footprints) {
+      const [lo, hi, alo, ahi, m, a] = axis === 'z' ? [b.min.x, b.max.x, b.min.z, b.max.z, c.x, c.z] : [b.min.z, b.max.z, b.min.x, b.max.x, c.z, c.x];
+      if (lo > m || hi < m) continue;
+      const far = Math.max(ahi - a, a - alo);
+      reach = Math.max(reach, far + gap);
+      // (the runway itself: the centre deck is wider, but only near the middle)
+      if (far > 20) clear = Math.max(clear, Math.max(hi - m, m - lo) + gap);
+    }
+    return { clear: clear + pad, reach: reach + pad };
+  };
+  const lines = (m, lo, hi, first, step, len) => {
+    const out = [];
+    for (let a = m + first; a < hi; a += step) out.push([a, Math.min(a + len, hi)]);
+    for (let a = m - first; a > lo; a -= step) out.push([Math.max(a - len, lo), a]);
+    return out;
+  };
+  const Z = span('z'), X = span('x');
+  const xs = lines(c.x, x0, x1, Z.clear, pitch[0], size[0]), zs = lines(c.z, z0, z1, X.clear, pitch[1], size[1]);
+  const blocks = [];
+  for (const [za, zb] of zs) for (const [xa, xb] of xs) blocks.push({ x0: xa, x1: xb, z0: za, z1: zb });
+  const ax = pitch[0] - size[0], az = pitch[1] - size[1];
+  for (const [za, zb] of lines(c.z, z0, z1, Z.reach, pitch[1], size[1])) blocks.push({ x0: c.x - Z.clear + ax, x1: c.x + Z.clear - ax, z0: za, z1: zb });
+  for (const [xa, xb] of lines(c.x, x0, x1, X.reach, pitch[0], size[0])) blocks.push({ x0: xa, x1: xb, z0: c.z - X.clear + az, z1: c.z + X.clear - az });
+  return blocks;
 }
 
 function showContains(ring, x, z) {
@@ -246,7 +292,7 @@ function ledStrips(root, runs) {
   };
 }
 
-function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, onFloor, ceiling, houseSources, houseUpdate }) {
+function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, onFloor, ceiling, houseSources, houseUpdate, fill }) {
   const round = ctx.mode === '360';
   const plan = stagePlan(room, ctx.mode, center.z);
   const L = plan.L;
@@ -528,7 +574,7 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
     }
     const start = dome && !round ? L.front + L.gap + .2 : z0;
     for (let z = start; z < z1; z += dome ? 10.4 : 13) zs.push([z, Math.min(z + (dome ? 9.2 : 11.4), z1)]);
-    const floor = floorBlocks(blockGrid(zs, xs), { keep, seed: arena ? 31 : 55, trim: { cols: 6, rows: 4 } });
+    const floor = floorBlocks(dome && round ? roundFloorBlocks(center, floorBounds, footprints) : blockGrid(zs, xs), { keep, seed: arena ? 31 : 55, trim: { cols: 6, rows: 4 } });
     if (round) for (const chair of floor.chairs) chair.turn = Math.atan2(-chair.x, center.z - chair.z);
     root.add(floorChairs(floor.chairs));
     ground = floor.people;
@@ -542,7 +588,7 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
   aisle.material.uniforms.uGain.value = .25;
   root.add(aisle, lightPoints(fohPosition(pipe, root, eye, { riser: eye.y - 1.6 }), cu, { maxPx: 4 }));
 
-  const entry = new THREE.HemisphereLight(0xaaaabf, 0x23232a, .32);
+  const entry = new THREE.HemisphereLight(fill?.sky ?? 0xaaaabf, fill?.ground ?? 0x23232a, .32);
   root.add(entry);
   const house = houseSources.map((pos) => {
     const lamp = new THREE.SpotLight(KELVIN(5000), 0, L.reach * 2.1, 1.12, .65, 2);

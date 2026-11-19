@@ -467,6 +467,39 @@ export function velvet(hexColor, key, o = {}) {
   });
 }
 
+// Matte finishes: paint, concrete, rubber sheet, seat plastic. Their specular lobe
+// is scaled by one shared factor (MATTE_SPEC), set per room. Under the big
+// rooms' house lights a GGX lobe, even at roughness 1, turns white at a grazing
+// angle: aisle treads, row fronts and fascias read as polished stone. Real
+// emulsion and concrete scatter that light, so the surface just looks lit.
+// This r185 build adds the direct specular on top of the diffuse, so scaling
+// it takes only the sheen off and leaves the lit colour as it was.
+export const MATTE_SPEC = { value: 1 };
+const isMatte = (m) => m?.isMeshStandardMaterial && !m.userData.matteSpec && m.metalness <= 0.15 && m.roughness >= 0.6
+  && !m.metalnessMap && !(m.sheen > 0) && !(m.clearcoat > 0) && !(m.transmission > 0);
+export function matteFinishes(root) {
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+      if (!isMatte(m)) continue;
+      m.userData.matteSpec = true;
+      const prev = m.onBeforeCompile;
+      // the program cache key as it was, so materials patched differently
+      // before this never share a program
+      const own = Object.prototype.hasOwnProperty.call(m, 'customProgramCacheKey') ? m.customProgramCacheKey.bind(m) : null;
+      const prevKey = own ? null : prev.toString();
+      m.onBeforeCompile = (sh, r) => {
+        prev.call(m, sh, r);
+        sh.uniforms.uMatteSpec = MATTE_SPEC;
+        sh.fragmentShader = 'uniform float uMatteSpec;\n' + sh.fragmentShader.replace('#include <lights_physical_fragment>', `#include <lights_physical_fragment>
+          material.specularColor *= uMatteSpec; material.specularColorBlended *= uMatteSpec; material.specularF90 *= uMatteSpec;`);
+      };
+      m.customProgramCacheKey = () => `${own ? own() : prevKey}|matte`;
+      m.needsUpdate = true;
+    }
+  });
+}
+
 export const aluminium = () => std({ color: 0xa9adb3, metalness: 0.9, roughness: 0.38 });
 export const blackSteel = () => std({ color: 0x141418, metalness: 0.6, roughness: 0.5 });
 
