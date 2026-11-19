@@ -4,7 +4,7 @@ import { KELVIN, V3, clamp, deckGridTex, lerp, ringTint, std, withRepeat } from 
 import { lightPoints } from './people.js';
 import { chainInto, hoists, latticeInto, ledScreen, mats, stageSteps, truss } from './rig.js';
 import {
-  bigCrowd, blockGrid, delayTower, flashOnCrowd, flashUnits, floorBlocks, floorChairs, fohPosition, groundRoof,
+  bigCrowd, blockGrid, delayTower, teeDelayTower, flashOnCrowd, flashUnits, floorBlocks, floorChairs, fohPosition, groundRoof,
   maskingDrapes, packFloor, paHang, runBlinders, runShow, runStrobes, screenHang, section, subLine,
 } from './show.js';
 import { AXES as SHOW_AXES, CONCERT_LAYOUTS, DIAGONALS as SHOW_DIAGONALS, stagePlan } from './stage-plan.js';
@@ -24,7 +24,8 @@ export function concertRoom(ctx, id, room) {
       const xs = [-76, -31, -16, 16, 31, 76];
       for (let i = 1; i < xs.length; i++) {
         const a = xs[i - 1], b = xs[i];
-        maskingDrapes(root, { a: [a, room.mask(a)], b: [b, room.mask(b)], top: room.H, bottomAt: stands.topAt });
+        // (matte black cloth: velvet's sheen picked the screens and the house lights out of its folds as white streaks)
+        maskingDrapes(root, { a: [a, room.mask(a)], b: [b, room.mask(b)], top: room.H, bottomAt: stands.topAt, matte: true });
       }
     }
     floorBounds = { x0: -29.2, x1: 29.2, z0: round ? 4 : L.front, z1: room.OZ + 39.5 };
@@ -32,7 +33,7 @@ export function concertRoom(ctx, id, room) {
     onFloor = (x, z) => Math.abs(x) < 29.2 && z >= 4 && z < floorBounds.z1 && offsets.every(([dx, dz]) => stands.topAt(x + dx, z + dz) < .05);
     houseUpdate = (f) => {
       room.updateInterior(f.house);
-      room.house.forEach((lamp) => { lamp.intensity = 9200 * f.house; });
+      room.house.forEach((lamp) => { lamp.intensity = 10400 * f.house; });
       room.houseFix.forEach((lamp) => { lamp.intensity = 1.35 * f.house; });
     };
   } else {
@@ -54,11 +55,13 @@ export function concertRoom(ctx, id, room) {
     hazeAmbDist: arena ? 160 : dome ? 230 : 400,
     // (house up, the threshold over what the house lights make of the white
     // fronts and aisles near them: they glared, and read as reflections)
-    bloom: { strength: .63, radius: .65, threshold: 1.18, house: arena || dome ? 1.6 : null },
+    // (the dome's house lights are daylight-bright on its light concrete and paint: higher still)
+    bloom: { strength: .63, radius: .65, threshold: 1.18, house: dome ? 2 : 1.6 },
     grade: { exposure: arena ? 1.16 : 1.2, vignette: .29, ca: .003, grain: .025, sat: 1.04, lift: [.004, .005, .009] },
     envIntensity: arena ? .6 : dome ? .55 : .5,
-    // the paint and concrete's specular sheen, scaled (core.js matteFinishes)
-    matteSpec: arena || dome ? .15 : null,
+    // the finishes' sheen, scaled (core.js roomFinishes): matte paint and
+    // concrete, the glass fences and glazing, the PA's and the set's steel
+    finish: { matte: .15, gloss: .3, metal: .3 },
   };
 }
 
@@ -338,10 +341,13 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
     fixtureRows.push({ fixtures, options: { house, stage, up, lift, span: L.reach * .48, strobe: kind === 'beam' || kind === 'spot' } });
   };
   const screen = (config) => showScreen(ctx, production, screens, config);
-  // a delay tower: a roofed mast with a pair of arrays under its roof
+  // a delay tower: a roofed mast with a pair of arrays under its roof; the
+  // stadium's a tall guyed mast with one long array off a T header, high
+  // enough to reach the top tier (its back rows over 50 m up)
   const delay = (p, y, yaw, boxes) => {
     delays.push(p);
-    const head = delayTower(production, { x: p.x, z: p.z, h: y, boxes, width: dome ? 1.3 : 1.5, yaw });
+    const head = stadium ? teeDelayTower(production, { x: p.x, z: p.z, h: 40, boxes: 24, fill: 6, width: 1.4, yaw })
+      : delayTower(production, { x: p.x, z: p.z, h: y, boxes, width: dome ? 1.3 : 1.5, yaw });
     row(head[0], head[head.length - 1], 4, 'beam', yaw, center, { gain: .45, lift: .76 });
   };
 
@@ -590,8 +596,16 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
 
   const entry = new THREE.HemisphereLight(fill?.sky ?? 0xaaaabf, fill?.ground ?? 0x23232a, .32);
   root.add(entry);
+  // The house lights: a ring of flood banks round the roof, stood in for by a
+  // handful of spots. As points, falling off as 1/d², each one burned what hung
+  // or stood just under it white (a pole, a tunnel's mouth, the balcony's
+  // glass) while the field across the room stayed as it should be. The ring
+  // falls off between a line's 1/d and a point's: 1/d^1.25, its power set so
+  // the field (`HOUSE_REF` metres off) is lit as before.
+  const HOUSE_DECAY = 1.25, HOUSE_REF = stadium ? 80 : 60;
+  const housePower = (arena ? 12500 : 34500) * Math.pow(HOUSE_REF, HOUSE_DECAY - 2);
   const house = houseSources.map((pos) => {
-    const lamp = new THREE.SpotLight(KELVIN(5000), 0, L.reach * 2.1, 1.12, .65, 2);
+    const lamp = new THREE.SpotLight(KELVIN(5000), 0, L.reach * 2.1, 1.12, .65, HOUSE_DECAY);
     lamp.position.copy(pos);
     lamp.target.position.set(pos.x * .73, 0, lerp(center.z, pos.z, .65));
     lamp.userData.offWhenDark = 'house';
@@ -627,7 +641,7 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
         l.color.copy(KELVIN(4600)).lerp(i % 2 ? f.pal.b : f.pal.a, high ? .37 : .18);
         l.intensity = keyPower * (quiet ? .82 : 1 + .32 * energy) * show;
       });
-      house.forEach((l) => { l.intensity = (arena ? 12500 : 34500) * f.house; });
+      house.forEach((l) => { l.intensity = housePower * f.house; });
       entry.intensity = .26 + .86 * f.house;
       houseUpdate?.({ ...f, sec });
       cu.uStage.value.copy(center).y = round ? 10 : 13;

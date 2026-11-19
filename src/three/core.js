@@ -467,22 +467,51 @@ export function velvet(hexColor, key, o = {}) {
   });
 }
 
-// Matte finishes: paint, concrete, rubber sheet, seat plastic. Their specular lobe
-// is scaled by one shared factor (MATTE_SPEC), set per room. Under the big
-// rooms' house lights a GGX lobe, even at roughness 1, turns white at a grazing
-// angle: aisle treads, row fronts and fascias read as polished stone. Real
-// emulsion and concrete scatter that light, so the surface just looks lit.
-// This r185 build adds the direct specular on top of the diffuse, so scaling
-// it takes only the sheen off and leaves the lit colour as it was.
-export const MATTE_SPEC = { value: 1 };
-const isMatte = (m) => m?.isMeshStandardMaterial && !m.userData.matteSpec && m.metalness <= 0.15 && m.roughness >= 0.6
-  && !m.metalnessMap && !(m.sheen > 0) && !(m.clearcoat > 0) && !(m.transmission > 0);
-export function matteFinishes(root) {
+// The big rooms' finishes, toned down per room through three shared factors
+// (FINISH), each 1 (no change) unless the room asks for less:
+//   matte  paint, concrete, rubber sheet, seat plastic, velvet drapes
+//          (roughness >= 0.6; velvet keeps its own soft sheen lobe): the
+//          specular lobe scaled. Under the house lights a GGX lobe, even at
+//          roughness 1, turns white at a grazing angle, and aisle treads, row
+//          fronts and fascias read as polished stone. This r185 build adds the
+//          direct specular on top of the diffuse, so scaling it takes only the
+//          sheen off and leaves the lit colour as it was.
+//   gloss  glass fences and glazing, screen faces, satin paint (metalness <=
+//          0.25, smoother): the same, by its own factor; glass still reflects,
+//          just not a house light as a point of white.
+//   metal  truss, rigging, chain, rails, chair frames: the metalness taken
+//          down by the factor (the colour it loses goes to the diffuse, or
+//          scaling the specular would only blacken it), the roughness raised
+//          towards 0.65 and then the specular scaled: painted or mill-finish
+//          steel, not chrome. A hang's black side plates by a house light
+//          mirrored it white at a grazing angle.
+//   flat   a material marked `userData.flat`: no specular at all in these
+//          rooms (the dome balcony's cream partitions, seen edge-on by the
+//          house lights).
+export const FINISH = { matte: { value: 1 }, gloss: { value: 1 }, metal: { value: 1 } };
+const finishOf = (m) => {
+  if (!m?.isMeshStandardMaterial || m.userData.finish || m.metalnessMap || m.clearcoat > 0 || m.transmission > 0) return null;
+  if (m.userData.flat) return 'flat';
+  if (m.metalness > 0.25) return 'metal';
+  return m.metalness <= 0.15 && m.roughness >= 0.6 ? 'matte' : 'gloss';
+};
+const FINISH_GLSL = {
+  matte: 'material.specularColor *= uFinish; material.specularColorBlended *= uFinish; material.specularF90 *= uFinish;',
+  gloss: 'material.specularColor *= uFinish; material.specularColorBlended *= uFinish; material.specularF90 *= uFinish;',
+  flat: 'material.specularColor *= uFinish; material.specularColorBlended *= uFinish; material.specularF90 *= uFinish;',
+  metal: `material.metalness *= uFinish;
+          material.diffuseContribution = diffuseColor.rgb * ( 1.0 - material.metalness );
+          material.specularColorBlended = mix( material.specularColor, diffuseColor.rgb, material.metalness );
+          material.roughness = mix( max( material.roughness, 0.65 ), material.roughness, uFinish );
+          material.specularColor *= uFinish; material.specularColorBlended *= uFinish; material.specularF90 *= uFinish;`,
+};
+export function roomFinishes(root) {
   root.traverse((o) => {
     if (!o.isMesh) return;
     for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
-      if (!isMatte(m)) continue;
-      m.userData.matteSpec = true;
+      const kind = finishOf(m);
+      if (!kind) continue;
+      m.userData.finish = kind;
       const prev = m.onBeforeCompile;
       // the program cache key as it was, so materials patched differently
       // before this never share a program
@@ -490,11 +519,11 @@ export function matteFinishes(root) {
       const prevKey = own ? null : prev.toString();
       m.onBeforeCompile = (sh, r) => {
         prev.call(m, sh, r);
-        sh.uniforms.uMatteSpec = MATTE_SPEC;
-        sh.fragmentShader = 'uniform float uMatteSpec;\n' + sh.fragmentShader.replace('#include <lights_physical_fragment>', `#include <lights_physical_fragment>
-          material.specularColor *= uMatteSpec; material.specularColorBlended *= uMatteSpec; material.specularF90 *= uMatteSpec;`);
+        sh.uniforms.uFinish = kind === 'flat' ? { value: 0 } : FINISH[kind];
+        sh.fragmentShader = 'uniform float uFinish;\n' + sh.fragmentShader.replace('#include <lights_physical_fragment>', `#include <lights_physical_fragment>
+          ${FINISH_GLSL[kind]}`);
       };
-      m.customProgramCacheKey = () => `${own ? own() : prevKey}|matte`;
+      m.customProgramCacheKey = () => `${own ? own() : prevKey}|finish-${kind}`;
       m.needsUpdate = true;
     }
   });

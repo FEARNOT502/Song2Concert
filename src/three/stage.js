@@ -16,7 +16,7 @@
 // side, like everything else there.
 
 import * as THREE from 'three';
-import { DEG, clamp, regionColor, dropDegenerateTriangles, ringTint, MATTE_SPEC, matteFinishes } from './core.js';
+import { DEG, clamp, regionColor, dropDegenerateTriangles, ringTint, FINISH, roomFinishes } from './core.js';
 import { Pipeline, QUALITY, buildEnvironment } from './render.js';
 import { crowdUniforms } from './people.js';
 import { LOD, Rig } from './rig.js';
@@ -188,9 +188,9 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     });
     for (const r of c.rigs) { r.blockers = stops; r.reach = LOOK_ROOMS.has(id) ? 260 : 0; }
     dropDegenerateTriangles(v.root);
-    // the big rooms' paint and concrete without the sheen (core.js matteFinishes)
-    if (v.matteSpec != null) matteFinishes(v.root);
-    MATTE_SPEC.value = v.matteSpec ?? 1;
+    // the big rooms' paint, glass and steel without the sheen (core.js roomFinishes)
+    if (v.finish) roomFinishes(v.root);
+    for (const k of Object.keys(FINISH)) FINISH[k].value = v.finish?.[k] ?? 1;
     pipe.scene.add(v.root);
     pipe.scene.add(pipe.flares.mesh);
     pipe.scene.background = v.background || new THREE.Color(0);
