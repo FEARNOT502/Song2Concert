@@ -14,6 +14,8 @@ const X = V3(1), Y = V3(0, 1);
 // The microphone's grille and capsule center in the exported stand's frame.
 const MIC_AXIS = V3(.31, .20, .93).normalize();
 const MIC_GRILLE = V3(.286, 1.725, .389).addScaledVector(MIC_AXIS, .095);
+const MIC_HEIGHT = 1.48;
+const CONTACT_PROPS = new Set(['drums', 'keyboard', 'mic', 'prompter', 'wedge', 'touring-rack', 'flight-case', 'ballast']);
 
 function cameraLabel(code) {
   const canvas = document.createElement('canvas');
@@ -53,19 +55,45 @@ function stageHeight(decks, x, z) {
   return height;
 }
 
+function mountContactShadows(group, footprints) {
+  const geometry = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+  const material = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+    vertexShader: `
+      varying vec2 footprint;
+      void main() {
+        footprint = abs(uv * 2.0 - 1.0);
+        gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `
+      varying vec2 footprint;
+      void main() {
+        vec2 rounded = max(footprint - 0.26, 0.0) / 0.74;
+        float shade = 1.0 - smoothstep(0.22, 1.0, length(rounded));
+        gl_FragColor = vec4(0.005, 0.005, 0.007, shade * 0.47);
+      }`,
+  });
+  const mesh = new THREE.InstancedMesh(geometry, material, footprints.length);
+  mesh.name = 'Equipment contact shadows';
+  mesh.userData.noCollide = true;
+  footprints.forEach((matrix, i) => mesh.setMatrixAt(i, matrix));
+  group.add(mesh);
+}
+
 export function addConcertEquipment(models, root, room, mode, plan, eye) {
   const data = layouts[room + '-' + mode];
   const group = new THREE.Group();
   group.name = 'Concert equipment';
   root.add(group);
   const batch = new ConcertModels(models, group);
-  const floorExclusions = [], collision = [];
+  const floorExclusions = [], collision = [], contactShadows = [];
   const collisionMaterial = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
   const display = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.FrontSide });
   const railParts = [];
   const amber = new THREE.MeshBasicMaterial({ color: 0x0d0704, toneMapped: false });
   const warm = new THREE.Color(0xffa15e);
   let drapeMaterial, matteDrape;
+  const fieldHeight = room === 'arena' ? 0 : .02;
 
   function boxCollision(x, y, z, w, h, d, yaw = 0) {
     const geo = new THREE.BoxGeometry(w, h, d);
@@ -74,6 +102,9 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
   }
   function add(name, x, y, z, yaw = 0, scale, material) {
     batch.add(name, placement(x, y, z, yaw, scale), material);
+  }
+  function contact(x, y, z, w, d, yaw = 0) {
+    contactShadows.push(placement(x, Math.max(fieldHeight, y) + .003, z, yaw, V3(w, 1, d)));
   }
   function reserve(x, z, rx, rz) {
     floorExclusions.push((a, b) => Math.abs(a - x) <= rx && Math.abs(b - z) <= rz);
@@ -116,8 +147,23 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
   }
 
   add('foh', eye.x, 0, eye.z);
-  boxCollision(eye.x, .405, eye.z + .5, 6.75, .81, 5.65);
-  boxCollision(eye.x, 3.05, eye.z + 1.64, 4.36, .18, 1.82);
+  contact(eye.x, 0, eye.z, 8.15, 6.3);
+  // Match the authored FOH's two decks, side landings and individual treads.
+  const lower = .81, upper = 3.14;
+  const fohFloor = (x, top, z, w, d) => boxCollision(eye.x + x, top - .07, eye.z + z, w, .14, d);
+  fohFloor(0, lower, 0, 7, 5);
+  fohFloor(0, upper, 1.635, 4.38, 1.93);
+  fohFloor(3.3085, upper, 1.979, 2.377, 1.15);
+  fohFloor(3.962, lower, -2.061, 1.11, .82);
+  for (let i = 0; i < 4; i++) fohFloor(0, lower * (i + 1) / 4, 3.52 - (i + .5) * .269, 1.33, .269);
+  for (let i = 0; i < 12; i++) {
+    fohFloor(3.962, lower + (upper - lower) * (i + 1) / 12, 1.419 - (11.5 - i) * .261, .977, .261);
+  }
+  for (const x of [-1.34, 1.25]) {
+    contact(eye.x + x, lower, eye.z - .57, 2.48, 1.14);
+    contact(eye.x + x, lower, eye.z + .85, 1.0, .94);
+  }
+  for (const x of [-1.058, 1.046]) contact(eye.x + x, upper, eye.z + 1.64, 1.37, 1.6);
   for (const { code, p, aim } of data.cameras) {
     const yaw = heading([aim[0] - p[0], aim[1] - p[1]]);
     add('camera', p[0], 0, p[1], yaw);
@@ -128,6 +174,7 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
     label.userData.noCollide = true;
     group.add(label);
     boxCollision(p[0], .81, p[1], .86, 1.62, .86, yaw);
+    contact(p[0], 0, p[1], 1.52, 1.48, yaw);
     reservePad(p[0], p[1], 1.23);
   }
   const { p: [jx, jz], tip, pocket, aim } = data.jib;
@@ -136,11 +183,16 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
   add('jib', jx, 0, jz, jibYaw, V3(length / 4.6, 1, 1));
   add('jib-head', tip[0], 2.713, tip[1], heading([aim[0] - tip[0], aim[1] - tip[1]]));
   boxCollision(jx, .71, jz, .97, 1.42, .97, jibYaw);
+  contact(jx, 0, jz, 1.75, 1.55, jibYaw);
   reservePad(jx, jz, 1.11);
   floorExclusions.push((x, z) => contains(pocket, x, z));
 
   const barrierWidth = 1.12;
-  for (const path of data.fences) {
+  for (const points of data.fences) {
+    // Fold tiny polyline jogs into the neighbouring bay; a 10 cm detour
+    // cannot take its own panel and has no well-defined crowd-facing side.
+    const path = points.filter(([x, z], i) => !i || i === points.length - 1 ||
+      Math.hypot(x - points[i - 1][0], z - points[i - 1][1]) > .2);
     for (let j = 1; j < path.length; j++) {
       const [ax, az] = path[j - 1], [bx, bz] = path[j];
       const dx = bx - ax, dz = bz - az, len = Math.hypot(dx, dz);
@@ -155,12 +207,13 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
         const t = clamp(((x - a[0]) * ux + (z - a[1]) * uz) / (ux ** 2 + uz ** 2 || 1));
         return (x - a[0] - t * ux) ** 2 + (z - a[1] - t * uz) ** 2;
       })));
-      if (deckDistance(mx + nx, mz + nz) > deckDistance(mx - nx, mz - nz)) yaw += Math.PI;
+      if (deckDistance(mx + nx, mz + nz) < deckDistance(mx - nx, mz - nz)) yaw += Math.PI;
       const n = Math.max(1, Math.round(len / barrierWidth));
       for (let i = 0; i < n; i++) {
         const u = (i + .5) / n;
         add('barrier', ax + dx * u, 0, az + dz * u, yaw, V3(len / (n * barrierWidth), 1, 1));
       }
+      contact(mx - Math.sin(yaw) * .18, 0, mz - Math.cos(yaw) * .18, len + .06, .83, yaw);
       boxCollision(mx, .56, mz, len, 1.12, .095, yaw);
       const rot = Math.cos(yaw), sin = Math.sin(yaw);
       floorExclusions.push((x, z) =>
@@ -170,7 +223,7 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
   }
 
   let caseCount = 0;
-  function prop({ kind, p: [x, z], facing, model, size }, y, ground) {
+  function prop({ kind, p: [x, z], facing, model, size, stack }, y, ground) {
     let yaw = heading(facing);
     let scale;
     // Facing describes the performer. The keyboard's keybed and pedal point
@@ -178,6 +231,7 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
     if (kind === 'keyboard') yaw += Math.PI;
     if (kind === 'mic') {
       yaw += Math.PI - Math.atan2(MIC_AXIS.x, MIC_AXIS.z);
+      scale = V3(1, MIC_HEIGHT / MIC_GRILLE.y, 1);
       const singer = MIC_GRILLE.clone().addScaledVector(MIC_AXIS, .24).applyAxisAngle(Y, yaw);
       add('mark', x + singer.x, y + .004, z + singer.z, heading(facing));
     }
@@ -193,15 +247,25 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
         const offset = (i - (modules - 1) / 2) * .66;
         add('cable-guard', x + Math.cos(yaw) * offset, y, z - Math.sin(yaw) * offset, yaw, V3(.74, 1, 1));
       }
+      contact(x, y, z, modules * .66 + .1, .70, yaw);
       reserve(x, z, nearJib ? .83 : .43, nearJib ? .83 : 1.1);
       return;
     }
-    if (model === 'combo-with-extension') {
+    if (kind === 'fender' || kind === 'vox') {
+      const amp = models.get(kind);
+      const tiers = stack ?? (model === 'combo-with-extension' ? 2 : 1);
+      contact(x, y, z, amp.size.x + .24, amp.size.z + .22, yaw);
       const name = kind + '-extension';
       const ext = models.get(name);
       const rise = kind === 'fender' ? .47 : .5;
-      add(name, x, y, z, yaw, V3(1.025, rise / ext.bounds.max.y, 1.05));
-      y += rise;
+      for (let i = 1; i < tiers; i++) {
+        add(name, x, y, z, yaw, V3(1.025, rise / ext.bounds.max.y, 1.05));
+        y += rise;
+      }
+    }
+    if (CONTACT_PROPS.has(kind)) {
+      const bounds = models.get(kind).size;
+      contact(x, y, z, bounds.x * (scale?.x ?? 1) + .15, bounds.z * (scale?.z ?? 1) + .15, yaw);
     }
     add(kind, x, y, z, yaw, scale);
     if (kind === 'prompter') add('prompter-display', x, y, z, yaw, undefined, display);
@@ -232,6 +296,7 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
     const yaw = heading([fx, fz]);
     const scale = V3(1.274 / model.size.x, .54 / model.size.y, 1 / model.size.z);
     for (let i = 0; i < count; i++) add('ground-sub', x, y + .55 * i - model.bounds.min.y * scale.y, z, yaw, scale);
+    contact(x, y, z, 1.52, 1.24, yaw);
     reserve(x, z, .85, .8);
     boxCollision(x, y + count * .55 / 2, z, 1.27, count * .55, 1, yaw);
   }
@@ -241,6 +306,7 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
   for (const { kind, p: [x, y, z], facing, ground } of data.lights) {
     if (kind !== 'footlight') {
       if (ground) reserve(x, z, 1.03, .7);
+      contact(x, y, z, kind === 'blinder4' ? 1.8 : .76, .72, heading(facing));
       continue;
     }
     const yaw = heading(facing);
@@ -321,6 +387,7 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
     },
     finish() {
       batch.flush();
+      mountContactShadows(group, contactShadows);
       if (!collision.length) return;
       const shell = new THREE.Mesh(mergeGeometries(collision), collisionMaterial);
       shell.name = 'Equipment collision';
@@ -349,8 +416,8 @@ export function floorLighting(equipment, rig, center, reach) {
       pos, dir, kind, hang: 'up', intensity: 0,
       length: reach * (kind === 'beam' ? .65 : .28),
       localBeam: kind !== 'beam',
-      beamGain: kind === 'beam' ? .54 : kind === 'spot' ? .33 : .16,
-      flareGain: .25, scale: 1,
+      beamGain: kind === 'beam' ? .42 : kind === 'spot' ? .26 : .11,
+      flareGain: .16, scale: 1,
     });
     const isTip = Math.hypot(pos.x - center.x, pos.z - center.z) > 21;
     const key = kind + (isTip ? '-tip' : '-main');

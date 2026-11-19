@@ -357,14 +357,14 @@ export class VenuePass extends Pass {
     this.sceneRT = null;
     this.volRT = null;
     this.comp = new FullScreenQuad(new THREE.ShaderMaterial({
-      uniforms: { tScene: { value: null }, tVol: { value: null }, uVolTexel: { value: new THREE.Vector2() } },
+      uniforms: { tScene: { value: null }, tVol: { value: null }, uVolTexel: { value: new THREE.Vector2() }, uVolShoulder: { value: 0 } },
       vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
       // A glint off a glossy surface under a stage light can overflow a half
       // float to Inf (or a degenerate normal give NaN); the bloom's blur would
       // spread it into a black block per mip. Stop it here: NaN to black, the
       // rest held far above white but well inside half-float range.
       fragmentShader: /* glsl */`
-        uniform sampler2D tScene, tVol; uniform vec2 uVolTexel; varying vec2 vUv;
+        uniform sampler2D tScene, tVol; uniform vec2 uVolTexel; uniform float uVolShoulder; varying vec2 vUv;
         vec3 sane(vec3 c) {
           return vec3(c.r < 4096.0 ? max(c.r, 0.0) : (c.r > 0.0 ? 4096.0 : 0.0),
                       c.g < 4096.0 ? max(c.g, 0.0) : (c.g > 0.0 ? 4096.0 : 0.0),
@@ -376,7 +376,11 @@ export class VenuePass extends Pass {
           vec3 v = texture2D(tVol, vUv).rgb * 0.36
                  + (texture2D(tVol, vUv + vec2(o.x, o.y)).rgb + texture2D(tVol, vUv + vec2(-o.x, o.y)).rgb
                  +  texture2D(tVol, vUv + vec2(o.x, -o.y)).rgb + texture2D(tVol, vUv + vec2(-o.x, -o.y)).rgb) * 0.16;
-          gl_FragColor = vec4(min(s + sane(v), vec3(4096.0)), 1.0);
+          v = sane(v);
+          // Keep the colour of overlapping beams as the additive volume rolls
+          // off, so a close view still shows the hardware through the haze.
+          v /= 1.0 + max(v.r, max(v.g, v.b)) * uVolShoulder;
+          gl_FragColor = vec4(min(s + v, vec3(4096.0)), 1.0);
         }`,
       depthTest: false, depthWrite: false,
     }));

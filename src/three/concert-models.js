@@ -5,18 +5,37 @@ import { V3 } from './core.js';
 
 export const CONCERT_VENUES = new Set(['arena', 'dome', 'stadium']);
 let modelsPromise;
+const SHADOW_CASTERS = new Set([
+  'drums', 'keyboard', 'mic', 'wedge', 'fender', 'vox', 'fender-extension', 'vox-extension',
+  'touring-rack', 'flight-case', 'prompter', 'foh', 'camera', 'jib', 'jib-head',
+]);
+
+function satinInstrument(material) {
+  const satin = new THREE.MeshPhysicalMaterial();
+  const defines = satin.defines;
+  THREE.MeshStandardMaterial.prototype.copy.call(satin, material);
+  satin.defines = defines;
+  satin.roughness = Math.max(.74, material.roughness);
+  satin.metalness = Math.min(.12, material.metalness);
+  satin.specularIntensity = .20;
+  if (Math.max(satin.color.r, satin.color.g, satin.color.b) > .3) satin.color.multiplyScalar(.75);
+  return satin;
+}
 
 export function loadConcertModels() {
   if (!modelsPromise) {
     const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
-    modelsPromise = loader.loadAsync(import.meta.env.BASE_URL + 'assets/concert-equipment.glb').then(({ scene }) => {
+    const url = import.meta.env.BASE_URL + 'assets/concert-equipment.glb?v=2';
+    modelsPromise = loader.loadAsync(url).then(({ scene }) => {
       const models = new Map();
       scene.updateMatrixWorld(true);
       for (const model of scene.children) {
         const parts = [];
         model.traverse((mesh) => {
           if (!mesh.isMesh) return;
-          const { geometry, material, matrixWorld } = mesh;
+          const { geometry, matrixWorld } = mesh;
+          const instrument = model.name === 'drums' || model.name === 'keyboard';
+          const material = instrument && mesh.material.isMeshStandardMaterial ? satinInstrument(mesh.material) : mesh.material;
           geometry.userData.shared = material.userData.shared = true;
           for (const value of Object.values(material)) if (value?.isTexture) value.userData.shared = true;
           geometry.computeBoundingBox();
@@ -59,6 +78,8 @@ export class ConcertModels {
       const mesh = new THREE.InstancedMesh(part.geometry, material || part.material, count);
       mesh.name = name;
       mesh.userData.noCollide = true;
+      mesh.receiveShadow = mesh.material.isMeshStandardMaterial;
+      mesh.castShadow = mesh.receiveShadow && SHADOW_CASTERS.has(name);
       this.root.add(mesh);
       return { mesh, matrix: part.matrix };
     });

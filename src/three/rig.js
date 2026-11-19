@@ -196,12 +196,13 @@ export function latticeInto(out, from, to, size, r) {
 // slaved to chosen fixtures so the floor and the crowd actually get lit where
 // the beams land.
 export class Rig {
-  constructor(pipe, { finish = 'black', buildBodies = null } = {}) {
+  constructor(pipe, { finish = 'black', buildBodies = null, restrainFlares = false } = {}) {
     this.pipe = pipe;
     this.fx = [];
     this.lights = [];
     this.finish = finish;
     this.buildBodies = buildBodies;
+    this.restrainFlares = restrainFlares;
     this.group = new THREE.Group();
     // what a beam stops on (the stage roof, the LED boxes, the screens), each
     // { box, inv, mat } in its own frame, set by the stage once the room is
@@ -317,12 +318,13 @@ export class Rig {
       if (camPos) {
         toCam.copy(camPos).sub(origin);
         const dist = toCam.length();
-        toCam.divideScalar(dist);
+        toCam.divideScalar(dist || 1);
         const facing = Math.max(0, f.dir.dot(toCam));
         const cone = Math.cos(Math.min(1.2, f.angle * 3.2 + 0.08));
         const into = smooth(cone, 1, facing);
-        f.flare.intensity = lvl * f.flareGain * (0.1 + 3.2 * into * into);
-        f.flare.size = (0.7 + dist * 0.03) * f.scale * (0.5 + 1.1 * into);
+        const near = this.restrainFlares ? smooth(.65, 4.0, dist) : 1;
+        f.flare.intensity = lvl * f.flareGain * (0.1 + 3.2 * into * into) * near;
+        f.flare.size = (0.7 + dist * 0.03) * f.scale * (0.5 + 1.1 * into) * (.4 + .6 * near);
       }
     }
     for (const L of this.lights) {

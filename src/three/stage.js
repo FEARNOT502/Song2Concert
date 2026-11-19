@@ -219,6 +219,7 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     G.uLift.value.setRGB(...(g.lift || [0, 0, 0]));
     pipe.haze.uniforms.uDensity.value = v.hazeDensity ?? 0.02;
     pipe.beams.uniforms.uGain.value = v.beamGain ?? 1;
+    pipe.venuePass.comp.material.uniforms.uVolShoulder.value = v.volShoulder ?? 0;
     pipe.haze.uniforms.uAmb.value.copy(v.hazeAmb || new THREE.Color(0));
     pipe.haze.uniforms.uAmbDist.value = v.hazeAmbDist ?? 80;
     v.root.traverse((o) => {

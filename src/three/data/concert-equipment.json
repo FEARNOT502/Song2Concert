@@ -36,7 +36,17 @@
       {"kind": "flight-case", "p": [-17.5, 7.04], "facing": [0.0, 1.0]},
       {"kind": "flight-case", "p": [-15.9, 7.04], "facing": [0.0, 1.0]},
       {"kind": "flight-case", "p": [17.5, 7.04], "facing": [0.0, 1.0]},
-      {"kind": "flight-case", "p": [15.9, 7.04], "facing": [0.0, 1.0]}
+      {"kind": "flight-case", "p": [15.9, 7.04], "facing": [0.0, 1.0]},
+      {"kind": "fender", "p": [-10.35, 11.1], "facing": [0, 1], "stack": 2},
+      {"kind": "fender", "p": [-11.45, 11.1], "facing": [0, 1], "stack": 3},
+      {"kind": "touring-rack", "p": [-13.15, 11.2], "facing": [-0.13, 0.99]},
+      {"kind": "flight-case", "p": [-14.72, 11.4], "facing": [-0.08, 1]},
+      {"kind": "flight-case", "p": [-13.83, 12.65], "facing": [-0.08, 1]},
+      {"kind": "vox", "p": [10.35, 11.1], "facing": [0, 1], "stack": 2},
+      {"kind": "vox", "p": [11.45, 11.1], "facing": [0, 1], "stack": 3},
+      {"kind": "touring-rack", "p": [13.15, 11.2], "facing": [0.13, 0.99]},
+      {"kind": "flight-case", "p": [14.72, 11.4], "facing": [0.08, 1]},
+      {"kind": "flight-case", "p": [13.83, 12.65], "facing": [0.08, 1]}
     ],
     "floor": [
       {"kind": "touring-rack", "p": [-4.29, 80.3], "facing": [0, 1], "size": [0.7, 0.68]},
@@ -109,8 +119,8 @@
     "stage": [
       {"kind": "drums", "p": [0, 45], "facing": [0.0, 1.0]},
       {"kind": "keyboard", "p": [-2.8, 32], "facing": [0.0, 1.0]},
-      {"kind": "fender", "p": [3.55, 38], "facing": [0.0, 1.0]},
-      {"kind": "vox", "p": [-3.45, 58.3], "facing": [0.0, 1.0]},
+      {"kind": "fender", "p": [3.55, 38], "facing": [0.0, 1.0], "stack": 2},
+      {"kind": "vox", "p": [-3.45, 58.3], "facing": [0.0, 1.0], "stack": 2},
       {"kind": "wedge", "p": [-4.99, 33], "facing": [1.0, 0.0]},
       {"kind": "wedge", "p": [-4.99, 45], "facing": [1.0, 0.0]},
       {"kind": "wedge", "p": [-4.99, 57], "facing": [1.0, 0.0]},
@@ -130,7 +140,13 @@
       {"kind": "mic", "p": [-4.85, 39.2], "facing": [-1.0, 0.0]},
       {"kind": "mic", "p": [4.85, 51.1], "facing": [1.0, 0.0]},
       {"kind": "mic", "p": [2.6, 27.0], "facing": [0.0, -1.0]},
-      {"kind": "mic", "p": [3, 63.0], "facing": [0.0, 1.0]}
+      {"kind": "mic", "p": [3, 63.0], "facing": [0.0, 1.0]},
+      {"kind": "touring-rack", "p": [4.22, 34.3], "facing": [1, 0]},
+      {"kind": "flight-case", "p": [4.27, 36.12], "facing": [1, 0]},
+      {"kind": "touring-rack", "p": [-4.38, 53.7], "facing": [-1, 0]},
+      {"kind": "flight-case", "p": [-4.31, 55.5], "facing": [-1, 0]},
+      {"kind": "flight-case", "p": [4.15, 56.35], "facing": [1, 0]},
+      {"kind": "flight-case", "p": [-4.35, 35.6], "facing": [-1, 0]}
     ],
     "floor": [
       {"kind": "flight-case", "p": [6.45, 21.5]},
@@ -278,7 +294,21 @@
       {"kind": "flight-case", "p": [36.5, 17.04], "facing": [0.0, 1.0]},
       {"kind": "flight-case", "p": [34.9, 17.04], "facing": [0.0, 1.0]},
       {"kind": "flight-case", "p": [33.3, 17.04], "facing": [0.0, 1.0]},
-      {"kind": "touring-rack", "p": [35.3, 20.4], "facing": [0.0, 1.0]}
+      {"kind": "touring-rack", "p": [35.3, 20.4], "facing": [0.0, 1.0]},
+      {"kind": "fender", "p": [-18, 22.4], "facing": [0, 1], "stack": 2},
+      {"kind": "fender", "p": [-19.3, 22.4], "facing": [0, 1], "stack": 3},
+      {"kind": "fender", "p": [-20.6, 22.4], "facing": [0, 1], "stack": 3},
+      {"kind": "touring-rack", "p": [-15.8, 22.65], "facing": [-0.13, 0.99]},
+      {"kind": "touring-rack", "p": [-22.9, 22.2], "facing": [-0.13, 0.99]},
+      {"kind": "flight-case", "p": [-14.2, 22.35], "facing": [-0.08, 1]},
+      {"kind": "flight-case", "p": [-24.55, 22.35], "facing": [-0.08, 1]},
+      {"kind": "vox", "p": [18, 22.4], "facing": [0, 1], "stack": 2},
+      {"kind": "vox", "p": [19.3, 22.4], "facing": [0, 1], "stack": 3},
+      {"kind": "vox", "p": [20.6, 22.4], "facing": [0, 1], "stack": 3},
+      {"kind": "touring-rack", "p": [15.8, 22.65], "facing": [0.13, 0.99]},
+      {"kind": "touring-rack", "p": [22.9, 22.2], "facing": [0.13, 0.99]},
+      {"kind": "flight-case", "p": [14.2, 22.35], "facing": [0.08, 1]},
+      {"kind": "flight-case", "p": [24.55, 22.35], "facing": [0.08, 1]}
     ],
     "floor": [
       {"kind": "touring-rack", "p": [-4.29, 120.9], "facing": [0, 1], "size": [0.7, 0.68]},
@@ -417,7 +447,15 @@
       {"kind": "prompter", "p": [-31.7, 65.6], "facing": [-0.0, -1.0]},
       {"kind": "wedge", "p": [-30.59, 65.53], "facing": [-0.0, -1.0]},
       {"kind": "wedge", "p": [-32.81, 65.53], "facing": [-0.0, -1.0]},
-      {"kind": "mic", "p": [-31.7, 64.92], "facing": [0.0, 1.0]}
+      {"kind": "mic", "p": [-31.7, 64.92], "facing": [0.0, 1.0]},
+      {"kind": "touring-rack", "p": [-4.6, 58.85], "facing": [-0.707, -0.707]},
+      {"kind": "flight-case", "p": [-6.2, 59.05], "facing": [-0.707, -0.707]},
+      {"kind": "touring-rack", "p": [-4.6, 67.85], "facing": [-0.707, 0.707]},
+      {"kind": "flight-case", "p": [-6.2, 67.65], "facing": [-0.707, 0.707]},
+      {"kind": "touring-rack", "p": [4.6, 58.85], "facing": [0.707, -0.707]},
+      {"kind": "flight-case", "p": [6.2, 59.05], "facing": [0.707, -0.707]},
+      {"kind": "touring-rack", "p": [4.6, 67.85], "facing": [0.707, 0.707]},
+      {"kind": "flight-case", "p": [6.2, 67.65], "facing": [0.707, 0.707]}
     ],
     "floor": [
       {"kind": "touring-rack", "p": [-4.29, 120.9], "facing": [0, 1], "size": [0.7, 0.68]},
@@ -606,7 +644,25 @@
       {"kind": "flight-case", "p": [38.4, 13.04], "facing": [0.0, 1.0]},
       {"kind": "flight-case", "p": [36.8, 13.04], "facing": [0.0, 1.0]},
       {"kind": "flight-case", "p": [35.2, 13.04], "facing": [0.0, 1.0]},
-      {"kind": "touring-rack", "p": [38.8, 14.8], "facing": [0.0, 1.0]}
+      {"kind": "touring-rack", "p": [38.8, 14.8], "facing": [0.0, 1.0]},
+      {"kind": "fender", "p": [-25.5, 17.3], "facing": [0, 1], "stack": 2},
+      {"kind": "fender", "p": [-26.9, 17.3], "facing": [0, 1], "stack": 3},
+      {"kind": "fender", "p": [-28.3, 17.3], "facing": [0, 1], "stack": 3},
+      {"kind": "fender", "p": [-29.7, 17.3], "facing": [0, 1], "stack": 3},
+      {"kind": "touring-rack", "p": [-23.4, 17.1], "facing": [-0.13, 0.99]},
+      {"kind": "touring-rack", "p": [-31.8, 17.4], "facing": [-0.13, 0.99]},
+      {"kind": "flight-case", "p": [-33.4, 17.55], "facing": [-0.08, 1]},
+      {"kind": "flight-case", "p": [-34.9, 17.6], "facing": [-0.08, 1]},
+      {"kind": "flight-case", "p": [-21.65, 16.95], "facing": [-0.08, 1]},
+      {"kind": "vox", "p": [25.5, 17.3], "facing": [0, 1], "stack": 2},
+      {"kind": "vox", "p": [26.9, 17.3], "facing": [0, 1], "stack": 3},
+      {"kind": "vox", "p": [28.3, 17.3], "facing": [0, 1], "stack": 3},
+      {"kind": "vox", "p": [29.7, 17.3], "facing": [0, 1], "stack": 3},
+      {"kind": "touring-rack", "p": [23.4, 17.1], "facing": [0.13, 0.99]},
+      {"kind": "touring-rack", "p": [31.8, 17.4], "facing": [0.13, 0.99]},
+      {"kind": "flight-case", "p": [33.4, 17.55], "facing": [0.08, 1]},
+      {"kind": "flight-case", "p": [34.9, 17.6], "facing": [0.08, 1]},
+      {"kind": "flight-case", "p": [21.65, 16.95], "facing": [0.08, 1]}
     ],
     "floor": [
       {"kind": "touring-rack", "p": [-4.29, 124.9], "facing": [0, 1], "size": [0.7, 0.68]},
@@ -765,7 +821,15 @@
       {"kind": "prompter", "p": [-24.96, 93.84], "facing": [-0.707, -0.707]},
       {"kind": "wedge", "p": [-24.22, 93.01], "facing": [-0.707, -0.707]},
       {"kind": "wedge", "p": [-25.79, 94.58], "facing": [-0.707, -0.707]},
-      {"kind": "mic", "p": [-25.79, 93.01], "facing": [0.707, 0.707]}
+      {"kind": "mic", "p": [-25.79, 93.01], "facing": [0.707, 0.707]},
+      {"kind": "touring-rack", "p": [-4.55, 59.4], "facing": [-0.707, -0.707]},
+      {"kind": "flight-case", "p": [-6.15, 59.6], "facing": [-0.707, -0.707]},
+      {"kind": "touring-rack", "p": [-4.55, 68.6], "facing": [-0.707, 0.707]},
+      {"kind": "flight-case", "p": [-6.15, 68.4], "facing": [-0.707, 0.707]},
+      {"kind": "touring-rack", "p": [4.55, 59.4], "facing": [0.707, -0.707]},
+      {"kind": "flight-case", "p": [6.15, 59.6], "facing": [0.707, -0.707]},
+      {"kind": "touring-rack", "p": [4.55, 68.6], "facing": [0.707, 0.707]},
+      {"kind": "flight-case", "p": [6.15, 68.4], "facing": [0.707, 0.707]}
     ],
     "floor": [
       {"kind": "touring-rack", "p": [-4.29, 124.9], "facing": [0, 1], "size": [0.7, 0.68]},

@@ -2,14 +2,14 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { KELVIN, V3, clamp, deckGridTex, lerp, ringTint, std, withRepeat } from './core.js';
 import { lightPoints } from './people.js';
-import { chainInto, hoists, latticeInto, ledScreen, mats, stageSteps, truss } from './rig.js';
+import { chainInto, hoists, latticeInto, ledScreen, mats, shadowSpot, stageSteps, truss } from './rig.js';
 import {
   bigCrowd, blockGrid, delayTower, teeDelayTower, flashOnCrowd, flashUnits, floorBlocks, floorChairs, fohPosition, groundRoof,
   maskingDrapes, packFloor, paHang, runBlinders, runShow, runStrobes, screenHang, section, subLine,
 } from './show.js';
 import { AXES as SHOW_AXES, CONCERT_LAYOUTS, DIAGONALS as SHOW_DIAGONALS, stagePlan } from './stage-plan.js';
 import { addConcertEquipment, floorLighting } from './concert-equipment.js';
-import { concertFixtureBodies } from './concert-models.js';
+import { ConcertModels, concertFixtureBodies } from './concert-models.js';
 
 const showXZ = (center, yaw, dist, across = 0, y = 0) =>
   V3(center.x + Math.sin(yaw) * dist + Math.cos(yaw) * across, y, center.z + Math.cos(yaw) * dist - Math.sin(yaw) * across);
@@ -59,7 +59,7 @@ export function concertRoom(ctx, id, room) {
     // (house up, the threshold over what the house lights make of the white
     // fronts and aisles near them: they glared, and read as reflections)
     // (the dome's house lights are daylight-bright on its light concrete and paint: higher still)
-    bloom: { strength: .63, radius: .65, threshold: 1.18, house: dome ? 2 : 1.6 },
+    bloom: { strength: .42, radius: .61, threshold: 1.38, house: dome ? 2 : 1.7 },
     grade: { exposure: arena ? 1.16 : 1.2, vignette: .29, ca: .003, grain: .025, sat: 1.04, lift: [.004, .005, .009] },
     envIntensity: arena ? .6 : dome ? .55 : .5,
     // the finishes' sheen, scaled (core.js roomFinishes): matte paint and
@@ -178,7 +178,7 @@ function showScreen(ctx, root, screens, { x = 0, z, bottom, w, h, yaw = 0, doubl
   group.name = 'LED screen';
   root.add(group);
   for (const dir of double ? [1, -1] : [1]) {
-    const panel = ledScreen({ w, h, tex: ctx.art.texture(w / h), pitch: .005, bright, frame: 0, light, lightPower: 1.25 });
+    const panel = ledScreen({ w, h, tex: ctx.art.texture(w / h), pitch: .005, bright, frame: 0, light, lightPower: .82 });
     panel.position.z = dir * .24;
     if (dir < 0) panel.rotation.y = Math.PI;
     group.add(panel);
@@ -198,30 +198,66 @@ function showSubLine(root, pos, yaw, opts) {
 }
 
 // ── LED strips ──
-// Every run is one unbroken bar (no gaps between pieces); its vertices carry
-// how far along their run they are (metres), so the shader can lay a
-// gradient along the deck's edge and move it.
+// Each lens carries the distance along the trim so the light can chase
+// across successive modules without restarting at each lens.
 const LED_SIZE = .12;
-function ledGeometry(runs) {
+function ledGeometry(root, runs, models) {
   const parts = [];
-  for (const { a, b, size = LED_SIZE, t0 = 0 } of runs) {
-    const d = b.clone().sub(a), len = d.length();
-    if (len < .05) continue;
-    const geo = new THREE.BoxGeometry(len + size, size, size);
-    const pos = geo.attributes.position;
-    const along = new Float32Array(pos.count);
-    for (let i = 0; i < pos.count; i++) along[i] = t0 + pos.getX(i) + len / 2;
+  const lens = models?.get('deck-led-lens');
+  const housing = models?.get('deck-led-housing');
+  const mounts = housing && new ConcertModels(models, root);
+  const vertex = V3();
+  function append(source, matrix, a, tangent, t0, deck) {
+    const pos = source.attributes.position;
+    const count = source.index?.count ?? pos.count;
+    const vertices = new THREE.Float32BufferAttribute(count * 3, 3);
+    const along = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+      const j = source.index?.getX(i) ?? i;
+      vertex.fromBufferAttribute(pos, j).applyMatrix4(matrix);
+      vertices.setXYZ(i, vertex.x, vertex.y, vertex.z);
+      along[i] = t0 + vertex.sub(a).dot(tangent);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', vertices);
     geo.setAttribute('aT', new THREE.BufferAttribute(along, 1));
-    geo.applyMatrix4(new THREE.Matrix4().compose(a.clone().addScaledVector(d, .5), new THREE.Quaternion().setFromUnitVectors(V3(1), d.normalize()), V3(1, 1, 1)));
+    geo.setAttribute('aDeck', new THREE.BufferAttribute(new Float32Array(count).fill(Number(deck)), 1));
     parts.push(geo);
   }
-  return parts.length ? mergeGeometries(parts) : null;
+  for (const { a, b, size = LED_SIZE, t0 = 0, outward } of runs) {
+    const d = b.clone().sub(a), len = d.length();
+    if (len < .05) continue;
+    const tangent = d.normalize();
+    if (outward && lens && mounts) {
+      const count = Math.max(1, Math.ceil(len / housing.size.x));
+      const xAxis = tangent.clone();
+      if (V3().crossVectors(outward, xAxis).y < 0) xAxis.negate();
+      const yAxis = V3().crossVectors(outward, xAxis).normalize();
+      const basis = new THREE.Matrix4().makeBasis(xAxis, yAxis, outward);
+      basis.scale(V3(len / (count * housing.size.x), 1.2, 1));
+      for (let i = 0; i < count; i++) {
+        const matrix = basis.clone().setPosition(a.clone().addScaledVector(tangent, len * (i + .5) / count));
+        mounts.add('deck-led-housing', matrix);
+        for (const part of lens.parts) {
+          append(part.geometry, matrix.clone().multiply(part.matrix), a, tangent, t0, true);
+        }
+      }
+      continue;
+    }
+    const geo = new THREE.BoxGeometry(len + size, size, size);
+    const matrix = new THREE.Matrix4().compose(a.clone().lerp(b, .5), new THREE.Quaternion().setFromUnitVectors(V3(1), tangent), V3(1, 1, 1));
+    append(geo, matrix, a, tangent, t0, Boolean(outward));
+    geo.dispose();
+  }
+  mounts?.flush();
+  const merged = parts.length ? mergeGeometries(parts) : null;
+  parts.forEach((geo) => geo.dispose());
+  return merged;
 }
 
-// Runs round a deck's outline, just under its lip and a hair proud of its
-// face. Where another deck as high carries on past an edge, that edge's run
-// lies inside it and is not seen: what shows is one line round the whole set.
-function deckEdgeRuns(ring, yAt, out, t = 0) {
+// Mount the strip where it is visible from the floor and from the upper
+// seats. Leave out joints on the same level and continue over the ramps.
+function deckEdgeRuns(ring, yAt, out, adjoiningDecks, t = 0) {
   let area = 0;
   for (let i = 0; i < ring.length; i++) { const a = ring[i], b = ring[(i + 1) % ring.length]; area += a.x * b.z - b.x * a.z; }
   const s = area > 0 ? 1 : -1;
@@ -229,15 +265,31 @@ function deckEdgeRuns(ring, yAt, out, t = 0) {
     const a = ring[i], b = ring[(i + 1) % ring.length];
     const dx = b.x - a.x, dz = b.z - a.z, len = Math.hypot(dx, dz);
     if (len < .05) continue;
-    const nx = s * dz / len * .06, nz = -s * dx / len * .06;
-    out.push({ a: V3(a.x + nx, yAt(a) - .09, a.z + nz), b: V3(b.x + nx, yAt(b) - .09, b.z + nz), t0: t });
+    const nx = s * dz / len, nz = -s * dx / len;
+    const segments = Math.ceil(len / .32);
+    const at = (j) => a.clone().lerp(b, j / segments);
+    const onLip = (p) => V3(p.x + nx * .025, yAt(p) - .019, p.z + nz * .025);
+    let from = null;
+    for (let j = 0; j <= segments; j++) {
+      const p = at(j + .5);
+      const exposed = j < segments && !adjoiningDecks.some(({ ring, h, ramp, z0, z1 }) => {
+        if (!showContains(ring, p.x + nx * .09, p.z + nz * .09)) return false;
+        const nearby = ramp ? lerp(ramp[0], ramp[1], clamp((p.z - z0) / (z1 - z0))) : h;
+        return nearby >= yAt(p) - .02;
+      });
+      if (exposed && from === null) from = j;
+      if (!exposed && from !== null) {
+        out.push({ a: onLip(at(from)), b: onLip(at(j)), t0: t + len * from / segments, size: .095, outward: V3(nx, 0, nz) });
+        from = null;
+      }
+    }
     t += len;
   }
   return t;
 }
 
-function ledStrips(root, runs) {
-  const geo = ledGeometry(runs);
+function ledStrips(root, runs, models) {
+  const geo = ledGeometry(root, runs, models);
   const U = {
     uA: { value: new THREE.Color() }, uB: { value: new THREE.Color() }, uC: { value: new THREE.Color() },
     uPhase: { value: 0 }, uClock: { value: 0 }, uFlow: { value: 0 }, uChase: { value: 0 }, uLevel: { value: .04 }, uMix: { value: 0 },
@@ -245,8 +297,8 @@ function ledStrips(root, runs) {
   const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, U);
-    sh.vertexShader = 'attribute float aT;\nvarying float vT;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vT = aT;');
-    sh.fragmentShader = 'uniform vec3 uA, uB, uC;\nuniform float uPhase, uClock, uFlow, uChase, uLevel, uMix;\nvarying float vT;\n' +
+    sh.vertexShader = 'attribute float aT, aDeck;\nvarying float vT, vDeck;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vT = aT; vDeck = aDeck;');
+    sh.fragmentShader = 'uniform vec3 uA, uB, uC;\nuniform float uPhase, uClock, uFlow, uChase, uLevel, uMix;\nvarying float vT, vDeck;\n' +
       sh.fragmentShader.replace('vec4 diffuseColor = vec4( diffuse, opacity );', /* glsl */`
         // three palette colours round a loop, laid along the strip and moving
         float p = fract(vT * 0.035 - uPhase) * 3.0;
@@ -255,7 +307,8 @@ function ledStrips(root, runs) {
                   : mix(uC, uA, smoothstep(0.0, 1.0, p - 2.0));
         vec3 solid = mix(uA, uB, uMix);
         float ch = 0.5 + 0.5 * cos(vT * 0.21 - uClock * 6.5);
-        vec3 led = mix(solid, grad, uFlow) * uLevel * mix(1.0, 0.25 + 1.2 * ch * ch, uChase);
+        float level = uLevel + vDeck * (0.18 + 0.32 * uFlow);
+        vec3 led = mix(solid, grad, uFlow) * level * mix(1.0, 0.25 + 1.2 * ch * ch, uChase);
         vec4 diffuseColor = vec4(led, opacity);`);
   };
   mat.customProgramCacheKey = () => 'concert-led-strip';
@@ -306,7 +359,7 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
   const drape = (config) => maskingDrapes(production, { ...config, cover: equipment?.drape });
   masking.forEach(drape);
   const footprints = [], screens = [], delays = [], rails = [], washes = [], fixtureRows = [];
-  const rig = ctx.rig({ finish: 'black', buildBodies: models && ((root, fixtures) => concertFixtureBodies(models, root, fixtures)) });
+  const rig = ctx.rig({ finish: 'black', restrainFlares: true, buildBodies: models && ((root, fixtures) => concertFixtureBodies(models, root, fixtures)) });
   const mainW = L.wall[0], mainH = L.wall[1], bottom = L.wall[2];
   const h = L.deck, rw = L.runway || h;
   const P = ([x, z], y = 0) => V3(x, y, z);
@@ -325,13 +378,18 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
   // ── the decks, their stairs, and the LED strip round them ──
   const deckMat = deckMaterials();
   let ledT = 0;
-  for (const d of plan.decks) {
+  const decks = plan.decks.map((d) => {
     const ring = d.ring.map((p) => P(p));
+    const zs = ring.map((p) => p.z);
+    return { ...d, ring, z0: Math.min(...zs), z1: Math.max(...zs) };
+  });
+  for (const d of decks) {
+    const { ring } = d;
     if (d.ramp) showRamp(production, ring, d.ramp[0], d.ramp[1], d.gap, footprints, deckMat);
     else showDeck(production, ring, d.h, d.gap, footprints, deckMat, d.base);
     const { min, max } = footprints[footprints.length - 1].bounds;
     const yAt = d.ramp ? (p) => lerp(d.ramp[0], d.ramp[1], (p.z - min.z) / (max.z - min.z)) : () => d.h;
-    ledT = deckEdgeRuns(ring, yAt, rails, ledT) + 10;
+    ledT = deckEdgeRuns(ring, yAt, rails, decks.filter((other) => other !== d), ledT) + 10;
   }
   for (const s of plan.steps) {
     production.add(stageSteps(s));
@@ -555,7 +613,14 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
   const facing = round ? SHOW_AXES : [-.82, .82];
   for (const yaw of facing) {
     const pos = showXZ(center, yaw, arena ? 16 : 24, 0, arena ? 18.5 : L.rig - 3.7);
-    const key = new THREE.SpotLight(KELVIN(4400), 0, L.reach, .49, .85, 2);
+    const key = shadowSpot(KELVIN(4400), 0, {
+      distance: L.reach, angle: .49, penumbra: .85, size: q.shadowSize,
+      far: arena ? 48 : 76, cast: Boolean(equipment && q.shadows && !washes.length),
+    });
+    if (key.castShadow) {
+      key.shadow.autoUpdate = false;
+      key.shadow.needsUpdate = true;
+    }
     key.position.copy(pos);
     key.target.position.copy(center).y = h;
     key.userData.offWhenDark = 'show';
@@ -570,7 +635,7 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
     production.add(key, key.target);
     washes.push(key);
   }
-  const runLeds = ledStrips(production, rails);
+  const runLeds = ledStrips(production, rails, models);
   const runFloor = equipment && floorLighting(equipment, rig, center, L.reach);
 
   // Distance from the stage, its speaker line and the delay tower bases.
@@ -659,8 +724,8 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
   equipment?.finish();
   return {
     stageTarget: focus, camera: { pos: eye, target: focus, fov: arena ? 56 : 59, near: .16, far: stadium ? 1800 : 700 },
-    hazeDensity: arena ? .00125 : dome ? .00085 : .00043, beamGain: arena ? .55 : .62,
-    env: { w: stadium ? 300 : dome ? 235 : 138, h: ceiling || 58, d: stadium ? 320 : dome ? 236 : 126, eye, wall: 0x0a0a10, floor: 0x0a0a0c, emitters: screens.slice(0, round ? 8 : 3).map(({ w, h, pos, normal }) => ({ w, h, pos, normal, screen: true, power: 1.4, aspect: w / h })) },
+    hazeDensity: arena ? .00125 : dome ? .00085 : .00043, beamGain: arena ? .41 : .46, volShoulder: 3.25,
+    env: { w: stadium ? 300 : dome ? 235 : 138, h: ceiling || 58, d: stadium ? 320 : dome ? 236 : 126, eye, wall: 0x0a0a10, floor: 0x0a0a0c, emitters: screens.slice(0, round ? 8 : 3).map(({ w, h, pos, normal }) => ({ w, h, pos, normal, screen: true, power: 1.05, aspect: w / h })) },
     setPrompterArt: equipment?.setArt,
     update(f) {
       stands.update(f);
@@ -672,7 +737,7 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
       const bl = Math.max(runBlinders(blinders, f), (runFloor?.(f, part) ?? 0) * .62);
       const st = runStrobes(strobes, f);
       runLeds(f, equipment && part === 'intro' ? 'verse' : sec, show);
-      const keyPower = arena ? 13500 : dome ? 32500 : 43500;
+      const keyPower = arena ? 9600 : dome ? 23100 : 30900;
       washes.forEach((l, i) => {
         l.color.copy(KELVIN(4600)).lerp(i % 2 ? f.pal.b : f.pal.a, high ? .37 : .18);
         l.intensity = keyPower * (quiet ? .82 : 1 + .32 * energy) * show;
