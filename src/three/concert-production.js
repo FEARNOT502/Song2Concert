@@ -580,7 +580,17 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
     }
     const start = dome && !round ? L.front + L.gap + .2 : z0;
     for (let z = start; z < z1; z += dome ? 10.4 : 13) zs.push([z, Math.min(z + (dome ? 9.2 : 11.4), z1)]);
-    const floor = floorBlocks(dome && round ? roundFloorBlocks(center, floorBounds, footprints) : blockGrid(zs, xs), { keep, seed: arena ? 31 : 55, trim: { cols: 6, rows: 4 } });
+    const blocks = dome && round ? roundFloorBlocks(center, floorBounds, footprints) : blockGrid(zs, xs);
+    if (dome && !round) {
+      // past the runway's end stage the middle is seated too: a column across
+      // the runway's line (an aisle in from the columns beside it), from just
+      // clear of the end stage back to the end of the floor
+      let reach = 0;
+      for (const { gap, bounds: b } of footprints) if (b.min.x <= 0 && b.max.x >= 0) reach = Math.max(reach, b.max.z + gap);
+      const half = 2.6 + L.thrustGap + .2 - 1.3;
+      for (let z = reach + .2; z < z1; z += 10.4) blocks.push({ x0: -half, x1: half, z0: z, z1: Math.min(z + 9.2, z1) });
+    }
+    const floor = floorBlocks(blocks, { keep, seed: arena ? 31 : 55, trim: { cols: 6, rows: 4 } });
     if (round) for (const chair of floor.chairs) chair.turn = Math.atan2(-chair.x, center.z - chair.z);
     root.add(floorChairs(floor.chairs));
     ground = floor.people;
