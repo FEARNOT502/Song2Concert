@@ -196,11 +196,12 @@ export function latticeInto(out, from, to, size, r) {
 // slaved to chosen fixtures so the floor and the crowd actually get lit where
 // the beams land.
 export class Rig {
-  constructor(pipe, { finish = 'black' } = {}) {
+  constructor(pipe, { finish = 'black', buildBodies = null } = {}) {
     this.pipe = pipe;
     this.fx = [];
     this.lights = [];
     this.finish = finish;
+    this.buildBodies = buildBodies;
     this.group = new THREE.Group();
     // what a beam stops on (the stage roof, the LED boxes, the screens), each
     // { box, inv, mat } in its own frame, set by the stage once the room is
@@ -221,7 +222,7 @@ export class Rig {
       color: new THREE.Color(o.color ?? 0xffffff), intensity: o.intensity ?? 1, level: 1, angle,
       length: o.length ?? 40, body: o.body !== false, scale: o.scale ?? 1, beamGain: o.beamGain ?? 1,
       flareGain: o.flareGain ?? 1, soft: o.soft ?? ({ wash: 0.9, par: 0.8, spot: 0.25, beam: 0.05, profile: 0.15, follow: 0.35, laser: 0 }[kind]),
-      noise: o.noise ?? 0.7, fall: o.fall ?? 1.3,
+      noise: o.noise ?? 0.7, fall: o.fall ?? 1.3, localBeam: o.localBeam ?? false,
     };
     const lensR = { beam: 0.07, spot: 0.12, wash: 0.16, profile: 0.08, par: 0.1, follow: 0.1, laser: 0.004 }[kind] * f.scale;
     f.beam = this.pipe.beams.add({ pos: f.pos, dir: f.dir, angle, length: f.length, color: f.color, intensity: 0, soft: f.soft, noise: f.noise, fall: f.fall, lens: lensR });
@@ -249,6 +250,10 @@ export class Rig {
     return len;
   }
   build() {
+    if (this.buildBodies) {
+      this.updateBodies = this.buildBodies(this.group, this.fx);
+      return this.group;
+    }
     const M = mats();
     const withBody = this.fx.filter((f) => f.body);
     this.bodied = withBody;
@@ -275,6 +280,7 @@ export class Rig {
     const m = this._m, q = this._q, s = this._s, p = this._p;
     const Y = V3(0, 1, 0), tmp = V3(), toCam = V3();
     const col = new THREE.Color();
+    this.updateBodies?.(master);
     this.bodied?.forEach((f, i) => {
       const sc = f.scale;
       s.setScalar(sc);
@@ -305,7 +311,7 @@ export class Rig {
       f.beam.color.copy(f.color);
       f.beam.intensity = lvl * f.beamGain;
       f.beam.angle = f.angle;
-      f.beam.length = this.clip(origin, f.dir, f.body ? Math.max(f.length, this.reach) : f.length);
+      f.beam.length = this.clip(origin, f.dir, f.body && !f.localBeam ? Math.max(f.length, this.reach) : f.length);
       f.flare.pos.copy(origin).addScaledVector(f.dir, 0.05);
       f.flare.color.copy(f.color);
       if (camPos) {

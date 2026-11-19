@@ -50,6 +50,7 @@ export function createArt(onChange, { W = 2048 } = {}) {
     meta: { title: '', artist: '', label: '' },
     palette: appPalette(),
     tone: 'app',
+    albumArtSrc: null,
     coverTex: null,
     cache: new Map(),
     want: null,
@@ -79,12 +80,13 @@ export function createArt(onChange, { W = 2048 } = {}) {
       return this.coverTex;
     },
 
-    install(canvas, meta, fromArt) {
+    install(canvas, meta, fromArt, albumArtSrc = null) {
       for (const t of this.cache.values()) t.dispose();
       this.cache.clear();
       this.coverTex?.dispose(); this.coverTex = null;
       this.canvas = canvas;
       this.meta = meta;
+      this.albumArtSrc = albumArtSrc;
       this.tone = fromArt ? 'art' : 'app';
       this.palette = fromArt ? extractPalette(canvas) : appPalette();
       onChange?.();
@@ -103,7 +105,7 @@ export function createArt(onChange, { W = 2048 } = {}) {
       if (coverSrc) {
         try {
           const c = await loadSleeve(coverSrc, W / 2);
-          if (token === this.token) this.install(c, meta, tone === 'art');
+          if (token === this.token) this.install(c, meta, tone === 'art', coverSrc);
           return;
         } catch { /* an unreadable picture: fall through to the drawn sleeve */ }
       }

@@ -453,20 +453,34 @@ export const fromRow = (row, k, n) => row[Math.min(row.length - 1, Math.round(k 
 // units: [{ pos (the face's centre), dir, mount (the y of the steel it hangs
 // from or stands on; null when bolted to a tower's face) }]
 const WARM = KELVIN(2900), COLD = KELVIN(7500);
-export function flashUnits(rig, root, units, { kind = 'blinder' } = {}) {
-  const blind = kind === 'blinder';
+export function flashUnits(rig, root, units, { kind = 'blinder', mountBody = null } = {}) {
+  const four = kind === 'blinder4', blind = kind === 'blinder' || four;
   const W = blind ? 1.0 : 1.05, H = blind ? 0.52 : 0.2, D = blind ? 0.24 : 0.2;
   const body = [], o = new THREE.Object3D();
   const lamps = [];
-  if (blind) for (let r = 0; r < 2; r++) for (let c = 0; c < 4; c++) { const l = new THREE.CircleGeometry(0.1, 14); l.translate((c - 1.5) * 0.235, (r - 0.5) * 0.23, 0.004); lamps.push(l); }
-  else { const l = new THREE.PlaneGeometry(W * 0.92, H * 0.6); l.translate(0, 0, 0.004); lamps.push(l); }
+  if (blind) {
+    const rows = four ? 1 : 2;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < 4; c++) {
+      const l = new THREE.CircleGeometry(mountBody ? (four ? .044 : .031) : .1, 14);
+      l.translate((c - 1.5) * (four ? .329 : mountBody ? .251 : .235),
+        (r - (rows - 1) / 2) * (mountBody ? .238 : .23), mountBody ? (four ? .234 : .186) : .004);
+      lamps.push(l);
+    }
+  } else {
+    const l = new THREE.PlaneGeometry(W * .92, H * (mountBody ? .48 : .6));
+    l.translate(0, 0, mountBody ? .146 : .004); lamps.push(l);
+  }
   const faceG = mergeGeometries(lamps);
   const face = new THREE.InstancedMesh(faceG, new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }), units.length);
   face.frustumCulled = false;
   const list = units.map((u, i) => {
     const dir = u.dir.clone().normalize();
     o.position.copy(u.pos); o.lookAt(u.pos.clone().add(dir)); o.updateMatrix();
-    const b = new THREE.BoxGeometry(W, H, D); b.translate(0, 0, -D / 2 - 0.002); b.applyMatrix4(o.matrix); body.push(b);
+    if (mountBody) mountBody(kind, u, o.matrix);
+    else {
+      const b = new THREE.BoxGeometry(W, H, D);
+      b.translate(0, 0, -D / 2 - 0.002); b.applyMatrix4(o.matrix); body.push(b);
+    }
     face.setMatrixAt(i, o.matrix);
     face.setColorAt(i, new THREE.Color(0));
     // the clamp and its pipe up (or the foot down) to the steel
@@ -479,12 +493,12 @@ export function flashUnits(rig, root, units, { kind = 'blinder' } = {}) {
       const c = new THREE.BoxGeometry(0.12, 0.1, 0.12); c.translate(at.x, at.y, at.z); body.push(c);
     }
     const fx = rig.add({
-      kind: 'wash', pos: u.pos.clone().addScaledVector(dir, 0.05), dir, body: false, color: blind ? WARM : COLD,
+      kind: 'wash', pos: u.pos.clone().addScaledVector(dir, mountBody ? .25 : .05), dir, body: false, color: blind ? WARM : COLD,
       angle: blind ? 0.42 : 0.6, length: blind ? 40 : 24, beamGain: blind ? 0.1 : 0.06, flareGain: blind ? 1.6 : 1.2, soft: 0.95, noise: 0.5,
     });
     return { fx, i, n: units.length, l: 0 };
   });
-  root.add(new THREE.Mesh(mergeGeometries(body.map((g) => g.index ? g.toNonIndexed() : g)), mats().cab));
+  if (body.length) root.add(new THREE.Mesh(mergeGeometries(body.map((g) => g.index ? g.toNonIndexed() : g)), mats().cab));
   root.add(face);
   return { list, face, blind };
 }
@@ -700,8 +714,9 @@ export function stageRing(root, rects, { t = 0.035 } = {}) {
 // A flown hang with its bridle chains up to the roof (or the stage's own
 // steel): a line array of `boxes` cabinets whose top is at `y`, turned `yaw`
 // from facing the room (+z), positive towards +x.
-export function paHang(root, { x, y, z, boxes, width = 1.3, yaw = 0, roofY = 0, splay = 0.035, depth = 0.7, height = 0.38 }) {
-  const a = lineArray({ boxes, width, splay, depth, height });
+export function paHang(root, { x, y, z, boxes, width = 1.3, yaw = 0, roofY = 0, splay = 0.035, depth = 0.7, height = 0.38, build = null }) {
+  const a = build ? new THREE.Group() : lineArray({ boxes, width, splay, depth, height });
+  build?.({ x, y, z, boxes, width, yaw, splay, depth, height });
   a.position.set(x, y, z); a.rotation.y = yaw;
   root.add(a);
   if (roofY > y + 0.2) {
@@ -820,7 +835,7 @@ export function subLine(root, { x0, x1, z, gap = 0, pitch = 1.6, count = 2, fill
 // hung under the roof's front edge, turned a little either way off `yaw` (the
 // heading down the room to the crowd behind it), well clear of the mast. A
 // pod of lights stands on the roof. Returns where the lights are.
-export function delayTower(root, { x, z, h, boxes = 12, width = 1.3, yaw = 0 }) {
+export function delayTower(root, { x, z, h, boxes = 12, width = 1.3, yaw = 0, hang = paHang }) {
   const M = mats();
   const steel = [];
   const at = (dx, y, dz) => V3(x + dx * Math.cos(yaw) + dz * Math.sin(yaw), y, z - dx * Math.sin(yaw) + dz * Math.cos(yaw));
@@ -840,7 +855,7 @@ export function delayTower(root, { x, z, h, boxes = 12, width = 1.3, yaw = 0 }) 
   // the pair: under the front edge, 2 m either side of the middle
   for (const s of [-1, 1]) {
     const p = at(s * 2, h - 0.75, Hs - 0.5);
-    const speaker = paHang(root, { x: p.x, y: p.y, z: p.z, boxes, width, yaw: yaw + s * 0.4, splay: 0.012, roofY: h - 0.3 });
+    const speaker = hang(root, { x: p.x, y: p.y, z: p.z, boxes, width, yaw: yaw + s * 0.4, splay: 0.012, roofY: h - 0.3 });
     speaker.name = 'Delay line array';
   }
   return [-1.6, -0.55, 0.55, 1.6].map((dx) => at(dx, h + .66, .18));
@@ -852,7 +867,7 @@ export function delayTower(root, { x, z, h, boxes = 12, width = 1.3, yaw = 0 }) 
 // the floor round the tower up into the top tier; a short fill off the T's
 // side for the floor near it; a pod of lights on the header. `h` the header's
 // height. Returns where the lights are.
-export function teeDelayTower(root, { x, z, h, boxes = 20, fill = 6, width = 1.3, yaw = 0 }) {
+export function teeDelayTower(root, { x, z, h, boxes = 20, fill = 6, width = 1.3, yaw = 0, hang = paHang }) {
   const M = mats();
   const steel = [], guys = [];
   const at = (dx, y, dz) => V3(x + dx * Math.cos(yaw) + dz * Math.sin(yaw), y, z - dx * Math.sin(yaw) + dz * Math.cos(yaw));
@@ -873,9 +888,9 @@ export function teeDelayTower(root, { x, z, h, boxes = 20, fill = 6, width = 1.3
   const base = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.3, 7.2), std({ color: 0x1a1b1e, roughness: 0.8 }));
   base.position.set(x, 0.15, z); base.rotation.y = yaw; root.add(base);
   const main = at(0, h - 0.6, front);
-  paHang(root, { x: main.x, y: main.y, z: main.z, boxes, width, yaw, splay: 0.018, height: 0.42, depth: 0.75, roofY: h - 0.3 }).name = 'Delay line array';
+  hang(root, { x: main.x, y: main.y, z: main.z, boxes, width, yaw, splay: 0.018, height: 0.42, depth: 0.75, roofY: h - 0.3 }, 'Delay line array').name = 'Delay line array';
   const side = at(2, h - 0.6, 0.4);
-  paHang(root, { x: side.x, y: side.y, z: side.z, boxes: fill, width: width * 0.8, yaw: yaw + 0.5, splay: 0.06, roofY: h - 0.3 }).name = 'Delay fill array';
+  hang(root, { x: side.x, y: side.y, z: side.z, boxes: fill, width: width * 0.8, yaw: yaw + 0.5, splay: 0.06, roofY: h - 0.3 }, 'Delay fill array').name = 'Delay fill array';
   return [-1.4, -0.45, 0.45, 1.4].map((dx) => at(dx, h + 0.66, 0.1));
 }
 
@@ -962,7 +977,7 @@ export function wallStrip(pts, hs, { y0 = 0, thick = 0.3, closed = false, ease =
   return g;
 }
 
-export function maskingDrapes(root, { a, b, top, bottomAt = () => 0, skip = null, panel = 2.4, matte = false }) {
+export function maskingDrapes(root, { a, b, top, bottomAt = () => 0, skip = null, panel = 2.4, matte = false, cover = null }) {
   const dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz), ux = dx / L, uz = dz / L;
   const yaw = Math.atan2(-uz, ux);
   const parts = [], pipes = [];
@@ -974,16 +989,21 @@ export function maskingDrapes(root, { a, b, top, bottomAt = () => 0, skip = null
     for (const k of [-0.5, -0.25, 0, 0.25, 0.5]) bot = Math.max(bot, bottomAt(x + ux * w * k, z + uz * w * k));
     const h = top - bot;
     if (h < 0.5) continue;
-    const g = drapeGeometry(w + 0.08, h, Math.max(2, Math.round(w / 0.5)), 0.16);
-    g.rotateY(yaw); g.translate(x, bot + h / 2, z);
-    parts.push(g);
+    if (cover) cover(x, bot, z, yaw, w + .08, h, matte);
+    else {
+      const g = drapeGeometry(w + 0.08, h, Math.max(2, Math.round(w / 0.5)), 0.16);
+      g.rotateY(yaw); g.translate(x, bot + h / 2, z);
+      parts.push(g);
+    }
     const p = new THREE.CylinderGeometry(0.03, 0.03, w, 6); p.rotateZ(Math.PI / 2); p.rotateY(yaw); p.translate(x, top + 0.05, z);
     pipes.push(p);
   }
-  if (!parts.length) return;
-  const m = new THREE.Mesh(mergeGeometries(parts), matte ? std({ color: 0x030303, roughness: 1, side: THREE.DoubleSide }) : velvet(0x020202, 'maskvel', { sheenColor: new THREE.Color(0x060606), sheenRoughness: 0.6, side: THREE.DoubleSide }));
-  m.receiveShadow = true;
-  root.add(m);
+  if (!pipes.length) return;
+  if (parts.length) {
+    const m = new THREE.Mesh(mergeGeometries(parts), matte ? std({ color: 0x030303, roughness: 1, side: THREE.DoubleSide }) : velvet(0x020202, 'maskvel', { sheenColor: new THREE.Color(0x060606), sheenRoughness: 0.6, side: THREE.DoubleSide }));
+    m.receiveShadow = true;
+    root.add(m);
+  }
   root.add(new THREE.Mesh(mergeGeometries(pipes), std({ color: 0x111113, roughness: 0.6, metalness: 0.5 })));
 }
 

@@ -22,6 +22,7 @@ import { crowdUniforms } from './people.js';
 import { LOD, Rig } from './rig.js';
 import { Walker } from './walk.js';
 import { createArt } from './art.js';
+import { CONCERT_VENUES, loadConcertModels } from './concert-models.js';
 import { BeatFollower } from './beat.js';
 import { buildVenue } from './venues/index.js';
 import { getDomeSeatCatalog } from './venues/dome.js';
@@ -126,11 +127,11 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     });
   }
 
-  function makeCtx() {
+  function makeCtx(concertModels) {
     const screens = [], rigs = [];
     const cu = crowdUniforms();
     return {
-      pipe, cu, screens, rigs,
+      pipe, cu, screens, rigs, concertModels,
       // the big rooms' layout: 'general' (an end stage) or '360' (a centre stage)
       mode: venueMode,
       // the crowd is decided at build time: off, it is not built at all
@@ -173,7 +174,12 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
       requestAnimationFrame(() => setTimeout(() => { clearTimeout(t); r(); }, 0));
     });
     if (gen !== buildGen || !running) return;
-    const c = makeCtx();
+    const concertModels = CONCERT_VENUES.has(id) ? await loadConcertModels().catch((error) => {
+      console.warn('Unable to load concert equipment models', error);
+      return null;
+    }) : null;
+    if (gen !== buildGen || !running) return;
+    const c = makeCtx(concertModels);
     const v = buildVenue(id, c);
     for (const r of c.rigs) { const g = r.build(); g.userData.plan = 'rig'; v.root.add(g); }
     // the beams stop on the stage roof, the LED boxes and the screens rather
@@ -186,7 +192,7 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
       o.geometry.computeBoundingBox();
       stops.push({ box: o.geometry.boundingBox.clone(), mat: o.matrixWorld.clone(), inv: o.matrixWorld.clone().invert() });
     });
-    for (const r of c.rigs) { r.blockers = stops; r.reach = LOOK_ROOMS.has(id) ? 260 : 0; }
+    for (const r of c.rigs) { r.blockers = stops; r.reach = CONCERT_VENUES.has(id) ? 260 : 0; }
     dropDegenerateTriangles(v.root);
     // the big rooms' paint, glass and steel without the sheen (core.js roomFinishes)
     if (v.finish) roomFinishes(v.root);
@@ -248,9 +254,15 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     onLoading?.(false, id);
   }
 
+  function applyPrompterArt() {
+    const hasCurrentCover = art.albumArtSrc && art.albumArtSrc === art.want?.coverSrc;
+    venue?.setPrompterArt?.(playing && hasCurrentCover ? art.cover() : null);
+  }
+
   // screens, their light, their haze, and the reflections, from the current art
   function applyArt() {
     if (!venue) return;
+    applyPrompterArt();
     // a bright sleeve (white, pastel) is run lower on the walls, the way a
     // content operator pulls a white frame down so it does not glare
     const sl = regionColor(art.canvas, 0, 0, 1, 1);
@@ -312,7 +324,7 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     }
     const sec = part ? (BASE[part] ?? B.sec) : null;
     shown = { part, manual: !!(playing && manual) };
-    const f = { t, dt, kick: B.kick, snare: 0, hat: 0, energy: B.energy, bar: B.bar, beat: B.beat, phase: B.phase, sec, part, secT, secProg, secBar, next, toNext, final, role: B.role, bpm: songMap?.bpm || B.bpm, house, pal, cam: pipe.camera.position, look: LOOK_ROOMS.has(venueId) ? songLook().rig : null };
+    const f = { t, dt, kick: B.kick, snare: 0, hat: 0, energy: B.energy, bar: B.bar, beat: B.beat, phase: B.phase, sec, part, secT, secProg, secBar, next, toNext, final, role: B.role, bpm: songMap?.bpm || B.bpm, house, pal, cam: pipe.camera.position, look: CONCERT_VENUES.has(venueId) ? songLook().rig : null };
     const cu = ctx.cu;
     cu.uTime.value = t; cu.uKick.value = B.kick * (1 - house); cu.uEnergy.value = B.energy * (1 - house * 0.8);
     cu.uFlick.value = B.kick * (1 - house);
@@ -424,8 +436,6 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     }
     return lookVal;
   }
-  // the rooms whose rig plays a look per song; the rest keep their house style
-  const LOOK_ROOMS = new Set(['arena', 'dome', 'stadium']);
 
   let heavy = false, drawn = 0, frameBudget = 0, lastT = 0;
   // the screen's refresh period (from the gaps between animation frames) and
@@ -481,9 +491,10 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     const keep = new Set([art.coverTex, ...art.cache.values()]);
     root.traverse((o) => {
       if (o.isInstancedMesh) o.dispose();
-      o.geometry?.dispose();
+      if (!o.geometry?.userData.shared) o.geometry?.dispose();
       const ms = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
       for (const m of ms) {
+        if (m.userData.shared) continue;
         for (const k of Object.keys(m)) { const v = m[k]; if (v && v.isTexture && !v.userData.shared && !keep.has(v)) v.dispose(); }
         if (m.uniforms) for (const u of Object.values(m.uniforms)) { const v = u?.value; if (v && v.isTexture && !v.userData?.shared && !keep.has(v)) v.dispose(); }
         m.dispose();
@@ -504,8 +515,15 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     setAnalyser: (get) => { analyser = typeof get === 'function' ? get : null; },
     // the song's structure (songmap.js) and a getter for the playback position
     setSongMap: (map, get) => { songMap = map || null; songClock = typeof get === 'function' ? get : null; },
-    setArt: (want) => { art.set(want); },
-    setPlaying: (on) => { playing = !!on; houseTarget = playing ? 0 : 1; },
+    setArt(want) {
+      art.set(want);
+      applyPrompterArt();
+    },
+    setPlaying(on) {
+      playing = !!on;
+      houseTarget = playing ? 0 : 1;
+      applyPrompterArt();
+    },
     setHouseLights(level, immediate = false) {
       houseTarget = clamp(level);
       if (immediate) house = houseTarget;
