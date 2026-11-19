@@ -223,7 +223,7 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
   }
 
   let caseCount = 0;
-  function prop({ kind, p: [x, z], facing, model, size, stack }, y, ground) {
+  function prop({ kind, p: [x, z], facing, model, size, stack, coil }, y, ground) {
     let yaw = heading(facing);
     let scale;
     // Facing describes the performer. The keyboard's keybed and pedal point
@@ -237,7 +237,17 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
     }
     if (kind === 'flight-case') {
       scale = FLIGHT_CASE_SIZES[caseCount % FLIGHT_CASE_SIZES.length];
-      yaw += [0, Math.PI / 2, Math.PI][caseCount++ % 3];
+      // (a stack keeps one case size and lines up; a loose case is turned)
+      yaw += stack ? Math.PI * (caseCount % 2) : [0, Math.PI / 2, Math.PI][caseCount % 3];
+      caseCount++;
+      if (stack > 1) {
+        const lift = models.get(kind).size.y * scale.y;
+        contact(x, y, z, models.get(kind).size.x * scale.x + .15, models.get(kind).size.z * scale.z + .15, yaw);
+        for (let i = 1; i < stack; i++) {
+          add(kind, x, y, z, yaw, scale);
+          y += lift;
+        }
+      }
     }
     if (kind === 'cable-guard') {
       const nearJib = Math.hypot(x - jx, z - jz) < 3.5;
@@ -255,21 +265,21 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
       const amp = models.get(kind);
       const tiers = stack ?? (model === 'combo-with-extension' ? 2 : 1);
       contact(x, y, z, amp.size.x + .24, amp.size.z + .22, yaw);
+      // Speaker cabinets at their real size underneath, the combo on top.
       const name = kind + '-extension';
-      const ext = models.get(name);
-      const rise = kind === 'fender' ? .47 : .5;
+      const rise = models.get(name).bounds.max.y;
       for (let i = 1; i < tiers; i++) {
-        add(name, x, y, z, yaw, V3(1.025, rise / ext.bounds.max.y, 1.05));
+        add(name, x, y, z, yaw);
         y += rise;
       }
     }
-    if (CONTACT_PROPS.has(kind)) {
+    if (CONTACT_PROPS.has(kind) && !(kind === 'flight-case' && stack > 1)) {
       const bounds = models.get(kind).size;
       contact(x, y, z, bounds.x * (scale?.x ?? 1) + .15, bounds.z * (scale?.z ?? 1) + .15, yaw);
     }
     add(kind, x, y, z, yaw, scale);
     if (kind === 'prompter') add('prompter-display', x, y, z, yaw, undefined, display);
-    if (kind === 'touring-rack' && !ground) {
+    if (kind === 'touring-rack' && !ground && coil !== false) {
       add('signal-coil', x + Math.cos(yaw) * .58, y + .002, z - Math.sin(yaw) * .58, yaw);
     }
     if (ground) {
@@ -283,8 +293,9 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
   add('cable-guard-service', eye.x - 2.98, .816, eye.z + .48, Math.PI / 2, V3(.63, 1, .74));
   // The band has short spare signal looms next to its amp stacks. Vocal mic
   // stands remain the wireless assets, independent from the deck cabling.
-  for (const { kind, p: [x, z], facing } of data.stage) {
-    if (!['fender', 'vox', 'keyboard'].includes(kind)) continue;
+  // (an amp line has one loom of its own in the data, not one per stack)
+  for (const { kind, p: [x, z], facing, wall } of data.stage) {
+    if (wall || !['fender', 'vox', 'keyboard'].includes(kind)) continue;
     const yaw = heading(facing);
     const dx = Math.cos(yaw), dz = -Math.sin(yaw);
     const side = x < 0 ? 1 : -1;
