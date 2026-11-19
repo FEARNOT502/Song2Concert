@@ -1345,7 +1345,7 @@ export function buildTunnels(data, ox, oz, materials = {}) {
       grid([paths[0][paths[0].length-1],paths[1][paths[1].length-1]]);
     }
   }
-  if (tunnelGeo.wall.length) g.add(new THREE.Mesh(mergeGeometries(tunnelGeo.wall), std({ color: data.tunnelFinish?.wall ?? 0x4c4a47, roughness: 0.92 })));
+  if (tunnelGeo.wall.length) g.add(new THREE.Mesh(mergeGeometries(tunnelGeo.wall), materials.tunnelWall ?? std({ color: data.tunnelFinish?.wall ?? 0x4c4a47, roughness: 0.92 })));
   if (tunnelGeo.floor.length) g.add(new THREE.Mesh(mergeGeometries(tunnelGeo.floor), std({ color: data.tunnelFinish?.floor ?? 0x2c2c2e, roughness: 0.95 })));
   if (tunnelGeo.metal.length) {
     const mesh=new THREE.Mesh(mergeGeometries(tunnelGeo.metal),materials.tunnelMetal??std({ color: 0x959a99, roughness: 0.96, metalness: 0.04, envMapIntensity: 0.08 }));

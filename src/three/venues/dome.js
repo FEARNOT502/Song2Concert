@@ -269,7 +269,8 @@ export function buildDome(ctx) {
   // desks (no photograph found: the user's account), no partitions.
   const SEAT_BLUE = 0x214797;
   // (their counters and partitions: light wood for the Sky Terrace, black for the Platinum Box, dark for the press desks)
-  const BOX_WOOD = { terrace: 0xc9a06a, platinum: 0x1c1c1e, press: 0x2b2d31 };
+  // (the terrace's oak a natural light wood, not the saturated gold it lit up as under the house lights)
+  const BOX_WOOD = { terrace: 0xb09272, platinum: 0x1c1c1e, press: 0x2b2d31 };
   const boxOf = new Map();          // `${level}:${x * scale}:${z * scale}` -> its box row
   {
     const want = new Map((TD_STANDS.boxRows ?? []).map((b) => [`${b.level}:${b.block}:${b.row}`, b]));
@@ -385,6 +386,9 @@ export function buildDome(ctx) {
       floor: standLit(std({ color: 0x858a88, roughness: 0.9, envMapIntensity: 0.3, emissive: 0x5e6663, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }), 0.25),
       levelStruct: { G: std({ color: 0x3b5144, roughness: 0.98 }) },
       levelRail: { C: new THREE.MeshBasicMaterial({ visible: false }) },
+      // (the tunnel under A02: its light grey a shade down and flat, core.js roomFinishes; lit from above by
+      // the whole house ring, its mouth glared white)
+      tunnelWall: Object.assign(std({ color: 0xa2a3a0, roughness: 1, envMapIntensity: 0.3 }), { userData: { flat: true } }),
       tunnelMetal: std({ color: 0x596160, roughness: 1, metalness: 0, envMapIntensity: 0 }),
       tunnelWire: std({ color: 0x596160, roughness: 1, metalness: 0, envMapIntensity: 0 }),
     },
@@ -482,7 +486,10 @@ export function buildDome(ctx) {
       m3.userData.noCollide = true; root.add(m3);
     }
     if (glass.length) {
-      const m3 = new THREE.Mesh(mergeGeometries(glass), std({ color: 0xd8e6ea, roughness: 0.08, metalness: 0.1, transparent: true, opacity: 0.1, depthWrite: false, side: THREE.DoubleSide }));
+      // (flat, core.js roomFinishes: as a mirror it took the house lights and glared along the whole balcony)
+      const gm = std({ color: 0xd8e6ea, roughness: 0.3, metalness: 0, transparent: true, opacity: 0.1, depthWrite: false, side: THREE.DoubleSide, envMapIntensity: 0.2 });
+      gm.userData.flat = true;
+      const m3 = new THREE.Mesh(mergeGeometries(glass), gm);
       m3.renderOrder = 2; root.add(m3);
     }
   }
@@ -598,7 +605,8 @@ export function buildDome(ctx) {
       add(geo.wood, wood); add(geo.white, white); add(geo.ceil, ceilM, false); add(geo.floor, carpet, false); add(geo.lamp, lamp, false);
       add(geo.frame, std({ color: 0x1f2023, roughness: 0.5, metalness: 0.3 }));
       add(geo.header, lit(0xcfc9bd, 0x4a463f, 0.35));
-      const gm = add(geo.glass, std({ color: 0xbfd2d8, roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide }));
+      // (a soft sheen, not a mirror of the house lights)
+      const gm = add(geo.glass, std({ color: 0xbfd2d8, roughness: 0.25, metalness: 0, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide, envMapIntensity: 0.4 }));
       if (gm) gm.renderOrder = 2;
       // the 2nd floor's underside over the balcony: light, its downlights with the house
       const S = [];
@@ -711,7 +719,8 @@ export function buildDome(ctx) {
       g.rotateY(Math.atan2(w.ax, w.az)); g.translate(w.x, (w.y0 + w.y1) / 2, w.z + ZH);
       return g.toNonIndexed();
     });
-    if (parts.length) root.add(new THREE.Mesh(mergeGeometries(parts), std({ color: 0xd8cdb8, roughness: 0.8 })));
+    // (flat: no sheen at all, core.js roomFinishes; edge-on to the house lights they glinted)
+    if (parts.length) { const pm = std({ color: 0xd8cdb8, roughness: 1, envMapIntensity: 0.3 }); pm.userData.flat = true; root.add(new THREE.Mesh(mergeGeometries(parts), pm)); }
   }
   {
     const rows = new Map();
@@ -1012,10 +1021,13 @@ export function buildDome(ctx) {
     while (r < 115 && stands.topAt(...at(r)) < 1) r += 0.1;
     const [x, z] = at(r + 0.6), y0 = stands.topAt(x, z), top = 26;
     const paint = { color: 0xd9b81a, roughness: 1, metalness: 0, envMapIntensity: 0 };
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.36, top - y0, 12), std(paint));
+    // (flat, core.js roomFinishes: the yellow paint glinted down its whole length)
+    const poleM = std(paint); poleM.userData.flat = true;
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.36, top - y0, 12), poleM);
     pole.position.set(x, (y0 + top) / 2, z); root.add(pole);
     const fy0 = y0 + 2.5, fy1 = top - 2;
-    const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.2, fy1 - fy0), std({ ...paint, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false }));
+    const flagM = std({ ...paint, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false }); flagM.userData.flat = true;
+    const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.2, fy1 - fy0), flagM);
     flag.position.set(x - sd * 0.8, (fy0 + fy1) / 2, z); flag.rotation.y = sd * Math.PI / 4; root.add(flag);
   }
 

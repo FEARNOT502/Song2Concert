@@ -846,6 +846,39 @@ export function delayTower(root, { x, z, h, boxes = 12, width = 1.3, yaw = 0 }) 
   return [-1.6, -0.55, 0.55, 1.6].map((dx) => at(dx, h + .66, .18));
 }
 
+// A stadium's delay tower, after the touring ones (a lattice mast guyed to its
+// ballast, a header truss across its top in a T): one long array hung off the
+// header's front end, clear of the mast, a J down the hang that reaches from
+// the floor round the tower up into the top tier; a short fill off the T's
+// side for the floor near it; a pod of lights on the header. `h` the header's
+// height. Returns where the lights are.
+export function teeDelayTower(root, { x, z, h, boxes = 20, fill = 6, width = 1.3, yaw = 0 }) {
+  const M = mats();
+  const steel = [], guys = [];
+  const at = (dx, y, dz) => V3(x + dx * Math.cos(yaw) + dz * Math.sin(yaw), y, z - dx * Math.sin(yaw) + dz * Math.cos(yaw));
+  latticeInto(steel, V3(x, 0, z), V3(x, h + 0.3, z), 1.2, 0.06);
+  // the outriggers to the ballast, four ways
+  for (const [dx, dz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) latticeInto(steel, V3(x + dx * 3.2, 0.3, z + dz * 3.2), V3(x + dx * 0.5, h * 0.16, z + dz * 0.5), 0.4, 0.03);
+  // the header: along the throw, from behind the mast out past the array; the
+  // T's cross over the mast
+  const front = 3.4, back = -2.4;
+  latticeInto(steel, at(0, h, back), at(0, h, front + 0.7), 0.6, 0.04);
+  latticeInto(steel, at(-2, h, 0), at(2, h, 0), 0.5, 0.035);
+  root.add(new THREE.Mesh(mergeGeometries(steel), M.trussBlack));
+  // guys from the header's ends and the T's down to the ballast's corners
+  const tops = [at(0, h, front + 0.5), at(0, h, back + 0.2), at(-1.8, h, 0), at(1.8, h, 0)];
+  const feet = [at(0, 0.3, 3.3), at(0, 0.3, -3.3), at(-3.3, 0.3, 0), at(3.3, 0.3, 0)];
+  tops.forEach((t, i) => rodInto(guys, t, feet[i], 0.012));
+  root.add(new THREE.Mesh(mergeGeometries(guys), M.black));
+  const base = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.3, 7.2), std({ color: 0x1a1b1e, roughness: 0.8 }));
+  base.position.set(x, 0.15, z); base.rotation.y = yaw; root.add(base);
+  const main = at(0, h - 0.6, front);
+  paHang(root, { x: main.x, y: main.y, z: main.z, boxes, width, yaw, splay: 0.018, height: 0.42, depth: 0.75, roofY: h - 0.3 }).name = 'Delay line array';
+  const side = at(2, h - 0.6, 0.4);
+  paHang(root, { x: side.x, y: side.y, z: side.z, boxes: fill, width: width * 0.8, yaw: yaw + 0.5, splay: 0.06, roofY: h - 0.3 }).name = 'Delay fill array';
+  return [-1.4, -0.45, 0.45, 1.4].map((dx) => at(dx, h + 0.66, 0.1));
+}
+
 // A ground-supported set for a big stage: two lattice towers carrying a header
 // truss that holds the LED wall, a black backdrop only as wide as the set, wings
 // either side to hide backstage, and the road cases that live back there. The

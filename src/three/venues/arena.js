@@ -233,7 +233,11 @@ function arenaRoom(ctx, { stage, sold }) {
   const house = [];
   // the house lights: the ceiling's downlights, shining down, not onto it
   for (const [x, z] of [[-24, 20], [24, 20], [-24, 60], [24, 60], [0, 40], [0, 80]]) {
-    const l = new THREE.SpotLight(KELVIN(4200), 0, 140, 1.4, 0.3, 2); l.position.set(x, H - 0.6, z); l.target.position.set(x, 0, z);
+    // (a recessed fitting's spread: full straight down, soft to nothing by 69°
+    // off the vertical. At 80° with a hard edge they threw light sideways along
+    // the ceiling: the hangs, their chains and the 400 level's fronts near
+    // them lit up white)
+    const l = new THREE.SpotLight(KELVIN(4200), 0, 140, 1.2, 0.6, 2); l.position.set(x, H - 0.6, z); l.target.position.set(x, 0, z);
     l.userData.offWhenDark = 'house'; root.add(l, l.target); house.push(l);
   }
   return { root, stands, H, OZ, X0, X1, Z0, Z1, houseFix, house, updateInterior };

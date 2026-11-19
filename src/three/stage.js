@@ -16,7 +16,7 @@
 // side, like everything else there.
 
 import * as THREE from 'three';
-import { DEG, clamp, regionColor, dropDegenerateTriangles, ringTint } from './core.js';
+import { DEG, clamp, regionColor, dropDegenerateTriangles, ringTint, FINISH, roomFinishes } from './core.js';
 import { Pipeline, QUALITY, buildEnvironment } from './render.js';
 import { crowdUniforms } from './people.js';
 import { LOD, Rig } from './rig.js';
@@ -188,6 +188,9 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     });
     for (const r of c.rigs) { r.blockers = stops; r.reach = LOOK_ROOMS.has(id) ? 260 : 0; }
     dropDegenerateTriangles(v.root);
+    // the big rooms' paint, glass and steel without the sheen (core.js roomFinishes)
+    if (v.finish) roomFinishes(v.root);
+    for (const k of Object.keys(FINISH)) FINISH[k].value = v.finish?.[k] ?? 1;
     pipe.scene.add(v.root);
     pipe.scene.add(pipe.flares.mesh);
     pipe.scene.background = v.background || new THREE.Color(0);
@@ -290,6 +293,9 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     const level = pulseRef ? (pulseRef.current || 0) : pulse;
     beat.update(dt, { level, analyser: playing ? analyser?.() : null, playing, map: songMap, time: songMap && songClock ? songClock() : NaN });
     house += (houseTarget - house) * Math.min(1, dt * 1.4);
+    // a room can raise the bloom's threshold with the house lights up, so the
+    // paint they light does not halo; it comes down for the show's own light
+    if (venue.bloom?.house != null) pipe.bloom.threshold = venue.bloom.threshold + (venue.bloom.house - venue.bloom.threshold) * house;
     const target = art.palette;
     for (const k of ['a', 'b', 'c', 'd']) pal[k].lerp(target[k], Math.min(1, dt * 2.2));
     applyCamera(dt);
