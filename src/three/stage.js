@@ -55,6 +55,15 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
   let strain = 0;
 
   const walker = new Walker(canvas);
+  // a click in the room: the FOH lighting monitor's CAM buttons take it
+  const clickRay = new THREE.Raycaster();
+  walker.onClick = (e) => {
+    if (!venue?.desks) return false;
+    const r = canvas.getBoundingClientRect();
+    clickRay.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), pipe.camera);
+    clickRay.far = 12;
+    return venue.desks.click(clickRay);
+  };
   walker.onSeatChange = onSeatChange;
   const beat = new BeatFollower();
   // the screens' content at 4096 px across on a computer (the type and the
@@ -83,6 +92,9 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
   let size = { w: 1, h: 1 };
   let raf = 0, running = false;
   let paused = false;
+  let hitAt = -1e9, hits = 0;
+  // the track's length and what is queued after it (for the FOH's show screen)
+  let nowPlaying = { duration: NaN, next: null };
   const clock = new THREE.Clock();
   // per-venue lists, collected once rather than found by a traversal each frame
   let pointMats = [], lightMats = [], fogMats = [];
@@ -257,7 +269,7 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
 
   function applyPrompterArt() {
     const hasCurrentCover = art.albumArtSrc && art.albumArtSrc === art.want?.coverSrc;
-    venue?.setPrompterArt?.(playing && hasCurrentCover ? art.cover() : null);
+    venue?.setPrompterArt?.(playing && hasCurrentCover ? art.cover() : null, art.meta);
   }
 
   // screens, their light, their haze, and the reflections, from the current art
@@ -325,7 +337,7 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     }
     const sec = part ? (BASE[part] ?? B.sec) : null;
     shown = { part, manual: !!(playing && manual) };
-    const f = { t, dt, kick: B.kick, snare: 0, hat: 0, energy: B.energy, bar: B.bar, beat: B.beat, phase: B.phase, sec, part, secT, secProg, secBar, next, toNext, final, role: B.role, bpm: songMap?.bpm || B.bpm, house, pal, cam: pipe.camera.position, look: CONCERT_VENUES.has(venueId) ? songLook().rig : null };
+    const f = { hitT: playing ? t - hitAt : Infinity, t, dt, kick: B.kick, snare: 0, hat: 0, energy: B.energy, bar: B.bar, beat: B.beat, phase: B.phase, sec, part, secT, secProg, secBar, next, toNext, final, role: B.role, bpm: songMap?.bpm || B.bpm, house, pal, cam: pipe.camera.position, look: CONCERT_VENUES.has(venueId) ? songLook().rig : null };
     const cu = ctx.cu;
     cu.uTime.value = t; cu.uKick.value = B.kick * (1 - house); cu.uEnergy.value = B.energy * (1 - house * 0.8);
     cu.uFlick.value = B.kick * (1 - house);
@@ -338,6 +350,17 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     groove += ((playing ? 1 - house : 0) - groove) * Math.min(1, dt * 0.8);
     cu.uBeat.value = grooveBeat; cu.uBpm.value = f.bpm; cu.uMood.value = grooveMood; cu.uGroove.value = groove;
     venue.update(f);
+    // the FOH desks' monitors (concert rooms): what is on, the room, the parts
+    if (venue.desks) {
+      const an = playing ? analyser?.() : null;
+      venue.desks.update({
+        t, playing, camPos: pipe.camera.position, camera: pipe.camera, renderer: pipe.renderer, scene: pipe.scene, heavy: heavy || strain > 0,
+        title: art.meta.title, artist: art.meta.artist, cover: art.meta.title ? art.canvas : null,
+        position: songClock ? songClock() : NaN, duration: nowPlaying.duration, peaks: songMap?.peaks ?? null, nextSong: nowPlaying.next,
+        bins: an ? B.bins : null, binHz: an ? an.context.sampleRate / an.fftSize : 1,
+        part: f.part, manual: shown.manual, nextPart: f.next, toNext: f.toNext, beat: f.phase, hitT: f.hitT,
+      });
+    }
     // a light at nothing still costs every lit pixel its share: take it out
     for (const d of dimLights) {
       const k = d.l.intensity;
@@ -553,6 +576,12 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
       const next = PARTS.includes(name) ? name : null;
       manual = next; manualAt = null;
     },
+    setNowPlaying({ duration = NaN, next = null } = {}) { nowPlaying = { duration, next }; },
+    // the desk's HIT: the chorus's first moment (blinders, strobes, the
+    // heads' white hit) on demand, without changing the part
+    hit() { if (playing) { hitAt = clock.getElapsedTime(); hits++; } },
+    // how many hits so far and how long since the last (for the desk's screen)
+    getHit: () => ({ count: hits, t: playing ? clock.getElapsedTime() - hitAt : Infinity }),
     // what the rig is playing now: { part (null while stopped), manual }
     getPart: () => shown,
     setStrain(level) {
@@ -587,6 +616,7 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     // for tests and the walk-through: the walker and the pipeline
     debug: {
       walker, pipe, art, beat,
+      get venue() { return venue; },
       setPaused(value) { paused = value; },
       drawFrame(dt = 0.016) { if (venue) frame(dt, clock.getElapsedTime()); },
     },

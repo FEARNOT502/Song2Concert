@@ -630,6 +630,9 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7, centre = null,
     uniforms: {
       uTime: cu.uTime, uKick: cu.uKick, uEnergy: cu.uEnergy, uStage: cu.uStage,
       uScale: { value: 800 }, uMax: { value: maxPx }, uGain: { value: 1 },
+      // the FOH's fan-light map draws the same sticks from straight above,
+      // each a fixed few pixels (0: the room's own view)
+      uMapPx: { value: 0 },
       uMode: { value: 0 }, uHouse: { value: 0 },
       // round a centre stage (1): the house in four faces round it
       uRound: { value: 0 },
@@ -650,6 +653,7 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7, centre = null,
       attribute vec4 aLook, aZone;
       attribute vec2 aPlace;
       uniform float uRound;
+      uniform float uMapPx;
       uniform float uTime, uScale, uMax, uMode, uHouse, uKick, uEnergy, uScene, uSec, uSecPrev, uSecMix, uSecT, uBeat, uLook, uPhase, uProg, uProgPrev, uRoll, uStep, uStepT;
       uniform vec3 uPal[4], uStage;
       varying vec3 vC;
@@ -867,6 +871,11 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7, centre = null,
         vC *= mix(1.0, 1.9, smoothstep(2.4, 0.6, px));
         gl_PointSize = clamp(px, 2.2, uMax);
         gl_Position = projectionMatrix * mv;
+        if (uMapPx > 0.0) {
+          gl_PointSize = uMapPx;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          vC *= 1.5;
+        }
       }`,
     fragmentShader: /* glsl */`
       uniform sampler2D tGlow; uniform float uGain; varying vec3 vC;

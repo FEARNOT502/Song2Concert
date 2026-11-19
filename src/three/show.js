@@ -413,6 +413,11 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
       else if (L.col === 1) col = cols[wrap(i + k, 2)];
       else if (L.col === 2) col = beam ? WHITE : cols[wrap(i + k, 2)];
     }
+    // the desk's HIT (+): the chorus's first moment, called by hand
+    if ((f.hitT ?? Infinity) < 0.35) {
+      if (L.hit === 0 && strobe) lvl = 1.6;
+      else if (L.hit === 1) lvl = 1.15 + 0.2 * f.kick;
+    }
     // one part fades into the next over a second or so, and a colour change
     // within one is a quick fade, not a cut; the hits (the chorus's first,
     // the strobing kicks) still land at once
@@ -517,9 +522,12 @@ export function runBlinders(B, f) {
   let sum = 0;
   const part = f.look ? (f.part || sec) : sec;
   const bar = Math.floor(f.secBar ?? f.bar);
+  const hitT = f.hitT ?? Infinity;
   for (const it of B.list) {
     let to = 0;
-    if (part === 'chorus' && f.look) {
+    // (the desk's HIT lands as the chorus's first moment does)
+    if (f.look && hitT < 0.45) to = 1;
+    else if (part === 'chorus' && f.look) {
       if (secT < 0.45) to = 1;
       else if (L.hit === 2 && f.kick > 0.8) to = wrap(f.beat, 4) === 0 ? 1 : wrap(f.beat, 2) === 0 ? (it.i % 2 ? 0.7 : 0) : 0;
     } else if (part === 'bridge' && f.kick > 0.8 && wrap(f.beat, 4) === 0) {
@@ -563,9 +571,11 @@ export function runStrobes(S, f) {
   const part = f.look ? (f.part || sec) : sec;
   const roll = f.look ? rollOf(f) : null;
   let sum = 0;
+  const hitT = f.hitT ?? Infinity;
   for (const it of S.list) {
     let to = 0;
-    if (part === 'chorus' && f.look) {
+    if (f.look && hitT < 0.6) to = wrap(Math.floor(hitT * 20), 2) === 0 ? 1 : 0;
+    else if (part === 'chorus' && f.look) {
       if (secT < 0.6) to = wrap(Math.floor(secT * 20), 2) === 0 ? 1 : 0;
       else if (L.hit === 0 && f.kick > 0.85) to = ((it.i * 7 + f.beat * 3) % 5) < 2 ? 1 : 0;
       else if (L.hit === 1 && f.kick > 0.85) to = 0.8;

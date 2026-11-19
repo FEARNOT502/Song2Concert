@@ -10,6 +10,7 @@ import {
 import { AXES as SHOW_AXES, CONCERT_LAYOUTS, DIAGONALS as SHOW_DIAGONALS, stagePlan } from './stage-plan.js';
 import { addConcertEquipment, floorLighting } from './concert-equipment.js';
 import { ConcertModels, concertFixtureBodies } from './concert-models.js';
+import { fohScreens } from './foh-screens.js';
 
 const showXZ = (center, yaw, dist, across = 0, y = 0) =>
   V3(center.x + Math.sin(yaw) * dist + Math.cos(yaw) * across, y, center.z + Math.cos(yaw) * dist - Math.sin(yaw) * across);
@@ -377,6 +378,7 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
 
   // ── the decks, their stairs, and the LED strip round them ──
   const deckMat = deckMaterials();
+  equipment?.shadeDeck(deckMat[0]);
   let ledT = 0;
   const decks = plan.decks.map((d) => {
     const ring = d.ring.map((p) => P(p));
@@ -615,7 +617,7 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
     const pos = showXZ(center, yaw, arena ? 16 : 24, 0, arena ? 18.5 : L.rig - 3.7);
     const key = shadowSpot(KELVIN(4400), 0, {
       distance: L.reach, angle: .49, penumbra: .85, size: q.shadowSize,
-      far: arena ? 48 : 76, cast: Boolean(equipment && q.shadows && !washes.length),
+      far: arena ? 48 : 76, cast: Boolean(equipment && q.shadows && washes.length < 2),
     });
     if (key.castShadow) {
       key.shadow.autoUpdate = false;
@@ -722,7 +724,12 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
   const blinders = flashUnits(rig, production, units, { mountBody });
   const strobes = flashUnits(rig, production, units.map((u) => ({ ...u, pos: u.pos.clone().addScaledVector(u.dir, .15).add(V3(.7, .2, 0)) })), { kind: 'strobe', mountBody });
   equipment?.finish();
+  const desks = equipment && fohScreens(equipment.group, {
+    venueId: room, mode: ctx.mode, root, plan, pipe, data: equipment.data, eye, focus, deck: h,
+    field: arena ? 0 : .02, high: q.msaa > 0,
+  });
   return {
+    desks,
     stageTarget: focus, camera: { pos: eye, target: focus, fov: arena ? 56 : 59, near: .16, far: stadium ? 1800 : 700 },
     hazeDensity: arena ? .00125 : dome ? .00085 : .00043, beamGain: arena ? .41 : .46, volShoulder: 3.25,
     env: { w: stadium ? 300 : dome ? 235 : 138, h: ceiling || 58, d: stadium ? 320 : dome ? 236 : 126, eye, wall: 0x0a0a10, floor: 0x0a0a0c, emitters: screens.slice(0, round ? 8 : 3).map(({ w, h, pos, normal }) => ({ w, h, pos, normal, screen: true, power: 1.05, aspect: w / h })) },

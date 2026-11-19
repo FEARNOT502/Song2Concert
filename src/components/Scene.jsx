@@ -80,6 +80,7 @@ function Scene({
   venueId, venueMode = 'general', coverId, coverSrc, pulse = 0, pulseRef = null, title, artist,
   strain = 0, effects = true, playing = false, crowdLight = 'stick', analyser = null,
   songMap = null, clock = null, part = null, seat = null, onSeatChange = null, apiRef = null,
+  duration = NaN, nextSong = null,
 }) {
   const hostRef = useRef(null);
   const canvasRef = useRef(null);
@@ -139,6 +140,8 @@ function Scene({
   useEffect(() => { stageRef.current?.setAnalyser(analyser); }, [analyser]);
   // The song's structure (src/songMap.js) and the playback clock to read it by.
   useEffect(() => { stageRef.current?.setSongMap(songMap, clock); }, [songMap, clock]);
+  // the track's length and the next in the queue, for the FOH's show screen
+  useEffect(() => { stageRef.current?.setNowPlaying({ duration, next: nextSong }); }, [duration, nextSong]);
   // How hard the audio thread is finding it — see stage.js setStrain. The scene
   // gives frames back when the sound needs them.
   useEffect(() => { stageRef.current?.setStrain(strain); }, [strain]);

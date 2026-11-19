@@ -538,6 +538,10 @@ export default function App() {
       else if (e.key === 'ArrowLeft') handleSeek(Math.max(0, now - 5));
       else if (e.key === 'f' || e.key === 'F') setFilePickerOpen(true);
       else if (e.key === 'v' || e.key === 'V') setVenuePickerOpen(true);
+      // the lighting desk: + (or =) fires the chorus hit without changing the part
+      else if (deskRef.current.on && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === '+' || e.key === '=' || e.code === 'NumpadAdd')) {
+        if (deskRef.current.playing) stageRef.current?.hit?.();
+      }
       // the lighting desk: 1–9, 0, - call a part, ` hands it back to the song
       else if (deskRef.current.on && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === '`' || /^[0-9-]$/.test(e.key))) {
         if (!deskRef.current.playing) return;
@@ -646,6 +650,8 @@ export default function App() {
         analyser={getAnalyser}
         songMap={songMap}
         clock={getClock}
+        duration={hasAudio ? effDurSec : NaN}
+        nextSong={queue[1]?.name ?? null}
         part={desk ? lightPart : null}
         seat={domeSeat}
         onSeatChange={setActiveSeat}
