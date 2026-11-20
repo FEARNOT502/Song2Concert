@@ -251,18 +251,23 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
     contact(eye.x + x, lower, eye.z + .85, 1.0, .94);
   }
   for (const x of [-1.058, 1.046]) contact(eye.x + x, upper, eye.z + 1.64, 1.37, 1.6);
+  // The floor cameras stand on camera risers, high enough to see over the
+  // heads, the barrier and the deck's lip to the people on it (a metre under
+  // the deck's height, 0.9 to 2.2 m).
+  const camRise = THREE.MathUtils.clamp(Math.max(...plan.decks.map((d) => d.h)) - 1, .9, 2.2);
   for (const { code, p, aim } of data.cameras) {
     const yaw = heading([aim[0] - p[0], aim[1] - p[1]]);
-    add('camera', p[0], 0, p[1], yaw);
+    skirts.push(placement(p[0], camRise / 2, p[1], yaw, V3(1.6, camRise, 1.6)));
+    add('camera', p[0], camRise, p[1], yaw);
     const label = cameraLabel(code);
-    label.position.copy(V3(0, 1.63, .514).applyAxisAngle(Y, yaw)).add(point(p));
+    label.position.copy(V3(0, 1.63 + camRise, .514).applyAxisAngle(Y, yaw)).add(point(p));
     label.rotation.y = yaw;
     label.name = 'CAM ' + code;
     label.userData.noCollide = true;
     group.add(label);
-    boxCollision(p[0], .81, p[1], .86, 1.62, .86, yaw);
-    contact(p[0], 0, p[1], 1.52, 1.48, yaw);
-    reservePad(p[0], p[1], 1.23);
+    boxCollision(p[0], (1.62 + camRise) / 2, p[1], 1.6, 1.62 + camRise, 1.6, yaw);
+    contact(p[0], 0, p[1], 1.9, 1.9, yaw);
+    reservePad(p[0], p[1], 1.4);
   }
   const { p: [jx, jz], tip, pocket, aim } = data.jib;
   const length = Math.hypot(tip[0] - jx, tip[1] - jz);
@@ -425,6 +430,7 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
   return {
     data,
     group,
+    camRise,
     blocksFloor: (x, z) => floorExclusions.some((test) => test(x, z)),
     drape(x, y, z, yaw, width, height, matte) {
       const model = models.get('masking');

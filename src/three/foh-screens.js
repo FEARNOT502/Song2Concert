@@ -340,7 +340,7 @@ function meshWith(group, name) {
   return mesh;
 }
 
-export function fohScreens(group, { venueId, mode, root, plan, pipe, data, eye, focus, deck, field = 0, high = true }) {
+export function fohScreens(group, { venueId, mode, root, plan, pipe, data, eye, focus, deck, field = 0, rise = 0, high = true }) {
   const show = screenOn(group, 'Audio channel display', 1120, 480);
   const room = screenOn(group, 'Audio routing display', 1120, 480);
   const light = screenOn(group, 'Cue stack monitor', LIGHT_W, LIGHT_H);
@@ -354,7 +354,7 @@ export function fohScreens(group, { venueId, mode, root, plan, pipe, data, eye, 
   const map = mapMesh && root && plan ? fanMap(root, plan, { size: high ? [1024, 768] : [512, 384] }) : null;
   if (map) mapMesh.material = new THREE.MeshBasicMaterial({ name: 'Fan map display', map: map.texture, toneMapped: false });
   // the cameras, their picture, CAM 1's viewfinder and tally
-  const feed = light && pipe && data ? cameraFeed(pipe, cameraPoses({ data, eye, focus, deck, field }), { size: high ? [480, 270] : [320, 180] }) : null;
+  const feed = light && pipe && data ? cameraFeed(pipe, cameraPoses({ data, eye, focus, deck, field, rise }), { size: high ? [480, 270] : [320, 180] }) : null;
   const finder = meshWith(group, 'Camera viewfinder live');
   const finderOwn = finder?.material;
   const finderLive = feed && new THREE.MeshBasicMaterial({ name: 'Camera viewfinder live', map: feed.texture, toneMapped: false });
@@ -384,6 +384,8 @@ export function fohScreens(group, { venueId, mode, root, plan, pipe, data, eye, 
   };
   const api = {
     light,
+    // (the two pictures' renderers, for the checks: scripts and tests)
+    feeds: { map, feed },
     get camera() { return cam; },
     setCamera(i) {
       cam = Math.max(0, Math.min(CAMERAS.length - 1, i));

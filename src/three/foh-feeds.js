@@ -84,6 +84,7 @@ export function fanMap(root, plan, { size = [1024, 768] } = {}) {
   const px = Math.max(2, Math.min(5, size[0] / (2 * hw) * 0.55));
   return {
     texture,
+    target: rt,
     render(renderer, scene) {
       withRenderer(renderer, () => {
         const bg = scene.background;
@@ -104,11 +105,11 @@ export function fanMap(root, plan, { size = [1024, 768] } = {}) {
 // The five cameras' places and where they look, from the layout data:
 // 0 the FOH's left camera on the upper deck, 1–3 the floor cameras, 4 the jib
 // (its head panning slowly to and fro over the stage).
-export function cameraPoses({ data, eye, focus, deck, field = 0 }) {
+export function cameraPoses({ data, eye, focus, deck, field = 0, rise = 0 }) {
   const look = (x, z, y = deck + 1.35) => new THREE.Vector3(x, y, z);
   const floorCam = ({ p, aim }) => {
     const d = Math.hypot(aim[0] - p[0], aim[1] - p[1]) || 1;
-    const pos = new THREE.Vector3(p[0] + (aim[0] - p[0]) / d * .45, field + 1.58, p[1] + (aim[1] - p[1]) / d * .45);
+    const pos = new THREE.Vector3(p[0] + (aim[0] - p[0]) / d * .45, field + rise + 1.58, p[1] + (aim[1] - p[1]) / d * .45);
     return () => ({ pos, at: look(aim[0], aim[1]), fov: 30 });
   };
   const cams = [() => ({ pos: new THREE.Vector3(eye.x - 1.04, 5.02, eye.z + 1.05), at: focus.clone(), fov: 17 })];
@@ -118,7 +119,7 @@ export function cameraPoses({ data, eye, focus, deck, field = 0 }) {
   const jibPos = new THREE.Vector3(tip[0], field + 2.85, tip[1]);
   const base = look(aim[0], aim[1], deck + 1.1);
   cams.push((t) => {
-    const a = Math.sin(t * 0.21) * 0.32;
+    const a = Math.sin(t * 0.21) * 0.14;
     const dx = base.x - jibPos.x, dz = base.z - jibPos.z;
     return { pos: jibPos, at: new THREE.Vector3(jibPos.x + dx * Math.cos(a) - dz * Math.sin(a), base.y, jibPos.z + dx * Math.sin(a) + dz * Math.cos(a)), fov: 38 };
   });
@@ -138,6 +139,7 @@ export function cameraFeed(pipe, poses, { size = [480, 270] } = {}) {
   const texel = new THREE.Vector2();
   return {
     texture,
+    target: out,
     render(renderer, index, t, volume) {
       const pose = poses[index](t);
       if (cam.fov !== pose.fov) { cam.fov = pose.fov; cam.updateProjectionMatrix(); }

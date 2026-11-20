@@ -53,6 +53,10 @@ export function concertRoom(ctx, id, room) {
   const show = concertProduction(ctx, root, id, { center, eye, stands, floorBounds, onFloor, ceiling: room.H, houseSources, houseUpdate, fill, masking });
   return {
     root, eye, ...show, round, seatNear: stands.seatNear, seats: stands.seats,
+    // the lightsticks' halves and quarters round a centre stage: the
+    // stadium's runways run out on the diagonals, so its quarters are the
+    // four floors between them (the dome's run on the axes: no turn)
+    splitTurn: id === 'stadium' && round ? .125 : 0,
     background: new THREE.Color(arena ? 0 : dome ? 0x050506 : 0x020306),
     fog: new THREE.FogExp2(arena ? 0x060508 : dome ? 0x07060a : 0x090708, arena ? .0037 : dome ? .0025 : .00165),
     hazeAmb: new THREE.Color(arena ? 0x040306 : dome ? 0x060507 : 0x060405),
@@ -725,8 +729,10 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
   const strobes = flashUnits(rig, production, units.map((u) => ({ ...u, pos: u.pos.clone().addScaledVector(u.dir, .15).add(V3(.7, .2, 0)) })), { kind: 'strobe', mountBody });
   equipment?.finish();
   const desks = equipment && fohScreens(equipment.group, {
-    venueId: room, mode: ctx.mode, root, plan, pipe, data: equipment.data, eye, focus, deck: h,
-    field: arena ? 0 : .02, high: q.msaa > 0,
+    // (round a centre stage the screens' focus is up at the LED box: the FOH
+    // camera frames the deck and who is on it instead)
+    venueId: room, mode: ctx.mode, root, plan, pipe, data: equipment.data, eye, focus: round ? center.clone().setY(h + 2.2) : focus, deck: h,
+    field: arena ? 0 : .02, rise: equipment.camRise, high: q.msaa > 0,
   });
   return {
     desks,

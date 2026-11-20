@@ -1157,7 +1157,14 @@ export function floorChairs(chairs, { color = 0x1a1c22 } = {}) {
 export function floorZones(people, round = null) {
   const floor = people.filter((p) => !p.zone);
   if (!floor.length) return;
-  const key = (p) => (p.fblock ? [(p.fblock.x0 + p.fblock.x1) / 2, p.fblock.z0] : [Math.round(p.x / 10) * 10, Math.floor(p.z / 15) * 15]);
+  // a block's key: its seated block's middle, or the pen it stands in. Round
+  // a centre stage the pens are laid out from the stage's middle, so the
+  // lines the house is halved and quartered along (through that middle) run
+  // between pens rather than through them; a block's place round the stage is
+  // its middle's, not a corner's, or blocks beside those lines took the wrong side.
+  const pen = (v, o, size) => o + (Math.floor((v - o) / size) + 0.5) * size;
+  const key = (p) => (p.fblock ? [(p.fblock.x0 + p.fblock.x1) / 2, round ? (p.fblock.z0 + p.fblock.z1) / 2 : p.fblock.z0]
+    : round ? [pen(p.x, round.x, 10), pen(p.z, round.z, 15)] : [Math.round(p.x / 10) * 10, Math.floor(p.z / 15) * 15]);
   const xs = [...new Set(floor.map((p) => Math.round(key(p)[0] * 2) / 2))].sort((a, b) => a - b);
   const zs = [...new Set(floor.map((p) => Math.round(key(p)[1] * 2) / 2))].sort((a, b) => a - b);
   // A floor block takes the stripe of the stand's wedge at its own angle, so a
