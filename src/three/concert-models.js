@@ -4,11 +4,13 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { V3 } from './core.js';
 
 export const CONCERT_VENUES = new Set(['arena', 'dome', 'stadium']);
-let modelsPromise, theaterModelsPromise, theaterLabPromise;
+let modelsPromise, theaterModelsPromise, theaterLabPromise, clubModelsPromise;
 const SHADOW_CASTERS = new Set([
   'drums', 'keyboard', 'mic', 'wedge', 'fender', 'vox', 'fender-extension', 'vox-extension',
   'touring-rack', 'flight-case', 'prompter', 'foh', 'camera', 'jib', 'jib-head',
   'theater-guitar', 'theater-bass', 'theater-amp-isolator', 'theater-pedalboard', 'theater-di',
+  'drum-kit', 'keys', 'wireless-mic', 'guitar', 'guitar-stand', 'bass', 'bass-stand',
+  'shared-vox', 'shared-fender', 'support-amp', 'shared-flight-case', 'shared-touring-rack', 'pa-top', 'pa-sub',
 ]);
 
 function satinInstrument(material) {
@@ -69,6 +71,16 @@ export function loadTheaterModels() {
     });
   }
   return Promise.all([loadConcertModels(), theaterModelsPromise]).then(([shared, theater]) => new Map([...shared, ...theater]));
+}
+
+export function loadClubModels() {
+  if (!clubModelsPromise) {
+    clubModelsPromise = loadModels('club-props.glb').catch((error) => {
+      clubModelsPromise = null;
+      throw error;
+    });
+  }
+  return Promise.all([loadConcertModels(), clubModelsPromise]).then(([shared, club]) => new Map([...shared, ...club]));
 }
 
 export function loadTheaterLab() {

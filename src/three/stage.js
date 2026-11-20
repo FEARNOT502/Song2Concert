@@ -22,7 +22,7 @@ import { crowdUniforms } from './people.js';
 import { LOD, Rig } from './rig.js';
 import { Walker } from './walk.js';
 import { createArt } from './art.js';
-import { CONCERT_VENUES, loadConcertModels, loadTheaterLab, loadTheaterModels } from './concert-models.js';
+import { CONCERT_VENUES, loadClubModels, loadConcertModels, loadTheaterLab, loadTheaterModels } from './concert-models.js';
 import { BeatFollower } from './beat.js';
 import { buildVenue } from './venues/index.js';
 import { getDomeSeatCatalog } from './venues/dome.js';
@@ -187,7 +187,7 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     });
     if (gen !== buildGen || !running) return;
     const theater = id === 'theater';
-    const models = theater && mode === 'op'
+    const models = id === 'club' ? loadClubModels() : theater && mode === 'op'
       ? loadTheaterModels()
       : theater || CONCERT_VENUES.has(id) ? loadConcertModels() : null;
     const [concertModels, theaterLab] = await Promise.all([
