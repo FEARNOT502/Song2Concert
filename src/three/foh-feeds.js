@@ -105,11 +105,11 @@ export function fanMap(root, plan, { size = [1024, 768] } = {}) {
 // The five cameras' places and where they look, from the layout data:
 // 0 the FOH's left camera on the upper deck, 1–3 the floor cameras, 4 the jib
 // (its head panning slowly to and fro over the stage).
-export function cameraPoses({ data, eye, focus, deck, field = 0, rise = 0 }) {
+export function cameraPoses({ data, eye, focus, deck, field = 0, lensOf = () => 1.58 }) {
   const look = (x, z, y = deck + 1.35) => new THREE.Vector3(x, y, z);
-  const floorCam = ({ p, aim }) => {
+  const floorCam = ({ code, p, aim }) => {
     const d = Math.hypot(aim[0] - p[0], aim[1] - p[1]) || 1;
-    const pos = new THREE.Vector3(p[0] + (aim[0] - p[0]) / d * .45, field + rise + 1.58, p[1] + (aim[1] - p[1]) / d * .45);
+    const pos = new THREE.Vector3(p[0] + (aim[0] - p[0]) / d * .45, field + lensOf(code), p[1] + (aim[1] - p[1]) / d * .45);
     return () => ({ pos, at: look(aim[0], aim[1]), fov: 30 });
   };
   const cams = [() => ({ pos: new THREE.Vector3(eye.x - 1.04, 5.02, eye.z + 1.05), at: focus.clone(), fov: 17 })];

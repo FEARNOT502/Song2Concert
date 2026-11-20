@@ -59,6 +59,38 @@ export function placement(x, y, z, yaw = 0, scale = V3(1, 1, 1)) {
   return new THREE.Matrix4().compose(V3(x, y, z), new THREE.Quaternion().setFromAxisAngle(UP, yaw), scale);
 }
 
+// A broadcast camera on a tripod run up or down so its lens stands at `lens`
+// metres: the legs (everything under the head) stretch, the head rides up on
+// them. Made once per height and kept beside the authored model.
+const CAMERA_LENS = 1.715, CAMERA_LEGS = 1.2;
+export function cameraOnTripod(models, lens) {
+  const name = `camera@${lens.toFixed(2)}`;
+  if (models.has(name)) return name;
+  const base = models.get('camera');
+  const s = 1 + (lens - CAMERA_LENS) / CAMERA_LEGS, lift = lens - CAMERA_LENS;
+  const v = V3(), inv = new THREE.Matrix4();
+  const parts = base.parts.map(({ geometry, material, matrix }) => {
+    const geo = geometry.clone();
+    const src = geometry.attributes.position;
+    const pos = new THREE.Float32BufferAttribute(src.count * 3, 3);
+    inv.copy(matrix).invert();
+    for (let i = 0; i < src.count; i++) {
+      v.fromBufferAttribute(src, i).applyMatrix4(matrix);
+      v.y = v.y <= CAMERA_LEGS ? v.y * s : v.y + lift;
+      v.applyMatrix4(inv);
+      pos.setXYZ(i, v.x, v.y, v.z);
+    }
+    geo.setAttribute('position', pos);
+    geo.computeBoundingBox();
+    geo.computeBoundingSphere();
+    return { geometry: geo, material, matrix };
+  });
+  const bounds = base.bounds.clone();
+  bounds.max.y += lift;
+  models.set(name, { parts, bounds, size: bounds.getSize(V3()), center: bounds.getCenter(V3()), lens });
+  return name;
+}
+
 // One instanced draw per material, even for a whole PA, perimeter or console.
 export class ConcertModels {
   constructor(models, root) {
@@ -79,7 +111,7 @@ export class ConcertModels {
       mesh.name = name;
       mesh.userData.noCollide = true;
       mesh.receiveShadow = mesh.material.isMeshStandardMaterial;
-      mesh.castShadow = mesh.receiveShadow && SHADOW_CASTERS.has(name);
+      mesh.castShadow = mesh.receiveShadow && SHADOW_CASTERS.has(name.split('@')[0]);
       this.root.add(mesh);
       return { mesh, matrix: part.matrix };
     });

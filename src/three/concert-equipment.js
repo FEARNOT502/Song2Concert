@@ -4,7 +4,7 @@ import { V3, clamp, ringTint, std, velvet } from './core.js';
 import { rodInto } from './rig.js';
 import { flashUnits, runBlinders, runShow } from './show.js';
 import { STEP_RISE, STEP_RUN } from './stage-plan.js';
-import { ConcertModels, heading, placement } from './concert-models.js';
+import { ConcertModels, cameraOnTripod, heading, placement } from './concert-models.js';
 import layouts from './data/concert-equipment.json';
 
 const FLIGHT_CASE_SIZES = [V3(1, 1, 1), V3(.84, .77, .88), V3(1.06, .86, .96)];
@@ -251,23 +251,25 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
     contact(eye.x + x, lower, eye.z + .85, 1.0, .94);
   }
   for (const x of [-1.058, 1.046]) contact(eye.x + x, upper, eye.z + 1.64, 1.37, 1.6);
-  // The floor cameras stand on camera risers, high enough to see over the
-  // heads, the barrier and the deck's lip to the people on it (a metre under
-  // the deck's height, 0.9 to 2.2 m).
-  const camRise = THREE.MathUtils.clamp(Math.max(...plan.decks.map((d) => d.h)) - 1, .9, 2.2);
+  // The floor cameras on their tripods, no risers, each run up to its own lens
+  // height (the data's `lens`): the two in the pit kept under the front row's
+  // sightline to the deck's edge (scripts set it from the pit's depth), the
+  // one out on the floor at 1.9 m.
+  const deckH = plan.decks[0].h;
+  const lensOf = (code) => data.cameras.find((c) => c.code === code)?.lens ?? (code === '05' ? 1.9 : deckH + .1);
   for (const { code, p, aim } of data.cameras) {
     const yaw = heading([aim[0] - p[0], aim[1] - p[1]]);
-    skirts.push(placement(p[0], camRise / 2, p[1], yaw, V3(1.6, camRise, 1.6)));
-    add('camera', p[0], camRise, p[1], yaw);
+    const lens = lensOf(code), lift = lens - 1.715;
+    add(cameraOnTripod(models, lens), p[0], 0, p[1], yaw);
     const label = cameraLabel(code);
-    label.position.copy(V3(0, 1.63 + camRise, .514).applyAxisAngle(Y, yaw)).add(point(p));
+    label.position.copy(V3(0, 1.63 + lift, .514).applyAxisAngle(Y, yaw)).add(point(p));
     label.rotation.y = yaw;
     label.name = 'CAM ' + code;
     label.userData.noCollide = true;
     group.add(label);
-    boxCollision(p[0], (1.62 + camRise) / 2, p[1], 1.6, 1.62 + camRise, 1.6, yaw);
-    contact(p[0], 0, p[1], 1.9, 1.9, yaw);
-    reservePad(p[0], p[1], 1.4);
+    boxCollision(p[0], (1.62 + lift) / 2, p[1], .86, 1.62 + lift, .86, yaw);
+    contact(p[0], 0, p[1], 1.52, 1.48, yaw);
+    reservePad(p[0], p[1], 1.23);
   }
   const { p: [jx, jz], tip, pocket, aim } = data.jib;
   const length = Math.hypot(tip[0] - jx, tip[1] - jz);
@@ -430,7 +432,7 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
   return {
     data,
     group,
-    camRise,
+    lensOf,
     blocksFloor: (x, z) => floorExclusions.some((test) => test(x, z)),
     drape(x, y, z, yaw, width, height, matte) {
       const model = models.get('masking');

@@ -85,17 +85,18 @@ function LightPanel({ part, onPart, playing, stageRef, crowdLight, onCrowdLightC
                 </button>
               );
             })}
+            {/* the chorus's first moment on demand, in the cell after Outro */}
+            <button
+              type="button"
+              disabled={!playing}
+              onClick={() => stageRef.current?.hit?.()}
+              title="The chorus's first moment: blinders, strobes and the heads' white hit"
+              className={`${btn} relative border-white/10 text-neutral-400 hover:border-white/30 hover:text-neutral-200 active:bg-[oklch(0.78_0.16_55)]/30 disabled:text-neutral-700 disabled:hover:border-white/10`}
+            >
+              Hit
+              <span className="absolute top-0.5 right-1 text-[8px] tracking-normal text-neutral-600">+</span>
+            </button>
           </div>
-          <button
-            type="button"
-            disabled={!playing}
-            onClick={() => stageRef.current?.hit?.()}
-            title="The chorus's first moment: blinders, strobes and the heads' white hit"
-            className={`${btn} relative w-full border-white/10 text-neutral-300 hover:border-[oklch(0.78_0.16_55)]/60 hover:text-white active:bg-[oklch(0.78_0.16_55)]/30 disabled:text-neutral-700 disabled:hover:border-white/10`}
-          >
-            Hit
-            <span className="absolute top-0.5 right-1 text-[8px] tracking-normal text-neutral-600">+</span>
-          </button>
           <div className="flex items-center gap-2">
             <button
               type="button"

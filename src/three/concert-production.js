@@ -673,7 +673,21 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
     }
     const start = dome && !round ? L.front + L.gap + .2 : z0;
     for (let z = start; z < z1; z += dome ? 10.4 : 13) zs.push([z, Math.min(z + (dome ? 9.2 : 11.4), z1)]);
-    const blocks = dome && round ? roundFloorBlocks(center, floorBounds, footprints) : blockGrid(zs, xs);
+    let blocks = dome && round ? roundFloorBlocks(center, floorBounds, footprints) : blockGrid(zs, xs);
+    if (arena && !round) {
+      // Beside the runway the first blocks run on back to the end stage's pit:
+      // the next row's blocks, cut down by that pit to three rows of chairs,
+      // were trimmed away whole and left the floor there empty.
+      let endZ = Infinity;
+      for (const { gap, bounds: b } of footprints) {
+        if (b.min.z > L.front + 1 && b.max.x - b.min.x > 10) endZ = Math.min(endZ, b.min.z - gap - .25);
+      }
+      const inner = (b) => b.x1 <= 13.5 && b.x0 >= -13.5;
+      if (Number.isFinite(endZ)) {
+        blocks = blocks.filter((b) => !(inner(b) && b.z0 > L.front && b.z0 < endZ));
+        for (const b of blocks) if (inner(b) && b.z0 === zs[0][0]) b.z1 = endZ;
+      }
+    }
     if (dome && !round) {
       // past the runway's end stage the middle is seated too: a column across
       // the runway's line (an aisle in from the columns beside it), from just
@@ -732,7 +746,7 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
     // (round a centre stage the screens' focus is up at the LED box: the FOH
     // camera frames the deck and who is on it instead)
     venueId: room, mode: ctx.mode, root, plan, pipe, data: equipment.data, eye, focus: round ? center.clone().setY(h + 2.2) : focus, deck: h,
-    field: arena ? 0 : .02, rise: equipment.camRise, high: q.msaa > 0,
+    field: arena ? 0 : .02, lensOf: equipment.lensOf, high: q.msaa > 0,
   });
   return {
     desks,
