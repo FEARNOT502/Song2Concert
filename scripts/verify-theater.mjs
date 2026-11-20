@@ -55,6 +55,29 @@ for(const mode of ['general','op']) {
     for(const n of o.geometry.attributes.position.array)assert(Number.isFinite(n));
   });
   const geo=collisionGeometry(venue.root),bvh=new MeshBVH(geo),ray=new THREE.Ray();
+  const pa=venue.root.getObjectByName('Theater PA');
+  assert(pa);
+  assert.equal(pa.getObjectsByProperty('name','Theater center PA hang').length,1);
+  assert.equal(pa.getObjectsByProperty('name','Theater side PA hang').length,2);
+  assert.equal(pa.getObjectsByProperty('name','Theater PA suspension arm').length,3);
+  const subs=pa.getObjectsByProperty('name','ground-sub');
+  assert.equal(subs.length,mode==='op'?4:2);
+  for(const sub of subs) {
+    const box=new THREE.Box3().setFromObject(sub);
+    if(mode==='op') {
+      assert(box.min.z>6.10&&box.max.z<6.95&&box.max.y<.93,'subs clear the curved apron, seated sightline and OP front row');
+    } else {
+      assert(box.max.z<5.9&&box.min.y>=.93-1e-6,'musical subs rest on the stage clear of the pit');
+    }
+  }
+  const fills=pa.getObjectsByProperty('name','front-fill');
+  assert.equal(fills.length,mode==='op'?6:4);
+  for(const fill of fills) {
+    const box=new THREE.Box3().setFromObject(fill);
+    assert(box.max.y<.93&&box.max.x<6.7&&box.min.x>-6.7,'front fills stay below the lip and clear of the stairs');
+  }
+  assert.equal(pa.getObjectsByProperty('name','Theater front-fill fascia bracket').length,fills.length);
+  assert.equal(pa.getObjectsByProperty('name','wedge').length,mode==='op'?0:2);
   // At the former deck/apron overlap, portal sill and side bridge seams there
   // must be exactly one opaque top mesh at +0.93 m, not coplanar layers.
   const topRay=new THREE.Raycaster(new THREE.Vector3(),new THREE.Vector3(0,-1,0),0,.22);
@@ -304,6 +327,18 @@ for(const mode of ['general','op']) {
   }
   const sideLamps=rig.fx.filter(f=>f.kind==='profile'&&Math.abs(f.pos.x)>8&&f.pos.z>9&&f.pos.z<11);
   assert.equal(sideLamps.length,10);
+  const railLift=mode==='op'?1.4:0;
+  const sideRails=venue.root.getObjectsByProperty('name','Theater side lighting rail');
+  assert.equal(sideRails.length,2);
+  assert(sideRails.every(rail=>Math.abs(rail.position.y-(7+railLift))<1e-7));
+  const brackets=venue.root.getObjectByName('Theater side lighting rail brackets').geometry;
+  brackets.computeBoundingBox();
+  assert(Math.abs(brackets.boundingBox.min.y-(5+railLift-.0325))<1e-5);
+  assert(Math.abs(brackets.boundingBox.max.y-(10.5+railLift+.0325))<1e-5);
+  for(const side of [-1,1]) {
+    const heights=sideLamps.filter(f=>side*f.pos.x>0).map(f=>f.pos.y).sort((a,b)=>a-b);
+    assert(heights.every((y,i)=>Math.abs(y-(4+1.4*i+railLift))<1e-7),'fixtures rise with their rail in OP mode');
+  }
   const bodyMatrix=new THREE.Matrix4(),bodyVertex=new THREE.Vector3();
   for(const f of sideLamps) {
     const index=rig.bodied.indexOf(f);assert(index>=0);

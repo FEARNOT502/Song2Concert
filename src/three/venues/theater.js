@@ -5,11 +5,14 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { APP, KELVIN, V3, clamp, pbrSet, valueNoise, glowMat, prng, std, velvet, withRepeat, ringTint } from '../core.js';
 import { crowd3D, lightPoints } from '../people.js';
-import { drapeGeometry, ledScreen, lineArray, mats, shadowSpot, stageSteps } from '../rig.js';
+import { drapeGeometry, ledScreen, mats, shadowSpot, stageSteps } from '../rig.js';
 import { seatFinder } from '../stands.js';
 
 import { getTheaterSeatCatalog } from './theater-seats.js';
 import { theaterHouse } from './theater-house.js';
+import { addTheaterBand } from './theater-band.js';
+import { addTheaterLab } from './theater-lab.js';
+import { addTheaterPA } from './theater-pa.js';
 import {buildTheaterStage} from './theater-stage.js';
 import {addTheaterSplayedWalls,theaterWallX,theaterSplayPoint,THEATER_SPLAY,THEATER_SPLAY_SLOPE} from './theater-walls.js';
 import {buildTheaterCeiling,theaterCeilingY} from './theater-ceiling.js';
@@ -140,51 +143,50 @@ export function buildTheater(ctx) {
     border.position.set(0, OT - 0.4 - (z < 0 ? 0.3 : 0), z); root.add(border);
   }
 
-  // the set: an LED wall upstage, framed by two steel towers
+  const lab = !concert && ctx.theaterLab ? addTheaterLab(root, ctx.theaterLab, DECK) : null;
   const aspect = 16 / 9;
   const SW = 12.4, SH = SW / aspect;
-  const screen = ledScreen({ w: SW, h: SH, tex: ctx.art.texture(aspect), pitch: 0.0039, bright: 1.3, frame: 0.2, lightPower: 1.7 });
-  screen.position.set(0, DECK + 1.2 + SH / 2, -6.2);
-  root.add(screen);
-  ctx.addScreen(screen, aspect, 'main');
-  const steel = std({ color: 0x1b1a1c, metalness: 0.8, roughness: 0.45 });
-  const practical = new THREE.MeshBasicMaterial({ color: KELVIN(2600).clone().multiplyScalar(6), toneMapped: false });
+  let screen, practical;
   const practicals = [];
-  for (const side of [-1, 1]) {
-    const tw = [];
-    const x0 = side * 5.2;
-    for (const [dx, dz] of [[-0.9, -0.9], [0.9, -0.9], [-0.9, 0.9], [0.9, 0.9]]) { const p = new THREE.BoxGeometry(0.12, 6.4, 0.12); p.translate(x0 + dx, DECK + 3.2, -2.6 + dz); tw.push(p); }
-    for (const y of [3.0, 5.6]) {
-      const pl = new THREE.BoxGeometry(2.0, 0.12, 2.0); pl.translate(x0, DECK + y, -2.6); tw.push(pl);
-      for (const dz of [-0.95, 0.95]) { const r = new THREE.BoxGeometry(2.0, 0.05, 0.05); r.translate(x0, DECK + y + 1.0, -2.6 + dz); tw.push(r); }
-      const r2 = new THREE.BoxGeometry(0.05, 0.05, 2.0); r2.translate(x0 - side * 0.95, DECK + y + 1.0, -2.6); tw.push(r2);
-    }
-    for (let k = 0; k < 8; k++) { const st = new THREE.BoxGeometry(1.1, 0.08, 0.34); st.translate(x0 - side * 1.6, DECK + 0.37 * (k + 1), -2.6 + 1.2 - k * 0.3); tw.push(st); }
-    const tower = new THREE.Mesh(mergeGeometries(tw), steel);
-    tower.castShadow = true; tower.receiveShadow = true;
-    root.add(tower);
-    for (const y of [3.4, 6.0]) {
-      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), practical);
-      lamp.position.set(x0 - side * 0.8, DECK + y, -1.75); root.add(lamp);
-      practicals.push(pipe.flares.add(lamp.position, KELVIN(2600), 0.5, 0.6));
+  // The concert wall and its towers also cover the loading fallback for the lab.
+  if (!lab) {
+    screen = ledScreen({ w: SW, h: SH, tex: ctx.art.texture(aspect), pitch: 0.0039, bright: 1.3, frame: 0.2, lightPower: 1.7 });
+    screen.position.set(0, DECK + 1.2 + SH / 2, -6.2);
+    root.add(screen);
+    ctx.addScreen(screen, aspect, 'main');
+    const steel = std({ color: 0x1b1a1c, metalness: 0.8, roughness: 0.45 });
+    practical = new THREE.MeshBasicMaterial({ color: KELVIN(2600).clone().multiplyScalar(6), toneMapped: false });
+    for (const side of [-1, 1]) {
+      const tw = [];
+      const x0 = side * 5.2;
+      for (const [dx, dz] of [[-0.9, -0.9], [0.9, -0.9], [-0.9, 0.9], [0.9, 0.9]]) { const p = new THREE.BoxGeometry(0.12, 6.4, 0.12); p.translate(x0 + dx, DECK + 3.2, -2.6 + dz); tw.push(p); }
+      for (const y of [3.0, 5.6]) {
+        const pl = new THREE.BoxGeometry(2.0, 0.12, 2.0); pl.translate(x0, DECK + y, -2.6); tw.push(pl);
+        for (const dz of [-0.95, 0.95]) { const r = new THREE.BoxGeometry(2.0, 0.05, 0.05); r.translate(x0, DECK + y + 1.0, -2.6 + dz); tw.push(r); }
+        const r2 = new THREE.BoxGeometry(0.05, 0.05, 2.0); r2.translate(x0 - side * 0.95, DECK + y + 1.0, -2.6); tw.push(r2);
+      }
+      for (let k = 0; k < 8; k++) { const st = new THREE.BoxGeometry(1.1, 0.08, 0.34); st.translate(x0 - side * 1.6, DECK + 0.37 * (k + 1), -2.6 + 1.2 - k * 0.3); tw.push(st); }
+      const tower = new THREE.Mesh(mergeGeometries(tw), steel);
+      tower.castShadow = true; tower.receiveShadow = true;
+      root.add(tower);
+      for (const y of [3.4, 6.0]) {
+        const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), practical);
+        lamp.position.set(x0 - side * 0.8, DECK + y, -1.75); root.add(lamp);
+        practicals.push(pipe.flares.add(lamp.position, KELVIN(2600), 0.5, 0.6));
+      }
     }
   }
 
-  // the stage stands empty between numbers: the lead's mark is a pool of
-  // followspot on the deck
-  const lead = { position: V3(-0.9, DECK, 3.3) };
+  // In concert mode the existing followspots pick up the central vocal mark.
+  const lead = concert && ctx.concertModels
+    ? addTheaterBand(ctx.concertModels, root, DECK)
+    : lab?.lead ?? V3(-0.9, DECK, 3.3);
 
   // ── the pit ──
   // covered over, level with the house floor (which runs on under the
   // apron's front): no band in it for this show
 
-  // ── PA: centre cluster and left/right columns ──
-  const cluster = lineArray({ boxes: 6, width: 1.1, depth: 0.6, height: 0.34, splay: 0.05 });
-  cluster.position.set(0, OT + 2.4, PZ + PT + 0.7); root.add(cluster);
-  for (const side of [-1, 1]) {
-    const col = lineArray({ boxes: 12, width: 0.7, depth: 0.5, height: 0.3, splay: 0.012 });
-    col.position.set(side * (theaterWallX(PZ+PT+.5)-.48), OT - 0.4, PZ + PT + 0.5); col.rotation.y = -side * 0.25; root.add(col);
-  }
+  addTheaterPA(root, ctx.concertModels, { concert, deck: DECK, lipPath, portalFront: PZ + PT, openingWidth: OW, openingTop: OT });
 
   // Exact plan-derived chairs and section-derived heights, shared with picker.
   const { spots, levels, stepPts, lampSpots } = theaterHouse(root, {mode:ctx.mode,carpet,wood:wallMat,fabric:seatVel,X,D});
@@ -212,15 +214,17 @@ export function buildTheater(ctx) {
   const rig = ctx.rig({ finish: 'black' });
   // box booms on the side walls, near the stage
   const booms = [],boomBrackets=[];
+  const sideRailLift = concert ? 1.4 : 0;
   for (const side of [-1, 1]) {
     const pipeM = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 8, 6), mats().black);
-    pipeM.position.copy(theaterSplayPoint(side,9.6,7,1));root.add(pipeM);
+    pipeM.name = 'Theater side lighting rail';
+    pipeM.position.copy(theaterSplayPoint(side,9.6,7 + sideRailLift,1));root.add(pipeM);
     for(const y of [5,10.5]) {
-      const p=theaterSplayPoint(side,9.6,y,.56),g=new THREE.BoxGeometry(1.12,.065,.10);
+      const p=theaterSplayPoint(side,9.6,y + sideRailLift,.56),g=new THREE.BoxGeometry(1.12,.065,.10);
       g.rotateY(side*Math.atan(THEATER_SPLAY_SLOPE));g.translate(p.x,p.y,p.z);boomBrackets.push(g);
     }
     for (let i = 0; i < 5; i++) {
-      const f = rig.add({ kind: 'profile', pos: theaterSplayPoint(side,9.6,4+i*1.4,1.18), color: KELVIN(3400), length: 24, scale: 0.7, beamGain: 0.06, flareGain: 0.6 });
+      const f = rig.add({ kind: 'profile', pos: theaterSplayPoint(side,9.6,4+i*1.4 + sideRailLift,1.18), color: KELVIN(3400), length: 24, scale: 0.7, beamGain: 0.06, flareGain: 0.6 });
       rig.aim(f, V3(-side * 1.5 + side * i * 0.4, DECK + 1.2, 1.5 - i * 0.8));
       booms.push(f);
     }
@@ -323,10 +327,12 @@ export function buildTheater(ctx) {
   // Haze sources for the screen and stage. Followspots use the Rig's actual
   // lens beam and flare; no separate glowing point is left in the rear seats.
   const hz = pipe.haze;
-  const offs = [[-0.6, 0.4], [0.6, 0.4], [-0.6, -0.4], [0.6, -0.4], [0, 0]];
-  const hzs = offs.map(([dx, dy]) => hz.add(V3(dx * SW * 0.5, screen.position.y + dy * SH * 0.5, -5.8), 0xffffff, 0));
-  ctx.screenHaze(screen, hzs, offs);
-  screen.userData.hazePower = 26;
+  if (screen) {
+    const offs = [[-0.6, 0.4], [0.6, 0.4], [-0.6, -0.4], [0.6, -0.4], [0, 0]];
+    const hzs = offs.map(([dx, dy]) => hz.add(V3(dx * SW * 0.5, screen.position.y + dy * SH * 0.5, -5.8), 0xffffff, 0));
+    ctx.screenHaze(screen, hzs, offs);
+    screen.userData.hazePower = 26;
+  }
   const hzStage = hz.add(V3(0, DECK + 3, 1), tung, 0);
 
   let aimT = 0;
@@ -339,7 +345,7 @@ export function buildTheater(ctx) {
     bloom: { strength: 0.55, radius: 0.6, threshold: 1.1 },
     grade: { exposure: 1.25, vignette: 0.42, ca: 0.002, grain: 0.04, sat: 1.06, lift: [0.01, 0.006, 0.006] },
     env: { w: W, h: H, d: D, eye, wall: 0x1a0d08, floor: 0x0c0405, emitters: [
-      { w: SW, h: SH, pos: V3(0, screen.position.y, -6), normal: V3(0, 0, 1), screen: true, power: 1.4, aspect },
+      ...(screen ? [{ w: SW, h: SH, pos: V3(0, screen.position.y, -6), normal: V3(0, 0, 1), screen: true, power: 1.4, aspect }] : []),
       { w: 12, h: 3, pos: V3(0, DECK + 0.5, 1), normal: V3(0, 1, 0), color: tung, power: 3 },
     ] },
     envIntensity: 0.55,
@@ -348,11 +354,11 @@ export function buildTheater(ctx) {
       const { a, b, c, d } = f.pal;
       const energy=clamp(f.energy??0),live=concert?show:0;
       aimT += f.dt * (0.4 + energy * 0.6);
-      const leadPos = V3(lead.position.x, DECK + 1.3, lead.position.z);
+      const leadPos = V3(lead.x, DECK + 1.3, lead.z);
       // OPEN PIT keeps the restrained musical look. OP SEATING enables the
       // existing stage rig as a music-driven concert, with a dark auditorium.
-      front1.color.copy(tung).lerp(a,.45*live);front1.intensity=60*f.house+120*live;
-      front2.color.copy(tung).lerp(b,.45*live);front2.intensity=50*f.house+90*live;
+      front1.color.copy(tung).lerp(a,.45*live);front1.intensity=(concert?260:60)*f.house+390*live;
+      front2.color.copy(tung).lerp(b,.45*live);front2.intensity=(concert?210:50)*f.house+320*live;
       washA.color.copy(a);washA.intensity=(150+600*energy)*live;
       backC.color.copy(b);backC.intensity=(150+450*energy)*live;
       booms.forEach((fx) => { fx.color.copy(tung).lerp(c,.5*live);fx.intensity=.1*f.house+(.25+.65*energy)*live; });
@@ -366,7 +372,8 @@ export function buildTheater(ctx) {
       sides.forEach((fx, i) => { fx.color.copy(i % 2 ? c : d);fx.intensity=(.35+.7*energy)*live; });
       follows.forEach((fx) => { rig.aim(fx, leadPos);fx.intensity=(concert?.5:1.4)*show; });
       practicals.forEach((p, i) => { p.intensity=(.45+.1*Math.sin(f.t*2+i))*(.6*f.house+(.25+.35*energy)*live); });
-      practical.color.copy(KELVIN(2600)).multiplyScalar(6*f.house+3*live);
+      practical?.color.copy(KELVIN(2600)).multiplyScalar(6*f.house+3*live);
+      lab?.update(f);
       houseLights.forEach((l) => { l.intensity = 420 * f.house; });
       bounce.color.copy(tung).lerp(a, 0.4).lerp(b, 0.2);
       bounce.intensity = 0.3 * f.house;

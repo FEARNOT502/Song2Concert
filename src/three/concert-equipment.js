@@ -4,17 +4,12 @@ import { V3, clamp, ringTint, std, velvet } from './core.js';
 import { rodInto } from './rig.js';
 import { flashUnits, runBlinders, runShow } from './show.js';
 import { STEP_RISE, STEP_RUN } from './stage-plan.js';
-import { ConcertModels, heading, placement } from './concert-models.js';
+import { addModelArray, ConcertModels, heading, mountEquipmentContactShadows, placement, wirelessMicMount } from './concert-models.js';
 import layouts from './data/concert-equipment.json';
 
 const FLIGHT_CASE_SIZES = [V3(1, 1, 1), V3(.84, .77, .88), V3(1.06, .86, .96)];
 const point = ([x, z], y = 0) => V3(x, y, z);
-const cabinetRot = new THREE.Quaternion();
-const X = V3(1), Y = V3(0, 1);
-// The microphone's grille and capsule center in the exported stand's frame.
-const MIC_AXIS = V3(.31, .20, .93).normalize();
-const MIC_GRILLE = V3(.286, 1.725, .389).addScaledVector(MIC_AXIS, .095);
-const MIC_HEIGHT = 1.48;
+const Y = V3(0, 1);
 const CONTACT_PROPS = new Set(['drums', 'keyboard', 'mic', 'prompter', 'wedge', 'touring-rack', 'flight-case', 'ballast']);
 
 function cameraLabel(code) {
@@ -53,31 +48,6 @@ function stageHeight(decks, x, z) {
     }
   }
   return height;
-}
-
-function mountContactShadows(group, footprints) {
-  const geometry = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
-  const material = new THREE.ShaderMaterial({
-    transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
-    vertexShader: `
-      varying vec2 footprint;
-      void main() {
-        footprint = abs(uv * 2.0 - 1.0);
-        gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
-      }`,
-    fragmentShader: `
-      varying vec2 footprint;
-      void main() {
-        vec2 rounded = max(footprint - 0.26, 0.0) / 0.74;
-        float shade = 1.0 - smoothstep(0.22, 1.0, length(rounded));
-        gl_FragColor = vec4(0.005, 0.005, 0.007, shade * 0.47);
-      }`,
-  });
-  const mesh = new THREE.InstancedMesh(geometry, material, footprints.length);
-  mesh.name = 'Equipment contact shadows';
-  mesh.userData.noCollide = true;
-  footprints.forEach((matrix, i) => mesh.setMatrixAt(i, matrix));
-  group.add(mesh);
 }
 
 export function addConcertEquipment(models, root, room, mode, plan, eye) {
@@ -230,9 +200,10 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
     // toward the player, as does the end of the wireless microphone.
     if (kind === 'keyboard') yaw += Math.PI;
     if (kind === 'mic') {
-      yaw += Math.PI - Math.atan2(MIC_AXIS.x, MIC_AXIS.z);
-      scale = V3(1, MIC_HEIGHT / MIC_GRILLE.y, 1);
-      const singer = MIC_GRILLE.clone().addScaledVector(MIC_AXIS, .24).applyAxisAngle(Y, yaw);
+      const mount = wirelessMicMount(yaw);
+      yaw = mount.yaw;
+      scale = mount.scale;
+      const { singer } = mount;
       add('mark', x + singer.x, y + .004, z + singer.z, heading(facing));
     }
     if (kind === 'flight-case') {
@@ -337,23 +308,8 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
       const height = name === 'blinder8' ? .486 : name === 'strobe' ? .244 : .60;
       batch.add(name, matrix.clone().multiply(new THREE.Matrix4().makeTranslation(0, -height, 0)));
     },
-    hang({ x, y, z, boxes, width = 1.3, yaw = 0, splay = .035, depth = .7, height = .38 }, key) {
-      const model = models.get(key);
-      const scale = V3(width / model.size.x, height * .985 / model.size.y, depth / model.size.z);
-      const raw = (boxes - 1) * splay + splay * .22 * (boxes - 1) * (boxes - 2) / 2;
-      const cap = Math.min(1, .85 / Math.max(raw, .001));
-      const holder = placement(x, y, z, yaw);
-      let down = 0, angle = 0, back = 0;
-      for (let i = 0; i < boxes; i++) {
-        cabinetRot.setFromAxisAngle(X, angle);
-        const offset = V3(0, -height - model.bounds.min.y * scale.y).applyQuaternion(cabinetRot);
-        const local = new THREE.Matrix4().compose(offset.add(V3(0, down, back)), cabinetRot, scale);
-        batch.add(key, new THREE.Matrix4().multiplyMatrices(holder, local));
-        down -= Math.cos(angle) * height;
-        back -= Math.sin(angle) * height;
-        angle += (splay + i * splay * .22) * cap;
-      }
-      add(key + '-bar', x, y + .013, z, yaw, V3(scale.x, 1, scale.z));
+    hang(config, key) {
+      addModelArray(batch, config, key);
     },
     delay({ x, z, h, yaw, roof }) {
       if (roof) {
@@ -387,7 +343,7 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
     },
     finish() {
       batch.flush();
-      mountContactShadows(group, contactShadows);
+  mountEquipmentContactShadows(group, contactShadows);
       if (!collision.length) return;
       const shell = new THREE.Mesh(mergeGeometries(collision), collisionMaterial);
       shell.name = 'Equipment collision';

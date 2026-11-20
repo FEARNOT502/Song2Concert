@@ -22,7 +22,7 @@ import { crowdUniforms } from './people.js';
 import { LOD, Rig } from './rig.js';
 import { Walker } from './walk.js';
 import { createArt } from './art.js';
-import { CONCERT_VENUES, loadConcertModels } from './concert-models.js';
+import { CONCERT_VENUES, loadConcertModels, loadTheaterLab, loadTheaterModels } from './concert-models.js';
 import { BeatFollower } from './beat.js';
 import { buildVenue } from './venues/index.js';
 import { getDomeSeatCatalog } from './venues/dome.js';
@@ -127,11 +127,11 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     });
   }
 
-  function makeCtx(concertModels) {
+  function makeCtx(concertModels, theaterLab) {
     const screens = [], rigs = [];
     const cu = crowdUniforms();
     return {
-      pipe, cu, screens, rigs, concertModels,
+      pipe, cu, screens, rigs, concertModels, theaterLab,
       // the big rooms' layout: 'general' (an end stage) or '360' (a centre stage)
       mode: venueMode,
       // the crowd is decided at build time: off, it is not built at all
@@ -174,12 +174,22 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
       requestAnimationFrame(() => setTimeout(() => { clearTimeout(t); r(); }, 0));
     });
     if (gen !== buildGen || !running) return;
-    const concertModels = CONCERT_VENUES.has(id) ? await loadConcertModels().catch((error) => {
-      console.warn('Unable to load concert equipment models', error);
-      return null;
-    }) : null;
+    const theater = id === 'theater';
+    const models = theater && mode === 'op'
+      ? loadTheaterModels()
+      : theater || CONCERT_VENUES.has(id) ? loadConcertModels() : null;
+    const [concertModels, theaterLab] = await Promise.all([
+      models?.catch((error) => {
+        console.warn('Unable to load concert equipment models', error);
+        return null;
+      }),
+      theater && mode !== 'op' ? loadTheaterLab().catch((error) => {
+        console.warn('Unable to load the theater laboratory', error);
+        return null;
+      }) : null,
+    ]);
     if (gen !== buildGen || !running) return;
-    const c = makeCtx(concertModels);
+    const c = makeCtx(concertModels, theaterLab);
     const v = buildVenue(id, c);
     for (const r of c.rigs) { const g = r.build(); g.userData.plan = 'rig'; v.root.add(g); }
     // the beams stop on the stage roof, the LED boxes and the screens rather
