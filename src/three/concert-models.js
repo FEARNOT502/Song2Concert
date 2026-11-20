@@ -53,7 +53,7 @@ async function loadModels(asset) {
 
 export function loadConcertModels() {
   if (!modelsPromise) {
-    modelsPromise = loadModels('concert-equipment.glb?v=2').catch((error) => {
+    modelsPromise = loadModels('concert-equipment.glb?v=3').catch((error) => {
       modelsPromise = null;
       throw error;
     });
@@ -127,7 +127,7 @@ export function wirelessMicMount(facing) {
   };
 }
 
-export function mountEquipmentContactShadows(group, footprints) {
+export function mountEquipmentContactShadows(group, footprints, opacity = .47) {
   const geometry = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
   const material = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
@@ -137,12 +137,14 @@ export function mountEquipmentContactShadows(group, footprints) {
         footprint = abs(uv * 2.0 - 1.0);
         gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
       }`,
+    uniforms: { uOpacity: { value: opacity } },
     fragmentShader: `
+      uniform float uOpacity;
       varying vec2 footprint;
       void main() {
         vec2 rounded = max(footprint - 0.26, 0.0) / 0.74;
         float shade = 1.0 - smoothstep(0.22, 1.0, length(rounded));
-        gl_FragColor = vec4(0.005, 0.005, 0.007, shade * 0.47);
+        gl_FragColor = vec4(0.005, 0.005, 0.007, shade * uOpacity);
       }`,
   });
   const mesh = new THREE.InstancedMesh(geometry, material, footprints.length);

@@ -21,6 +21,7 @@ const KEYS = [
 ];
 const DESK_KEYS = [
   ['1 – 9 · 0 · -', 'call a part of the song'],
+  ['+', 'hit: blinders, strobes, the heads in white'],
   ['`', 'hand the lights back to the song'],
 ];
 

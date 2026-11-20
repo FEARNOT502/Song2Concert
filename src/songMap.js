@@ -40,6 +40,25 @@ function getWorker() {
   return worker;
 }
 
+// The track's outline for the FOH's show screen: the loudest sample in each
+// of 1024 slices, scaled so the loudest slice fills the height.
+function waveformPeaks(pcm, slices = 1024) {
+  const peaks = new Float32Array(slices);
+  const step = pcm.length / slices;
+  let top = 1e-6;
+  for (let s = 0; s < slices; s++) {
+    let p = 0;
+    for (let i = Math.floor(s * step), end = Math.floor((s + 1) * step); i < end; i++) {
+      const v = Math.abs(pcm[i]);
+      if (v > p) p = v;
+    }
+    peaks[s] = p;
+    if (p > top) top = p;
+  }
+  for (let s = 0; s < slices; s++) peaks[s] /= top;
+  return peaks;
+}
+
 async function analyze(file) {
   const w = getWorker();
   const OAC = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
@@ -59,11 +78,13 @@ async function analyze(file) {
     for (let i = 0; i < n; i++) pcm[i] += d[i];
   }
   if (ch > 1) for (let i = 0; i < n; i++) pcm[i] /= ch;
+  const peaks = waveformPeaks(pcm);
   const id = ++seq;
-  return new Promise((resolve) => {
+  const map = await new Promise((resolve) => {
     waiting.set(id, resolve);
     w.postMessage({ id, pcm, sampleRate: audio.sampleRate }, [pcm.buffer]);
   });
+  return map ? { ...map, peaks } : map;
 }
 
 export function songMapFor(file) {

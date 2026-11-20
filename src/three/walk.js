@@ -72,6 +72,7 @@ export class Walker {
     this.ray = new THREE.Ray();
     this.drag = null;
     this.onLook = null;
+    this.onClick = null;         // (event) => true when a click was used
     this.seatNear = null;       // the venue's stand seats, if it has any
     this.stillSince = 0;        // when the last step was taken (ms, wall clock: a slow frame rate must not stretch the wait)
     this.sitting = false;
@@ -88,20 +89,30 @@ export class Walker {
     const blur = () => this.held.clear();
     const pdown = (e) => {
       if (e.button !== undefined && e.button !== 0) return;
-      this.drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
+      this.drag = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: 0, at: performance.now() };
       canvas.setPointerCapture?.(e.pointerId);
     };
     const pmove = (e) => {
       if (!this.drag || this.drag.id !== e.pointerId) return;
       const dx = e.clientX - this.drag.x, dy = e.clientY - this.drag.y;
       this.drag.x = e.clientX; this.drag.y = e.clientY;
+      this.drag.moved += Math.abs(dx) + Math.abs(dy);
       this.look(dx, dy);
     };
-    const pup = (e) => { if (this.drag && this.drag.id === e.pointerId) this.drag = null; };
-    const dbl = () => this.reset();
+    // A press that barely moved and let go quickly is a click, handed to
+    // onClick (the FOH's monitors take their buttons from it); a click it
+    // used is not also half of a double click that resets the view.
+    const pup = (e) => {
+      if (!this.drag || this.drag.id !== e.pointerId) return;
+      const { moved, at } = this.drag;
+      this.drag = null;
+      if (moved < 6 && performance.now() - at < 350 && this.onClick?.(e)) this.clickUsedAt = performance.now();
+    };
+    const pcancel = (e) => { if (this.drag && this.drag.id === e.pointerId) this.drag = null; };
+    const dbl = () => { if (performance.now() - (this.clickUsedAt ?? -1e9) > 600) this.reset(); };
     this.listeners = [
       [canvas, 'pointerdown', pdown], [canvas, 'pointermove', pmove], [canvas, 'pointerup', pup],
-      [canvas, 'pointercancel', pup], [canvas, 'dblclick', dbl],
+      [canvas, 'pointercancel', pcancel], [canvas, 'dblclick', dbl],
     ];
     if (keys) this.listeners.push([window, 'keydown', down], [window, 'keyup', up], [window, 'blur', blur]);
     for (const [t, ev, fn] of this.listeners) t.addEventListener(ev, fn);

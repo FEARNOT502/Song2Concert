@@ -413,6 +413,11 @@ function runMovers(list, f, { house, stage, span = 30, up = false, strobe = true
       else if (L.col === 1) col = cols[wrap(i + k, 2)];
       else if (L.col === 2) col = beam ? WHITE : cols[wrap(i + k, 2)];
     }
+    // the desk's HIT (+): the chorus's first moment, called by hand
+    if ((f.hitT ?? Infinity) < 0.35) {
+      if (L.hit === 0 && strobe) lvl = 1.6;
+      else if (L.hit === 1) lvl = 1.15 + 0.2 * f.kick;
+    }
     // one part fades into the next over a second or so, and a colour change
     // within one is a quick fade, not a cut; the hits (the chorus's first,
     // the strobing kicks) still land at once
@@ -517,9 +522,12 @@ export function runBlinders(B, f) {
   let sum = 0;
   const part = f.look ? (f.part || sec) : sec;
   const bar = Math.floor(f.secBar ?? f.bar);
+  const hitT = f.hitT ?? Infinity;
   for (const it of B.list) {
     let to = 0;
-    if (part === 'chorus' && f.look) {
+    // (the desk's HIT lands as the chorus's first moment does)
+    if (f.look && hitT < 0.45) to = 1;
+    else if (part === 'chorus' && f.look) {
       if (secT < 0.45) to = 1;
       else if (L.hit === 2 && f.kick > 0.8) to = wrap(f.beat, 4) === 0 ? 1 : wrap(f.beat, 2) === 0 ? (it.i % 2 ? 0.7 : 0) : 0;
     } else if (part === 'bridge' && f.kick > 0.8 && wrap(f.beat, 4) === 0) {
@@ -563,9 +571,11 @@ export function runStrobes(S, f) {
   const part = f.look ? (f.part || sec) : sec;
   const roll = f.look ? rollOf(f) : null;
   let sum = 0;
+  const hitT = f.hitT ?? Infinity;
   for (const it of S.list) {
     let to = 0;
-    if (part === 'chorus' && f.look) {
+    if (f.look && hitT < 0.6) to = wrap(Math.floor(hitT * 20), 2) === 0 ? 1 : 0;
+    else if (part === 'chorus' && f.look) {
       if (secT < 0.6) to = wrap(Math.floor(secT * 20), 2) === 0 ? 1 : 0;
       else if (L.hit === 0 && f.kick > 0.85) to = ((it.i * 7 + f.beat * 3) % 5) < 2 ? 1 : 0;
       else if (L.hit === 1 && f.kick > 0.85) to = 0.8;
@@ -1147,7 +1157,14 @@ export function floorChairs(chairs, { color = 0x1a1c22 } = {}) {
 export function floorZones(people, round = null) {
   const floor = people.filter((p) => !p.zone);
   if (!floor.length) return;
-  const key = (p) => (p.fblock ? [(p.fblock.x0 + p.fblock.x1) / 2, p.fblock.z0] : [Math.round(p.x / 10) * 10, Math.floor(p.z / 15) * 15]);
+  // a block's key: its seated block's middle, or the pen it stands in. Round
+  // a centre stage the pens are laid out from the stage's middle, so the
+  // lines the house is halved and quartered along (through that middle) run
+  // between pens rather than through them; a block's place round the stage is
+  // its middle's, not a corner's, or blocks beside those lines took the wrong side.
+  const pen = (v, o, size) => o + (Math.floor((v - o) / size) + 0.5) * size;
+  const key = (p) => (p.fblock ? [(p.fblock.x0 + p.fblock.x1) / 2, round ? (p.fblock.z0 + p.fblock.z1) / 2 : p.fblock.z0]
+    : round ? [pen(p.x, round.x, 10), pen(p.z, round.z, 15)] : [Math.round(p.x / 10) * 10, Math.floor(p.z / 15) * 15]);
   const xs = [...new Set(floor.map((p) => Math.round(key(p)[0] * 2) / 2))].sort((a, b) => a - b);
   const zs = [...new Set(floor.map((p) => Math.round(key(p)[1] * 2) / 2))].sort((a, b) => a - b);
   // A floor block takes the stripe of the stand's wedge at its own angle, so a

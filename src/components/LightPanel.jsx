@@ -9,16 +9,13 @@
 
 import { memo, useEffect, useState } from 'react';
 import { CrowdLightToggle } from './TopBar.jsx';
+import { DESK } from '../lightDesk.js';
 
 const ACCENT = 'oklch(0.78 0.16 55)';
 const KEY = 's2c.lightPanel';
 
-// the parts (src/three/show.js PARTS) in the order a song runs, with their keys
-export const DESK = [
-  ['intro', 'Intro', '1'], ['verse', 'Verse', '2'], ['pre', 'Pre', '3'], ['chorus', 'Chorus', '4'],
-  ['post', 'Post', '5'], ['interlude', 'Interlude', '6'], ['break', 'Break', '7'], ['bridge', 'Bridge', '8'],
-  ['dance', 'Dance', '9'], ['solo', 'Solo', '0'], ['outro', 'Outro', '-'],
-];
+// the parts in the order a song runs, with their keys (shared with the FOH screen)
+export { DESK };
 
 function loadOpen() {
   try { return window.localStorage.getItem(KEY) === 'open'; } catch { return false; }
@@ -89,6 +86,16 @@ function LightPanel({ part, onPart, playing, stageRef, crowdLight, onCrowdLightC
               );
             })}
           </div>
+          <button
+            type="button"
+            disabled={!playing}
+            onClick={() => stageRef.current?.hit?.()}
+            title="The chorus's first moment: blinders, strobes and the heads' white hit"
+            className={`${btn} relative w-full border-white/10 text-neutral-300 hover:border-[oklch(0.78_0.16_55)]/60 hover:text-white active:bg-[oklch(0.78_0.16_55)]/30 disabled:text-neutral-700 disabled:hover:border-white/10`}
+          >
+            Hit
+            <span className="absolute top-0.5 right-1 text-[8px] tracking-normal text-neutral-600">+</span>
+          </button>
           <div className="flex items-center gap-2">
             <button
               type="button"

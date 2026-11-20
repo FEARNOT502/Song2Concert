@@ -50,6 +50,87 @@ function stageHeight(decks, x, z) {
   return height;
 }
 
+// A prompter's page: the sleeve, and under it the title (and the artist).
+function fitText(ctx, text, max) {
+  if (ctx.measureText(text).width <= max) return text;
+  let t = text;
+  while (t.length > 1 && ctx.measureText(t + '…').width > max) t = t.slice(0, -1);
+  return t.trimEnd() + '…';
+}
+function prompterPage(image, meta) {
+  const S = 1024;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = S;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#050506';
+  ctx.fillRect(0, 0, S, S);
+  const art = 760, x0 = (S - art) / 2, y0 = 34;
+  if (image) ctx.drawImage(image, x0, y0, art, art);
+  const title = meta?.title || '', artist = meta?.artist || '';
+  const sans = '"Inter Tight", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#f4f4f6';
+  ctx.font = `700 ${artist ? 88 : 104}px ${sans}`;
+  ctx.fillText(fitText(ctx, title, S - 80), S / 2, artist ? 900 : 940);
+  if (artist) {
+    ctx.fillStyle = '#a4a7ae';
+    ctx.font = `500 54px ${sans}`;
+    ctx.fillText(fitText(ctx, artist, S - 120), S / 2, 980);
+  }
+  const map = new THREE.CanvasTexture(canvas);
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.flipY = false;
+  map.anisotropy = 4;
+  return map;
+}
+
+// Everything standing on the decks, drawn once into a top-down map of soft
+// dark footprints that the deck's top multiplies into its own colour. Unlike
+// a shadow map it holds under any light (the house lights up, a single key,
+// the rig's own heads), and costs one texture read.
+function deckShadeTexture(decks, feet) {
+  const pts = decks.flatMap(({ ring }) => ring);
+  const minX = Math.min(...pts.map((p) => p[0])) - 1, maxX = Math.max(...pts.map((p) => p[0])) + 1;
+  const minZ = Math.min(...pts.map((p) => p[1])) - 1, maxZ = Math.max(...pts.map((p) => p[1])) + 1;
+  const px = Math.max(.04, Math.max(maxX - minX, maxZ - minZ) / 2048);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.ceil((maxX - minX) / px);
+  canvas.height = Math.ceil((maxZ - minZ) / px);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#000';
+  const box = (w, d, r) => {
+    ctx.beginPath();
+    ctx.roundRect(-w / 2, -d / 2, w, d, Math.min(r, w / 2, d / 2));
+    ctx.fill();
+  };
+  for (const { x, z, w, d, yaw, core } of feet) {
+    ctx.save();
+    ctx.translate((x - minX) / px, (z - minZ) / px);
+    ctx.rotate(-yaw);
+    // a dense core right under the thing, and a soft skirt round it
+    ctx.globalAlpha = core;
+    box(w / px, d / px, .04 / px);
+    // (each ring 3.5 cm further out: some 80% darker right at the edge,
+    // fading out by 35 cm, like light kept off the deck by the case; the
+    // deck's white joints run hot under the stage light, so it has to be deep)
+    ctx.globalAlpha = .14;
+    for (let k = 1; k <= 10; k++) {
+      const e = k * .07 / px;
+      box(w / px + e, d / px + e, .06 / px + e / 2);
+    }
+    ctx.restore();
+  }
+  const map = new THREE.CanvasTexture(canvas);
+  map.colorSpace = THREE.NoColorSpace;
+  // (the canvas's rows run with +z: v = 0 is its first row)
+  map.flipY = false;
+  map.anisotropy = 4;
+  return { map, offset: new THREE.Vector2(minX, minZ), size: new THREE.Vector2(maxX - minX, maxZ - minZ) };
+}
+
 export function addConcertEquipment(models, root, room, mode, plan, eye) {
   const data = layouts[room + '-' + mode];
   const group = new THREE.Group();
@@ -64,6 +145,7 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
   const warm = new THREE.Color(0xffa15e);
   let drapeMaterial, matteDrape;
   const fieldHeight = room === 'arena' ? 0 : .02;
+  const deckFeet = [], skirts = [];
 
   function boxCollision(x, y, z, w, h, d, yaw = 0) {
     const geo = new THREE.BoxGeometry(w, h, d);
@@ -73,7 +155,12 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
   function add(name, x, y, z, yaw = 0, scale, material) {
     batch.add(name, placement(x, y, z, yaw, scale), material);
   }
-  function contact(x, y, z, w, d, yaw = 0) {
+  function contact(x, y, z, w, d, yaw = 0, core = .85) {
+    // (on a deck the baked shade does it: see deckShadeTexture)
+    if (y > .3 && Math.abs(stageHeight(plan.decks, x, z) - y) < .05) {
+      deckFeet.push({ x, z, w: Math.max(.05, w - .2), d: Math.max(.05, d - .2), yaw, core });
+      return;
+    }
     contactShadows.push(placement(x, Math.max(fieldHeight, y) + .003, z, yaw, V3(w, 1, d)));
   }
   function reserve(x, z, rx, rz) {
@@ -134,18 +221,23 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
     contact(eye.x + x, lower, eye.z + .85, 1.0, .94);
   }
   for (const x of [-1.058, 1.046]) contact(eye.x + x, upper, eye.z + 1.64, 1.37, 1.6);
+  // The floor cameras stand on camera risers, high enough to see over the
+  // heads, the barrier and the deck's lip to the people on it (a metre under
+  // the deck's height, 0.9 to 2.2 m).
+  const camRise = THREE.MathUtils.clamp(Math.max(...plan.decks.map((d) => d.h)) - 1, .9, 2.2);
   for (const { code, p, aim } of data.cameras) {
     const yaw = heading([aim[0] - p[0], aim[1] - p[1]]);
-    add('camera', p[0], 0, p[1], yaw);
+    skirts.push(placement(p[0], camRise / 2, p[1], yaw, V3(1.6, camRise, 1.6)));
+    add('camera', p[0], camRise, p[1], yaw);
     const label = cameraLabel(code);
-    label.position.copy(V3(0, 1.63, .514).applyAxisAngle(Y, yaw)).add(point(p));
+    label.position.copy(V3(0, 1.63 + camRise, .514).applyAxisAngle(Y, yaw)).add(point(p));
     label.rotation.y = yaw;
     label.name = 'CAM ' + code;
     label.userData.noCollide = true;
     group.add(label);
-    boxCollision(p[0], .81, p[1], .86, 1.62, .86, yaw);
-    contact(p[0], 0, p[1], 1.52, 1.48, yaw);
-    reservePad(p[0], p[1], 1.23);
+    boxCollision(p[0], (1.62 + camRise) / 2, p[1], 1.6, 1.62 + camRise, 1.6, yaw);
+    contact(p[0], 0, p[1], 1.9, 1.9, yaw);
+    reservePad(p[0], p[1], 1.4);
   }
   const { p: [jx, jz], tip, pocket, aim } = data.jib;
   const length = Math.hypot(tip[0] - jx, tip[1] - jz);
@@ -193,7 +285,7 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
   }
 
   let caseCount = 0;
-  function prop({ kind, p: [x, z], facing, model, size, stack }, y, ground) {
+  function prop({ kind, p: [x, z], facing, model, size, stack, coil }, y, ground) {
     let yaw = heading(facing);
     let scale;
     // Facing describes the performer. The keyboard's keybed and pedal point
@@ -208,7 +300,17 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
     }
     if (kind === 'flight-case') {
       scale = FLIGHT_CASE_SIZES[caseCount % FLIGHT_CASE_SIZES.length];
-      yaw += [0, Math.PI / 2, Math.PI][caseCount++ % 3];
+      // (a stack keeps one case size and lines up; a loose case is turned)
+      yaw += stack ? Math.PI * (caseCount % 2) : [0, Math.PI / 2, Math.PI][caseCount % 3];
+      caseCount++;
+      if (stack > 1) {
+        const lift = models.get(kind).size.y * scale.y;
+        contact(x, y, z, models.get(kind).size.x * scale.x + .15, models.get(kind).size.z * scale.z + .15, yaw);
+        for (let i = 1; i < stack; i++) {
+          add(kind, x, y, z, yaw, scale);
+          y += lift;
+        }
+      }
     }
     if (kind === 'cable-guard') {
       const nearJib = Math.hypot(x - jx, z - jz) < 3.5;
@@ -226,21 +328,27 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
       const amp = models.get(kind);
       const tiers = stack ?? (model === 'combo-with-extension' ? 2 : 1);
       contact(x, y, z, amp.size.x + .24, amp.size.z + .22, yaw);
+      // Speaker cabinets at their real size underneath, the combo on top.
       const name = kind + '-extension';
-      const ext = models.get(name);
-      const rise = kind === 'fender' ? .47 : .5;
+      const rise = models.get(name).bounds.max.y;
       for (let i = 1; i < tiers; i++) {
-        add(name, x, y, z, yaw, V3(1.025, rise / ext.bounds.max.y, 1.05));
+        add(name, x, y, z, yaw);
         y += rise;
       }
     }
-    if (CONTACT_PROPS.has(kind)) {
+    if (CONTACT_PROPS.has(kind) && !(kind === 'flight-case' && stack > 1)) {
       const bounds = models.get(kind).size;
       contact(x, y, z, bounds.x * (scale?.x ?? 1) + .15, bounds.z * (scale?.z ?? 1) + .15, yaw);
     }
     add(kind, x, y, z, yaw, scale);
     if (kind === 'prompter') add('prompter-display', x, y, z, yaw, undefined, display);
-    if (kind === 'touring-rack' && !ground) {
+    // The risers stand on legs; a black skirt round them closes the gap
+    // under the platform that let the deck show through.
+    if (kind === 'drums' || kind === 'keyboard') {
+      const [w, d] = kind === 'drums' ? [2.74, 2.05] : [2.12, 1.58];
+      skirts.push(placement(x, y + .13, z, yaw, V3(w, .26, d)));
+    }
+    if (kind === 'touring-rack' && !ground && coil !== false) {
       add('signal-coil', x + Math.cos(yaw) * .58, y + .002, z - Math.sin(yaw) * .58, yaw);
     }
     if (ground) {
@@ -254,8 +362,9 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
   add('cable-guard-service', eye.x - 2.98, .816, eye.z + .48, Math.PI / 2, V3(.63, 1, .74));
   // The band has short spare signal looms next to its amp stacks. Vocal mic
   // stands remain the wireless assets, independent from the deck cabling.
-  for (const { kind, p: [x, z], facing } of data.stage) {
-    if (!['fender', 'vox', 'keyboard'].includes(kind)) continue;
+  // (an amp line has one loom of its own in the data, not one per stack)
+  for (const { kind, p: [x, z], facing, wall } of data.stage) {
+    if (wall || !['fender', 'vox', 'keyboard'].includes(kind)) continue;
     const yaw = heading(facing);
     const dx = Math.cos(yaw), dz = -Math.sin(yaw);
     const side = x < 0 ? 1 : -1;
@@ -292,6 +401,7 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
   return {
     data,
     group,
+    camRise,
     blocksFloor: (x, z) => floorExclusions.some((test) => test(x, z)),
     drape(x, y, z, yaw, width, height, matte) {
       const model = models.get('masking');
@@ -323,15 +433,14 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
       const cover = V3(-1.28, .304, .24).applyAxisAngle(Y, yaw);
       add('cable-guard', x + cover.x, cover.y, z + cover.z, yaw + Math.PI / 2);
     },
-    setArt(map) {
-      if (display.map?.source === map?.source) return;
+    // The prompters show the sleeve with the song's title under it.
+    setArt(map, meta = null) {
+      const key = map ? `${map.source.uuid}|${meta?.title ?? ''}|${meta?.artist ?? ''}` : null;
+      if (key === display.userData.key) return;
+      display.userData.key = key;
       if (Boolean(display.map) !== Boolean(map)) display.needsUpdate = true;
       display.map?.dispose();
-      display.map = map?.clone() ?? null;
-      if (display.map) {
-        display.map.flipY = false;
-        display.map.needsUpdate = true;
-      }
+      display.map = map ? prompterPage(map.image, meta) : null;
       display.color.setHex(map ? 0xffffff : 0);
     },
     runFootlights(f, part) {
@@ -341,9 +450,35 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
       footLevel = THREE.MathUtils.lerp(footLevel, level * (1 - f.house), clamp(f.dt * 5));
       amber.color.copy(ringTint(envelope, f.pal.b)).lerp(warm, .48).multiplyScalar(.025 + 3.2 * footLevel);
     },
+    // Multiply the decks' top by the baked footprints of what stands on them.
+    // (in the decks' own frame, the production's, which the props share: the
+    // room's root can sit anywhere in the world)
+    shadeDeck(material) {
+      if (!deckFeet.length) return;
+      const shade = deckShadeTexture(plan.decks, deckFeet);
+      material.onBeforeCompile = (sh) => {
+        sh.uniforms.uDeckShade = { value: shade.map };
+        sh.uniforms.uDeckShadeBox = { value: new THREE.Vector4(shade.offset.x, shade.offset.y, shade.size.x, shade.size.y) };
+        sh.vertexShader = 'uniform vec4 uDeckShadeBox;\nvarying vec2 vDeckShadeUv;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+          vDeckShadeUv = (transformed.xz - uDeckShadeBox.xy) / uDeckShadeBox.zw;`);
+        sh.fragmentShader = 'uniform sampler2D uDeckShade;\nvarying vec2 vDeckShadeUv;\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+          diffuseColor.rgb *= texture2D(uDeckShade, vDeckShadeUv).r;`);
+      };
+      material.customProgramCacheKey = () => 'concert-deck-shade';
+      material.needsUpdate = true;
+    },
     finish() {
       batch.flush();
-  mountEquipmentContactShadows(group, contactShadows);
+      mountEquipmentContactShadows(group, contactShadows, .62);
+      if (skirts.length) {
+        const skirt = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1),
+          std({ color: 0x030303, roughness: 1, envMapIntensity: .1 }), skirts.length);
+        skirts.forEach((m, i) => skirt.setMatrixAt(i, m));
+        skirt.name = 'Riser skirts';
+        skirt.receiveShadow = true;
+        skirt.userData.noCollide = true;
+        group.add(skirt);
+      }
       if (!collision.length) return;
       const shell = new THREE.Mesh(mergeGeometries(collision), collisionMaterial);
       shell.name = 'Equipment collision';

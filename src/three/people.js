@@ -630,9 +630,15 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7, centre = null,
     uniforms: {
       uTime: cu.uTime, uKick: cu.uKick, uEnergy: cu.uEnergy, uStage: cu.uStage,
       uScale: { value: 800 }, uMax: { value: maxPx }, uGain: { value: 1 },
+      // the FOH's fan-light map draws the same sticks from straight above,
+      // each a fixed few pixels (0: the room's own view)
+      uMapPx: { value: 0 },
       uMode: { value: 0 }, uHouse: { value: 0 },
       // round a centre stage (1): the house in four faces round it
       uRound: { value: 0 },
+      // where the house's halves and quarters start round it (0..1 of a turn):
+      // a stage whose runways run on the diagonals has its quarters between them
+      uTurn: { value: 0 },
       // the operator's cue: this scene (its number and section) and the last,
       // crossfading; how long the section has run, the beat count, the song's look
       uScene: { value: 1 }, uSec: { value: 0 }, uSecPrev: { value: 0 }, uSecMix: { value: 1 }, uSecT: { value: 0 },
@@ -649,7 +655,11 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7, centre = null,
     vertexShader: /* glsl */`
       attribute vec4 aLook, aZone;
       attribute vec2 aPlace;
-      uniform float uRound;
+      uniform float uRound, uTurn;
+      // the house's halves and quarters, round from where they start
+      float part4(float u) { return floor(fract(u + uTurn) * 4.0); }
+      float part2(float u) { return floor(fract(u + uTurn) * 2.0); }
+      uniform float uMapPx;
       uniform float uTime, uScale, uMax, uMode, uHouse, uKick, uEnergy, uScene, uSec, uSecPrev, uSecMix, uSecT, uBeat, uLook, uPhase, uProg, uProgPrev, uRoll, uStep, uStepT;
       uniform vec3 uPal[4], uStage;
       varying vec3 vC;
@@ -677,8 +687,8 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7, centre = null,
         // are one look among several, not the rule)
         float idx = lay < 0.5 ? 0.0                                   // the whole house one colour
                   : lay < 1.5 ? (lv < 0.5 ? 0.0 : 1.0)                // the floor against the stands
-                  : lay < 2.5 ? floor(u * 4.0)                       // four great arcs round the house
-                  : floor(u * 2.0);                                  // the two halves
+                  : lay < 2.5 ? part4(u)                             // four great arcs round the house
+                  : part2(u);                                        // the two halves
         float ci = c0 + (idx + k) * st;
         if (wht > 0.5 && mod(idx + k, 3.0) == 2.0) return col(4.0);
         return col(ci);
@@ -750,7 +760,7 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7, centre = null,
           if (v < 0.5) {
             float lit = mod(uStep, 4.0);
             // (round: a quarter of the house a step, round it, as well as up)
-            float on = uRound > 0.5 ? 1.0 - step(0.5, abs(floor(u * 4.0) - lit)) : 1.0 - step(0.5, abs(mod(lv, 4.0) - lit));
+            float on = uRound > 0.5 ? 1.0 - step(0.5, abs(part4(u) - lit)) : 1.0 - step(0.5, abs(mod(lv, 4.0) - lit));
             float glow = on * (0.4 + 0.6 * exp(-uStepT * 2.5));
             return mix(sceneCol(s, bar) * 0.3, sceneCol(s, 1.0 + uStep) * 1.15, glow) * lift;
           }
@@ -773,7 +783,7 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7, centre = null,
           float m = mod(floor(v * 4.0) + uLook, 4.0);
           if (m > 2.5) c = grad(c0 + slant(0.8) * 3.0 - ph * 0.5);
           else if (m < 0.5) c = h1(uLook * 3.3 + 0.7) < 0.25 ? (stp(bt) < 0.5 ? col(c0 + bar) : col(c0 + 1.0 + bar) * 0.8) : grad(c0 + mir() * 2.0 - ph * 0.5);
-          else if (m < 1.5) c = sceneCol(s, bt + uRound * floor(u * 4.0));
+          else if (m < 1.5) c = sceneCol(s, bt + uRound * part4(u));
           else c = grad(span(4.0, 4.0) - ph * 0.5);
           float turn = mod(uLook, 2.0) < 0.5 ? 1.0 : 0.6 + 0.4 * step(mod(uBeat - lv, 4.0), 0.5);
           return c * (0.55 + 0.75 * uKick) * turn;
@@ -867,6 +877,11 @@ export function crowdLights(people, cu, { size = 0.07, maxPx = 7, centre = null,
         vC *= mix(1.0, 1.9, smoothstep(2.4, 0.6, px));
         gl_PointSize = clamp(px, 2.2, uMax);
         gl_Position = projectionMatrix * mv;
+        if (uMapPx > 0.0) {
+          gl_PointSize = uMapPx;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          vC *= 1.5;
+        }
       }`,
     fragmentShader: /* glsl */`
       uniform sampler2D tGlow; uniform float uGain; varying vec3 vC;
