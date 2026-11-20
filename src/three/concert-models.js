@@ -4,10 +4,13 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { V3 } from './core.js';
 
 export const CONCERT_VENUES = new Set(['arena', 'dome', 'stadium']);
-let modelsPromise;
+let modelsPromise, theaterModelsPromise, theaterLabPromise, clubModelsPromise;
 const SHADOW_CASTERS = new Set([
   'drums', 'keyboard', 'mic', 'wedge', 'fender', 'vox', 'fender-extension', 'vox-extension',
   'touring-rack', 'flight-case', 'prompter', 'foh', 'camera', 'jib', 'jib-head',
+  'theater-guitar', 'theater-bass', 'theater-amp-isolator', 'theater-pedalboard', 'theater-di',
+  'drum-kit', 'keys', 'wireless-mic', 'guitar', 'guitar-stand', 'bass', 'bass-stand',
+  'shared-vox', 'shared-fender', 'support-amp', 'shared-flight-case', 'shared-touring-rack', 'pa-top', 'pa-sub',
 ]);
 
 function satinInstrument(material) {
@@ -22,35 +25,80 @@ function satinInstrument(material) {
   return satin;
 }
 
+async function loadScene(asset) {
+  const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+  const { scene } = await loader.loadAsync(import.meta.env.BASE_URL + 'assets/' + asset);
+  return scene;
+}
+
+async function loadModels(asset) {
+  const scene = await loadScene(asset);
+  const models = new Map();
+  scene.updateMatrixWorld(true);
+  for (const model of scene.children) {
+    const parts = [];
+    const instrument = model.name === 'drums' || model.name === 'keyboard';
+    model.traverse((mesh) => {
+      if (!mesh.isMesh) return;
+      const { geometry, matrixWorld } = mesh;
+      const material = instrument && mesh.material.isMeshStandardMaterial ? satinInstrument(mesh.material) : mesh.material;
+      geometry.userData.shared = material.userData.shared = true;
+      for (const value of Object.values(material)) if (value?.isTexture) value.userData.shared = true;
+      geometry.computeBoundingBox();
+      parts.push({ geometry, material, matrix: matrixWorld.clone() });
+    });
+    const bounds = new THREE.Box3().setFromObject(model);
+    models.set(model.name, { parts, bounds, size: bounds.getSize(V3()), center: bounds.getCenter(V3()) });
+  }
+  return models;
+}
+
 export function loadConcertModels() {
   if (!modelsPromise) {
-    const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
-    const url = import.meta.env.BASE_URL + 'assets/concert-equipment.glb?v=3';
-    modelsPromise = loader.loadAsync(url).then(({ scene }) => {
-      const models = new Map();
-      scene.updateMatrixWorld(true);
-      for (const model of scene.children) {
-        const parts = [];
-        model.traverse((mesh) => {
-          if (!mesh.isMesh) return;
-          const { geometry, matrixWorld } = mesh;
-          const instrument = model.name === 'drums' || model.name === 'keyboard';
-          const material = instrument && mesh.material.isMeshStandardMaterial ? satinInstrument(mesh.material) : mesh.material;
-          geometry.userData.shared = material.userData.shared = true;
-          for (const value of Object.values(material)) if (value?.isTexture) value.userData.shared = true;
-          geometry.computeBoundingBox();
-          parts.push({ geometry, material, matrix: matrixWorld.clone() });
-        });
-        const bounds = new THREE.Box3().setFromObject(model);
-        models.set(model.name, { parts, bounds, size: bounds.getSize(V3()), center: bounds.getCenter(V3()) });
-      }
-      return models;
-    }).catch((error) => {
+    modelsPromise = loadModels('concert-equipment.glb?v=3').catch((error) => {
       modelsPromise = null;
       throw error;
     });
   }
   return modelsPromise;
+}
+
+export function loadTheaterModels() {
+  if (!theaterModelsPromise) {
+    theaterModelsPromise = loadModels('theater-backline.glb').catch((error) => {
+      theaterModelsPromise = null;
+      throw error;
+    });
+  }
+  return Promise.all([loadConcertModels(), theaterModelsPromise]).then(([shared, theater]) => new Map([...shared, ...theater]));
+}
+
+export function loadClubModels() {
+  if (!clubModelsPromise) {
+    clubModelsPromise = loadModels('club-props.glb').catch((error) => {
+      clubModelsPromise = null;
+      throw error;
+    });
+  }
+  return Promise.all([loadConcertModels(), clubModelsPromise]).then(([shared, club]) => new Map([...shared, ...club]));
+}
+
+export function loadTheaterLab() {
+  if (!theaterLabPromise) {
+    theaterLabPromise = loadScene('theater-lab.glb').then((scene) => {
+      scene.traverse((mesh) => {
+        if (!mesh.isMesh) return;
+        mesh.userData.noCollide = true;
+        mesh.geometry.userData.shared = mesh.material.userData.shared = true;
+        mesh.receiveShadow = true;
+      });
+      return scene;
+    }).catch((error) => {
+      theaterLabPromise = null;
+      throw error;
+    });
+  }
+  return theaterLabPromise;
 }
 
 export const heading = ([x, z] = [0, 1]) => Math.atan2(x, z);
@@ -89,6 +137,65 @@ export function cameraOnTripod(models, lens) {
   bounds.max.y += lift;
   models.set(name, { parts, bounds, size: bounds.getSize(V3()), center: bounds.getCenter(V3()), lens });
   return name;
+}
+
+export function addModelArray(batch, { x, y, z, boxes, width = 1.3, yaw = 0, splay = .035, depth = .7, height = .38 }, key = 'line-array') {
+  const model = batch.models.get(key);
+  const scale = V3(width / model.size.x, height * .985 / model.size.y, depth / model.size.z);
+  const raw = (boxes - 1) * splay + splay * .22 * (boxes - 1) * (boxes - 2) / 2;
+  const cap = Math.min(1, .85 / Math.max(raw, .001));
+  const holder = placement(x, y, z, yaw);
+  const rotation = new THREE.Quaternion(), axis = V3(1);
+  let down = 0, angle = 0, back = 0;
+  for (let i = 0; i < boxes; i++) {
+    rotation.setFromAxisAngle(axis, angle);
+    const offset = V3(0, -height - model.bounds.min.y * scale.y).applyQuaternion(rotation);
+    const part = new THREE.Matrix4().compose(offset.add(V3(0, down, back)), rotation, scale);
+    batch.add(key, part.premultiply(holder));
+    down -= Math.cos(angle) * height;
+    back -= Math.sin(angle) * height;
+    angle += (splay + i * splay * .22) * cap;
+  }
+  batch.add(key + '-bar', placement(x, y + .013, z, yaw, V3(scale.x, 1, scale.z)));
+}
+
+// The authored capsule points towards the singer, with the grille 1.48 m high.
+const MIC_AXIS = V3(.31, .20, .93).normalize();
+const MIC_GRILLE = V3(.286, 1.725, .389).addScaledVector(MIC_AXIS, .095);
+export function wirelessMicMount(facing) {
+  const yaw = facing + Math.PI - Math.atan2(MIC_AXIS.x, MIC_AXIS.z);
+  return {
+    yaw,
+    scale: V3(1, 1.48 / MIC_GRILLE.y, 1),
+    singer: MIC_GRILLE.clone().addScaledVector(MIC_AXIS, .24).applyAxisAngle(UP, yaw),
+  };
+}
+
+export function mountEquipmentContactShadows(group, footprints, opacity = .47) {
+  const geometry = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+  const material = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+    vertexShader: `
+      varying vec2 footprint;
+      void main() {
+        footprint = abs(uv * 2.0 - 1.0);
+        gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+      }`,
+    uniforms: { uOpacity: { value: opacity } },
+    fragmentShader: `
+      uniform float uOpacity;
+      varying vec2 footprint;
+      void main() {
+        vec2 rounded = max(footprint - 0.26, 0.0) / 0.74;
+        float shade = 1.0 - smoothstep(0.22, 1.0, length(rounded));
+        gl_FragColor = vec4(0.005, 0.005, 0.007, shade * uOpacity);
+      }`,
+  });
+  const mesh = new THREE.InstancedMesh(geometry, material, footprints.length);
+  mesh.name = 'Equipment contact shadows';
+  mesh.userData.noCollide = true;
+  footprints.forEach((matrix, i) => mesh.setMatrixAt(i, matrix));
+  group.add(mesh);
 }
 
 // One instanced draw per material, even for a whole PA, perimeter or console.
