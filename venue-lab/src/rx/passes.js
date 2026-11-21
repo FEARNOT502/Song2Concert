@@ -163,7 +163,9 @@ export function ssrMaterial() {
         float rz = 1.0 / mix(ia, ib, t);
         float sz = viewPos(uv).z;
         float dz = sz - rz;              // > 0: the ray is behind the surface
-        if (dz > 0.0 && dz < uThick + abs(rz) * 0.02) { hitT = t; hi = t; break; }
+        // (as thick as the last step was long, so a far wall is not stepped over)
+        float stepLen = abs(rz - 1.0 / mix(ia, ib, lo)) + 1e-3;
+        if (dz > 0.0 && dz < max(uThick + abs(rz) * 0.02, stepLen * 1.5)) { hitT = t; hi = t; break; }
         lo = t;
       }
       if (hitT < 0.0) { gl_FragColor = vec4(0.0); return; }
@@ -329,7 +331,7 @@ export function froxelLightMaterial() {
       gl_FragColor = cur;
     }`, {
     uDims: U(new THREE.Vector3()), uCols: U(8), uNear: U(0.3), uFar: U(80),
-    uProjInv: U(new THREE.Matrix4()), uCamWorld: U(new THREE.Matrix4()), uFrame: U(0), uDensity: U(0.01), uNoiseAmt: U(0.6), uAniso: U(0.45), uTime: U(0),
+    uProjInv: U(new THREE.Matrix4()), uCamWorld: U(new THREE.Matrix4()), uFrame: U(0), uDensity: U(0.01), uNoiseAmt: U(0.6), uAniso: U(0.35), uTime: U(0),
     uAmbGain: U(1), uFloorY: U(0), uFloorFall: U(14),
     tNoise: U(null), uCount: U(0),
     uLPos: U(Array.from({ length: MAX_FOG_LIGHTS }, () => new THREE.Vector3())),

@@ -14,10 +14,46 @@ npm ci
 node venue-lab/build.mjs
 ```
 
-Open `venue-lab/out/test.html` directly in a WebGL-capable browser. For example,
+Open `venue-lab/out/test.html` over http (for example `npx serve venue-lab/out`):
+the app's models are fetched from `out/assets/`, which a `file://` page cannot do. For example,
 `test.html?q=low&layout=360#arena` opens Arena with the center-stage layout.
 `out/venue-lab.html` is the HTML fragment for an artifact host. Both outputs
 bundle the renderer and geometry with the page.
+
+## The Lab's render pipeline (`src/rx`)
+
+The Lab draws with its own pipeline. `build.mjs` swaps the app's
+`src/three/render.js` for `src/rx/index.js` in the Lab's bundle only; the app
+itself is unchanged. `RX=0 node venue-lab/build.mjs` builds the Lab with the
+app's pipeline, and the Lab's **Next / Base** switch (or `?rx=0`) turns it off
+at runtime. `?rxoff=gi,ao,ssr,fog,taa,probe,shadows,agx` turns parts off.
+
+- **Baked GI** (`gi.js`, `bake-gi.mjs`): the room's indirect light, ray traced
+  per light group (lights that always move together, and each LED wall) into a
+  probe volume of first-order spherical harmonics. Each frame the groups are
+  summed on the GPU, weighted by what their lights are doing, and every
+  material reads the result in place of the environment's diffuse light and
+  the room's stand-in fills (hemisphere, proscenium and ceiling area lights,
+  the LED walls' area lights), which go out while it is in.
+  Bake after the room changes: `node build.mjs && node bake-gi.mjs theater general`
+  (and `theater op`), from `venue-lab/`; it writes `assets/<venue>-<mode>.gi`.
+- **Screen space** (`passes.js`): the scene target has a second output (view
+  normal, roughness, reflectance; `materials.js`). GTAO and SSR run at half
+  size; the materials read last frame's AO and reflection coverage back, so AO
+  darkens only indirect light and the environment's reflection steps aside
+  where SSR found the real one. The environment is a box-projected probe of the
+  room itself (`probe.js`), recaptured a face per frame.
+- **Haze**: a froxel volume lit by every spot (through its shadow map), point
+  and LED wall, with the GI as ambient, reprojected over frames; the app's
+  analytic beams stay on top.
+- **TAA** with variance clipping, softer and steadier shadows (eight taps
+  turning every frame, 4096 maps on the key lights), a satin stage floor.
+- **Output**: AgX for SDR; HDR through a WebGPU canvas in extended range
+  (`hdr.js`, the Lab's **SDR / HDR** switch; needs an HDR display).
+
+`node rxshot.mjs <venue> <outdir> '<views json>'` serves `out/` over http and
+captures views; `settle=N` in a view draws the same moment N times so the
+temporal passes converge. `python3 compare.py` makes side-by-side sheets.
 
 ## Files
 

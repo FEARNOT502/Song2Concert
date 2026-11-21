@@ -39,9 +39,22 @@ export class HDRPresenter {
   }
   async init() {
     if (!navigator.gpu) throw new Error('no WebGPU');
-    const adapter = await navigator.gpu.requestAdapter();
+    // (the adapter is kept: dropped, its instance can go with it and take the
+    // device down)
+    const adapter = this.adapter = await navigator.gpu.requestAdapter();
     if (!adapter) throw new Error('no adapter');
     this.device = await adapter.requestDevice();
+    this.device.lost.then((i) => {
+      this.lost = `${i.reason}: ${i.message}`;
+      if (i.reason === 'destroyed') return;
+      this.losses = (this.losses ?? 0) + 1;
+      // lost: start again with a new device and canvas
+      this.pipeline = null; this.tex = null; this.active = false;
+      this.canvas?.remove(); this.canvas = null;
+      this.gl.style.opacity = '';
+      this.ready = this.init().catch((e) => { this.status = `unavailable: ${e.message}`; });
+    });
+    this.device.addEventListener?.('uncapturederror', (e) => { this.gpuErr = e.error?.message; });
     const c = document.createElement('canvas');
     c.id = 'stage-hdr';
     c.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;display:none;pointer-events:none;';
@@ -60,7 +73,20 @@ export class HDRPresenter {
     });
     this.hdrDisplay = matchMedia('(dynamic-range: high)').matches;
     this.status = this.hdrDisplay ? 'ok' : 'ok (this display is SDR: shown clipped at white)';
+    Object.defineProperty(this, 'debug', { configurable: true, get: () => ({ lost: this.lost ?? null, gpuErr: this.gpuErr ?? null, probe: this.probe2d(), err: this.err ?? null, canvas: this.canvas ? [this.canvas.width, this.canvas.height] : null, losses: this.losses ?? 0, gl: [this.gl.width, this.gl.height], tex: this.tex ? [this.tex.width, this.tex.height] : null }) });
     this.enable(this.want);
+  }
+  // can this device copy anything at all from a canvas? (debugging)
+  probe2d() {
+    if (!this.device) return 'no device';
+    try {
+      const c = document.createElement('canvas'); c.width = c.height = 4;
+      c.getContext('2d').fillRect(0, 0, 4, 4);
+      const t = this.device.createTexture({ size: [4, 4], format: 'rgba8unorm', usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT });
+      this.device.queue.copyExternalImageToTexture({ source: c }, { texture: t }, [4, 4]);
+      t.destroy();
+      return 'ok';
+    } catch (e) { return e.message; }
   }
   enable(on) {
     this.want = on;
@@ -85,7 +111,28 @@ export class HDRPresenter {
       this.bind = d.createBindGroup({ layout: this.pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: this.tex.createView() }] });
       if (this.canvas.width !== W / 2 || this.canvas.height !== H) { this.canvas.width = W / 2; this.canvas.height = H; }
     }
-    d.queue.copyExternalImageToTexture({ source: glCanvas }, { texture: this.tex }, [W, H]);
+    try {
+      d.queue.copyExternalImageToTexture({ source: glCanvas }, { texture: this.tex }, [W, H]);
+    } catch (e) {
+      // (some drivers refuse a direct copy of a WebGL canvas: a bitmap of it
+      // is taken now and copied a moment later)
+      this.err = `${e.message} [${W}x${H}, tex ${this.tex.width}x${this.tex.height}]`;
+      if (!this.pending) {
+        this.pending = true;
+        createImageBitmap(glCanvas).then((bmp) => {
+          this.pending = false;
+          if (!this.tex || bmp.width !== this.tex.width || bmp.height !== this.tex.height) { bmp.close(); return; }
+          d.queue.copyExternalImageToTexture({ source: bmp }, { texture: this.tex }, [bmp.width, bmp.height]);
+          bmp.close();
+          this.draw();
+        }).catch((e2) => { this.pending = false; this.err += ` / bitmap: ${e2.message}`; });
+      }
+      return;
+    }
+    this.draw();
+  }
+  draw() {
+    const d = this.device;
     const enc = d.createCommandEncoder();
     const pass = enc.beginRenderPass({ colorAttachments: [{ view: this.ctx.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 1] }] });
     pass.setPipeline(this.pipeline);

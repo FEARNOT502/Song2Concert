@@ -463,6 +463,7 @@ window.__set = async (o = {}) => {
   }
   if (o.light) App.setCrowdLight(o.light);
   if (o.rx !== undefined) App.setRx(o.rx !== '0' && o.rx !== 0);
+  if (o.out) { App.setOut(o.out); await App.pipe.rx?.hdr?.ready; App.stage.resize(document.getElementById('stage').clientWidth, document.getElementById('stage').clientHeight); }
   if (o.rxoff !== undefined && App.pipe.rx) for (const k of Object.keys(App.pipe.rx.f)) App.pipe.rx.f[k] = !String(o.rxoff).split(',').includes(k);
   if (o.yaw !== undefined) App.walker.yaw += +o.yaw;
   if (o.pitch !== undefined) App.walker.pitch += +o.pitch;

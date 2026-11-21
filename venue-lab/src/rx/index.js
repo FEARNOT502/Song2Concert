@@ -30,14 +30,14 @@ const rt = (w, h, o = {}) => new THREE.WebGLRenderTarget(Math.max(1, w), Math.ma
 const LOOK = {
   theater: {
     general: { fog: 0.0055, fogAmb: 0.9, floorY: 1, expRx: 1.55, probe: [0, 4.5, 6], led: 0.4 },
-    op: { fog: 0.0075, fogAmb: 0.9, floorY: 1, expRx: 1.55, probe: [0, 4.5, 6], led: 0.35 },
+    op: { fog: 0.006, fogAmb: 0.9, floorY: 1, expRx: 1.55, probe: [0, 4.5, 6], led: 0.35 },
   },
 };
 // A few of the room's surfaces as they really finish: a stage floor is painted
 // satin, not chalk, and shows a soft reflection of what is lit above it.
 // (Lab only; put back when rx is off.)
 const SURFACES = [
-  { name: /stage deck/i, mat: 0, set: { roughness: 0.5 } },
+  { name: /stage deck/i, mat: 0, set: { roughness: 0.58, normalScale: new THREE.Vector2(0.35, 0.35) } },
   { name: /stage deck/i, mat: 1, set: { roughness: 0.55 } },
 ];
 const lookOf = (id, mode) => LOOK[id]?.[mode] ?? LOOK[id]?.general ?? { fog: 0.012, fogAmb: 0.8, floorY: 0, expRx: 1.5 };
@@ -92,7 +92,7 @@ class Rx {
         if (!s.name.test(o.name)) continue;
         const m = Array.isArray(o.material) ? o.material[s.mat] : o.material;
         if (!m) continue;
-        this.surfaces.push({ m, set: s.set, was: Object.fromEntries(Object.keys(s.set).map((k) => [k, m[k]])) });
+        this.surfaces.push({ m, set: s.set, was: Object.fromEntries(Object.keys(s.set).map((k) => [k, m[k]?.clone ? m[k].clone() : m[k]])) });
       }
     });
     this.surfacesOn = false;
@@ -508,11 +508,15 @@ export class Pipeline extends AppPipeline {
       const { w, h } = rx.pipe.size;
       renderer.setRenderTarget(null);
       U.uPeak.value = rx.hdr.peak;
+      // (one clear: the second half's draw must not wipe the first's)
+      const ac = renderer.autoClear;
+      renderer.autoClear = false;
       for (const [k, x] of [[1, 0], [2, w]]) {
         U.uOut.value = k;
         renderer.setViewport(x, 0, w, h);
         this.quad.render(renderer);
       }
+      renderer.autoClear = ac;
       renderer.setViewport(0, 0, w, h);
       rx.hdr.present(renderer.domElement);
     };

@@ -32,7 +32,7 @@ await routeCdn(page);
 const t0 = Date.now();
 const pq = views[0].page ? `&${views[0].page}` : '';
 await page.goto(`http://127.0.0.1:${port}/test.html?${venue}${pq}#${venue}`);
-await page.waitForFunction('window.__ready === true', null, { timeout: 600000 });
+await page.waitForFunction('window.__ready === true', null, { timeout: 1800000 });
 console.log('ready', ((Date.now() - t0) / 1000).toFixed(1), 's');
 for (const v of views) {
   const t1 = Date.now();
