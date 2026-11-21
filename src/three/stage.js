@@ -333,6 +333,8 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     const level = pulseRef ? (pulseRef.current || 0) : pulse;
     beat.update(dt, { level, analyser: playing ? analyser?.() : null, playing, map: songMap, time: songMap && songClock ? songClock() : NaN });
     house += (houseTarget - house) * Math.min(1, dt * 1.4);
+    // (the haze machines run for the show: the air is clearer with the house up)
+    if (pipe.rx) pipe.rx.house = house;
     // a room can raise the bloom's threshold with the house lights up, so the
     // paint they light does not halo; it comes down for the show's own light
     if (venue.bloom?.house != null) pipe.bloom.threshold = venue.bloom.threshold + (venue.bloom.house - venue.bloom.threshold) * house;

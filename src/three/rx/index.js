@@ -29,7 +29,7 @@ const rt = (w, h, o = {}) => new THREE.WebGLRenderTarget(Math.max(1, w), Math.ma
 // what each venue's haze and look are, under rx: haze density (per metre),
 // how far the haze volume reaches, the probe's place
 const LOOK = {
-  club: { general: { fog: 0.006, fogAmb: 0.6, floorY: 0.5, expRx: 1.3, fogFar: 40, led: 0.4, giGain: 0.7 } },
+  club: { general: { fog: 0.005, fogAmb: 0.4, floorY: 0.5, expRx: 1.2, fogFar: 40, led: 0.4, giGain: 0.35, envI: 0.35 } },
   concerthall: { general: { fog: 0.0006, fogAmb: 0.4, floorY: 0, expRx: 1.1, fogFar: 90, led: 0.3, giGain: 0.55 } },
   arena: {
     general: { fog: 0.003, fogAmb: 0.35, floorY: 0, expRx: 1.45, fogFar: 200, led: 0.25 },
@@ -228,7 +228,7 @@ class Rx {
       const mapsReady = this.lights.every((l) => !l.castShadow || !GIVolume.visible(l) || l.shadow?.map);
       const cap = () => { RXU.rxPrevOn.value = 0; au = sm.autoUpdate; if (mapsReady) sm.autoUpdate = false; };
       this.probe.step(sc, this.settling ? 6 : 1, cap, () => { sm.autoUpdate = au; });
-      if (this.probe.ready) { sc.environment = this.probe.texture; sc.environmentIntensity = 1; RXU.rxBoxOn.value = 1; }
+      if (this.probe.ready) { sc.environment = this.probe.texture; sc.environmentIntensity = this.look.envI ?? 1; RXU.rxBoxOn.value = 1; }
     } else if (this.appEnv) { sc.environment = this.appEnv; sc.environmentIntensity = this.appEnvI; RXU.rxBoxOn.value = 0; }
     RXU.rxGIOn.value = this.giOn ? 1 : 0;
     // (where the room keeps fills of its own, the GI comes in under them)
@@ -450,7 +450,7 @@ class RxVenuePass extends AppVenuePass {
       L.uDims.value.set(fx, fy, fz); L.uCols.value = FROXEL.COLS; L.uNear.value = near; L.uFar.value = far;
       L.uProjInv.value.copy(cam.projectionMatrixInverse); L.uCamWorld.value.copy(cam.matrixWorld);
       L.uFrame.value = frame; L.uTime.value = rx.t ?? 0;
-      L.uDensity.value = rx.look.fog; L.uAmbGain.value = rx.look.fogAmb; L.uFloorY.value = rx.look.floorY ?? 0;
+      L.uDensity.value = rx.look.fog * (1 - 0.65 * (rx.house ?? 0)); L.uAmbGain.value = rx.look.fogAmb; L.uFloorY.value = rx.look.floorY ?? 0;
       L.tNoise.value = p.beams.uniforms.tNoise.value;
       L.uGIOn.value = rx.giOn ? 1 : 0;
       for (const k of ['rxGI0', 'rxGI1', 'rxGI2', 'rxGIOrigin', 'rxGISize']) L[k].value = RXU[k].value;
