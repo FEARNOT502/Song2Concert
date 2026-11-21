@@ -450,7 +450,7 @@ class RxVenuePass extends AppVenuePass {
       L.uDims.value.set(fx, fy, fz); L.uCols.value = FROXEL.COLS; L.uNear.value = near; L.uFar.value = far;
       L.uProjInv.value.copy(cam.projectionMatrixInverse); L.uCamWorld.value.copy(cam.matrixWorld);
       L.uFrame.value = frame; L.uTime.value = rx.t ?? 0;
-      L.uDensity.value = rx.look.fog * (1 - 0.65 * (rx.house ?? 0)); L.uAmbGain.value = rx.look.fogAmb; L.uFloorY.value = rx.look.floorY ?? 0;
+      L.uDensity.value = rx.look.fog * (1 - 0.9 * (rx.house ?? 0)); L.uAmbGain.value = rx.look.fogAmb * (1 - 0.8 * (rx.house ?? 0)); L.uFloorY.value = rx.look.floorY ?? 0;
       L.tNoise.value = p.beams.uniforms.tNoise.value;
       L.uGIOn.value = rx.giOn ? 1 : 0;
       for (const k of ['rxGI0', 'rxGI1', 'rxGI2', 'rxGIOrigin', 'rxGISize']) L[k].value = RXU[k].value;

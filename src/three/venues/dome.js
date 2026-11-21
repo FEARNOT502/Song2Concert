@@ -672,8 +672,9 @@ export function buildDome(ctx) {
         if(i===m.front.length-2)quad(b,c,C,B);
       }
       const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));g.computeVertexNormals();
-      const mesh=new THREE.Mesh(g,std({color:0xcfc6b6,roughness:.9,emissive:0x6a655c,emissiveIntensity:.5,side:THREE.DoubleSide}));
-      mesh.name='Balcony end-wall sweep and rear-stand ceiling';roomLit.push([mesh.material,.5]);root.add(mesh);
+      // (matt concrete, barely lifted with the house: a cream face lit from within glared white under the floods)
+      const mesh=new THREE.Mesh(g,std({color:0x8f8a82,roughness:1,emissive:0x4a4740,emissiveIntensity:.22,envMapIntensity:.15,side:THREE.DoubleSide}));
+      mesh.name='Balcony end-wall sweep and rear-stand ceiling';roomLit.push([mesh.material,.22]);root.add(mesh);
     }else if(TD_STANDS.continuousUpperWall){
       const w=TD_STANDS.continuousUpperWall,P=w.pts.map(([x,z])=>({x,z:z+ZH}));
       parts.push(wallStrip(P,P.map(p=>ringY(p.z)+.5),{y0:w.y0,thick:.4,ease:0}));
@@ -699,7 +700,7 @@ export function buildDome(ctx) {
     // (lifted a little with the house, as the house lights fill the bowl: an end face turned from the floods reads as
     // concrete, not as a black mass; off in the show. No shadows on it: the floods graze it, and the seats' and the
     // shadow map's own acne showed on it as dark slivers)
-    if (g.length) { const wm = std({ color: 0xcfc6b6, roughness: 0.9, emissive: 0x6a655c, emissiveIntensity: 0.5 }); roomLit.push([wm, 0.5]); root.add(new THREE.Mesh(mergeGeometries(g), wm)); }
+    if (g.length) { const wm = std({ color: 0x8f8a82, roughness: 1, emissive: 0x4a4740, emissiveIntensity: 0.22, envMapIntensity: 0.15 }); roomLit.push([wm, 0.22]); root.add(new THREE.Mesh(mergeGeometries(g), wm)); }
   }
   // The balcony's partitions. Its rows run on unbroken along the Premium Lounge (1B and 3B sides: rows of 70-odd
   // seats); only the suites (THE SUITE TOKYO, behind the backstop) are divided, by low cream panels, a metre over
