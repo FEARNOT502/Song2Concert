@@ -20,13 +20,15 @@ the app's models are fetched from `out/assets/`, which a `file://` page cannot d
 `out/venue-lab.html` is the HTML fragment for an artifact host. Both outputs
 bundle the renderer and geometry with the page.
 
-## The Lab's render pipeline (`src/rx`)
+## The render pipeline (`src/three/rx`)
 
-The Lab draws with its own pipeline. `build.mjs` swaps the app's
-`src/three/render.js` for `src/rx/index.js` in the Lab's bundle only; the app
-itself is unchanged. `RX=0 node venue-lab/build.mjs` builds the Lab with the
-app's pipeline, and the Lab's **Next / Base** switch (or `?rx=0`) turns it off
-at runtime. `?rxoff=gi,ao,ssr,fog,taa,probe,shadows,agx` turns parts off.
+The app and the Lab draw with `src/three/rx`: the app's `render.js` pipeline
+with the realism passes on it. It runs on 'high' quality with the effects on;
+on 'low' (phones), with the effects off or under audio strain, the frame is
+`render.js` alone. The Lab's **Next / Base** switch (or `?rx=0`, in the app
+too) turns it off at runtime; `?rxoff=gi,ao,ssr,fog,taa,probe,shadows,agx`
+turns parts off. Each venue's haze, exposure and GI strength are in `LOOK`
+(`rx/index.js`).
 
 - **Baked GI** (`gi.js`, `bake-gi.mjs`): the room's indirect light, ray traced
   per light group (lights that always move together, and each LED wall) into a
@@ -35,8 +37,9 @@ at runtime. `?rxoff=gi,ao,ssr,fog,taa,probe,shadows,agx` turns parts off.
   material reads the result in place of the environment's diffuse light and
   the room's stand-in fills (hemisphere, proscenium and ceiling area lights,
   the LED walls' area lights), which go out while it is in.
-  Bake after the room changes: `node build.mjs && node bake-gi.mjs theater general`
-  (and `theater op`), from `venue-lab/`; it writes `assets/<venue>-<mode>.gi`.
+  Bake after a room changes: from `venue-lab/`, `node build.mjs` then
+  `node bake-gi.mjs <venue> <mode> [cell]` (club 0.5, the others 1.0; big
+  rooms are held to 40,000 probes); it writes `public/assets/<venue>-<mode>.gi`.
 - **Screen space** (`passes.js`): the scene target has a second output (view
   normal, roughness, reflectance; `materials.js`). GTAO and SSR run at half
   size; the materials read last frame's AO and reflection coverage back, so AO

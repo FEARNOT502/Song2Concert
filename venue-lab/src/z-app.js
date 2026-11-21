@@ -199,7 +199,6 @@ const App = {
     if (location.hash.slice(1) !== id) location.hash = id;
     UI.venue(id);
     await this.build(() => this.stage.setVenue(id, modeOf(this.layouts, id)));
-    this.pipe.rx?.setVenue(this.stage.debug.venue, id, modeOf(this.layouts, id));
     UI.rx(this);
   },
 
@@ -207,7 +206,7 @@ const App = {
   setRx(on) {
     const rx = this.pipe.rx;
     if (!rx || rx.on === on) return;
-    rx.on = on;
+    rx.on = on && rx.allowed !== false;
     this.pipe.venuePass.resetHistory?.();
     this.stage.resize(document.getElementById('stage').clientWidth, document.getElementById('stage').clientHeight);
     UI.rx(this);

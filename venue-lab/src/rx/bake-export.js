@@ -122,11 +122,19 @@ export async function exportBake(App, { url = '/__bake', states, send = true, ex
     g.idx.sort((a, b) => Math.max(...rec[b].map((r) => r.I)) - Math.max(...rec[a].map((r) => r.I)));
     const rep = g.idx[0];
     const sStar = rec[rep].reduce((bi, r, s, arr) => (r.I > arr[bi].I ? s : bi), 0);
-    g.rep = info(lights[rep]);
+    g.rep = info(lights[rep]); g.light = lights[rep];
     g.members = g.idx.map((j) => ({ ...info(lights[j]), k: rec[j][sStar].I / rec[rep][sStar].I }));
     delete g.idx;
     groups.push(g);
   });
+  // at most MAXG groups (the GPU sums them into one texture): the LED walls
+  // and the strongest; the rest keep their direct light only
+  const MAXG = 24;
+  if (groups.length > MAXG) {
+    const weight = (g) => (g.kind === 'screen' ? Infinity : Math.max(...rec[lights.indexOf(g.light)].map((r) => r.I)) * g.members.reduce((t, m) => t + (m.k ?? 1), 0));
+    groups.sort((a, b) => weight(b) - weight(a));
+    groups.length = MAXG;
+  }
   App.setHouse(house0, true);
   App.frame(0.016);
 

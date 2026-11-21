@@ -17,7 +17,10 @@
 
 import * as THREE from 'three';
 import { DEG, clamp, regionColor, dropDegenerateTriangles, ringTint, FINISH, roomFinishes } from './core.js';
-import { Pipeline, QUALITY, buildEnvironment } from './render.js';
+// The pipeline with the realism passes on it (rx: baked GI, GTAO, SSR, froxel
+// haze, TAA, AgX); it is the app's own (render.js) with them added, and runs
+// as that alone on 'low' or with the effects off.
+import { Pipeline, QUALITY, buildEnvironment } from './rx/index.js';
 import { crowdUniforms } from './people.js';
 import { LOD, Rig } from './rig.js';
 import { Walker } from './walk.js';
@@ -121,6 +124,7 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     const on = fx && strain < 2;
     pipe.bloom.enabled = on && pipe.q.bloom;
     pipe.volOn = on;
+    if (pipe.rx) pipe.rx.on = on && qName === 'high' && pipe.rx.allowed;
   }
 
   // ── venue ──────────────────────────────────────────────────────────────────
@@ -227,6 +231,7 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     cam.fov = v.camera.fov; cam.near = v.camera.near ?? 0.1; cam.far = v.camera.far ?? 2000;
     cam.updateProjectionMatrix();
     venue = v; ctx = c;
+    pipe.rx?.setVenue(v, id, venueMode);
     walker.setVenue(v.root, v.camera.pos, v.camera.target, v.seatNear);
     if ((pendingSeat || id === 'theater') && seatCatalog(id, venueMode)) {
       const cat = seatCatalog(id, venueMode);

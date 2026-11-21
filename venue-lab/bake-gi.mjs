@@ -1,4 +1,4 @@
-// bake-gi.mjs — bake a room's indirect light (A1) into venue-lab/assets/<venue>-<mode>.gi
+// bake-gi.mjs — bake a room's indirect light into public/assets/<venue>-<mode>.gi
 //
 // usage (from venue-lab/, after `node build.mjs`):
 //   node bake-gi.mjs <venue> <mode> [cell=1.0] [rays=128]
@@ -8,7 +8,7 @@
 // built once in shared memory and the probes are ray traced by one worker per
 // core (bake-worker.mjs): a first bounce with every light group's direct
 // light shadow-tested, then a second bounce from the first. The result is
-// read by the Lab's pipeline (src/rx/gi.js). Rebake when the room changes.
+// read by the app's pipeline (src/three/rx/gi.js). Rebake when the room changes.
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -89,9 +89,16 @@ log('BVH built');
 
 // ── the probes: a grid over the room's box (and the stage house) ──
 const env = header.env, bb = header.bbox;
-const lo = env ? [-env.w / 2 + 0.3, 0.3, Math.max(bb[0][2], -22) + 0.3] : bb[0].map((v) => v + 0.3);
+// (whatever stands far out round a room — a ground plane, a skyline — is not the room)
+bb[0] = [Math.max(bb[0][0], -180), Math.max(bb[0][1], -5), Math.max(bb[0][2], -180)];
+bb[1] = [Math.min(bb[1][0], 180), Math.min(bb[1][1], 90), Math.min(bb[1][2], 180)];
+const lo = env ? [-env.w / 2 + 0.3, 0.3, Math.max(bb[0][2], -22) + 0.3] : [bb[0][0] + 0.3, Math.max(bb[0][1], -2) + 0.3, bb[0][2] + 0.3];
 const hi = env ? [env.w / 2 - 0.3, env.h - 0.3, env.d - 0.3] : bb[1].map((v) => v - 0.3);
-const dims = lo.map((l, i) => Math.max(2, Math.round((hi[i] - l) / CELL) + 1));
+// as fine as `cell`, but no more than BUDGET probes (a stadium is coarser)
+const BUDGET = +(process.env.GI_BUDGET || 40000);
+const vol = lo.reduce((v, l, i) => v * Math.max(0.1, hi[i] - l), 1);
+const CELLX = Math.max(CELL, Math.cbrt(vol / BUDGET));
+const dims = lo.map((l, i) => Math.max(2, Math.round((hi[i] - l) / CELLX) + 1));
 const cell = lo.map((l, i) => (hi[i] - l) / (dims[i] - 1));
 const P = dims[0] * dims[1] * dims[2];
 const G = header.groups.length;
@@ -193,7 +200,6 @@ const outHeader = {
 const hj = new TextEncoder().encode(JSON.stringify(outHeader));
 const pad = (4 - ((8 + hj.length) % 4)) % 4;
 const file = Buffer.concat([Buffer.from('RXGI'), Buffer.from(new Uint32Array([hj.length]).buffer), Buffer.from(hj), Buffer.alloc(pad), Buffer.from(data.buffer)]);
-fs.mkdirSync('assets', { recursive: true });
-const outPath = path.join('assets', `${venue}-${mode}.gi`);
+const outPath = path.join('..', 'public', 'assets', `${venue}-${mode}.gi`);
 fs.writeFileSync(outPath, file);
 log(`wrote ${outPath} (${(file.length / 1e6).toFixed(1)} MB), max irradiance term ${maxA.toFixed(3)}`);

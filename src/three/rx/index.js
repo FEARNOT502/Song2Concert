@@ -13,21 +13,36 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import * as THREE from 'three';
-import { Pipeline as AppPipeline, VenuePass as AppVenuePass } from '../../../src/three/render.js';
+import { Pipeline as AppPipeline, VenuePass as AppVenuePass } from '../render.js';
 import { RXU, patchChunks, patchTree } from './materials.js';
 import { FINAL_RX, FROXEL, MAX_FOG_LIGHTS, MAX_FOG_SHADOWS, aoMaterial, compMaterial, copyMaterial, froxelIntegrateMaterial, froxelLightMaterial, fsq, packMaterial, ssrMaterial, taaMaterial } from './passes.js';
 import { ReflectionProbe } from './probe.js';
 import { GIVolume, loadGI } from './gi.js';
 import { HDRPresenter } from './hdr.js';
 
-export * from '../../../src/three/render.js';
+export * from '../render.js';
 
 const query = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
 const halton = (i, b) => { let f = 1, r = 0; while (i > 0) { f /= b; r += f * (i % b); i = Math.floor(i / b); } return r; };
 const rt = (w, h, o = {}) => new THREE.WebGLRenderTarget(Math.max(1, w), Math.max(1, h), { type: THREE.HalfFloatType, depthBuffer: false, ...o });
 
-// what each venue's haze and look are, under rx
+// what each venue's haze and look are, under rx: haze density (per metre),
+// how far the haze volume reaches, the probe's place
 const LOOK = {
+  club: { general: { fog: 0.006, fogAmb: 0.6, floorY: 0.5, expRx: 1.3, fogFar: 40, led: 0.4, giGain: 0.7 } },
+  concerthall: { general: { fog: 0.0006, fogAmb: 0.4, floorY: 0, expRx: 1.1, fogFar: 90, led: 0.3, giGain: 0.55 } },
+  arena: {
+    general: { fog: 0.003, fogAmb: 0.35, floorY: 0, expRx: 1.45, fogFar: 200, led: 0.25 },
+    360: { fog: 0.003, fogAmb: 0.35, floorY: 0, expRx: 1.5, fogFar: 200, led: 0.3 },
+  },
+  dome: {
+    general: { fog: 0.0016, fogAmb: 0.3, floorY: 0, expRx: 1.45, fogFar: 240, led: 0.2 },
+    360: { fog: 0.0016, fogAmb: 0.3, floorY: 0, expRx: 1.5, fogFar: 240, led: 0.3 },
+  },
+  stadium: {
+    general: { fog: 0.001, fogAmb: 0.3, floorY: 0, expRx: 1.45, fogFar: 260, led: 0.2 },
+    360: { fog: 0.001, fogAmb: 0.3, floorY: 0, expRx: 1.5, fogFar: 260, led: 0.3 },
+  },
   theater: {
     general: { fog: 0.0055, fogAmb: 0.9, floorY: 1, expRx: 1.55, probe: [0, 4.5, 6], led: 0.4 },
     op: { fog: 0.006, fogAmb: 0.9, floorY: 1, expRx: 1.55, probe: [0, 4.5, 6], led: 0.35 },
@@ -45,7 +60,9 @@ const lookOf = (id, mode) => LOOK[id]?.[mode] ?? LOOK[id]?.general ?? { fog: 0.0
 class Rx {
   constructor(pipe) {
     this.pipe = pipe;
-    this.on = query.get('rx') !== '0';
+    // ?rx=0 turns it off for the page (and the Lab's Base switch at runtime)
+    this.allowed = query.get('rx') !== '0';
+    this.on = this.allowed;
     const off = new Set((query.get('rxoff') || '').split(',').filter(Boolean));
     this.f = { gi: !off.has('gi'), ao: !off.has('ao'), ssr: !off.has('ssr'), fog: !off.has('fog'), taa: !off.has('taa'), probe: !off.has('probe'), shadows: !off.has('shadows'), agx: !off.has('agx') };
     this.frame = 0;
@@ -149,9 +166,11 @@ class Rx {
         const stage = /wash|front|back/i.test(l.name) || l.castShadow;
         if (!stage) continue;
         this.shadowSaved.push(rec);
-        if (!l.castShadow && l.angle > 0.65) continue;
+        // (a few: every shadowed light draws the room again)
+        const casters = this.shadowSaved.filter((r) => r.l.castShadow).length;
+        if (!l.castShadow && (l.angle > 0.65 || casters >= 4)) continue;
+        const key = rec.cast && this.shadowSaved.length <= 3;
         l.castShadow = true;
-        const key = l.castShadow;
         l.shadow.mapSize.set(key ? 4096 : 2048, key ? 4096 : 2048);
         l.shadow.radius = 2.5;
         l.shadow.bias = -0.00012;
@@ -212,6 +231,8 @@ class Rx {
       if (this.probe.ready) { sc.environment = this.probe.texture; sc.environmentIntensity = 1; RXU.rxBoxOn.value = 1; }
     } else if (this.appEnv) { sc.environment = this.appEnv; sc.environmentIntensity = this.appEnvI; RXU.rxBoxOn.value = 0; }
     RXU.rxGIOn.value = this.giOn ? 1 : 0;
+    // (where the room keeps fills of its own, the GI comes in under them)
+    RXU.rxGIGain.value = this.look.giGain ?? 1;
     if (this.giOn) this.gi.update();
     RXU.rxShadowSeed.value = this.frame % 64;
     RXU.rxPrevOn.value = this.havePrev && (this.f.ao || this.f.ssr) ? 1 : 0;
@@ -238,6 +259,9 @@ class Rx {
     cam.projectionMatrixInverse.copy(this.unjitteredInv);
     this.prevVP.multiplyMatrices(this.unjittered, cam.matrixWorldInverse);
     this.havePrev = true;
+    // renders between frames (the FOH desks' camera feeds) are from other
+    // views: last frame's screen-space AO is not theirs
+    RXU.rxPrevOn.value = 0;
   }
 
   // the lights the haze is lit by, this frame
@@ -419,7 +443,7 @@ class RxVenuePass extends AppVenuePass {
     }
 
     // the haze, as a volume
-    const near = Math.max(cam.near, 0.2), far = Math.min(cam.far, 90);
+    const near = Math.max(cam.near, 0.2), far = Math.min(cam.far, rx.look.fogFar ?? 90);
     const [fx, fy, fz] = this.fdims;
     if (rx.f.fog && p.volOn) {
       const L = this.fxl.material.uniforms;
