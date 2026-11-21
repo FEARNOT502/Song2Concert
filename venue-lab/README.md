@@ -94,3 +94,5 @@ Run from `venue-lab/` after building. Set `CHROME` to the path to Chromium.
   captures a screenshot. Use `cam=x,y,z,tx,ty,tz` to set the view.
 - `node tour.mjs <venue> <outdir> '[{"name":"v","q":"house=1&cam=x,y,z,tx,ty,tz"}]'`
   captures several views in one load.
+
+The Lab with the rx pipeline is published at https://claude.ai/artifact/AGiqnC45AzUQrr7Bkwsudu (models and baked light beside the page as base64 text: an artifact host serves no binaries).

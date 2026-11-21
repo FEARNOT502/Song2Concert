@@ -43,7 +43,12 @@ const assets = [];
 for (const [dir, test] of [[here('../public/assets/'), /\.glb$/], [here('assets/'), /\.gi$/]]) {
   let names = [];
   try { names = await readdir(dir); } catch { /* none */ }
-  for (const n of names.filter((x) => test.test(x))) { await copyFile(path.join(dir, n), here(`out/assets/${n}`)); assets.push(n); }
+  for (const n of names.filter((x) => test.test(x))) {
+    await copyFile(path.join(dir, n), here(`out/assets/${n}`));
+    // (an artifact host serves no binaries: a base64 twin the Lab decodes)
+    await writeFile(here(`out/assets/${n}.b64.txt`), (await readFile(path.join(dir, n))).toString('base64'));
+    assets.push(n);
+  }
 }
 await Promise.all([
   writeFile(here('out/venue-lab.html'), out),

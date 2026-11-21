@@ -10,6 +10,25 @@ import { exportBake } from './rx/bake-export.js';
 // the app: venue switching, the beat, the palette, the look-around, the UI
 // ─────────────────────────────────────────────────────────────────────────────
 
+// An artifact host serves no binary files: the Lab's models and baked light
+// go up as base64 text beside the page (build.mjs writes `<name>.b64.txt`).
+// Where a binary asset is not found, its text twin is fetched and decoded.
+{
+  const fetch0 = window.fetch.bind(window);
+  window.fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : input?.url;
+    const res = await fetch0(input, init).catch((e) => { if (!/assets\/[^/?#]+\.(glb|gi)\b/.test(url || '')) throw e; return null; });
+    if ((res && res.ok) || !/assets\/[^/?#]+\.(glb|gi)\b/.test(url || '')) return res;
+    const twin = url.replace(/(\.(glb|gi))(\?[^#]*)?$/, '$1.b64.txt');
+    const t = await fetch0(twin);
+    if (!t.ok) return res ?? t;
+    const bin = atob((await t.text()).trim());
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new Response(bytes.buffer, { status: 200, headers: { 'content-type': 'application/octet-stream' } });
+  };
+}
+
 const INFO = {
   club: { name: 'Club', type: 'LIVE HOUSE', ref: '라이브하우스 · 가상의 공간', seats: '350', seat: 'Floor, centre', dist: '5 m', rt: '0.75', vol: '672', warm: '0.85', refl: '+6' },
   theater: { name: 'Theater', type: 'PROSCENIUM · MUSICAL', ref: '블루스퀘어 신한카드홀 기반', seats: '1,766', seat: 'Stalls, row 9', dist: '14 m', rt: '1.28', vol: '15,000', warm: '1.01', refl: '+16' },
