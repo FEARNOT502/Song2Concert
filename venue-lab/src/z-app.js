@@ -4,6 +4,7 @@ import { createStage } from '../../src/three/stage.js';
 import { VENUE_BUILDERS } from '../../src/three/venues/index.js';
 import { modeOf, ROUND_VENUES } from '../../src/useVenueModes.js';
 import { Tags, sleeveCanvas, typeSleeve } from './y-tags.js';
+import { exportBake } from './rx/bake-export.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // the app: venue switching, the beat, the palette, the look-around, the UI
@@ -179,6 +180,25 @@ const App = {
     if (location.hash.slice(1) !== id) location.hash = id;
     UI.venue(id);
     await this.build(() => this.stage.setVenue(id, modeOf(this.layouts, id)));
+    this.pipe.rx?.setVenue(this.stage.debug.venue, id, modeOf(this.layouts, id));
+    UI.rx(this);
+  },
+
+  // the Lab's own pipeline (src/rx) on or off, and SDR or HDR out
+  setRx(on) {
+    const rx = this.pipe.rx;
+    if (!rx || rx.on === on) return;
+    rx.on = on;
+    this.pipe.venuePass.resetHistory?.();
+    this.stage.resize(document.getElementById('stage').clientWidth, document.getElementById('stage').clientHeight);
+    UI.rx(this);
+  },
+  setOut(mode) {
+    const rx = this.pipe.rx;
+    if (!rx) return;
+    rx.setOutput(mode);
+    rx.hdr?.ready.then(() => { this.stage.resize(document.getElementById('stage').clientWidth, document.getElementById('stage').clientHeight); UI.rx(this); });
+    UI.rx(this);
   },
 
   async setLayout(layout) {
@@ -264,6 +284,8 @@ const UI = {
     seg('#seg-layout', (v) => app.setLayout(v));
     seg('#seg-tone', (v) => app.setMode(v));
     seg('#seg-crowd', (v) => app.setCrowdLight(v));
+    seg('#seg-rx', (v) => app.setRx(v === 'next'));
+    seg('#seg-out', (v) => app.setOut(v));
     this.pressed('#seg-crowd', app.crowdLight);
     this.pressed('#seg-quality', app.quality);
     this.pressed('#seg-lights', 'show');
@@ -402,11 +424,32 @@ const UI = {
     if (on) this.$('#loading-name').textContent = name;
   },
   fps(v) { this.$('#fps').textContent = `${Math.round(v)} FPS`; },
+  rx(app) {
+    const rx = app.pipe.rx;
+    if (!rx) { this.$('#seg-rx').hidden = this.$('#seg-out').hidden = true; return; }
+    this.pressed('#seg-rx', rx.on ? 'next' : 'base');
+    this.pressed('#seg-out', rx.out);
+    const hdrOk = !!navigator.gpu;
+    this.$('#seg-out [data-v="hdr"]').disabled = !hdrOk;
+    this.$('#seg-out').title = rx.hdr ? `HDR: ${rx.hdr.status}` : (hdrOk ? 'HDR: WebGPU 확장 범위 캔버스 (HDR 디스플레이 필요)' : 'HDR: 이 브라우저에 WebGPU가 없습니다');
+    this.$('#seg-rx').title = `Next: 베이크 GI(${rx.giStatus}) · GTAO · SSR · 반사 프로브 · 프록셀 헤이즈 · TAA · AgX / Base: 앱 그대로`;
+  },
 };
 
 window.__app = App; window.__art = Art; window.__tags = { Tags, sleeveCanvas };
 window.__pal = (id) => { const p = extractPalette(drawCover(id)); return { kind: p.kind, cols: ["a", "b", "c", "d"].map((k) => p[k].getHexString()) }; };
 window.__info = () => ({ walk: [App.walker.feet.x, App.walker.feet.y, App.walker.feet.z, App.walker.eyeH].map((v) => +v.toFixed(2)), bvh: !!App.walker.bvh, venue: App.venueId, fps: Math.round(App.fps), beams: App.pipe.beams.geo.instanceCount, calls: App.pipe.renderer.info.render.calls, tris: App.pipe.renderer.info.render.triangles, progs: App.pipe.renderer.info.programs?.length });
+// draw the same moment `n` more times: the temporal passes settle (screenshots)
+window.__settle = async (n = 24) => {
+  const p = App.pipe, rx = p.rx;
+  if (!rx) return null;
+  rx.settling = true;
+  try { for (let i = 0; i < n; i++) { p.render(p.lastT ?? 0); if (i % 4 === 3) await new Promise((r) => setTimeout(r, 0)); } } finally { rx.settling = false; }
+  return rx.info();
+};
+window.__rxInfo = () => App.pipe.rx?.info();
+// the bake's input: the room's surfaces and its lights, sent to the bake server
+window.__rxExport = (opts) => exportBake(App, opts);
 window.__set = async (o = {}) => {
   if (o.layout) await App.setLayout(o.layout);
   if (o.quality) await App.setQuality(o.quality);
@@ -419,6 +462,8 @@ window.__set = async (o = {}) => {
     if (c.length === 6 && c.every(Number.isFinite)) App.setCamera(V3(...c.slice(0, 3)), V3(...c.slice(3)));
   }
   if (o.light) App.setCrowdLight(o.light);
+  if (o.rx !== undefined) App.setRx(o.rx !== '0' && o.rx !== 0);
+  if (o.rxoff !== undefined && App.pipe.rx) for (const k of Object.keys(App.pipe.rx.f)) App.pipe.rx.f[k] = !String(o.rxoff).split(',').includes(k);
   if (o.yaw !== undefined) App.walker.yaw += +o.yaw;
   if (o.pitch !== undefined) App.walker.pitch += +o.pitch;
   // to: "x,z;x,z" walks to each point in turn (stops early if stuck)
