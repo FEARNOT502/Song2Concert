@@ -28,14 +28,15 @@ export const C2 = { y: 4.17, r0: 49.8, r1: 60.0, ceil: 10.2 };
 // the aisle behind the top row, up against the bowl's wall
 export const TOP = { y: 12.1, r0: 60.9, r1: 62.4 };
 
-// the lower vomitories' angles, from the gaps in the 2F's first rows
-export const LOWER_VOMS = [14.5, 63.6, 92.9, 131.2, 157.3, 180.0, 202.7, 228.8, 267.2, 296.4, 326.5, 345.3];
+// the lower vomitories' angles, centred in the gaps in the 2F's first rows
+// (the seats as the operator's chart draws them)
+export const LOWER_VOMS = [14.87, 63.42, 92.9, 131.08, 157.3, 180.0, 202.7, 228.8, 266.96, 296.64, 326.5, 345.42];
 // the upper ones: [angle, the pit's front, its back wall] (radii, from the
-// rows the seats leave out there)
+// rows the chart's seats leave out there)
 export const UPPER_VOMS = [
-  [22.35, 51.55, 55.03], [44.65, 51.45, 54.95], [78.25, 51.5, 54.45], [112.05, 51.23, 54.2],
-  [145.95, 50.98, 53.17], [180.0, 50.95, 54.25], [214.0, 50.97, 53.17], [247.95, 51.22, 54.18],
-  [281.75, 51.5, 54.45], [315.35, 51.45, 54.93], [337.65, 51.55, 55.03],
+  [22.35, 51.61, 55.13], [44.65, 51.79, 54.78], [78.25, 51.58, 54.55], [112.05, 51.32, 54.29],
+  [145.95, 51.12, 54.1], [180.0, 51.0, 53.98], [214.0, 51.09, 54.05], [247.95, 51.26, 54.23],
+  [281.75, 51.46, 54.46], [315.35, 51.78, 54.77], [337.65, 51.59, 55.11],
 ];
 // the pits' clear width either side of the line, their walls' thickness
 const PIT_HW = 1.35, WALL = .15, OUT = PIT_HW + WALL;

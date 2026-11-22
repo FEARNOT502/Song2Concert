@@ -1,0 +1,267 @@
+{
+ "tolerance_m": 0.35,
+ "registration": {
+  "scale": 1.00017,
+  "rotation_deg": 0.1942,
+  "offset_m": [
+   0.017,
+   -0.049
+  ],
+  "pairDistance_m": {
+   "median": 0.004,
+   "p95": 0.006
+  }
+ },
+ "level2": {
+  "chartSeats": 7587,
+  "appSeats": 7587,
+  "paired": 7587,
+  "missing": 0,
+  "extra": 0,
+  "otherSection": 0
+ },
+ "sections": {
+  "23": {
+   "label": 417,
+   "chart": 417,
+   "app": 417,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  },
+  "24": {
+   "label": 270,
+   "chart": 270,
+   "app": 270,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  },
+  "25": {
+   "label": 236,
+   "chart": 236,
+   "app": 236,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  },
+  "26": {
+   "label": 217,
+   "chart": 217,
+   "app": 217,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  },
+  "27": {
+   "label": 248,
+   "chart": 246,
+   "app": 246,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  },
+  "28": {
+   "label": 247,
+   "chart": 247,
+   "app": 247,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  },
+  "29": {
+   "label": 244,
+   "chart": 244,
+   "app": 244,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  },
+  "30": {
+   "label": 259,
+   "chart": 258,
+   "app": 258,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  },
+  "31": {
+   "label": 306,
+   "chart": 305,
+   "app": 305,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  },
+  "32": {
+   "label": 326,
+   "chart": 326,
+   "app": 326,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  },
+  "33": {
+   "label": 250,
+   "chart": 250,
+   "app": 250,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  },
+  "34": {
+   "label": 245,
+   "chart": 244,
+   "app": 244,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  },
+  "35": {
+   "label": 326,
+   "chart": 326,
+   "app": 326,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  },
+  "36": {
+   "label": 306,
+   "chart": 306,
+   "app": 306,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  },
+  "37": {
+   "label": 269,
+   "chart": 267,
+   "app": 267,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  },
+  "38": {
+   "label": 241,
+   "chart": 240,
+   "app": 240,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  },
+  "39": {
+   "label": 248,
+   "chart": 248,
+   "app": 248,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  },
+  "40": {
+   "label": 248,
+   "chart": 248,
+   "app": 248,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  },
+  "41": {
+   "label": 219,
+   "chart": 219,
+   "app": 219,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  },
+  "42": {
+   "label": 245,
+   "chart": 242,
+   "app": 242,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  },
+  "43": {
+   "label": 277,
+   "chart": 271,
+   "app": 271,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  },
+  "44": {
+   "label": 288,
+   "chart": 435,
+   "app": 435,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  },
+  "45": {
+   "label": 329,
+   "chart": 323,
+   "app": 323,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  },
+  "46": {
+   "label": 221,
+   "chart": 217,
+   "app": 217,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  },
+  "47": {
+   "label": 206,
+   "chart": 202,
+   "app": 202,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  },
+  "48": {
+   "label": 116,
+   "chart": 116,
+   "app": 116,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  },
+  "49": {
+   "label": 104,
+   "chart": 104,
+   "app": 104,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  },
+  "50": {
+   "label": 176,
+   "chart": 171,
+   "app": 171,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  },
+  "51": {
+   "label": 160,
+   "chart": 159,
+   "app": 159,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  },
+  "52": {
+   "label": 233,
+   "chart": 233,
+   "app": 233,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0
+  }
+ },
+ "missingSeats": [],
+ "extraSeats": []
+}

@@ -2,25 +2,33 @@
 
 다른 LLM이나 다른 세션이 바로 이어받을 수 있게 유지하는 문서다. 작업할 때마다 갱신한다.
 
-- 마지막 갱신: 2026-11-22 (로컬 Claude Code 세션)
+- 마지막 갱신: 2026-11-22 22:40 KST (로컬 Claude Code 세션)
 - 브랜치: `claude/beautiful-hopper-35idcn` (`origin/main`과 같은 `454a902`에서 시작)
 - 전체 계획과 결정 기록: [KSPO_DOME_REMODEL_PLAN.ko.md](KSPO_DOME_REMODEL_PLAN.ko.md)의 7장. 자료 목록: [references/GYMNASTIC_ARENA_REFERENCES.ko.md](references/GYMNASTIC_ARENA_REFERENCES.ko.md)
 
 ## 1. 지금 상태
 
-**아직 커밋하지 않은 변경**(이 세션). 커밋 전에 렌더를 확인한다.
+- 커밋 `a710ba2`: 보미토리, 콘코스, 1F 통로, IMAG, 글레어 작업.
+- `e414844`: Codex 커밋 `ebc6b2d`(조명 정리, FOH 콘솔 단순화, KSPO FOH 카메라·카메라 패드·지브 삭제)를 main에서 병합. 브랜치에 푸시까지 끝남.
+
+**그 뒤의 미커밋 작업: 2F 좌석을 운영사 도면으로 재생성**
 
 | 파일 | 변경 |
 |---|---|
-| `src/three/venues/gymnastic-bowl.js` | 거의 새로 작성했다. 운영사 DAE 치수로 보미토리를 다시 만들었다(하부 12, 상부 11). 콘코스는 레이크 아래 한 층의 깔끔한 링이다. 레이크 메시에서 DAE 대용 형상(2F 평판, r≈57 m 벽)을 뺐다. 3F 콘코스와 계단 코어는 삭제했다. |
-| `src/three/venues/gymnastic-arena.js` | 상단 열 뒤 통로와 벽(`TOP`)을 두었다. 1F 블록 사이 통로는 맨 뒤 벽만 막았다. 커튼은 블록마다 두른다. 블룸 `house`는 1.0에서 2.2로 올렸다. |
-| `src/three/venues/gymnastic-show.js` | General 양옆 IMAG와 행어를 삭제했다. |
-| `venue-lab/src/z-app.js` | 디버그용 `window.__pick(nx, ny)`를 추가했다. 화면의 한 점에 무엇이 있는지 알려준다. |
-| `venue-lab/pipeline/gym_dae_region.py`, `gym_dae_views.py` | DAE 링 구역 삼각형 추출과 단면·평면 그림 도구다(새 파일). |
-| `docs/KSPO_DOME_REMODEL_PLAN.ko.md` | 7.1절에 이번 작업과 남은 작업을 적었다. |
+| `venue-lab/pipeline/gym_seat_audit.py` | 새 파일. EPS 도면의 2F 좌석 기호(청록 아치 `cc`, 앞줄 사각형 `qu` 3–4pt)를 하나하나 추출해 앱 평면에 정합(ICP 유사변환, 축척 1.0002, 회전 0.19°)한다. 앱 좌석과 짝지어 누락, 추가, 구역 어긋남을 보고하고, 참조 데이터 `docs/references/kspo-seat-audit-chart.json`을 쓴다. |
+| `venue-lab/pipeline/gymnastic_arena.py` | 2F 좌석을 DAE 대신 도면 기호로 생성한다(`chart_upper`). 높이는 가장 가까운 DAE 좌석에서 가져온다. 1F는 그대로 DAE다. |
+| `src/three/venues/gymnastic-data.js` | 다시 생성: 1F 3,766석, 2F 7,587석. 기존 2F는 7,744석이었고 도면 대비 누락 512, 추가 667이었다. |
+| `scripts/verify-gym-seats.mjs`, `package.json`의 `verify:gym-seats` | 새 검증 절차. EPS 없이 참조 JSON으로 2F 좌석 하나하나, 통로, 구역 분리가 도면과 같은지 본다. 현재 **PASS**(7,587석 전부 짝, 위치 차이 중앙값 4 mm). |
+| `docs/references/kspo-seat-audit.json` | 감사 보고(구역별 도면, 라벨, 앱, 누락, 추가). |
+| `src/three/venues/gymnastic-bowl.js` | 새 좌석에 맞춰 상부 보미토리 피트 범위와 하부 보미토리 중심 각도를 다시 계산했다. |
+| `public/assets/gymnastic-arena-*.gi` | 재베이크함. 좌석 재생성 뒤 다시 구워야 한다. |
 
-확인한 것: `npm run verify` 통과. Lab 렌더로 하부·상부 보미토리, 1F 블록 사이 통로, General IMAG 삭제, 콘코스 계단을 확인했다.
-확인하지 않은 것: 콘코스 밝기·대비를 올린 마지막 수정분(바닥 타일 발광 맵), `npm run build`, `node venue-lab/uitest.mjs`, GI 재베이크.
+확인한 것: `npm run verify:gym-seats` PASS, `npm run verify` 통과, `npm run build` 통과(병합 직후).
+확인하지 않은 것: 새 좌석의 렌더(D블록 레이크 위 안착, 보미토리와의 간섭), `uitest`, GI 재베이크, 피커와 블록맵.
+
+남은 의문(사용자 확인 필요):
+- 도면의 44구역에는 좌석 기호가 435개 있지만 라벨은 288석이다(+147). 그 밖의 구역은 라벨보다 0–6석 적다. 그래서 2F 합계는 7,587로, 라벨 합계 7,477보다 110석 많다. 지금은 도면에 그려진 기호를 그대로 따른다.
+- 1F는 아직 도면 대조를 하지 않았다. 도면 구역 분할이 1F에서는 맞지 않는다(5–11구역 0석). 1F 기호는 `qu` 1/3/4/6pt이고, 1–22열에 가동석 1–11열이 포함된다.
 
 ## 2. 사용자가 정한 것 (되돌리지 말 것)
 
@@ -29,8 +37,9 @@
 - **콘코스:** 레이크 아래 단층 하나만 둔다. **최상단 열 뒤에는 콘코스를 두지 않는다.** 방·화장실·문 같은 세부 구조 없이 깔끔하게 만든다. 조명은 중성 흰색이다. 평소에는 꺼져 있다가 진입하면 켜진다.
 - **1F 이동식 블록 사이 통로:** 열어 두고 맨 뒤 벽만 막는다.
 - **General 무대:** IMAG를 두지 않는다(백월만). T자 돌출, 중앙 업스테이지 5인 밴드, 착석 플로어. FOH는 플로어 후방 중앙이다.
-- **360 무대:** 검은 격자 트러스, 4면 LED 박스와 그 아래 2분할 IMAG, 박스 모서리 라인어레이. FOH는 19구역 비계 콘솔이고, FOH 카메라는 19구역 윗단에 둔다.
+- **360 무대:** 검은 격자 트러스, 4면 LED 박스와 그 아래 2분할 IMAG, 박스 모서리 라인어레이. FOH는 19구역 비계 콘솔이다. (FOH 카메라와 카메라 패드·지브는 사용자의 Codex 커밋 `ebc6b2d`에서 삭제됐다. 되살리지 않는다.)
 - **벽:** 리본 전광판을 두지 않는다.
+- **좌석 검증:** 실제 배치도와 완전히 같아야 한다. 없어진 좌석이 없고 통로와 구역 분리가 같아야 한다(`npm run verify:gym-seats`).
 - **마감:** 1층 가동석 앞은 검은 커튼, 플로어는 밝은 회색 콘크리트. 좌석 색은 2025 사진 기준(1층 노랑, 2층은 아래 노랑에서 위로 하늘색 모자이크).
 - **분위기:** 하우스 조명 상태는 선명하게(뿌옇지 않게). 반사와 글레어를 줄인다. 공연 중에 벽이 띠처럼 빛나면 안 된다.
 - Lab 전용 소스(`venue-lab/src/n-*.js`, `o-*.js`)와 루트의 `PLAN-*.md` 등 추적되지 않는 파일은 커밋하지 않는다. 운영사 원본 파일(DAE·EPS·PDF)도 커밋하지 않는다.
@@ -51,7 +60,10 @@ cd venue-lab && node build.mjs          # 앱 코드를 바꾼 뒤 렌더 전에
 node rxshot.mjs gymnastic-arena shots/kspo/x '[{"name":"a","q":"layout=general&house=1&cam=x,y,z,tx,ty,tz&frames=90&settle=8"}]' 1280 720
 EVAL='JSON.stringify(window.__pick(0.5,0))' node rxshot.mjs ...   # 화면의 한 점에 무엇이 있는지
 node bake-gi.mjs gymnastic-arena general 1.0 && node bake-gi.mjs gymnastic-arena 360 1.0   # 구조나 조명이 바뀌면
-cd .. && npm run verify && npm run build && node venue-lab/uitest.mjs
+cd .. && npm run verify && npm run verify:gym-seats && npm run build && node venue-lab/uitest.mjs
+# 2F 좌석을 도면에서 다시 만들고 감사하기 (원본은 커밋하지 않는 운영사 파일)
+python -I venue-lab/pipeline/gymnastic_arena.py kspodome_dae.zip seat.pdf src/three/venues/gymnastic-data.js
+python -I venue-lab/pipeline/gym_seat_audit.py seat.pdf src/three/venues/gymnastic-data.js docs/references/kspo-seat-audit.json
 ```
 
 - 콘코스 안에서 찍을 때는 `frames=90`을 준다. 점등이 서서히 올라오기 때문이다.
@@ -82,8 +94,7 @@ cd .. && npm run verify && npm run build && node venue-lab/uitest.mjs
 
 ## 6. 다음 할 일 (순서대로)
 
-1. 콘코스 마지막 수정분을 렌더로 확인하고, 필요하면 밝기를 조정한다.
-2. `npm run build`와 `node venue-lab/uitest.mjs`를 돌린다. GI 두 모드를 재베이크한다(`public/assets/gymnastic-arena-*.gi`).
-3. 커밋하고 `claude/beautiful-hopper-35idcn`에 푸시한다.
-4. 좌석 감사: `gymnastic_arena.py`의 구역 분할(`chart_sections`/`section_lookup`)이 44–52구역에서 틀린 원인을 찾아 다시 생성한다. 그다음 피커와 `src/data.js` 표시 수치를 확인한다.
-5. General 펜스와 밴드 근접 렌더를 확인한다. 텍스처를 보강하고 2F 모자이크를 다듬는다.
+1. 새 2F 좌석을 렌더로 확인한다(D블록 안착, 보미토리 간섭, 23구역 16열 삭제). 문제가 없으면 GI를 재베이크하고 uitest를 돌린 뒤 커밋·푸시한다.
+2. 44구역 라벨 불일치를 사용자에게 보고한다.
+3. 1F 도면 대조: 1F 기호 추출과 구역 분할을 고치고, 12–22열을 대조한다. 결과를 `verify:gym-seats`에 넣는다.
+4. General 펜스와 밴드 근접 렌더를 확인한다. 텍스처와 2F 모자이크를 다듬는다.

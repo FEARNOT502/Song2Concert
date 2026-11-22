@@ -13,7 +13,8 @@
     "verify:live": "node scripts/verify-live.mjs",
     "verify:theater": "node scripts/verify-theater.mjs",
     "verify": "npm run verify:acoustics && npm run verify:ir && npm run verify:fade && npm run verify:live && npm run verify:audio",
-    "verify:audio": "node scripts/audio-smoke.mjs"
+    "verify:audio": "node scripts/audio-smoke.mjs",
+    "verify:gym-seats": "node scripts/verify-gym-seats.mjs"
   },
   "dependencies": {
     "@wasm-audio-decoders/flac": "^0.2.10",
