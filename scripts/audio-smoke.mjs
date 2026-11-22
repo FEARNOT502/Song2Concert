@@ -8,7 +8,7 @@ import { chromium } from 'playwright';
 import { createServer } from 'vite';
 import { existsSync } from 'node:fs';
 
-const server = await createServer({ server: { port: 5199 }, logLevel: 'error' });
+const server = await createServer({ server: { port: 5199, open: false }, logLevel: 'error' });
 await server.listen();
 const PINNED = '/opt/pw-browsers/chromium';
 const browser = await chromium.launch({
