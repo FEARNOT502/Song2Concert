@@ -46,6 +46,8 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
   let pipe;
   try {
     pipe = new Pipeline(canvas);
+    // Keep the air clear in every venue, including when scene effects are on.
+    pipe.volOn = false;
   } catch {
     return null; // no WebGL — Scene falls back to a plain backdrop
   }
@@ -116,7 +118,6 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
   function applyPasses() {
     const on = fx && strain < 2;
     pipe.bloom.enabled = on && pipe.q.bloom;
-    pipe.volOn = on;
     if (pipe.rx) pipe.rx.on = on && qName === 'high' && pipe.rx.allowed;
   }
 
@@ -325,12 +326,12 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     const level = pulseRef ? (pulseRef.current || 0) : pulse;
     beat.update(dt, { level, analyser: playing ? analyser?.() : null, playing, map: songMap, time: songMap && songClock ? songClock() : NaN });
     house += (houseTarget - house) * Math.min(1, dt * 1.4);
-    // Both renderers keep the room clear with the house lights up. The
-    // froxel volume already scatters light, so keep only a little legacy glow.
     if (pipe.rx) pipe.rx.house = house;
-    const volumeFog = pipe.rx?.on && pipe.rx.f.fog;
-    pipe.haze.uniforms.uStrength.value = (volumeFog ? 0.18 : 0.55) * (1 - 0.90 * house);
-    if (pipe.scene.fog) pipe.scene.fog.density = volumeFog ? 0 : venue.fog.density * (0.48 - 0.34 * house);
+    if (pipe.volOn) {
+      const volumeFog = pipe.rx?.on && pipe.rx.f.fog;
+      pipe.haze.uniforms.uStrength.value = (volumeFog ? 0.18 : 0.55) * (1 - 0.90 * house);
+    }
+    if (pipe.scene.fog) pipe.scene.fog.density = pipe.rx?.on ? 0 : venue.fog.density * (0.48 - 0.34 * house);
     const bloom = venue.bloom;
     const threshold = bloom?.threshold ?? 0.9;
     pipe.bloom.threshold = threshold + ((bloom?.house ?? threshold + 0.65) - threshold) * house;
@@ -605,8 +606,8 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
       strain = next;
       if (severe) applyQuality();
     },
-    // The crowd is decided when the room is built, so switching rebuilds it;
-    // the light shafts and bloom go at once.
+    // The crowd is decided when the room is built, so switching rebuilds it.
+    // Bloom changes immediately.
     setEffects(on) {
       const next = !!on;
       if (next === fx) return;

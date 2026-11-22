@@ -307,12 +307,14 @@ export class Rig {
     for (const f of this.fx) {
       const lvl = f.intensity * f.level * master;
       const origin = f._lens || f.pos;
-      f.beam.pos.copy(origin);
-      f.beam.dir.copy(f.dir);
-      f.beam.color.copy(f.color);
-      f.beam.intensity = lvl * f.beamGain;
-      f.beam.angle = f.angle;
-      f.beam.length = this.clip(origin, f.dir, f.body && !f.localBeam ? Math.max(f.length, this.reach) : f.length);
+      if (this.pipe.volOn !== false) {
+        f.beam.pos.copy(origin);
+        f.beam.dir.copy(f.dir);
+        f.beam.color.copy(f.color);
+        f.beam.intensity = lvl * f.beamGain;
+        f.beam.angle = f.angle;
+        f.beam.length = this.clip(origin, f.dir, f.body && !f.localBeam ? Math.max(f.length, this.reach) : f.length);
+      }
       f.flare.pos.copy(origin).addScaledVector(f.dir, 0.05);
       f.flare.color.copy(f.color);
       if (camPos) {

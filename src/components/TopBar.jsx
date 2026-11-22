@@ -50,7 +50,7 @@ export function EffectsToggle({ on, onChange, className = '' }) {
       onClick={() => onChange(!on)}
       aria-pressed={on}
       title={on
-        ? 'Scene effects on — crowd, light shafts, bloom. Click for a lighter scene.'
+        ? 'Scene effects on — crowd and bloom. Click for a lighter scene.'
         : 'Scene effects off — the room only. Click to bring the show back.'}
       className={`p-1.5 rounded transition-colors hover:bg-white/5 ${
         on ? 'text-[oklch(0.78_0.16_55)]' : 'text-neutral-600 hover:text-neutral-400'

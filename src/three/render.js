@@ -640,8 +640,10 @@ export class Pipeline {
     this.renderer.info.reset();
     this.beams.uniforms.uTime.value = t;
     this.final.material.uniforms.uTime.value = t;
-    this.beams.sync();
-    this.haze.sync();
+    if (this.volOn) {
+      this.beams.sync();
+      this.haze.sync();
+    }
     this.flares.sync();
     this.gpu.poll();
     this.gpu.begin();
