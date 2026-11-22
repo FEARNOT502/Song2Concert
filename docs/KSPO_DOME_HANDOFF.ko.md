@@ -2,7 +2,7 @@
 
 다른 LLM이나 다른 세션이 바로 이어받을 수 있게 유지하는 문서다. 작업할 때마다 갱신한다.
 
-- 마지막 갱신: 2026-11-23 00:55 KST
+- 마지막 갱신: 2026-11-23 02:25 KST
 - 브랜치: `claude/beautiful-hopper-35idcn` (`origin/main`과 같은 `454a902`에서 시작)
 - 전체 계획과 결정 기록: [KSPO_DOME_REMODEL_PLAN.ko.md](KSPO_DOME_REMODEL_PLAN.ko.md)의 7장. 자료 목록: [references/GYMNASTIC_ARENA_REFERENCES.ko.md](references/GYMNASTIC_ARENA_REFERENCES.ko.md)
 
@@ -13,18 +13,18 @@
 - `c2eb7a0`: 2F 좌석을 운영사 도면 기호로 재생성하고 `verify:gym-seats` 추가. 푸시 완료.
 - `ee5afd6`: 보미토리 도면 위치 재배치, 1·2층 바닥 구멍·`overTunnel`·`underConsole`·360 라인어레이(`GYM_PA['360']`) 수정.
 - `4ab3379`: `scripts/audio-smoke.mjs` Vite `open: false` 추가, `ee5afd6` 반영 GI 재베이크(`general`/`360`), `npm run verify`·`npm run verify:gym-seats`·`npm run build`·`uitest.mjs`(12뷰) 통과 후 커밋·푸시 완료.
+- `5fa6c02`: 1F 고정석(12–22열, C블록 12–21열) 3,770석 도면 정합·재생성(`11,357`석), `verify:gym-seats` 1F+2F PASS, GI 재베이크, 메인 앱 스크린샷 8장 검수 완료.
 
-### 1F 도면 정합 완료 (현재 작업)
+### 3단계: 구조 마감·펜스·보미토리·모자이크·텍스처 정비 (현재 작업)
 
 | 파일 | 변경 |
 |---|---|
-| `venue-lab/pipeline/gym_seat_audit.py` | 1F 고정석(12–22열; C블록 5–11은 12–21열) 추출·블록별 정합·감사 추가. B/C/D블록 시안 Bezier `c` 모서리 1.8 pt 내향 투영 + 0.9 pt 클러스터, A블록 시안 `qu`/`lll`/`llll`/`ququ`/`quququ`로 1–22열 추출 후 `>1.1 m` 복도 간격으로 가동석(1–11열) 분리. 도면 A블록의 평행이동 편차를 상쇄하도록 `fit_lower_blocks`에서 `LOWER_BLOCKS`(`1-4`, `5-11`, `12-15`, `16-22`) 블록별 구역 중심 `_similarity` 초기화 + 축소 반경 ICP(`reach=0.6`) 수행. `kspo-seat-audit.json`에 `level1`·`level2`·`sections(1-52)` 기록, `kspo-seat-audit-chart.json`에 `seats1f`·`labels1f` 추가. |
-| `venue-lab/pipeline/gymnastic_arena.py` | `chart_lower` 추가로 1F 고정석 3,770석을 도면 기호에서 생성(`y = 0.4 + 0.2 * row`), 1–11열 가동석은 접힘 상태 유지. `chart_sections` PDF 캐싱. |
-| `src/three/venues/gymnastic-data.js` | 재생성: **1F 3,770석 + 2F 7,587석 = 총 11,357석**. 기존 1F는 DAE 3,766석(A블록 16–22구역이 182×7 클론)이었으나 도면 실좌석 `182, 182, 183, 183, 184, 182, 182`(+4석) 반영. |
-| `scripts/verify-gym-seats.mjs`, `npm run verify:gym-seats` | `verifyLevel` 헬퍼로 1F(3,770석) + 2F(7,587석) 동시 검증 확장. **PASS** (missing 0, extra 0, section 0, 1F·2F 짝 거리 중앙값 `0.004 m`, p95 `0.006 m`). |
-| `public/assets/gymnastic-arena-*.gi` | 1F 새 좌석 반영 GI 재베이크 완료 (`general` 4.3 MB, `360` 7.5 MB). |
+| `src/three/concert-equipment.js`, `src/three/venues/gymnastic-equipment.js` | `data.fences`가 `{ points, face: 'origin' }` 옵션을 지원하도록 확장하고 General 외곽 플로어 바리케이드(`edge = GYM_FLOOR_R - .8`)의 경사 킥플레이트가 안쪽 플로어 관객(원점) 방향을 향하도록 교정. |
+| `src/three/venues/gymnastic-arena.js` | ① `lowerStands` 블록 끝면 뒤쪽(`r = end..44.8`, `y = 0..4.77`) 빈 틈을 콘크리트 벽으로 막아 터널 형태·뒷벽은 유지한 채 검은 틈 제거, 양측 끝면 경사 난간(`railRadial` + 충돌판) 추가. ② `upperStands` 최후면 `BOX 1-8` 어두운 사각 패치를 제거하고 `TOP.r1` 연속 외벽(`10.72..22 m`)과 트림 밴드로 깔끔하게 마감. ③ `mat.wall`·`mat.parapet`에 무광 콘크리트 텍스처(`roughnessMap: null`) 보강. ④ `chairs` 2F 노랑→하늘색 비율을 `smoothstep`으로 다듬고, `hash` 내 `^=`의 부호 있는 32비트 반전(`color.setHex(undefined)` → 검정 사선 띠 유발)을 `Math.imul` + `>>> 0`으로 수정. `seatedCrowd` 빌보드를 `s.yaw` 기준 `+0.03 m` 앞으로 옮겨 좌석 좌판 교차 제거. |
+| `src/three/venues/gymnastic-bowl.js` | 공식 KSPO DOME 내부 사진(`s3_01_03_pic2.jpg`)에 맞춰 상·하부 보미토리 옆 벽(`addVomCurb`)을 트레드 위 ~`0.42 m`(하부 터널 상단 `+0.22 m`) 낮은 콘크리트 턱 + 상단 금속 난간(`W.rail`) 구조로 낮추고, 벽 색감을 차분한 베이지-회색 무광(`0xa8a59e`)으로 조정. 보미토리 계단·트레드에 콘크리트 텍스처 적용. |
+| `public/assets/gymnastic-arena-*.gi` | 1F 끝면 벽·2F 후면 벽·낮춘 보미토리 벽을 반영해 general(4.3 MB) / 360(7.5 MB) GI 재베이크 완료. |
 
-확인한 것: `npm run verify:gym-seats` PASS (1F 3,770 + 2F 7,587), `npm run verify` PASS, `npm run build` PASS, 메인 앱(`vite preview`, `?debug`) 브라우저에서 General/360 `VenuePicker`·`GymnasticBlockMap`·1F 좌석 단차 밀착·접힘 커튼·블록 간 통로·360 19구역 콘솔 하부 147석 제외(`underConsole`) 및 콘솔 에러 0건 확인 완료.
+확인한 것: `npm run verify:gym-seats` PASS, `npm run verify` PASS, `npm run build` PASS (`built in 42.23s`), 메인 앱(`vite preview`, `?debug`, `--use-angle=d3d11`) 13개 뷰 캡처(`Errors: none`)에서 외곽 바리케이드 방향, 1F 터널·끝면 벽·난간, General 5인 밴드, 2F 후면 벽·모자이크·사선 검은 띠 완전 제거, 낮춘 보미토리 옆 벽·난간 모두 육안 확인 완료.
 
 **보미토리 위치를 도면에서 직접 배치** (이전 커밋 `ee5afd6` 참고)
 
@@ -109,9 +109,9 @@ python -I venue-lab/pipeline/gym_seat_audit.py seat.pdf src/three/venues/gymnast
   - 장애인석: 84
 - 현재 데이터의 2F 구역 수: 44구역 412, 45구역 238, 46구역 161, 47구역 174, 48구역 192, 49구역 116, 50구역 206, 51구역 222, 52구역 330, 23구역 450. 44–52구역의 구역 경계가 어긋나 있고, 2F 초과 267석의 대부분이 여기서 나온다.
 
-## 6. 다음 할 일 (순서대로)
+## 6. 완료 현황 및 참고
 
-1. ~~1F 도면 대조: 1F 기호 추출·구역 분할·12–22열 재생성 및 `verify:gym-seats` 1F+2F PASS~~ (완료)
-2. ~~메인 앱에서 KSPO 피커·블록맵(1F·2F 좌석) 및 1F 단차·360 콘솔 주변 렌더 확인~~ (완료)
-3. **General 펜스(`concert-equipment.js`의 외곽 바리케이드 킥플레이트 방향 점검)와 밴드(5인) 근접 렌더 확인.**
-4. **주요 표면 텍스처 보강 및 2F 좌석 색 모자이크 다듬기** (메인 앱 기준 확인·반영).
+1. ~~1F 도면 대조: 1F 기호 추출·구역 분할·12–22열 재생성 및 `verify:gym-seats` 1F+2F PASS~~ (완료, `5fa6c02`)
+2. ~~메인 앱에서 KSPO 피커·블록맵(1F·2F 좌석) 및 1F 단차·360 콘솔 주변 렌더 확인~~ (완료, `5fa6c02`)
+3. ~~General 외곽 바리케이드 플로어 방향·5인 밴드 근접 확인, 1F 블록 끝면 뒤 벽 마감·경사 난간, 2F 최후면 벽 정리~~ (완료)
+4. ~~보미토리 옆 벽 높이 실측 사진 정합·난간 추가, 콘크리트·벽·파라펫 텍스처 보강, 2F smoothstep 모자이크 및 좌석 해시 사선 버그 수정~~ (완료)

@@ -31,7 +31,10 @@ function generalPlot() {
   const edge = GYM_FLOOR_R - .8, gaps = [100, 140, 180, 220, 260];
   const ends = [66, ...gaps.flatMap((g) => [g - 1.8, g + 1.8]), 294];
   for (let i = 0; i < ends.length; i += 2) {
-    fences.push(gymRing(ends[i], ends[i + 1], edge, Math.max(2, Math.ceil((ends[i + 1] - ends[i]) / 3))).map(([x, z]) => P(x, z)));
+    fences.push({
+      points: gymRing(ends[i], ends[i + 1], edge, Math.max(2, Math.ceil((ends[i + 1] - ends[i]) / 3))).map(([x, z]) => P(x, z)),
+      face: 'origin',
+    });
   }
   const stage = [];
   const prop = (kind, x, z, facing = [0, 1], extra = {}) => stage.push({ kind, p: P(x, z), facing, ...extra });

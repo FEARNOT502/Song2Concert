@@ -207,7 +207,9 @@ export function addConcertEquipment(models, root, room, mode, plan, eye, overrid
   }
 
   const barrierWidth = 1.12;
-  for (const points of data.fences) {
+  for (const fence of data.fences) {
+    const points = Array.isArray(fence) ? fence : fence.points;
+    const face = Array.isArray(fence) ? 'deck' : fence.face;
     // Fold tiny polyline jogs into the neighbouring bay; a 10 cm detour
     // cannot take its own panel and has no well-defined crowd-facing side.
     const path = points.filter(([x, z], i) => !i || i === points.length - 1 ||
@@ -226,7 +228,9 @@ export function addConcertEquipment(models, root, room, mode, plan, eye, overrid
         const t = clamp(((x - a[0]) * ux + (z - a[1]) * uz) / (ux ** 2 + uz ** 2 || 1));
         return (x - a[0] - t * ux) ** 2 + (z - a[1] - t * uz) ** 2;
       })));
-      if (deckDistance(mx + nx, mz + nz) < deckDistance(mx - nx, mz - nz)) yaw += Math.PI;
+      if (face === 'origin'
+        ? mx * nx + mz * nz > 0
+        : deckDistance(mx + nx, mz + nz) < deckDistance(mx - nx, mz - nz)) yaw += Math.PI;
       const n = Math.max(1, Math.round(len / barrierWidth));
       for (let i = 0; i < n; i++) {
         const u = (i + .5) / n;

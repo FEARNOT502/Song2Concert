@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { KELVIN, V3, concreteTex, fbm, pbrSet, smooth, std, valueNoise, withRepeat } from '../core.js';
+import { KELVIN, V3, clamp, concreteTex, fbm, pbrSet, smooth, std, valueNoise, withRepeat } from '../core.js';
 import { decodeSeats, stadiumSeatGeometry, seatFinder } from '../stands.js';
 import { maskingDrapes } from '../show.js';
 import { GYM_AISLE_R, GYM_FOH, GYM_NAME, GYM_RAD, gymPoint, gymRing, gymSector } from '../gymnastic-arena-plan.js';
@@ -67,6 +67,35 @@ function railArc(root, mat, radius, y, start, end) {
   arcWall(root, collision, radius, y, y + 1.04, start, end).visible = false;
 }
 
+function railRadial(root, mat, deg, pts) {
+  const rail = [], colPos = [];
+  for (let s = 1; s < pts.length; s++) {
+    const [r0, y0] = pts[s - 1], [r1, y1] = pts[s];
+    const [x0, z0] = gymPoint(deg, r0), [x1, z1] = gymPoint(deg, r1);
+    const steps = Math.max(1, Math.round(Math.hypot(x1 - x0, z1 - z0) / 1.1));
+    for (let k = 0; k <= steps; k++) {
+      const t = k / steps, r = r0 + (r1 - r0) * t, y = y0 + (y1 - y0) * t;
+      const [x, z] = gymPoint(deg, r);
+      if (s === 1 || k > 0) rail.push([V3(x, y, z), V3(x, y + 1.04, z), .05]);
+      if (k > 0) {
+        const pt = (k - 1) / steps, py = y0 + (y1 - y0) * pt, pr = r0 + (r1 - r0) * pt;
+        const [px, pz] = gymPoint(deg, pr);
+        for (const h of [.46, 1.02]) rail.push([V3(px, py + h, pz), V3(x, y + h, z), h > .9 ? .07 : .045]);
+      }
+    }
+    colPos.push(
+      x0, y0, z0, x1, y1, z1, x1, y1 + 1.04, z1,
+      x0, y0, z0, x1, y1 + 1.04, z1, x0, y0 + 1.04, z0,
+    );
+  }
+  pipes(root, rail, mat);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(colPos, 3));
+  const wall = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
+  wall.visible = false;
+  root.add(wall);
+}
+
 function lowerStands(root, mat, mode) {
   for (const [i, [a, b]] of TREAD_SECTORS.entries()) {
     const isC = i === 2, isA = i === 0;
@@ -83,7 +112,9 @@ function lowerStands(root, mat, mode) {
       root.add(plate(gymSector(a, b, inner, inner + .842), 0, y, mat.concrete));
     }
     const end = front + .84 * rows;
-    root.add(plate(gymSector(a, b, end, 44.8), 4.51, 4.77, mat.concrete));
+    root.add(plate(gymSector(a, b, end, 44.8), 0, 4.77, mat.concrete));
+    const endProfile = [[GYM_AISLE_R - .33, 2.60], [front, 2.80], [end, isC ? 4.77 : 4.80], [44.6, 4.77]];
+    for (const deg of [a + .2, b - .2]) railRadial(root, mat.rail, deg, endProfile);
     // Small half-step strips in the lower seating aisles.
     const groups = i % 2 ? 4 : 7;
     for (let aisle = 1; aisle < groups; aisle++) {
@@ -163,15 +194,9 @@ function upperStands(root, mat, pipe) {
   root.add(new THREE.Mesh(mergeGeometries(parts), mat.concrete));
   parts.forEach((g) => g.dispose());
 
-  // the boxes' fronts and walls, where BOX 1-8 stand in the top rows
-  for (const center of [112, 126, 140, 154, 206, 220, 234, 248]) {
-    arcWall(root, mat.parapet, 58.35, 11.05, 11.45, center - 4.4, center + 4.4);
-    arcWall(root, mat.concourse, 60.6, 11.1, 13.92, center - 4.4, center + 4.4);
-  }
-  // the bowl's wall behind that aisle, a light grey band in it, up to the roof
-  arcWall(root, mat.wall, TOP.r1, TOP.y, 15);
-  arcWall(root, mat.parapet, TOP.r1, 15, 15.7);
-  arcWall(root, mat.wall, TOP.r1, 15.7, 22);
+  // Continuous bowl wall behind the top-row aisle up to the roof deck.
+  arcWall(root, mat.wall, TOP.r1, 10.72, 22);
+  arcWall(root, mat.parapet, TOP.r1 - .04, 15, 15.55);
   return buildBowl(root, { pipe, rakeAt });
 }
 
@@ -366,11 +391,12 @@ function chairs(root, seats) {
   // 1F's fixed rows yellow; 2F yellow at the front, then yellow and teal mixed
   // seat by seat, teal taking over towards the back
   const YELLOW = [0xd9a92c, 0xe0b237, 0xd3a128], TEAL = [0x8ccbdc, 0x96d2e2, 0x80c2d4];
-  const hash = (i) => { let h = (i * 2654435761) >>> 0; h ^= h >>> 15; return (h % 1000) / 1000; };
+  const hash = (i) => { let h = Math.imul(i | 0, 2654435761) >>> 0; h = (h ^ (h >>> 15)) >>> 0; return (h % 1000) / 1000; };
   seats.forEach((seat, i) => {
-    const n = +seat.block, u = hash(i * 7 + n);
-    const teal = n >= 23 && (seat.row >= 10 ? u < .82 : seat.row >= 5 ? u < .45 : u < .05);
-    const hue = (teal ? TEAL : YELLOW)[Math.floor(hash(i + 911) * 3)];
+    const n = +seat.block, key = n * 1009 + seat.row * 97 + seat.num * 13;
+    const t = clamp((seat.row - 2) / 11, 0, 1), pTeal = t * t * (3 - 2 * t) * .88;
+    const teal = n >= 23 && hash(key) < pTeal;
+    const hue = (teal ? TEAL : YELLOW)[Math.floor(hash(key + 911) * 3)];
     mat.makeRotationY(seat.yaw).setPosition(seat.x, seat.y, seat.z);
     body.setMatrixAt(i, mat);
     body.setColorAt(i, color.setHex(hue));
@@ -401,7 +427,7 @@ function seatedCrowd(seats, stage, round) {
     const turn = Math.atan2(stage.x - s.x, stage.z - s.z);
     const around = Math.atan2(s.x - stage.x, s.z - stage.z);
     return {
-      x: s.x - Math.sin(turn) * .12, y: s.y, z: s.z - Math.cos(turn) * .12, turn, seat: true,
+      x: s.x + Math.sin(s.yaw) * .03, y: s.y, z: s.z + Math.cos(s.yaw) * .03, turn, seat: true,
       zone: { lv: +s.block < 23 ? 1 : 2, block: +s.block, u: round ? (around + Math.PI) / (2 * Math.PI) : (around + Math.PI) / (2 * Math.PI) },
     };
   });
@@ -412,10 +438,14 @@ export function buildGymnasticArena(ctx) {
   root.name = GYM_NAME;
   const round = ctx.mode === '360';
   const textures = withRepeat(concreteTex({ key: 'gym-structure', tone: .44, warm: .05, even: .64 }), .27, .27);
-  const mat = Object.fromEntries(Object.entries(MAT).map(([name, color]) =>
-    // (no roughness map on the concrete: under it the screen-space reflections
-    // traced its pores and sparkled; the arena's concrete is the same)
-    [name, std({ color, roughness: .93, side: THREE.DoubleSide, ...(name === 'concrete' ? { ...textures, roughnessMap: null } : {}) })]));
+  const wallTex = withRepeat(concreteTex({ key: 'gym-wall', tone: .74, warm: .02, even: .82 }), .12, .12);
+  const parapetTex = withRepeat(concreteTex({ key: 'gym-parapet', tone: .58, warm: .03, even: .76 }), .22, .22);
+  const mat = Object.fromEntries(Object.entries(MAT).map(([name, color]) => {
+    const mapProps = name === 'concrete' ? textures : name === 'wall' ? wallTex : name === 'parapet' ? parapetTex : null;
+    // (no roughness map on the concrete finishes: under it the screen-space
+    // reflections traced its pores and sparkled; the arena's concrete is the same)
+    return [name, std({ color, roughness: name === 'wall' ? .95 : .93, side: THREE.DoubleSide, ...(mapProps ? { ...mapProps, roughnessMap: null } : {}) })];
+  }));
   mat.panel = std({ color: 0xffffff, ...baffleTex(), roughnessMap: null, roughness: 1, side: THREE.DoubleSide });
   // the floor as the 2025 concert photographs show it: light grey concrete
   const ground = new THREE.Mesh(new THREE.CircleGeometry(62.4, 128),

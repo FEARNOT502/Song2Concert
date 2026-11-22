@@ -19,7 +19,7 @@
 // the concourse reads lit through a vomitory with the house dark.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { KELVIN, V3, floorPanelTex, std } from '../core.js';
+import { KELVIN, V3, concreteTex, floorPanelTex, std, withRepeat } from '../core.js';
 import { GYM_RAD, gymPoint, gymRing } from '../gymnastic-arena-plan.js';
 
 export const CROSS_Y = 4.77, CROSS_R = 44.8;
@@ -206,11 +206,16 @@ function soffit(profile, holes) {
 }
 
 export function buildBowl(root, { pipe, rakeAt }) {
-  // the vomitories' white walls, matt (no sheen: under the house lights a
-  // painted edge read as a polished one)
-  const white = std({ color: 0xb4b6b3, roughness: 1, envMapIntensity: .15, side: THREE.DoubleSide });
+  // the vomitories' concrete pit walls, muted matte grey-beige to match 2018-2025 interior photos
+  const white = std({ color: 0xa8a59e, roughness: 1, envMapIntensity: .15, side: THREE.DoubleSide });
   white.userData.flat = true;
-  const concrete = std({ color: 0x8d9092, roughness: .95, side: THREE.DoubleSide });
+  const concrete = std({
+    color: 0x8d9092,
+    ...withRepeat(concreteTex({ key: 'gym-bowl-tread', tone: .44, warm: .05, even: .64 }), .27, .27),
+    roughnessMap: null,
+    roughness: .95,
+    side: THREE.DoubleSide,
+  });
   // the concourse's finishes, lit from within (see the note at the top), a
   // neutral white: light walls, a mid-grey stone floor, white ceilings
   // (their own colour nearly black: the house lights throw no shadows, and
@@ -236,12 +241,25 @@ export function buildBowl(root, { pipe, rakeAt }) {
   for (let i = 0; i < 30; i++) { const m = (lo + hi) / 2; if (soff(m) < C2.ceil) lo = m; else hi = m; }
   const R_CEIL = lo;
 
+  const addVomCurb = (deg, across, r0, r1, yBot, top0, top1) => {
+    prism(W.white, deg, across, [[r0, yBot], [r0, top0], [r1, top1], [r1, yBot]], WALL);
+    const [ux, uz] = gymPoint(deg, 1), [tx, tz] = gymPoint(deg + 90, across);
+    const pt = (r, y) => V3(ux * r + tx, y, uz * r + tz);
+    const rMid = (r0 + r1) / 2, topMid = (top0 + top1) / 2;
+    W.rail.push(
+      [pt(r0, top0), pt(r0, top0 + .44)],
+      [pt(rMid, topMid), pt(rMid, topMid + .44)],
+      [pt(r1, top1), pt(r1, top1 + .44)],
+      [pt(r0, top0 + .44), pt(r1, top1 + .44)],
+    );
+  };
+
   // ── lower: off the cross aisle, four steps down between the walls, the
   // tunnel's mouth under the rows, the tunnel on into the concourse ──
   for (const [deg, PIT_HW] of LOWER_VOMS) {
     const OUT = PIT_HW + WALL;
     for (const s of [-1, 1]) {
-      prism(W.white, deg, s * (PIT_HW + WALL / 2), [[L_FRONT, C2.y], [L_FRONT, CROSS_Y + 1.05], [L_MOUTH, rakeAt(L_MOUTH) + 1.05], [L_MOUTH, C2.y]], WALL);
+      addVomCurb(deg, s * (PIT_HW + WALL / 2), L_FRONT, L_MOUTH, C2.y, CROSS_Y + .42, L_TREAD + .22);
       // the tunnel's walls
       radialBox(W.lit, deg, L_MOUTH, C2.r0, WALL / 2, C2.y, L_ROOF, s * (PIT_HW + WALL / 2));
     }
@@ -266,7 +284,7 @@ export function buildBowl(root, { pipe, rakeAt }) {
     // (a short pit drops further, for the door's height under the rows)
     const yF = rakeAt(rF), yD = Math.min(yF - .9, rakeAt(rD) - 2.0), head = yD + 1.95;
     for (const s of [-1, 1]) {
-      prism(W.white, deg, s * (PIT_HW + WALL / 2), [[rF, yD - .3], [rF, yF + 1.0], [rD + .2, rakeAt(rD) + 1.0], [rD + .2, yD - .3]], WALL);
+      addVomCurb(deg, s * (PIT_HW + WALL / 2), rF, rD + .2, yD - .3, yF + .42, rakeAt(rD) + .42);
     }
     // the floor: a landing, steps down, a landing at the door
     radialBox(W.tread, deg, rF, rF + .35, PIT_HW, yD - .3, yF);
