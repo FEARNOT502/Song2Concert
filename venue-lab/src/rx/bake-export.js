@@ -168,7 +168,8 @@ export async function exportBake(App, { url = '/__bake', states, send = true, ex
         if (skipMaterial(m) && screenG < 0) continue;
         let a = baseAlbedo(m, cache);
         if (instCol) a = a.map((x, c) => x * instCol[c]);
-        const two = m.side === THREE.DoubleSide ? 1 : 0;
+        // (a surface drawn from its back — a membrane seen from inside — faces the other way)
+        const two = m.side === THREE.DoubleSide ? 1 : m.side === THREE.BackSide ? 4 : 0;
         const end = Math.min(gr.start + gr.count, I ? I.count : P.count);
         for (let t = gr.start; t + 2 < end + 0; t += 3) {
           const ia = I ? I.getX(t) : t, ib = I ? I.getX(t + 1) : t + 1, ic = I ? I.getX(t + 2) : t + 2;

@@ -130,9 +130,10 @@ for (let pi = range[0]; pi < range[1]; pi++) {
     const h = bvh.raycastFirst(ray, THREE.DoubleSide, 0, 200);
     if (!h) continue;
     const t = h.faceIndex;
-    let n0 = N[t * 3], n1 = N[t * 3 + 1], n2 = N[t * 3 + 2];
-    const cosd = n0 * dx + n1 * dy + n2 * dz;
     const fl = F[t];
+    let n0 = N[t * 3], n1 = N[t * 3 + 1], n2 = N[t * 3 + 2];
+    if (fl & 4) { n0 = -n0; n1 = -n1; n2 = -n2; }
+    const cosd = n0 * dx + n1 * dy + n2 * dz;
     if (cosd > 0) {
       if (!(fl & 1)) { back++; continue; }
       n0 = -n0; n1 = -n1; n2 = -n2;
