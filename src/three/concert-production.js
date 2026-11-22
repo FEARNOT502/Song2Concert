@@ -735,7 +735,7 @@ export function concertProduction(ctx, root, room, { center, eye, stands, floorB
   // falls off between a line's 1/d and a point's: 1/d^1.25, its power set so
   // the field (`HOUSE_REF` metres off) is lit as before.
   const HOUSE_DECAY = 1.25, HOUSE_REF = stadium ? 80 : 60;
-  const housePower = (arena ? 12500 : gym ? 24000 : 34500) * Math.pow(HOUSE_REF, HOUSE_DECAY - 2);
+  const housePower = (arena ? 12500 : gym ? 12000 : 34500) * Math.pow(HOUSE_REF, HOUSE_DECAY - 2);
   const house = houseSources.map((pos) => {
     const lamp = new THREE.SpotLight(KELVIN(5000), 0, L.reach * 2.1, 1.12, .65, HOUSE_DECAY);
     lamp.position.copy(pos);

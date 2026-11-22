@@ -8,7 +8,8 @@
 // on the landing above it.
 import * as THREE from 'three';
 import { KELVIN, V3, lerp, std } from '../core.js';
-import { hoists } from '../rig.js';
+import { chainInto, hoists, mats } from '../rig.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { floorChairs, packFloor, screenHang } from '../show.js';
 import { concertProduction, showBeam } from '../concert-production.js';
 import { trimmedModel } from '../concert-models.js';
@@ -20,6 +21,16 @@ import { gymEquipment } from './gymnastic-equipment.js';
 import { gymMask } from './gymnastic-seats.js';
 
 const ROOF = 27.4;
+
+// The ribbon boards round the bowl the concert photographs show (the tour's
+// name on them in 2025): small LED strips at the 3F concourse's rail, the
+// song's sleeve and title on them here.
+function ribbons(k, angles) {
+  for (const deg of angles) {
+    const [x, z] = gymPoint(deg, 60.55);
+    k.screen({ x, z, bottom: 12.95, w: 6.2, h: 1.05, yaw: -deg * GYM_RAD, bright: 1.4 });
+  }
+}
 
 function generalRig(k) {
   const { production, L, center, row, bar, screen, hang, drape } = k;
@@ -83,42 +94,45 @@ function generalRig(k) {
       },
     });
   }
+  // (the ribbons last: the room's reflections take the first screens, the big ones)
+  ribbons(k, [70, 125, 180, 235, 290]);
   return V3(0, L.runway + .55, L.tip - 2.4);
 }
 
+// DAY6's rig as the May 2025 photographs show it: a big black grid of truss
+// over the floor, a four-faced LED box hung under its middle (one picture on
+// all four sides), a line array at each of the box's corners splayed two
+// ways, a column of fixtures down through the box's middle, the grid's edges
+// and lines full of fixtures.
 function roundRig(k) {
   const { production, L, center, row, bar, screen, hang } = k;
-  const top = L.rig, e = 14.5, xs = [-e, -e / 2, 0, e / 2, e];
-  // DAY6's black grid over the deck, on chains from the roof
-  for (const v of xs) {
+  const top = L.rig, e = 15.5, lines = [-e, -e * 2 / 3, -e / 3, 0, e / 3, e * 2 / 3, e];
+  for (const v of lines) {
     showBeam(production, V3(v, top, -e), V3(v, top, e), .6);
     showBeam(production, V3(-e, top, v), V3(e, top, v), .6);
   }
-  for (const x of [-e, e]) production.add(hoists([-e, -e / 2, e / 2, e], top + .1, x, ROOF), hoists([-e / 2, e / 2], top + .1, 0, ROOF));
+  for (const x of [-e, -e / 3, e / 3, e]) production.add(hoists([-e, -e / 3, e / 3, e], top + .1, x, ROOF));
+  // the box: four faces, its bottom over the deck at the height the photographs show
+  const [bw, bh, bottom] = L.wall;
+  for (const yaw of AXES) {
+    screen({ x: Math.sin(yaw) * (bw / 2 + .25), z: Math.cos(yaw) * (bw / 2 + .25), bottom, w: bw, h: bh, yaw, bright: 1.6, light: true });
+  }
+  const chains = [];
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) chainInto(chains, sx * (bw / 2 - .6), bottom + bh, sz * (bw / 2 - .6), top - .2, { motor: false });
+  production.add(new THREE.Mesh(mergeGeometries(chains), mats().chain));
   for (const yaw of AXES) {
     const along = (d, across) => V3(Math.sin(yaw) * d + Math.cos(yaw) * across, 0, Math.cos(yaw) * d - Math.sin(yaw) * across);
-    // its edges: beams to the house on that side, an LED bar under them
-    row(along(e, -e + 1.5).setY(top - .4), along(e, e - 1.5).setY(top - .4), 9, 'beam', yaw, center);
+    // the grid's edge: beams out to the house, an LED bar under them
+    row(along(e, -e + 1.2).setY(top - .4), along(e, e - 1.2).setY(top - .4), 11, 'beam', yaw, center);
     bar(along(e + .38, -e).setY(top - .25), along(e + .38, e).setY(top - .25), .09);
-    // in from them: spots for the deck, then washes straight down over it
-    row(along(e / 2, -e / 2).setY(top - .4), along(e / 2, e / 2).setY(top - .4), 7, 'spot', yaw, center);
-    // four screens a side: the big pair up on the edge, a smaller double-faced
-    // pair under the middle (DAY6's split IMAG), and the arrays past them
-    const [w, h, bottom] = L.wall;
-    for (const s of [-1, 1]) {
-      const p = along(e + .25, s * 6.95);
-      screen({ x: p.x, z: p.z, bottom, w, h, yaw, light: s < 0, bright: 1.6 });
-      const q = along(10.2, s * 4.05);
-      screen({ x: q.x, z: q.z, bottom: 9.7, w: 6.5, h: 3.55, yaw, double: true, bright: 1.5 });
-    }
+    // the lines in from it: spots on the deck, washes nearer the middle
+    row(along(e * 2 / 3, -e * 2 / 3).setY(top - .4), along(e * 2 / 3, e * 2 / 3).setY(top - .4), 9, 'spot', yaw, center);
+    row(along(e / 3, -e / 3).setY(top - .4), along(e / 3, e / 3).setY(top - .4), 6, 'wash', yaw, center, { gain: .3 });
   }
-  row(V3(-e / 2, top - .4, -1.2), V3(e / 2, top - .4, -1.2), 5, 'wash', 0, center, { gain: .28 });
-  row(V3(-e / 2, top - .4, 1.2), V3(e / 2, top - .4, 1.2), 5, 'wash', Math.PI, center, { gain: .28 });
+  // the column of fixtures down through the box
+  row(V3(0, top - .6, 0), V3(0, bottom + bh + .4, 0), 7, 'beam', 0, center, { gain: .5 });
   for (const [i, { x, z, top: y, yaw }] of GYM_PA['360'].entries()) {
-    hang(production, { x, y, z, boxes: 12, width: 1.2, yaw, roofY: ROOF }, i % 2 ? 'Main sector array' : 'Side sector array');
-  }
-  for (const yaw of AXES) {
-    hang(production, { x: 18.3 * Math.sin(yaw), y: top - 1.2, z: 18.3 * Math.cos(yaw), boxes: 6, width: 1.18, depth: 1.05, yaw, roofY: ROOF, splay: .008 }, 'Flown subwoofer array');
+    hang(production, { x, y, z, boxes: 12, width: 1.2, yaw, roofY: top - .1 }, i % 2 ? 'Main sector array' : 'Side sector array');
   }
   // the deck's side white (a fascia round it, its LED trim on the lip above)
   const fascia = new THREE.Mesh(new THREE.CylinderGeometry(GYM_CENTER_R + .012, GYM_CENTER_R + .012, L.deck - .12, 96, 1, true),
@@ -143,6 +157,7 @@ function roundRig(k) {
     panel.userData.noCollide = true;
     production.add(panel);
   }
+  ribbons(k, [20, 85, 150, 215, 280, 340]);
   return center;
 }
 

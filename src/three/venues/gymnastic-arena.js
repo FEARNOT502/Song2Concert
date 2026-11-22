@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { KELVIN, V3, concreteTex, fbm, pbrSet, smooth, std, valueNoise, withRepeat } from '../core.js';
-import { stageSteps } from '../rig.js';
 import { decodeSeats, stadiumSeatGeometry, seatFinder } from '../stands.js';
 import { maskingDrapes } from '../show.js';
 import { GYM_AISLE_R, GYM_FOH, GYM_NAME, GYM_RAD, gymPoint, gymRing, gymSector } from '../gymnastic-arena-plan.js';
@@ -85,10 +84,6 @@ function lowerStands(root, mat, mode) {
     }
     const end = front + .84 * rows;
     root.add(plate(gymSector(a, b, end, 44.8), 4.51, 4.77, mat.concrete));
-    // Aisles at the four floor approaches rise up beside the folded bays.
-    const angle = a - 3.8, [x, z] = gymPoint(angle, 28.5);
-    const [dx, dz] = gymPoint(angle, 1);
-    root.add(stageSteps({ x, z, h: 4.76, width: 1.65, dir: [dx, dz], run: .61 }));
     // Small half-step strips in the lower seating aisles.
     const groups = i % 2 ? 4 : 7;
     for (let aisle = 1; aisle < groups; aisle++) {
@@ -328,26 +323,13 @@ function roof(root, mat, pipe) {
   const warm = KELVIN(5200);
   // (the roof lit by the house lights' spill and bounce: the white deck, the
   // baffles and the steel glow a little with them, as in the photographs)
-  const glow = [[mat.ceiling, .32], [mat.panel, .3], [steel, .12]];
+  const glow = [[mat.ceiling, .1], [mat.panel, .1], [steel, .04]];
   for (const [m2] of glow) m2.emissive = KELVIN(5600);
   return (house) => {
     lens.material.color.copy(warm).multiplyScalar(.05 + 5.5 * house);
     for (const f of light) f.intensity = .4 * house;
     for (const [m2, k] of glow) m2.emissiveIntensity = k * house;
   };
-}
-
-// The concert floor's covering: interlocking 1 m protection panels, dark grey,
-// a faint moulded texture, their joints darker (a tile is 2 x 2 panels).
-function floorPanelTex() {
-  const n = valueNoise(57);
-  return pbrSet('gym-floor-panels', 512, (u, v) => {
-    const du = Math.min(u % .5, .5 - (u % .5)), dv = Math.min(v % .5, .5 - (v % .5));
-    const seam = 1 - smooth(.004, .009, Math.min(du, dv));
-    const grain = fbm(n, u * 24, v * 24, 24, 24, 3);
-    const c = .085 + .018 * grain - .05 * seam;
-    return [c, c, c * 1.03, .5 - seam * .3 + grain * .05, 1];
-  }, { normal: 1.2 });
 }
 
 // The roof's acoustic baffles: white perforated sheet in a frame, the holes
@@ -371,11 +353,11 @@ function chairs(root, seats) {
   // the colours as of 2025 (the concert photographs from 1F and from 2F 27):
   // 1F's fixed rows yellow; 2F yellow at the front, then yellow and teal mixed
   // seat by seat, teal taking over towards the back
-  const YELLOW = [0xd9a92c, 0xe0b237, 0xd3a128], TEAL = [0x4fa2b3, 0x5aabbb, 0x4697a8];
+  const YELLOW = [0xd9a92c, 0xe0b237, 0xd3a128], TEAL = [0x8ccbdc, 0x96d2e2, 0x80c2d4];
   const hash = (i) => { let h = (i * 2654435761) >>> 0; h ^= h >>> 15; return (h % 1000) / 1000; };
   seats.forEach((seat, i) => {
     const n = +seat.block, u = hash(i * 7 + n);
-    const teal = n >= 23 && (seat.row >= 13 ? u < .86 : seat.row >= 7 ? u < .55 : u < .08);
+    const teal = n >= 23 && (seat.row >= 10 ? u < .82 : seat.row >= 5 ? u < .45 : u < .05);
     const hue = (teal ? TEAL : YELLOW)[Math.floor(hash(i + 911) * 3)];
     mat.makeRotationY(seat.yaw).setPosition(seat.x, seat.y, seat.z);
     body.setMatrixAt(i, mat);
@@ -423,9 +405,9 @@ export function buildGymnasticArena(ctx) {
     // traced its pores and sparkled; the arena's concrete is the same)
     [name, std({ color, roughness: .93, side: THREE.DoubleSide, ...(name === 'concrete' ? { ...textures, roughnessMap: null } : {}) })]));
   mat.panel = std({ color: 0xffffff, ...baffleTex(), roughnessMap: null, roughness: 1, side: THREE.DoubleSide });
-  // the floor under its concert covering: dark grey protection panels
+  // the floor as the 2025 concert photographs show it: light grey concrete
   const ground = new THREE.Mesh(new THREE.CircleGeometry(62.4, 128),
-    std({ color: 0xffffff, ...withRepeat(floorPanelTex(), 62.4, 62.4), roughnessMap: null, roughness: 1 }));
+    std({ color: 0xc3beb4, ...withRepeat(concreteTex({ key: 'gym-floor', tone: .5, even: .55, warm: .04 }), 16, 16), roughnessMap: null, roughness: 1, envMapIntensity: .3 }));
   ground.rotateX(-Math.PI / 2);
   ground.receiveShadow = true;
   root.add(ground);
@@ -451,7 +433,7 @@ export function buildGymnasticArena(ctx) {
     root, eye, ...show, round, seatNear: stands.seatNear, seats: stands.seats, splitTurn: 0,
     background: new THREE.Color(0x060608), fog: new THREE.FogExp2(0x07070a, .0031),
     hazeAmb: new THREE.Color(0x050407), hazeAmbDist: 120,
-    bloom: { strength: .42, radius: .6, threshold: 1.38, house: 1.6 },
+    bloom: { strength: .32, radius: .5, threshold: 1.5, house: 1.0 },
     grade: { exposure: 1.14, vignette: .28, ca: .003, grain: .025, sat: 1.04, lift: [.004, .005, .009] },
     envIntensity: .58,
     finish: { matte: .15, gloss: .3, metal: .3 },

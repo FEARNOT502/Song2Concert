@@ -30,9 +30,11 @@ export const GYM_PA = {
     { x: -24.8, z: 15.6, top: 17.2, yaw: -.24 },
     { x: 24.8, z: 17.4, top: 17.2, yaw: .24 },
   ],
+  // 360: a pair at each corner of the LED box, splayed either side of the diagonal
   360: Array.from({ length: 8 }, (_, i) => {
-    const yaw = (Math.floor(i / 2) * 90 + (i % 2 ? 51 : 39)) * GYM_RAD;
-    return { x: 21.5 * Math.sin(yaw), z: 21.5 * Math.cos(yaw), top: 18.0, yaw };
+    const diag = (Math.floor(i / 2) * 90 + 45) * GYM_RAD, s = i % 2 ? 1 : -1;
+    const x = 12.4 * Math.sin(diag) + s * .9 * Math.cos(diag), z = 12.4 * Math.cos(diag) - s * .9 * Math.sin(diag);
+    return { x, z, top: 18.2, yaw: diag + s * .38 };
   }),
 };
 export const GYM_CENTER_R = 7.6;
@@ -52,7 +54,7 @@ const GENERAL = {
   wall: [30.4, 10.9, 4.45], wallZ: -23.15, rig: 18.2, reach: 66,
 };
 // 360: DAY6's low round deck, the drum riser in its middle, the grid over it.
-const ROUND = { code: 'KR1', deck: 1.38, riser: [2.28, .69], gap: 2.6, rig: 19.2, wall: [12.8, 6.25, 13.6], reach: 64 };
+const ROUND = { code: 'KR1', deck: 1.38, riser: [2.28, .69], gap: 2.6, rig: 20.2, wall: [16.4, 5.4, 12.6], reach: 64 };
 const rect = (x0, x1, z0, z1) => [[x0, z0], [x1, z0], [x1, z1], [x0, z1]];
 const RISE = .2, RUN = .28;
 const flight = ({ x, z, h, y0 = 0, width, dir }) => {

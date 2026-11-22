@@ -140,8 +140,10 @@ function roundPlot() {
   const fences = [];
   for (const [a, b] of GYM_STANDING) {
     const lo = a + 2.4, hi = b - 2.4, mid = (a + b) / 2, gate = 1.4 / outer / GYM_RAD;
-    const arc = (from, to, radius) => gymRing(from, to, radius, Math.max(2, Math.ceil(Math.abs(to - from) / 4))).map(([x, z]) => P(x, z));
-    fences.push([...arc(mid - gate, lo, outer), ...arc(lo, hi, inner), ...arc(hi, mid + gate, outer)]);
+    // (straight runs, as the photographs show them: one along the pit, so the
+    // six make a hexagon round the stage, and one either side of the gate)
+    const arc = (from, to, radius, n) => gymRing(from, to, radius, n).map(([x, z]) => P(x, z));
+    fences.push([...arc(mid - gate, lo, outer, 1), ...arc(lo, hi, inner, 1), ...arc(hi, mid + gate, outer, 1)]);
   }
   const stage = [];
   const at = (deg, rad) => gymPoint(deg, rad);
@@ -187,6 +189,12 @@ function roundPlot() {
   for (const deg of [45, 135, 225, 315]) {
     const [x, z] = at(deg, GYM_CENTER_R - .55);
     lights.push({ p: [r2(x), h, r2(z)], aim: [0, 0, 0], facing: out(x, z), kind: 'blinder4', ground: false });
+  }
+  // moving lights on the floor round its edge, outside the pens' fences
+  for (let i = 0; i < 18; i++) {
+    const deg = i * 20 + 10, [x, z] = at(deg, GYM_FLOOR_R - 1.1);
+    const kind = i % 2 ? 'beam' : 'spot';
+    lights.push({ p: [r2(x), 0, r2(z)], aim: [r2(x * .55), 12, r2(z * .55)], facing: toward(x, z), kind, ground: true });
   }
   // the console on its deck in section 19, the camera on the landing above it
   const [fx, fy, fz] = GYM_FOH['360'];

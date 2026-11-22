@@ -133,12 +133,12 @@ export function cutRake(geometry) {
 }
 
 export function buildBowl(root, { pipe, rakeAt }) {
-  const white = std({ color: 0xd2d4d2, roughness: .82, side: THREE.DoubleSide });
+  const white = std({ color: 0xc6c8c5, roughness: .95, envMapIntensity: .2, side: THREE.DoubleSide });
   const concrete = std({ color: 0x8d9092, roughness: .92, side: THREE.DoubleSide });
   // the concourses' finishes, lit from within (see the note at the top)
-  const lit = std({ color: 0xb9b6ae, roughness: .85, emissive: KELVIN(3600), emissiveIntensity: .85, side: THREE.DoubleSide });
-  const floorLit = std({ color: 0x6c6a66, roughness: .82, emissive: KELVIN(3600), emissiveIntensity: .24 });
-  const ceilingLit = std({ color: 0x9c9a95, roughness: .9, emissive: KELVIN(3600), emissiveIntensity: .6, side: THREE.DoubleSide });
+  const lit = std({ color: 0xb9b6ae, roughness: .85, emissive: KELVIN(3600), emissiveIntensity: .35, side: THREE.DoubleSide });
+  const floorLit = std({ color: 0x6c6a66, roughness: .82, emissive: KELVIN(3600), emissiveIntensity: .1 });
+  const ceilingLit = std({ color: 0x9c9a95, roughness: .9, emissive: KELVIN(3600), emissiveIntensity: .18, side: THREE.DoubleSide });
   const rail = std({ color: 0xb7babb, roughness: .78, metalness: .4 });
   const W = { white: [], roof: [], dark: [], concrete: [], lit: [], floor: [], ceiling: [], rail: [], tread: [] };
 
@@ -235,7 +235,7 @@ export function buildBowl(root, { pipe, rakeAt }) {
 
   const meshes = [
     mesh(root, W.white, white, 'Vomitory hoods'),
-    mesh(root, W.roof, std({ color: 0xc4c6c2, roughness: .9, side: THREE.DoubleSide }), 'Vomitory hood roofs'),
+    mesh(root, W.roof, std({ color: 0xb8bab6, roughness: .95, envMapIntensity: .2, side: THREE.DoubleSide }), 'Vomitory hood roofs'),
     mesh(root, W.dark, std({ color: 0x141517, roughness: 1, side: THREE.DoubleSide }), 'Vomitory linings', false),
     mesh(root, W.concrete, concrete, 'Bowl concrete'),
     mesh(root, W.lit, lit, 'Concourse walls'),
@@ -258,7 +258,7 @@ export function buildBowl(root, { pipe, rakeAt }) {
   }
   // the fittings: a line of lamps under the rake round the 2F concourse, one
   // under the 3F concourse's ceiling, every 2.5 degrees
-  const fit = new THREE.InstancedMesh(new THREE.BoxGeometry(1.2, .06, .22), new THREE.MeshBasicMaterial({ color: KELVIN(3600).multiplyScalar(2.6) }), 288);
+  const fit = new THREE.InstancedMesh(new THREE.BoxGeometry(1.2, .06, .22), new THREE.MeshBasicMaterial({ color: KELVIN(3600).multiplyScalar(1.1) }), 288);
   const mtx = new THREE.Matrix4(), rot = new THREE.Quaternion(), one = V3(1, 1, 1);
   let n = 0;
   for (let i = 0; i < 144; i++) {
