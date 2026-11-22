@@ -136,11 +136,13 @@ export function buildBowl(root, { pipe, rakeAt }) {
   const white = std({ color: 0xc6c8c5, roughness: .95, envMapIntensity: .2, side: THREE.DoubleSide });
   const concrete = std({ color: 0x8d9092, roughness: .92, side: THREE.DoubleSide });
   // the concourses' finishes, lit from within (see the note at the top)
-  const lit = std({ color: 0xb9b6ae, roughness: .85, emissive: KELVIN(3600), emissiveIntensity: .35, side: THREE.DoubleSide });
-  const floorLit = std({ color: 0x6c6a66, roughness: .82, emissive: KELVIN(3600), emissiveIntensity: .1 });
-  const ceilingLit = std({ color: 0x9c9a95, roughness: .9, emissive: KELVIN(3600), emissiveIntensity: .18, side: THREE.DoubleSide });
+  // (their own colour nearly black: the house lights throw no shadows, and
+  // would reach in through the rake; the finishes' look is their emission)
+  const lit = std({ color: 0x121110, roughness: .9, emissive: KELVIN(3600).multiplyScalar(.74), emissiveIntensity: .55, side: THREE.DoubleSide });
+  const floorLit = std({ color: 0x100f0e, roughness: .9, emissive: KELVIN(3600).multiplyScalar(.42), emissiveIntensity: .5 });
+  const ceilingLit = std({ color: 0x0f0f0e, roughness: .95, emissive: KELVIN(3600).multiplyScalar(.6), emissiveIntensity: .45, side: THREE.DoubleSide });
   const rail = std({ color: 0xb7babb, roughness: .78, metalness: .4 });
-  const W = { white: [], roof: [], dark: [], concrete: [], lit: [], floor: [], ceiling: [], rail: [], tread: [] };
+  const W = { white: [], roof: [], dark: [], frame: [], door: [], concrete: [], lit: [], floor: [], ceiling: [], rail: [], tread: [] };
 
   // ── the vomitories, as they are in the 2018 photographs: an open pit in
   // the rake facing the stage, its white walls' tops a diagonal rising from
@@ -233,7 +235,21 @@ export function buildBowl(root, { pipe, rakeAt }) {
     radialBox(W.lit, deg - 1.9, r2 + .75, r1 - .75, 2.9 * GYM_RAD * C2.r1, C2.y, mid + .2, 0);
   }
 
+  // the concourses' back walls: columns at the structure's bays, between them
+  // the doors (washrooms, kiosks, stairs to the gates), dark grey in frames
+  for (const [y0, y1, r] of [[C2.y, C3.y - .3, C2.r1], [C3.y, C3.ceil, C3.r1]]) {
+    for (let i = 0; i < 36; i++) {
+      const deg = i * 10 + 5;
+      if (STAIR_CORES.some((c) => Math.abs(((deg - c + 540) % 360) - 180) < 7)) continue;
+      radialBox(W.concrete, deg, r - .55, r, .38, y0, y1);
+      if (i % 2) continue;
+      radialBox(W.frame, deg + 5, r - .08, r, 1.05, y0, y0 + 2.45);
+      radialBox(W.door, deg + 5, r - .1, r - .04, .9, y0, y0 + 2.3);
+    }
+  }
   const meshes = [
+    mesh(root, W.frame, std({ color: 0x8e9092, roughness: .6, metalness: .3 }), 'Concourse door frames', false),
+    mesh(root, W.door, std({ color: 0x3a3d41, roughness: .7, metalness: .2 }), 'Concourse doors', false),
     mesh(root, W.white, white, 'Vomitory hoods'),
     mesh(root, W.roof, std({ color: 0xb8bab6, roughness: .95, envMapIntensity: .2, side: THREE.DoubleSide }), 'Vomitory hood roofs'),
     mesh(root, W.dark, std({ color: 0x141517, roughness: 1, side: THREE.DoubleSide }), 'Vomitory linings', false),
