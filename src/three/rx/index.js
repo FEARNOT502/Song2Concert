@@ -37,8 +37,8 @@ const LOOK = {
   },
   // (KSPO DOME: smaller than the arena under a lower roof; its haze reaches across the bowl)
   'gymnastic-arena': {
-    general: { fog: 0.0028, fogAmb: 0.35, floorY: 0, expRx: 1.45, fogFar: 140, led: 0.25 },
-    360: { fog: 0.0028, fogAmb: 0.35, floorY: 0, expRx: 1.5, fogFar: 140, led: 0.3 },
+    general: { fog: 0.0024, fogAmb: 0.35, floorY: 0, expRx: 1.45, fogFar: 140, led: 0.25, box: [[-62, 0, -62], [62, 27, 62]], probe: [0, 9, 8] },
+    360: { fog: 0.0018, fogAmb: 0.3, floorY: 0, expRx: 1.5, fogFar: 140, led: 0.3, box: [[-62, 0, -62], [62, 27, 62]], probe: [0, 7, 20] },
   },
   dome: {
     general: { fog: 0.0016, fogAmb: 0.3, floorY: 0, expRx: 1.45, fogFar: 240, led: 0.2 },
@@ -121,8 +121,11 @@ class Rx {
     // the probe: in the house, the box the room's walls (and the stage house)
     const env = venue.env;
     const bb = new THREE.Box3().setFromObject(this.root);
-    const min = env ? new THREE.Vector3(-env.w / 2, 0, Math.max(bb.min.z, -16)) : bb.min.clone();
-    const max = env ? new THREE.Vector3(env.w / 2, env.h, env.d) : bb.max.clone();
+    // (a room centred on its own middle gives its box in LOOK: the default
+    // runs from just behind the stage out along +z, as the arena does)
+    const box = this.look.box;
+    const min = box ? new THREE.Vector3(...box[0]) : env ? new THREE.Vector3(-env.w / 2, 0, Math.max(bb.min.z, -16)) : bb.min.clone();
+    const max = box ? new THREE.Vector3(...box[1]) : env ? new THREE.Vector3(env.w / 2, env.h, env.d) : bb.max.clone();
     const pp = this.look.probe ? new THREE.Vector3(...this.look.probe) : min.clone().lerp(max, 0.5);
     this.probe.place(pp, min, max);
     RXU.rxBoxMin.value.copy(min); RXU.rxBoxMax.value.copy(max); RXU.rxProbePos.value.copy(pp);

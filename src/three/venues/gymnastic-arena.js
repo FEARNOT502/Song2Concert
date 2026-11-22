@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { KELVIN, V3, concreteTex, std, withRepeat } from '../core.js';
+import { KELVIN, V3, concreteTex, fbm, pbrSet, smooth, std, valueNoise, withRepeat } from '../core.js';
 import { stageSteps } from '../rig.js';
 import { decodeSeats, stadiumSeatGeometry, seatFinder } from '../stands.js';
 import { maskingDrapes } from '../show.js';
@@ -337,6 +337,32 @@ function roof(root, mat, pipe) {
   };
 }
 
+// The concert floor's covering: interlocking 1 m protection panels, dark grey,
+// a faint moulded texture, their joints darker (a tile is 2 x 2 panels).
+function floorPanelTex() {
+  const n = valueNoise(57);
+  return pbrSet('gym-floor-panels', 512, (u, v) => {
+    const du = Math.min(u % .5, .5 - (u % .5)), dv = Math.min(v % .5, .5 - (v % .5));
+    const seam = 1 - smooth(.004, .009, Math.min(du, dv));
+    const grain = fbm(n, u * 24, v * 24, 24, 24, 3);
+    const c = .085 + .018 * grain - .05 * seam;
+    return [c, c, c * 1.03, .5 - seam * .3 + grain * .05, 1];
+  }, { normal: 1.2 });
+}
+
+// The roof's acoustic baffles: white perforated sheet in a frame, the holes
+// in a tight grid (the sound goes through to the wool behind).
+function baffleTex() {
+  return pbrSet('gym-baffle', 256, (u, v) => {
+    const edge = Math.min(u, 1 - u, v, 1 - v);
+    const frame = edge < .025 ? 1 : 0;
+    const hu = (u * 52) % 1 - .5, hv = (v * 18) % 1 - .5;
+    const hole = frame ? 0 : 1 - smooth(.18, .26, Math.hypot(hu, hv));
+    const c = .82 - .38 * hole - .06 * frame;
+    return [c, c, c * .98, .5 - hole * .4 + frame * .2, 1];
+  }, { normal: 1.0 });
+}
+
 function chairs(root, seats) {
   const body = new THREE.InstancedMesh(stadiumSeatGeometry(), std({ color: 0xffffff, roughness: .8, side: THREE.DoubleSide }), seats.length);
   const frame = new THREE.InstancedMesh(new THREE.BoxGeometry(.05, .48, .3), std({ color: 0x25282b, roughness: .82 }), seats.length);
@@ -396,10 +422,10 @@ export function buildGymnasticArena(ctx) {
     // (no roughness map on the concrete: under it the screen-space reflections
     // traced its pores and sparkled; the arena's concrete is the same)
     [name, std({ color, roughness: .93, side: THREE.DoubleSide, ...(name === 'concrete' ? { ...textures, roughnessMap: null } : {}) })]));
-  mat.panel = std({ color: 0xd2d4ce, roughness: 1, side: THREE.DoubleSide });
+  mat.panel = std({ color: 0xffffff, ...baffleTex(), roughnessMap: null, roughness: 1, side: THREE.DoubleSide });
   // the floor under its concert covering: dark grey protection panels
   const ground = new THREE.Mesh(new THREE.CircleGeometry(62.4, 128),
-    std({ color: 0x3a3b3d, ...withRepeat(concreteTex({ key: 'gym-floor', tone: .37, even: .82 }), 18, 18), roughnessMap: null, roughness: 1 }));
+    std({ color: 0xffffff, ...withRepeat(floorPanelTex(), 62.4, 62.4), roughnessMap: null, roughness: 1 }));
   ground.rotateX(-Math.PI / 2);
   ground.receiveShadow = true;
   root.add(ground);

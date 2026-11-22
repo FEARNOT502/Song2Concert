@@ -122,13 +122,13 @@ function roundRig(k) {
   }
   // the deck's side white (a fascia round it, its LED trim on the lip above)
   const fascia = new THREE.Mesh(new THREE.CylinderGeometry(GYM_CENTER_R + .012, GYM_CENTER_R + .012, L.deck - .12, 96, 1, true),
-    std({ color: 0xe9ecef, roughness: .5, metalness: .05 }));
+    std({ color: 0xe9ecef, roughness: .82, metalness: .05 }));
   fascia.position.y = (L.deck - .12) / 2 + .02;
   fascia.name = 'Round deck fascia';
   fascia.userData.noCollide = true;
   production.add(fascia);
   const riser = new THREE.Mesh(new THREE.CylinderGeometry(L.riser[0] + .01, L.riser[0] + .01, L.riser[1] - .04, 64, 1, true),
-    std({ color: 0xf1f3f5, roughness: .45, metalness: .05 }));
+    std({ color: 0xf1f3f5, roughness: .82, metalness: .05 }));
   riser.position.y = L.deck + (L.riser[1] - .04) / 2;
   riser.name = 'Drum riser fascia';
   riser.userData.noCollide = true;
@@ -176,7 +176,7 @@ function consoleDeck(root) {
     m.userData.noCollide = true;
     g.add(m);
   }
-  const rail = std({ color: 0x2c2e31, roughness: .5, metalness: .6 });
+  const rail = std({ color: 0x2c2e31, roughness: .82, metalness: .4 });
   const bar = (w, d, x, y, z) => {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, .045, d), rail);
     m.position.set(x, y, z);
@@ -210,7 +210,8 @@ export function buildGymnasticShow(ctx, root, eye, stands, floor, houseUpdate = 
   // the house lights' banks on the roof's trusses: an inner ring for the
   // floor and the 1F rows, an outer one for the 2F rake
   const houseSources = [
-    ...Array.from({ length: 6 }, (_, i) => { const [x, z] = gymPoint(i * 60 + 30, 18); return V3(x, 25.6, z); }),
+    // (the inner ring at a quarter of the outer's power: the floor is near it)
+    ...Array.from({ length: 6 }, (_, i) => { const [x, z] = gymPoint(i * 60 + 30, 18); return Object.assign(V3(x, 25.6, z), { k: .22 }); }),
     ...Array.from({ length: 6 }, (_, i) => { const [x, z] = gymPoint(i * 60, 40); return V3(x, 23.4, z); }),
   ];
   const floorOf = (keep) => {

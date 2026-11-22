@@ -735,13 +735,15 @@ export function concertProduction(ctx, root, room, { center, eye, stands, floorB
   // falls off between a line's 1/d and a point's: 1/d^1.25, its power set so
   // the field (`HOUSE_REF` metres off) is lit as before.
   const HOUSE_DECAY = 1.25, HOUSE_REF = stadium ? 80 : 60;
-  const housePower = (arena ? 12500 : gym ? 30000 : 34500) * Math.pow(HOUSE_REF, HOUSE_DECAY - 2);
+  const housePower = (arena ? 12500 : gym ? 85000 : 34500) * Math.pow(HOUSE_REF, HOUSE_DECAY - 2);
   const house = houseSources.map((pos) => {
     const lamp = new THREE.SpotLight(KELVIN(5000), 0, L.reach * 2.1, 1.12, .65, HOUSE_DECAY);
     lamp.position.copy(pos);
     if (houseTarget) lamp.target.position.copy(houseTarget(pos));
     else lamp.target.position.set(pos.x * .73, 0, lerp(center.z, pos.z, .65));
     lamp.userData.offWhenDark = 'house';
+    // (a source may carry its own share of the power: `k`)
+    lamp.userData.k = pos.k ?? 1;
     root.add(lamp, lamp.target);
     return lamp;
   });
@@ -785,7 +787,7 @@ export function concertProduction(ctx, root, room, { center, eye, stands, floorB
         l.color.copy(KELVIN(4600)).lerp(i % 2 ? f.pal.b : f.pal.a, high ? .37 : .18);
         l.intensity = keyPower * (quiet ? .82 : 1 + .32 * energy) * show;
       });
-      house.forEach((l) => { l.intensity = housePower * f.house; });
+      house.forEach((l) => { l.intensity = housePower * f.house * l.userData.k; });
       entry.intensity = .26 + .86 * f.house;
       houseUpdate?.({ ...f, sec });
       cu.uStage.value.copy(center).y = round ? 10 : 13;
