@@ -9,41 +9,10 @@
 // the amps on a line behind them), the vocal mics and prompters along the
 // deck's front and out on the T's walkway. 360: DAY6's round deck, the drums
 // on the raised middle, guitar, keys and bass round it.
-import { GYM_CENTER_R, GYM_CONSOLE_DECK, GYM_FLOOR_R, GYM_FOH, GYM_FOH_CAMERA, GYM_RAD, GYM_STANDING, gymPoint, gymRing, gymStagePlan } from '../gymnastic-arena-plan.js';
+import { GYM_CENTER_R, GYM_CONSOLE_DECK, GYM_FLOOR_R, GYM_FOH, GYM_RAD, GYM_STANDING, gymPoint, gymRing, gymStagePlan } from '../gymnastic-arena-plan.js';
 
 const r2 = (v) => Math.round(v * 1000) / 1000;
 const P = (x, z) => [r2(x), r2(z)];
-
-// the floor cameras' places, which the floor's seats keep clear of too
-export function gymCameraPads(mode) {
-  const plan = gymStagePlan(mode);
-  const { L } = plan;
-  if (mode === '360') {
-    return [120, 240, 0].map((deg, i) => {
-      const [x, z] = gymPoint(deg + 9, GYM_CENTER_R + 1.35);
-      return { code: ['03', '04', '05'][i], p: P(x, z), aim: P(0, 0), lens: 1.75 };
-    });
-  }
-  return [
-    { code: '03', p: P(-17.6, L.front + 1.35), aim: P(-11, L.back + 6), lens: 2.0 },
-    { code: '04', p: P(17.6, L.front + 1.35), aim: P(11, L.back + 6), lens: 2.0 },
-    { code: '05', p: P(0, L.cross + L.crossD + 3.6), aim: P(0, L.cross + 1) },
-  ];
-}
-
-export const gymJib = (mode) => {
-  if (mode === '360') {
-    const [x, z] = gymPoint(171, GYM_FLOOR_R - 1.15), [tx, tz] = gymPoint(175, GYM_FLOOR_R - 5.4);
-    return { p: P(x, z), tip: P(tx, tz), aim: P(0, 0) };
-  }
-  return { p: P(-24.6, 1.6), tip: P(-20.9, -.4), aim: P(0, -15) };
-};
-
-function pocket({ p: [x, z], tip: [tx, tz] }) {
-  const len = Math.hypot(tx - x, tz - z), ux = (tx - x) / len, uz = (tz - z) / len;
-  const at = (a, b) => P(x + ux * a - uz * b, z + uz * a + ux * b);
-  return [at(-1.6, -1.4), at(len + .6, -1.0), at(len + .6, 1.0), at(-1.6, 1.4)];
-}
 
 function generalPlot() {
   const plan = gymStagePlan('general');
@@ -133,8 +102,7 @@ function generalPlot() {
   }
   for (const s of [-1, 1]) lights.push({ p: [r2(s * (r - 1.2)), h, r2(L.front - .9)], aim: [0, 0, 0], facing: [-s * .25, 1], kind: 'blinder4', ground: false });
   for (const x of [-1.2, 1.2]) lights.push({ p: [x, L.runway, r2(L.front + .45)], aim: [0, 0, 0], facing: [0, 1], kind: 'footlight', ground: false });
-  const jib = gymJib('general');
-  return { fences, stage, floor, cameras: gymCameraPads('general'), jib: { ...jib, pocket: pocket(jib) }, subs, fills, lights };
+  return { fences, stage, floor, subs, fills, lights };
 }
 
 function roundPlot() {
@@ -203,15 +171,10 @@ function roundPlot() {
     const kind = i % 2 ? 'beam' : 'spot';
     lights.push({ p: [r2(x), 0, r2(z)], aim: [r2(x * .55), 12, r2(z * .55)], facing: toward(x, z), kind, ground: true });
   }
-  // the console on its deck in section 19, the camera on the landing above it
   const [fx, fy, fz] = GYM_FOH['360'];
-  const { r, y, riser } = GYM_FOH_CAMERA;
-  const [cx, cz] = gymPoint(-3.2, r);
-  const jib = gymJib('360');
   return {
-    fences, stage, floor: [], cameras: gymCameraPads('360'), jib: { ...jib, pocket: pocket(jib) }, subs, fills, lights,
-    foh: { y: r2(fy - .81), yaw: Math.PI, model: 'foh-console' },
-    fohCam: { p: P(cx, cz), y: r2(y + riser), riser, aim: [0, h + 1.5, 0] },
+    fences, stage, floor: [], subs, fills, lights,
+    foh: { y: r2(fy - .81), yaw: Math.PI },
     consoleDeck: { ...GYM_CONSOLE_DECK, x: fx, z: fz },
   };
 }

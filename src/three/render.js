@@ -80,6 +80,11 @@ export class BeamField {
         uniform float uTime, uGain;
         uniform sampler3D tNoise;
         varying vec3 vWorld; varying vec3 vApex; varying vec3 vDir; varying vec4 vP; varying vec4 vQ; varying vec3 vColor;
+        float rayOffset(vec2 pixel) {
+          vec3 p = fract(vec3(pixel.xyx) * 0.1031);
+          p += dot(p, p.yzx + 33.33);
+          return fract((p.x + p.y) * p.z);
+        }
         void main() {
           vec2 uv = gl_FragCoord.xy / uRes;
           vec3 ro = cameraPosition;
@@ -116,9 +121,10 @@ export class BeamField {
           t0 = max(t0, 0.0);
           t1 = min(t1, tScene);
           if (t1 <= t0) discard;
-          float dither = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + uTime * 7.31);
+          float dither = rayOffset(gl_FragCoord.xy);
           float dt = (t1 - t0) / float(STEPS);
           float soft = vQ.x, nAmt = vQ.y, fallExp = vQ.z;
+          float tail = L - max(0.65, (L - hMin) * 0.14);
           float acc = 0.0;
           for (int i = 0; i < STEPS; i++) {
             float t = t0 + (float(i) + dither) * dt;
@@ -129,15 +135,19 @@ export class BeamField {
             float R = max(h * tanA, 1e-3);
             float x = rr / (R * R);
             float hard = 1.0 - smoothstep(0.55, 1.0, x);
-            float prof = mix(hard * (0.55 + 0.45 * (1.0 - x)), exp(-3.2 * x) * step(x, 1.0), soft);
-            float fall = pow(1.0 + h * 0.25, -fallExp);
+            float wash = exp(-3.2 * x) * (1.0 - smoothstep(0.72, 1.0, x));
+            float prof = mix(hard * (0.55 + 0.45 * (1.0 - x)), wash, soft);
+            float fall = pow(1.0 + h * 0.25, -fallExp) * (1.0 - smoothstep(tail, L, h));
             float n = texture(tNoise, pw * 0.045 + vec3(uTime * 0.012, uTime * 0.02, -uTime * 0.008)).r;
             float n2 = texture(tNoise, pw * 0.16 - vec3(0.0, uTime * 0.03, 0.0)).r;
-            float haze = mix(1.0, (n * 1.5 + n2 * 0.5) * 0.9, nAmt);
+            float haze = mix(1.0, (n * 1.5 + n2 * 0.5) * 0.9, nAmt * 0.6);
             acc += prof * fall * haze;
           }
           acc *= dt;
-          gl_FragColor = vec4(vColor * vP.z * acc * uGain, 1.0);
+          // Broad wash fixtures color more air but should not fill it with
+          // the same visible intensity as a narrow beam.
+          float scatter = mix(0.94, 0.42, smoothstep(0.32, 0.86, soft));
+          gl_FragColor = vec4(vColor * vP.z * acc * uGain * scatter, 1.0);
         }`,
       transparent: true,
       blending: THREE.AdditiveBlending,
@@ -192,6 +202,7 @@ export class HazeField {
       uCol: { value: Array.from({ length: this.MAX }, () => V3()) },
       uCount: { value: 0 },
       uDensity: { value: 0.02 },
+      uStrength: { value: 1 },
       uAmb: { value: new THREE.Color(0) },
       uAmbDist: { value: 60 },
     };
@@ -205,7 +216,7 @@ export class HazeField {
         uniform vec3 uPos[${this.MAX}];
         uniform vec3 uCol[${this.MAX}];
         uniform int uCount;
-        uniform float uDensity, uAmbDist;
+        uniform float uDensity, uAmbDist, uStrength;
         uniform vec3 uAmb;
         varying vec2 vUv;
         void main() {
@@ -224,7 +235,7 @@ export class HazeField {
             sum += uCol[i] * F;
           }
           vec3 amb = uAmb * (1.0 - exp(-tMax / uAmbDist));
-          gl_FragColor = vec4(sum * uDensity + amb, 1.0);
+          gl_FragColor = vec4((sum * uDensity + amb) * uStrength, 1.0);
         }`,
       depthTest: false, depthWrite: false, transparent: true, blending: THREE.AdditiveBlending,
     }));
@@ -302,14 +313,14 @@ export class FlareField {
 // right and look wrong: the sleeve goes milky behind a wash of coloured air. So
 // after the volumetrics are drawn, every screen face is drawn once more into
 // that buffer with a multiply blend, thinning the air in front of it. Not to a
-// trace: a wall with no air in front of it, in a room full of haze, reads as
-// pasted on over the room. Somewhat under half is kept, and the art still
-// reads through it. The scene's own depth decides which pixels of the face
+// trace: a wall with no air in front of it reads as pasted on. Keep most of
+// the haze so the screen edge does not form a visible cut in a nearby beam.
+// The scene's own depth decides which pixels of the face
 // are visible, so a head or a truss in front of the screen keeps its haze.
 export class ScreenMask {
   constructor() {
     this.scene = new THREE.Scene();
-    this.uniforms = { tDepth: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uKeep: { value: 0.45 } };
+    this.uniforms = { tDepth: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uKeep: { value: 0.82 } };
     this.mat = new THREE.ShaderMaterial({
       uniforms: this.uniforms,
       vertexShader: 'void main(){ gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',

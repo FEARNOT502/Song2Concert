@@ -60,15 +60,6 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
   let strain = 0;
 
   const walker = new Walker(canvas);
-  // a click in the room: the FOH lighting monitor's CAM buttons take it
-  const clickRay = new THREE.Raycaster();
-  walker.onClick = (e) => {
-    if (!venue?.desks) return false;
-    const r = canvas.getBoundingClientRect();
-    clickRay.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), pipe.camera);
-    clickRay.far = 12;
-    return venue.desks.click(clickRay);
-  };
   walker.onSeatChange = onSeatChange;
   const beat = new BeatFollower();
   // the screens' content at 4096 px across on a computer (the type and the
@@ -166,6 +157,8 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
 
   function teardown() {
     if (venue) {
+      venue.desks?.dispose();
+      pipe.rx?.setVenue(null);
       pipe.scene.remove(venue.root);
       disposeTree(venue.root);
       venue = null; ctx = null;
@@ -193,11 +186,9 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     });
     if (gen !== buildGen || !running) return;
     const theater = id === 'theater';
-    const models = id === 'club' ? loadClubModels() : theater && mode === 'op'
+    const models = id === 'club' ? loadClubModels() : (theater && mode === 'op') || id === GYM_ID
       ? loadTheaterModels()
-      // (KSPO DOME's band plays the theatre's guitars and bass beside the shared kit)
-      : id === GYM_ID ? Promise.all([loadConcertModels(), loadTheaterModels()]).then(([a, b]) => new Map([...a, ...b]))
-        : theater || CONCERT_VENUES.has(id) ? loadConcertModels() : null;
+      : theater || CONCERT_VENUES.has(id) ? loadConcertModels() : null;
     const [concertModels, theaterLab] = await Promise.all([
       models?.catch((error) => {
         console.warn('Unable to load concert equipment models', error);
@@ -230,7 +221,7 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     pipe.scene.add(v.root);
     pipe.scene.add(pipe.flares.mesh);
     pipe.scene.background = v.background || new THREE.Color(0);
-    pipe.scene.fog = v.fog || null;
+    pipe.scene.fog = v.fog?.clone() ?? null;
     const cam = pipe.camera;
     cam.fov = v.camera.fov; cam.near = v.camera.near ?? 0.1; cam.far = v.camera.far ?? 2000;
     cam.updateProjectionMatrix();
@@ -242,12 +233,11 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
       const s = (pendingSeat && cat.getSeat(pendingSeat.block, pendingSeat.row, pendingSeat.num)) || cat.defaultSeat;
       if (s) walker.sitAt(s, v.stageTarget);
     }
-    const b = v.bloom || {};
-    pipe.bloom.strength = b.strength ?? 0.6; pipe.bloom.radius = b.radius ?? 0.6; pipe.bloom.threshold = b.threshold ?? 0.9;
+    pipe.bloom.radius = v.bloom?.radius ?? 0.6;
     const G = pipe.final.material.uniforms, g = v.grade || {};
     G.uExposure.value = g.exposure ?? 1; G.uVignette.value = g.vignette ?? 0.35; G.uCA.value = g.ca ?? 0.002;
     G.uGrain.value = pipe.q.grain ? (g.grain ?? 0.035) : 0; G.uSat.value = g.sat ?? 1.05;
-    G.uLift.value.setRGB(...(g.lift || [0, 0, 0]));
+    G.uLift.value.setRGB(...(g.lift || [0, 0, 0])).multiplyScalar(0.25);
     pipe.haze.uniforms.uDensity.value = v.hazeDensity ?? 0.02;
     pipe.beams.uniforms.uGain.value = v.beamGain ?? 1;
     pipe.venuePass.comp.material.uniforms.uVolShoulder.value = v.volShoulder ?? 0;
@@ -263,24 +253,22 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     v.root.traverse((o) => { if (o.isLight && o.userData.offWhenDark) dimLights.push({ l: o, peak: 0 }); });
     applyArt();
     applyCamera(0);
-    // Every material's shader is built for the number of lights in the room,
-    // so a light taken out or put back would rebuild them all mid-song: build
-    // them now for each state the room passes through (house up, the fade,
-    // the show) and the switch later only picks one already made.
-    // (into the scene's own target: a shader is built for where it draws to,
-    // and one built for the screen is not the one the frame uses)
-    const states = dimLights.length ? [['house'], ['house', 'show'], ['show']] : [null];
-    try {
-      for (const on of states) {
-        if (on) for (const d of dimLights) d.l.visible = on.includes(d.l.userData.offWhenDark);
-        pipe.renderer.setRenderTarget(pipe.venuePass.sceneRT);
-        const job = pipe.renderer.compileAsync(pipe.scene, cam);
-        pipe.renderer.setRenderTarget(null);
-        await job;
-        if (gen !== buildGen || !running) return;
-      }
-    } catch { /* compiles on the first frame instead */ }
-    if (gen !== buildGen || !running) return;
+    // Rx configures its own lights and shadows on the first frame. Warming the
+    // base lighting states here compiles shaders the first rx frame cannot use.
+    if (!pipe.rx?.on) {
+      const states = dimLights.length ? [['house'], ['house', 'show'], ['show']] : [null];
+      try {
+        for (const on of states) {
+          if (on) for (const d of dimLights) d.l.visible = on.includes(d.l.userData.offWhenDark);
+          pipe.renderer.setRenderTarget(pipe.venuePass.sceneRT);
+          const job = pipe.renderer.compileAsync(pipe.scene, cam);
+          pipe.renderer.setRenderTarget(null);
+          await job;
+          if (gen !== buildGen || !running) return;
+        }
+      } catch { /* compiles on the first frame instead */ }
+      if (gen !== buildGen || !running) return;
+    }
     frame(0.016, clock.getElapsedTime());
     fade(1, 420);
     onLoading?.(false, id);
@@ -337,11 +325,16 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     const level = pulseRef ? (pulseRef.current || 0) : pulse;
     beat.update(dt, { level, analyser: playing ? analyser?.() : null, playing, map: songMap, time: songMap && songClock ? songClock() : NaN });
     house += (houseTarget - house) * Math.min(1, dt * 1.4);
-    // (the haze machines run for the show: the air is clearer with the house up)
+    // Both renderers keep the room clear with the house lights up. The
+    // froxel volume already scatters light, so keep only a little legacy glow.
     if (pipe.rx) pipe.rx.house = house;
-    // a room can raise the bloom's threshold with the house lights up, so the
-    // paint they light does not halo; it comes down for the show's own light
-    if (venue.bloom?.house != null) pipe.bloom.threshold = venue.bloom.threshold + (venue.bloom.house - venue.bloom.threshold) * house;
+    const volumeFog = pipe.rx?.on && pipe.rx.f.fog;
+    pipe.haze.uniforms.uStrength.value = (volumeFog ? 0.18 : 0.55) * (1 - 0.90 * house);
+    if (pipe.scene.fog) pipe.scene.fog.density = volumeFog ? 0 : venue.fog.density * (0.48 - 0.34 * house);
+    const bloom = venue.bloom;
+    const threshold = bloom?.threshold ?? 0.9;
+    pipe.bloom.threshold = threshold + ((bloom?.house ?? threshold + 0.65) - threshold) * house;
+    pipe.bloom.strength = (bloom?.strength ?? 0.6) * (0.82 - 0.38 * house);
     const target = art.palette;
     for (const k of ['a', 'b', 'c', 'd']) pal[k].lerp(target[k], Math.min(1, dt * 2.2));
     applyCamera(dt);

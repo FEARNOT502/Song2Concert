@@ -4,15 +4,13 @@
 // FOH. The room's own part is its rig, here: the end stage's trusses, back wall and
 // PA under the dome's roof (General), or DAY6's black grid over the round deck
 // with its screens turned four ways (360); and the 360's console deck over
-// section 19, with the console trimmed of its camera deck and the FOH camera
-// on the landing above it.
+// section 19.
 import * as THREE from 'three';
 import { KELVIN, V3, lerp, std } from '../core.js';
 import { chainInto, hoists, mats } from '../rig.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { floorChairs, packFloor, screenHang } from '../show.js';
 import { concertProduction, showBeam } from '../concert-production.js';
-import { trimmedModel } from '../concert-models.js';
 import { AXES } from '../stage-plan.js';
 import {
   GYM_CENTER_R, GYM_CONSOLE_DECK, GYM_FLOOR_R, GYM_FOH, GYM_PA, GYM_RAD, GYM_STANDING, gymPoint, gymStagePlan,
@@ -205,15 +203,6 @@ function consoleDeck(root) {
 export function buildGymnasticShow(ctx, root, eye, stands, floor, houseUpdate = null) {
   const mode = ctx.mode, round = mode === '360';
   const data = gymEquipment(mode);
-  const models = ctx.concertModels;
-  if (models && round) {
-    // the console without its camera deck: the deck, its posts and its stair
-    // over the console's own floor (the 0.81 m lower deck's landing stays)
-    trimmedModel(models, 'foh', 'foh-console', (a, b, c) => {
-      const y = Math.max(a.y, b.y, c.y), cx = (a.x + b.x + c.x) / 3, cz = (a.z + b.z + c.z) / 3;
-      return y > 2.45 || (cx > 3.35 && cz > -1.62 && y > .95);
-    });
-  }
   if (round) consoleDeck(root);
   const center = V3(0, gymStagePlan(mode).L.deck, round ? 0 : -17);
   const onFloor = (x, z) => Math.hypot(x, z) < GYM_FLOOR_R - 1.2;

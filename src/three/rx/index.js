@@ -19,38 +19,37 @@ import { FINAL_RX, FROXEL, MAX_FOG_LIGHTS, MAX_FOG_SHADOWS, aoMaterial, compMate
 import { ReflectionProbe } from './probe.js';
 import { GIVolume, loadGI } from './gi.js';
 import { HDRPresenter } from './hdr.js';
+import { GYM_ID } from '../gymnastic-arena-plan.js';
 
 export * from '../render.js';
 
 const query = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
-const halton = (i, b) => { let f = 1, r = 0; while (i > 0) { f /= b; r += f * (i % b); i = Math.floor(i / b); } return r; };
 const rt = (w, h, o = {}) => new THREE.WebGLRenderTarget(Math.max(1, w), Math.max(1, h), { type: THREE.HalfFloatType, depthBuffer: false, ...o });
 
 // what each venue's haze and look are, under rx: haze density (per metre),
 // how far the haze volume reaches, the probe's place
 const LOOK = {
-  club: { general: { fog: 0.005, fogAmb: 0.4, floorY: 0.5, expRx: 1.2, fogFar: 40, led: 0.4, giGain: 0.35, envI: 0.35 } },
-  concerthall: { general: { fog: 0.0006, fogAmb: 0.4, floorY: 0, expRx: 1.1, fogFar: 90, led: 0.3, giGain: 0.55 } },
-  arena: {
-    general: { fog: 0.003, fogAmb: 0.35, floorY: 0, expRx: 1.45, fogFar: 200, led: 0.25 },
-    360: { fog: 0.003, fogAmb: 0.35, floorY: 0, expRx: 1.5, fogFar: 200, led: 0.3 },
+  club: { general: { fog: 0.0028, fogAmb: 0.20, floorY: 0.5, expRx: 1.2, fogFar: 36, led: 0.4, giGain: 0.35, envI: 0.35 } },
+  concerthall: { general: { fog: 0.00018, fogAmb: 0.14, floorY: 0, expRx: 1.1, fogFar: 75, led: 0.3, giGain: 0.55 } },
+  [GYM_ID]: {
+    general: { fog: 0.0010, fogAmb: 0.18, expRx: 1.4, fogFar: 135, led: 0.25, box: [[-62, 0, -62], [62, 27, 62]], probe: [0, 9, 8] },
+    360: { fog: 0.0008, fogAmb: 0.18, expRx: 1.45, fogFar: 150, led: 0.3, box: [[-62, 0, -62], [62, 27, 62]], probe: [0, 7, 20] },
   },
-  // (KSPO DOME: smaller than the arena under a lower roof; its haze reaches across the bowl)
-  'gymnastic-arena': {
-    general: { fog: 0.0022, fogAmb: 0.18, floorY: 0, expRx: 1.4, fogFar: 140, led: 0.25, box: [[-62, 0, -62], [62, 27, 62]], probe: [0, 9, 8] },
-    360: { fog: 0.0018, fogAmb: 0.18, floorY: 0, expRx: 1.45, fogFar: 140, led: 0.3, box: [[-62, 0, -62], [62, 27, 62]], probe: [0, 7, 20] },
+  arena: {
+    general: { fog: 0.0011, fogAmb: 0.18, expRx: 1.45, fogFar: 175, led: 0.25 },
+    360: { fog: 0.00095, fogAmb: 0.18, expRx: 1.5, fogFar: 185, led: 0.3 },
   },
   dome: {
-    general: { fog: 0.0016, fogAmb: 0.3, floorY: 0, expRx: 1.45, fogFar: 240, led: 0.2 },
-    360: { fog: 0.0016, fogAmb: 0.3, floorY: 0, expRx: 1.5, fogFar: 240, led: 0.3 },
+    general: { fog: 0.00068, fogAmb: 0.16, expRx: 1.45, fogFar: 205, led: 0.2 },
+    360: { fog: 0.0006, fogAmb: 0.16, expRx: 1.5, fogFar: 215, led: 0.3 },
   },
   stadium: {
-    general: { fog: 0.001, fogAmb: 0.3, floorY: 0, expRx: 1.45, fogFar: 260, led: 0.2 },
-    360: { fog: 0.001, fogAmb: 0.3, floorY: 0, expRx: 1.5, fogFar: 260, led: 0.3 },
+    general: { fog: 0.00032, fogAmb: 0.12, expRx: 1.45, fogFar: 215, led: 0.2 },
+    360: { fog: 0.00038, fogAmb: 0.12, expRx: 1.5, fogFar: 230, led: 0.3 },
   },
   theater: {
-    general: { fog: 0.0055, fogAmb: 0.9, floorY: 1, expRx: 1.55, probe: [0, 4.5, 6], led: 0.4 },
-    op: { fog: 0.006, fogAmb: 0.9, floorY: 1, expRx: 1.55, probe: [0, 4.5, 6], led: 0.35 },
+    general: { fog: 0.0013, fogAmb: 0.20, floorY: 1, expRx: 1.55, probe: [0, 4.5, 6], led: 0.4 },
+    op: { fog: 0.00185, fogAmb: 0.24, floorY: 1, expRx: 1.55, probe: [0, 4.5, 6], led: 0.35 },
   },
 };
 // A few of the room's surfaces as they really finish: a stage floor is painted
@@ -60,7 +59,7 @@ const SURFACES = [
   { name: /stage deck/i, mat: 0, set: { roughness: 0.58, normalScale: new THREE.Vector2(0.35, 0.35) } },
   { name: /stage deck/i, mat: 1, set: { roughness: 0.55 } },
 ];
-const lookOf = (id, mode) => LOOK[id]?.[mode] ?? LOOK[id]?.general ?? { fog: 0.012, fogAmb: 0.8, floorY: 0, expRx: 1.5 };
+const lookOf = (id, mode) => LOOK[id]?.[mode] ?? LOOK[id]?.general ?? { fog: 0.001, fogAmb: 0.18, expRx: 1.5 };
 
 class Rx {
   constructor(pipe) {
@@ -76,15 +75,12 @@ class Rx {
     this.look = lookOf(null);
     this.prevVP = new THREE.Matrix4();
     this.havePrev = false;
-    this.unjittered = new THREE.Matrix4();
-    this.unjitteredInv = new THREE.Matrix4();
     this.probe = new ReflectionProbe(pipe.renderer, pipe.pmrem, 256);
     this.gi = new GIVolume(pipe.renderer);
     this.giStatus = 'none';
     this.hidden = [];          // fake fill lights put out while rx is on
     this.shadowSaved = [];
     this.appEnv = null; this.appEnvI = 1;
-    this.fogSaved = null;
     this.lights = [];
     this.hdr = null;
     this.out = 'sdr';
@@ -105,9 +101,13 @@ class Rx {
     this.lights = [];
     this.havePrev = false;
     this.pipe.venuePass.resetHistory?.();
-    if (!this.root) return;
-    this.root.traverse((o) => { if (o.isLight) this.lights.push(o); });
+    this.gi.dispose();
+    this.giStatus = 'none';
     this.surfaces = [];
+    this.surfacesOn = false;
+    if (!this.root) return;
+    patchTree(this.pipe.scene);
+    this.root.traverse((o) => { if (o.isLight) this.lights.push(o); });
     this.root.traverse((o) => {
       if (!o.isMesh) return;
       for (const s of SURFACES) {
@@ -117,7 +117,6 @@ class Rx {
         this.surfaces.push({ m, set: s.set, was: Object.fromEntries(Object.keys(s.set).map((k) => [k, m[k]?.clone ? m[k].clone() : m[k]])) });
       }
     });
-    this.surfacesOn = false;
     // the probe: in the house, the box the room's walls (and the stage house)
     const env = venue.env;
     const bb = new THREE.Box3().setFromObject(this.root);
@@ -130,7 +129,7 @@ class Rx {
     this.probe.place(pp, min, max);
     RXU.rxBoxMin.value.copy(min); RXU.rxBoxMax.value.copy(max); RXU.rxProbePos.value.copy(pp);
     // the baked light, if there is one for this room
-    this.gi.dispose();
+    if (!this.allowed || !this.f.gi) return;
     this.giStatus = 'loading';
     const url = `${import.meta.env.BASE_URL}assets/${id}-${mode}.gi`;
     const root = this.root;
@@ -199,7 +198,6 @@ class Rx {
     const p = this.pipe, cam = p.camera;
     this.t = t;
     this.frame++;
-    patchTree(p.scene);
     RXU.rxOn.value = this.on ? 1 : 0;
     const sc = p.scene;
     const surf = this.on;
@@ -211,7 +209,6 @@ class Rx {
       this.restoreLights();
       this.applyShadows(false);
       if (this.appEnv && sc.environment !== this.appEnv) { sc.environment = this.appEnv; sc.environmentIntensity = this.appEnvI; }
-      if (this.fogSaved != null && sc.fog) { sc.fog.density = this.fogSaved; this.fogSaved = null; }
       RXU.rxGIOn.value = 0;
       p.final.material.uniforms.uTone.value = 0;
       p.final.material.uniforms.uSharpen.value = 0;
@@ -221,14 +218,14 @@ class Rx {
     if (!this.giOn && this.hidden.length) this.restoreLights();
     this.applyShadows(this.f.shadows);
     p.renderer.shadowMap.type = THREE.PCFShadowMap;
-    // the room's distance fog: the froxel haze does that job now
-    if (sc.fog && this.f.fog) { if (this.fogSaved == null) this.fogSaved = sc.fog.density; sc.fog.density = 0; }
     p.final.material.uniforms.uTone.value = this.f.agx ? 1 : 0;
     p.final.material.uniforms.uExpRx.value = this.look.expRx ?? 1.5;
-    p.final.material.uniforms.uSharpen.value = this.f.taa ? 0.6 : 0;
+    p.final.material.uniforms.uSharpen.value = this.f.taa ? 0.25 : 0;
     // the environment: the probe of the room (or the app's, until it is in)
     if (sc.environment && sc.environment !== this.probe.texture) { this.appEnv = sc.environment; this.appEnvI = sc.environmentIntensity; }
-    if (this.f.probe && this.root) {
+    // Let the main camera draw the first frame and initialize its shadow maps
+    // before rendering the room a second time for the reflection probe.
+    if (this.f.probe && this.root && this.havePrev) {
       // (the shadow maps as they are: not drawn again for each face)
       const sm = p.renderer.shadowMap;
       let au = sm.autoUpdate;
@@ -246,29 +243,17 @@ class Rx {
     RXU.rxPrevOn.value = this.havePrev && (this.f.ao || this.f.ssr) ? 1 : 0;
     RXU.rxPrevVP.value.copy(this.prevVP);
     RXU.rxAOStrength.value = this.f.ao ? 1 : 0;
-    // temporal jitter, a pixel's sub-sample, cycling over sixteen
+    // Keep the projection fixed. MSAA handles silhouettes while the history
+    // smooths the lighting samples in the same pixel grid.
     cam.updateMatrixWorld();
-    this.unjittered.copy(cam.projectionMatrix);
-    this.unjitteredInv.copy(cam.projectionMatrixInverse);
-    if (this.f.taa) {
-      const vp = p.venuePass, w = vp.sceneRT?.width || 1, h = vp.sceneRT?.height || 1;
-      const i = (this.frame % 16) + 1;
-      const jx = (halton(i, 2) - 0.5) * 2 / w, jy = (halton(i, 3) - 0.5) * 2 / h;
-      cam.projectionMatrix.elements[8] -= jx;
-      cam.projectionMatrix.elements[9] -= jy;
-      cam.projectionMatrixInverse.copy(cam.projectionMatrix).invert();
-    }
   }
 
   end() {
     const cam = this.pipe.camera;
     if (!this.on) { this.havePrev = false; return; }
-    cam.projectionMatrix.copy(this.unjittered);
-    cam.projectionMatrixInverse.copy(this.unjitteredInv);
-    this.prevVP.multiplyMatrices(this.unjittered, cam.matrixWorldInverse);
+    this.prevVP.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
     this.havePrev = true;
-    // renders between frames (the FOH desks' camera feeds) are from other
-    // views: last frame's screen-space AO is not theirs
+    // The fan-light monitor draws from above between main-camera frames.
     RXU.rxPrevOn.value = 0;
   }
 
@@ -460,7 +445,8 @@ class RxVenuePass extends AppVenuePass {
       L.uDims.value.set(fx, fy, fz); L.uCols.value = FROXEL.COLS; L.uNear.value = near; L.uFar.value = far;
       L.uProjInv.value.copy(cam.projectionMatrixInverse); L.uCamWorld.value.copy(cam.matrixWorld);
       L.uFrame.value = frame; L.uTime.value = rx.t ?? 0;
-      L.uDensity.value = rx.look.fog * (1 - 0.9 * (rx.house ?? 0)); L.uAmbGain.value = rx.look.fogAmb * (1 - 0.8 * (rx.house ?? 0)); L.uFloorY.value = rx.look.floorY ?? 0;
+      const house = rx.house ?? 1;
+      L.uDensity.value = rx.look.fog * (1 - 0.95 * house); L.uAmbGain.value = rx.look.fogAmb * (1 - 0.9 * house); L.uFloorY.value = rx.look.floorY ?? 0;
       L.tNoise.value = p.beams.uniforms.tNoise.value;
       L.uGIOn.value = rx.giOn ? 1 : 0;
       for (const k of ['rxGI0', 'rxGI1', 'rxGI2', 'rxGIOrigin', 'rxGISize']) L[k].value = RXU[k].value;
@@ -557,8 +543,7 @@ export class Pipeline extends AppPipeline {
     if (typeof window !== 'undefined') window.__rx = this.rx;
   }
   resize(w, h) {
-    // the temporal resolve does the supersampling: the scene is drawn at no
-    // more than 1.5 pixels per CSS pixel
+    // Cap the cost of the multisampled scene and its postprocessing.
     if (this.rx?.on && this.q.dpr > 1.5) this.q = { ...this.q, dpr: 1.5 };
     super.resize(w, h);
     if (this.rx?.on && this.rx.out === 'hdr' && this.rx.hdr?.active) {

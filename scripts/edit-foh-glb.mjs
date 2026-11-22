@@ -6,10 +6,6 @@
 //
 // - The lighting console's monitor moves left along the desk, and a 4:3 copy
 //   of it stands to its right for the fan-light map ("Fan map display").
-// - The left camera's viewfinder and tally lamp on the FOH's upper deck get
-//   their own materials ("Camera viewfinder live", "CAM 1 tally lamp"), so the
-//   app can show the programme feed there when CAM 1 is taken.
-//
 // Geometry is picked by region in the FOH's own frame (metres; +x right, -z
 // towards the stage, the operator looking down -z), so the monitor's bezel,
 // stand and screen move together even though the exporter merged them with the
@@ -107,20 +103,6 @@ function relocate(prim, tris, move, { copy = false, sx = 1 } = {}) {
   idx.setArray(out);
 }
 
-// Splits the picked triangles off into a new primitive with its own material.
-function split(prim, tris, material) {
-  const next = prim.clone();
-  next.setIndices(prim.getIndices().clone().setArray(new Uint32Array(tris.flatMap((t) => [0, 1, 2].map((k) => prim.getIndices().getScalar(t + k))))));
-  next.setMaterial(material);
-  const keep = [];
-  const idx = prim.getIndices();
-  const picked = new Set(tris);
-  for (let t = 0; t < idx.getCount(); t += 3) if (!picked.has(t)) keep.push(idx.getScalar(t), idx.getScalar(t + 1), idx.getScalar(t + 2));
-  idx.setArray(new Uint32Array(keep));
-  node.getMesh().addPrimitive(next);
-  return next;
-}
-
 // ── the lighting monitors ──
 let moved = 0, copied = 0, mapPrim = null;
 for (const prim of prims) {
@@ -147,15 +129,6 @@ for (const prim of prims) {
   moved += tris.length;
 }
 if (!mapPrim) throw new Error('no Cue stack monitor found');
-
-// ── CAM 1 (the left camera on the upper deck): its own viewfinder and tally ──
-for (const [matName, newName] of [['Camera viewfinder preview', 'Camera viewfinder live'], ['Live red tally lamp', 'CAM 1 tally lamp']]) {
-  const prim = prims.find((p) => p.getMaterial().getName() === matName);
-  const tris = pick(prim, ([x, y]) => x < 0 && y > 4);
-  if (!tris.length) throw new Error('nothing left of centre for ' + matName);
-  split(prim, tris, prim.getMaterial().clone().setName(newName));
-  console.log(`${newName}: ${tris.length} triangles`);
-}
 
 console.log(`monitor: ${moved} triangles moved left, ${copied} copied for the map monitor`);
 await doc.transform(meshopt({ encoder: MeshoptEncoder, level: 'high' }));

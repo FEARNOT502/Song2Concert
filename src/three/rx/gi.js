@@ -6,9 +6,9 @@
 // lights, a front light, the colour wash, the LED wall...), baked at unit
 // strength. Light adds, so the room's GI now is the sum of those bakes, each
 // weighted by what its lights are doing this frame: colour × intensity. That
-// sum is made on the GPU every frame into three small 3D textures (first-
-// order spherical harmonics of irradiance, one per colour channel) which every
-// material reads (materials.js) and the haze takes its ambient from.
+// sum is made on the GPU when light weights change, into three small 3D textures
+// (first-order spherical harmonics of irradiance, one per colour channel) read
+// by the materials (materials.js) and the haze.
 //
 // The file: 'RXGI', a u32 header length, the JSON header, then half floats:
 // for each group, for each channel (r, g, b), the probes x-fastest, four each
@@ -111,6 +111,7 @@ export class GIVolume {
     RXU.rxGISize.value.set(nx * c[0], ny * c[1], nz * c[2]);
     RXU.rxGIOffset.value = header.offset ?? Math.min(...c) * 0.4;
     RXU.rxGI0.value = this.rts[0].texture; RXU.rxGI1.value = this.rts[1].texture; RXU.rxGI2.value = this.rts[2].texture;
+    this.dirty = true;
     this.ready = true;
   }
 
@@ -118,13 +119,20 @@ export class GIVolume {
 
   update() {
     if (!this.ready) return;
-    const W = this.weights;
-    this.groups.forEach((g, i) => {
-      const l = g.light;
-      if (!l || !GIVolume.visible(l)) { W[i].set(0, 0, 0); return; }
-      const k = l.intensity * (g.scale ?? 1);
-      W[i].set(l.color.r * k, l.color.g * k, l.color.b * k);
-    });
+    for (const [i, { light, scale }] of this.groups.entries()) {
+      let r = 0, g = 0, b = 0;
+      if (light && GIVolume.visible(light)) {
+        const k = light.intensity * (scale ?? 1);
+        r = light.color.r * k;
+        g = light.color.g * k;
+        b = light.color.b * k;
+      }
+      const weight = this.weights[i];
+      if (weight.x === r && weight.y === g && weight.z === b) continue;
+      weight.set(r, g, b);
+      this.dirty = true;
+    }
+    if (!this.dirty) return;
     const r = this.renderer, U = this.quad.material.uniforms;
     U.tIn.value = this.input; U.uG.value = this.groups.length; U.uNZ.value = this.dims[2]; U.uNX.value = this.dims[0];
     const cur = r.getRenderTarget(), cf = r.getActiveCubeFace(), cm = r.getActiveMipmapLevel();
@@ -137,6 +145,7 @@ export class GIVolume {
       }
     }
     r.setRenderTarget(cur, cf, cm);
+    this.dirty = false;
   }
 
   dispose() {

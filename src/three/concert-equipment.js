@@ -4,28 +4,13 @@ import { V3, clamp, ringTint, std, velvet } from './core.js';
 import { rodInto } from './rig.js';
 import { flashUnits, runBlinders, runShow } from './show.js';
 import { STEP_RISE, STEP_RUN } from './stage-plan.js';
-import { addModelArray, cameraOnTripod, ConcertModels, heading, mountEquipmentContactShadows, placement, wirelessMicMount } from './concert-models.js';
+import { addModelArray, ConcertModels, heading, mountEquipmentContactShadows, placement, wirelessMicMount } from './concert-models.js';
 import layouts from './data/concert-equipment.json';
 
 const FLIGHT_CASE_SIZES = [V3(1, 1, 1), V3(.84, .77, .88), V3(1.06, .86, .96)];
 const point = ([x, z], y = 0) => V3(x, y, z);
 const Y = V3(0, 1);
 const CONTACT_PROPS = new Set(['drums', 'keyboard', 'mic', 'prompter', 'wedge', 'touring-rack', 'flight-case', 'ballast']);
-
-function cameraLabel(code) {
-  const canvas = document.createElement('canvas');
-  canvas.width = 128; canvas.height = 32;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#131316';
-  ctx.fillRect(0, 0, 128, 32);
-  ctx.fillStyle = '#e1e4e8';
-  ctx.font = 'bold 22px monospace';
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('CAM ' + code, 64, 17);
-  const map = new THREE.CanvasTexture(canvas);
-  map.colorSpace = THREE.SRGBColorSpace;
-  return new THREE.Mesh(new THREE.PlaneGeometry(.103, .027), new THREE.MeshBasicMaterial({ map, color: 0xbbbbbb }));
-}
 
 function contains(ring, x, z) {
   let inside = false;
@@ -132,9 +117,8 @@ function deckShadeTexture(decks, feet) {
 }
 
 // `override`: a plot in the data file's shape, for a room that makes its own
-// (KSPO DOME). Its `foh` ({ y, yaw, model }) sets the mix position's base
-// height, its turn and the model standing there (a trimmed console without
-// the camera deck, for a deck over the stand's rows).
+// (KSPO DOME). Its `foh` ({ y, yaw }) sets the mix position's base
+// height and its turn.
 export function addConcertEquipment(models, root, room, mode, plan, eye, override = null) {
   const data = override ?? layouts[room + '-' + mode];
   const group = new THREE.Group();
@@ -170,9 +154,6 @@ export function addConcertEquipment(models, root, room, mode, plan, eye, overrid
   function reserve(x, z, rx, rz) {
     floorExclusions.push((a, b) => Math.abs(a - x) <= rx && Math.abs(b - z) <= rz);
   }
-  function reservePad(x, z, radius) {
-    floorExclusions.push((a, b) => (a - x) ** 2 + (b - z) ** 2 < radius ** 2);
-  }
   function stepMesh(step) {
     const { x, z, h, y0, width, dir } = step;
     const n = Math.max(1, Math.ceil((h - y0) / STEP_RISE - 1e-6)), rise = (h - y0) / n;
@@ -207,82 +188,23 @@ export function addConcertEquipment(models, root, room, mode, plan, eye, overrid
     }
   }
 
-  const fohY = data.foh?.y ?? 0, fohYaw = data.foh?.yaw ?? 0, fohDeck = !data.foh?.model;
-  // the console's own frame: (x, z) off its middle, turned with it
+  const fohY = data.foh?.y ?? 0, fohYaw = data.foh?.yaw ?? 0;
   const fohAt = (x, z) => V3(x, 0, z).applyAxisAngle(Y, fohYaw).add(V3(eye.x, 0, eye.z));
-  add(data.foh?.model ?? 'foh', eye.x, fohY, eye.z, fohYaw);
+  add('foh', eye.x, fohY, eye.z, fohYaw);
   contact(eye.x, fohY, eye.z, 8.15, 6.3, fohYaw);
-  // Match the authored FOH's two decks, side landings and individual treads.
-  const lower = .81, upper = 3.14;
+  // Match the console platform and its rear steps.
+  const lower = .81;
   const fohFloor = (x, top, z, w, d) => {
     const p = fohAt(x, z);
     boxCollision(p.x, fohY + top - .07, p.z, w, .14, d, fohYaw);
   };
-  const fohContact = (x, top, z, w, d) => {
-    const p = fohAt(x, z);
-    contact(p.x, fohY + top, p.z, w, d, fohYaw);
-  };
   fohFloor(0, lower, 0, 7, 5);
-  if (fohDeck) {
-    fohFloor(0, upper, 1.635, 4.38, 1.93);
-    fohFloor(3.3085, upper, 1.979, 2.377, 1.15);
-  }
-  fohFloor(3.962, lower, -2.061, 1.11, .82);
   for (let i = 0; i < 4; i++) fohFloor(0, lower * (i + 1) / 4, 3.52 - (i + .5) * .269, 1.33, .269);
-  if (fohDeck) for (let i = 0; i < 12; i++) {
-    fohFloor(3.962, lower + (upper - lower) * (i + 1) / 12, 1.419 - (11.5 - i) * .261, .977, .261);
-  }
   for (const x of [-1.34, 1.25]) {
-    fohContact(x, lower, -.57, 2.48, 1.14);
-    fohContact(x, lower, .85, 1.0, .94);
+    const desk = fohAt(x, -.57), chair = fohAt(x, .85);
+    contact(desk.x, fohY + lower, desk.z, 2.48, 1.14, fohYaw);
+    contact(chair.x, fohY + lower, chair.z, 1.0, .94, fohYaw);
   }
-  if (fohDeck) for (const x of [-1.058, 1.046]) fohContact(x, upper, 1.64, 1.37, 1.6);
-  // A FOH camera of its own where the deck is gone: on a riser (`p`, its top
-  // `y`, `aim`), the riser a black-skirted box like the floor cameras' pads.
-  if (data.fohCam) {
-    const { p: [cx, cz], y: cy, aim, riser = 0 } = data.fohCam;
-    const yaw = heading([aim[0] - cx, aim[2] - cz]);
-    add(cameraOnTripod(models, 1.6), cx, cy, cz, yaw);
-    if (riser > 0) {
-      const box = new THREE.Mesh(new THREE.BoxGeometry(1.5, riser, 1.5), std({ color: 0x050505, roughness: 1 }));
-      box.position.set(cx, cy - riser / 2, cz);
-      box.rotation.y = yaw;
-      box.name = 'FOH camera riser';
-      box.receiveShadow = true;
-      group.add(box);
-    }
-    boxCollision(cx, cy + .8, cz, .86, 1.6, .86, yaw);
-    contact(cx, cy, cz, 1.52, 1.48, yaw);
-  }
-  // The floor cameras on their tripods, no risers, each run up to its own lens
-  // height (the data's `lens`): the two in the pit kept under the front row's
-  // sightline to the deck's edge (scripts set it from the pit's depth), the
-  // one out on the floor at 1.9 m.
-  const deckH = plan.decks[0].h;
-  const lensOf = (code) => data.cameras.find((c) => c.code === code)?.lens ?? (code === '05' ? 1.9 : deckH + .1);
-  for (const { code, p, aim } of data.cameras) {
-    const yaw = heading([aim[0] - p[0], aim[1] - p[1]]);
-    const lens = lensOf(code), lift = lens - 1.715;
-    add(cameraOnTripod(models, lens), p[0], 0, p[1], yaw);
-    const label = cameraLabel(code);
-    label.position.copy(V3(0, 1.63 + lift, .514).applyAxisAngle(Y, yaw)).add(point(p));
-    label.rotation.y = yaw;
-    label.name = 'CAM ' + code;
-    label.userData.noCollide = true;
-    group.add(label);
-    boxCollision(p[0], (1.62 + lift) / 2, p[1], .86, 1.62 + lift, .86, yaw);
-    contact(p[0], 0, p[1], 1.52, 1.48, yaw);
-    reservePad(p[0], p[1], 1.23);
-  }
-  const { p: [jx, jz], tip, pocket, aim } = data.jib;
-  const length = Math.hypot(tip[0] - jx, tip[1] - jz);
-  const jibYaw = Math.atan2(jz - tip[1], tip[0] - jx);
-  add('jib', jx, 0, jz, jibYaw, V3(length / 4.6, 1, 1));
-  add('jib-head', tip[0], 2.713, tip[1], heading([aim[0] - tip[0], aim[1] - tip[1]]));
-  boxCollision(jx, .71, jz, .97, 1.42, .97, jibYaw);
-  contact(jx, 0, jz, 1.75, 1.55, jibYaw);
-  reservePad(jx, jz, 1.11);
-  floorExclusions.push((x, z) => contains(pocket, x, z));
 
   const barrierWidth = 1.12;
   for (const points of data.fences) {
@@ -348,15 +270,10 @@ export function addConcertEquipment(models, root, room, mode, plan, eye, overrid
       }
     }
     if (kind === 'cable-guard') {
-      const nearJib = Math.hypot(x - jx, z - jz) < 3.5;
-      yaw = nearJib ? jibYaw : Math.PI / 2;
-      const modules = nearJib ? 2 : 3;
-      for (let i = 0; i < modules; i++) {
-        const offset = (i - (modules - 1) / 2) * .66;
-        add('cable-guard', x + Math.cos(yaw) * offset, y, z - Math.sin(yaw) * offset, yaw, V3(.74, 1, 1));
-      }
-      contact(x, y, z, modules * .66 + .1, .70, yaw);
-      reserve(x, z, nearJib ? .83 : .43, nearJib ? .83 : 1.1);
+      yaw = Math.PI / 2;
+      for (const offset of [-.66, 0, .66]) add('cable-guard', x, y, z + offset, yaw, V3(.74, 1, 1));
+      contact(x, y, z, 2.08, .70, yaw);
+      reserve(x, z, .43, 1.1);
       return;
     }
     if (kind === 'fender' || kind === 'vox') {
@@ -439,7 +356,6 @@ export function addConcertEquipment(models, root, room, mode, plan, eye, overrid
   return {
     data,
     group,
-    lensOf,
     blocksFloor: (x, z) => floorExclusions.some((test) => test(x, z)),
     drape(x, y, z, yaw, width, height, matte) {
       const model = models.get('masking');
