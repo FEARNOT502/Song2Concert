@@ -11,6 +11,7 @@ import { AXES as SHOW_AXES, CONCERT_LAYOUTS, DIAGONALS as SHOW_DIAGONALS, stageP
 import { addConcertEquipment, floorLighting } from './concert-equipment.js';
 import { ConcertModels, concertFixtureBodies } from './concert-models.js';
 import { fohScreens } from './foh-screens.js';
+import { GYM_ID } from './gymnastic-arena-plan.js';
 
 const showXZ = (center, yaw, dist, across = 0, y = 0) =>
   V3(center.x + Math.sin(yaw) * dist + Math.cos(yaw) * across, y, center.z + Math.cos(yaw) * dist - Math.sin(yaw) * across);
@@ -166,7 +167,7 @@ function showRamp(root, ring, fromH, toH, gap, footprints, mat) {
   mesh.geometry.computeVertexNormals();
 }
 
-function showBeam(root, a, b, size = 0.8) {
+export function showBeam(root, a, b, size = 0.8) {
   const span = b.clone().sub(a);
   const t = truss(span.length(), { size, finish: 'black' });
   t.position.copy(a).addScaledVector(span, 0.5);
@@ -350,17 +351,24 @@ function ledStrips(root, runs, models) {
   };
 }
 
-function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, onFloor, ceiling, houseSources, houseUpdate, fill, masking }) {
+// The production on the shared kit. A room with a rig of its own (KSPO DOME)
+// passes `rigOf` (its trusses, screens and PA, built with the kit's helpers in
+// place of the arena/dome/stadium layouts below), `floorOf` (its own floor
+// crowd and chairs) and `equipmentData` (its equipment plot, in the same shape
+// as data/concert-equipment.json).
+export function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, onFloor, ceiling, houseSources, houseUpdate, fill, masking, rigOf = null, floorOf = null, equipmentData = null, houseTarget = null }) {
   const round = ctx.mode === '360';
   const plan = stagePlan(room, ctx.mode, center.z);
   const L = plan.L;
-  const arena = room === 'arena', dome = room === 'dome', stadium = room === 'stadium';
+  const arena = room === 'arena', dome = room === 'dome', stadium = room === 'stadium', gym = room === GYM_ID;
+  // (an indoor room under a roof of its own: the arena's and KSPO DOME's throws and powers)
+  const indoor = arena || gym;
   const { pipe, cu, q } = ctx;
   const production = new THREE.Group();
   production.name = L.code;
   root.add(production);
   const models = ctx.concertModels;
-  const equipment = models && addConcertEquipment(models, production, room, ctx.mode, plan, eye);
+  const equipment = models && addConcertEquipment(models, production, room, ctx.mode, plan, eye, equipmentData);
   const drape = (config) => maskingDrapes(production, { ...config, cover: equipment?.drape });
   masking.forEach(drape);
   const footprints = [], screens = [], delays = [], rails = [], washes = [], fixtureRows = [];
@@ -409,7 +417,7 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
     const group = fixtureRows.length;
     const fixtures = Array.from({ length: n }, (_, i) => {
       const pos = a.clone().lerp(b, (i + .5) / n);
-      const fx = rig.add({ kind, pos, hang: up ? 'up' : 'down', length: L.reach * (kind === 'wash' ? .53 : 1), beamGain: gain, flareGain: .32, scale: arena ? 1 : 1.23, dir: focus.clone().sub(pos) });
+      const fx = rig.add({ kind, pos, hang: up ? 'up' : 'down', length: L.reach * (kind === 'wash' ? .53 : 1), beamGain: gain, flareGain: .32, scale: indoor ? 1 : 1.23, dir: focus.clone().sub(pos) });
       return { fx, i, n, group };
     });
     const stage = focus.clone();
@@ -431,7 +439,9 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
   };
 
   let frontTarget = center;
-  if (!round) {
+  if (rigOf) {
+    frontTarget = rigOf({ production, plan, L, center, h, rw, ceiling, equipment, row, bar, screen, hang, drape, delay, footprints }) ?? center;
+  } else if (!round) {
     const front = L.front, back = L.back, r = L.w / 2;
     screen({ z: L.wallZ, bottom, w: mainW, h: mainH, bright: arena ? 1.65 : 1.85, light: true });
     // the arena's IMAG columns are portrait (3:4): the sleeve over its title;
@@ -618,10 +628,10 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
   // when a cue uses the taller LED wall or sends the beams into the stands.
   const facing = round ? SHOW_AXES : [-.82, .82];
   for (const yaw of facing) {
-    const pos = showXZ(center, yaw, arena ? 16 : 24, 0, arena ? 18.5 : L.rig - 3.7);
+    const pos = showXZ(center, yaw, indoor ? 16 : 24, 0, arena ? 18.5 : gym ? L.rig + .8 : L.rig - 3.7);
     const key = shadowSpot(KELVIN(4400), 0, {
       distance: L.reach, angle: .49, penumbra: .85, size: q.shadowSize,
-      far: arena ? 48 : 76, cast: Boolean(equipment && q.shadows && washes.length < 2),
+      far: indoor ? 48 : 76, cast: Boolean(equipment && q.shadows && washes.length < 2),
     });
     if (key.castShadow) {
       key.shadow.autoUpdate = false;
@@ -634,14 +644,16 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
     washes.push(key);
   }
   if (!round) for (const side of [-1, 1]) {
-    const key = new THREE.SpotLight(KELVIN(4600), 0, L.reach, arena ? .28 : .34, .8, 2);
-    key.position.set(side * (arena ? 12 : 24), arena ? 24 : L.rig - 6, L.tip + (arena ? 13 : 14));
+    const key = new THREE.SpotLight(KELVIN(4600), 0, L.reach, indoor ? .28 : .34, .8, 2);
+    key.position.set(side * (indoor ? 12 : 24), arena ? 24 : gym ? L.rig + 2.5 : L.rig - 6, L.tip + (indoor ? 13 : 14));
     key.target.position.copy(frontTarget);
     key.userData.offWhenDark = 'show';
     production.add(key, key.target);
     washes.push(key);
   }
   const runLeds = ledStrips(production, rails, models);
+  // (what the room's own rig runs each frame: rigOf leaves it on production.userData.run)
+  const extra = production.userData.run || [];
   const runFloor = equipment && floorLighting(equipment, rig, center, L.reach);
 
   // Distance from the stage, its speaker line and the delay tower bases.
@@ -657,7 +669,9 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
 
   const { x0, x1, z0, z1 } = floorBounds;
   let ground;
-  if (stadium) {
+  if (floorOf) {
+    ground = floorOf(keep);
+  } else if (stadium) {
     ground = packFloor({ ...floorBounds, spacing: .64, inside: keep, seed: 177, trim: { cols: 4, rows: 4 } });
   } else {
     const xs = arena ? [[x0, -14.9], [-13.5, -1], [1, 13.5], [14.9, x1]] : [];
@@ -721,11 +735,12 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
   // falls off between a line's 1/d and a point's: 1/d^1.25, its power set so
   // the field (`HOUSE_REF` metres off) is lit as before.
   const HOUSE_DECAY = 1.25, HOUSE_REF = stadium ? 80 : 60;
-  const housePower = (arena ? 12500 : 34500) * Math.pow(HOUSE_REF, HOUSE_DECAY - 2);
+  const housePower = (arena ? 12500 : gym ? 30000 : 34500) * Math.pow(HOUSE_REF, HOUSE_DECAY - 2);
   const house = houseSources.map((pos) => {
     const lamp = new THREE.SpotLight(KELVIN(5000), 0, L.reach * 2.1, 1.12, .65, HOUSE_DECAY);
     lamp.position.copy(pos);
-    lamp.target.position.set(pos.x * .73, 0, lerp(center.z, pos.z, .65));
+    if (houseTarget) lamp.target.position.copy(houseTarget(pos));
+    else lamp.target.position.set(pos.x * .73, 0, lerp(center.z, pos.z, .65));
     lamp.userData.offWhenDark = 'house';
     root.add(lamp, lamp.target);
     return lamp;
@@ -733,10 +748,10 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
   const focus = center.clone().setY(round ? Math.max(8, bottom * .73) : (bottom + mainH * .55) * .66);
   const flashPositions = round ? (arena ? SHOW_AXES : SHOW_DIAGONALS) : [-.48, -.16, .16, .48];
   const units = flashPositions.map((yaw, i) => ({
-    pos: round ? showXZ(center, yaw, arena ? (i % 2 ? 11.25 : 24) : 12, 0, L.rig - 1.15)
-      : V3((i / 3 - .5) * L.w * .82, L.rig - (arena ? .98 : 2.65), L.front - .6),
+    pos: round ? showXZ(center, yaw, arena ? (i % 2 ? 11.25 : 24) : gym ? 10.5 : 12, 0, L.rig - 1.15)
+      : V3((i / 3 - .5) * L.w * .82, L.rig - (indoor ? .98 : 2.65), L.front - .6),
     dir: showXZ(V3(), yaw, 1, 0, -.32),
-    mount: L.rig - (round ? 0 : arena ? .35 : 2),
+    mount: L.rig - (round ? 0 : indoor ? .35 : 2),
   }));
   const mountBody = equipment?.mountFlash;
   const blinders = flashUnits(rig, production, units, { mountBody });
@@ -746,12 +761,12 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
     // (round a centre stage the screens' focus is up at the LED box: the FOH
     // camera frames the deck and who is on it instead)
     venueId: room, mode: ctx.mode, root, plan, pipe, data: equipment.data, eye, focus: round ? center.clone().setY(h + 2.2) : focus, deck: h,
-    field: arena ? 0 : .02, lensOf: equipment.lensOf, high: q.msaa > 0,
+    field: indoor ? 0 : .02, lensOf: equipment.lensOf, high: q.msaa > 0,
   });
   return {
     desks,
-    stageTarget: focus, camera: { pos: eye, target: focus, fov: arena ? 56 : 59, near: .16, far: stadium ? 1800 : 700 },
-    hazeDensity: arena ? .00125 : dome ? .00085 : .00043, beamGain: arena ? .41 : .46, volShoulder: 3.25,
+    stageTarget: focus, camera: { pos: eye, target: focus, fov: indoor ? 56 : 59, near: .16, far: stadium ? 1800 : 700 },
+    hazeDensity: arena ? .00125 : gym ? .0011 : dome ? .00085 : .00043, beamGain: indoor ? .41 : .46, volShoulder: 3.25,
     env: { w: stadium ? 300 : dome ? 235 : 138, h: ceiling || 58, d: stadium ? 320 : dome ? 236 : 126, eye, wall: 0x0a0a10, floor: 0x0a0a0c, emitters: screens.slice(0, round ? 8 : 3).map(({ w, h, pos, normal }) => ({ w, h, pos, normal, screen: true, power: 1.05, aspect: w / h })) },
     setPrompterArt: equipment?.setArt,
     update(f) {
@@ -762,9 +777,10 @@ function concertProduction(ctx, root, room, { center, eye, stands, floorBounds, 
       const energy = clamp(f.energy);
       for (const { fixtures, options } of fixtureRows) runShow(rig, fixtures, f, options);
       const bl = Math.max(runBlinders(blinders, f), (runFloor?.(f, part) ?? 0) * .62);
+      extra.forEach((run) => run(f, show));
       const st = runStrobes(strobes, f);
       runLeds(f, equipment && part === 'intro' ? 'verse' : sec, show);
-      const keyPower = arena ? 9600 : dome ? 23100 : 30900;
+      const keyPower = arena ? 9600 : gym ? 11800 : dome ? 23100 : 30900;
       washes.forEach((l, i) => {
         l.color.copy(KELVIN(4600)).lerp(i % 2 ? f.pal.b : f.pal.a, high ? .37 : .18);
         l.intensity = keyPower * (quiet ? .82 : 1 + .32 * energy) * show;

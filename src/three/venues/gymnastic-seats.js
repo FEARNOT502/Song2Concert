@@ -1,6 +1,7 @@
 import { decodeSeats } from '../stands.js';
 import { floorBlocks } from '../show.js';
-import { GYM_AISLE_R, GYM_CENTER_R, GYM_FIRST_ROW, GYM_FLOOR_R, GYM_FOH, GYM_STANDING, gymPoint, gymRing, gymSector, gymStagePlan } from '../gymnastic-arena-plan.js';
+import { GYM_AISLE_R, GYM_CENTER_R, GYM_CONSOLE_DECK, GYM_FIRST_ROW, GYM_FLOOR_R, GYM_FOH, GYM_STANDING, gymPoint, gymRing, gymSector, gymStagePlan } from '../gymnastic-arena-plan.js';
+import { gymCameraPads, gymJib } from './gymnastic-equipment.js';
 import { GYM_SEATS, GYM_SECTION_ANGLES } from './gymnastic-data.js';
 
 const packed = decodeSeats(GYM_SEATS);
@@ -14,28 +15,55 @@ for (let i = 0; i < packed.length; i += 6) {
 
 export const gymMask = (x) => -25.5 + Math.min(10, Math.max(0, Math.abs(x) - 19) * .6);
 
+// Under the 360 console's scaffold (section 19, its rows' radii and its width).
+export function underConsole(seat) {
+  const { r0, r1, half } = GYM_CONSOLE_DECK;
+  const r = Math.hypot(seat.x, seat.z);
+  return seat.z < 0 && r > r0 - .35 && r < r1 + .35 && Math.abs(seat.x - GYM_FOH['360'][0]) < half + .3;
+}
+
 export function gymOpenSeat(seat, mode) {
+  // (360: section 19 is the CONSOLE on DAY6's map, not sold)
   if (mode === '360') return seat.block !== '19';
   return seat.z > gymMask(seat.x) + 1.4;
 }
 
+// General: the floor seated round the T, in blocks either side of the runway,
+// beside the walkway, and behind it to the floor's back, clear of the pit's
+// fences, the floor cameras, the jib and the FOH.
 const generalFloor = (() => {
-  const { L } = gymStagePlan('general');
+  const plan = gymStagePlan('general');
+  const { L } = plan;
   const [fx, , fz] = GYM_FOH.general;
-  const halves = [-1, 1].flatMap((side) => [[3.4, 12], [13.3, 24]].map(([lo, hi]) =>
-    side < 0 ? [-hi, -lo] : [lo, hi]));
-  const groups = [[L.front + 3.8, .3], [1.5, 15.5], [17, 29]];
-  const blocks = groups.flatMap(([z0, z1], row) => halves.map(([x0, x1], column) => ({
-    x0, x1, z0, z1, name: `F${1 + row * halves.length + column}`,
-  })));
-  const positions = [], people = [];
+  const pads = gymCameraPads('general'), jib = gymJib('general');
+  const box = (ring) => {
+    const xs = ring.map((p) => p[0]), zs = ring.map((p) => p[1]);
+    return [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)];
+  };
+  const clear = [...plan.decks.map((d) => [box(d.ring), d.gap + .85]), ...plan.steps.map((st) => [box(st.ring), .9])];
   function keep(x, z) {
     return Math.hypot(x, z) < GYM_FLOOR_R - 1.25 &&
-      (Math.abs(x - fx) > 4.8 || Math.abs(z - fz) > 3.8) &&
-      (z > L.tip + 1.4 || Math.abs(x) > 3.25);
+      clear.every(([[x0, x1, z0, z1], pad]) => x < x0 - pad || x > x1 + pad || z < z0 - pad || z > z1 + pad) &&
+      (Math.abs(x - fx) > 4.9 || Math.abs(z - fz) > 4.45) &&
+      pads.every(({ p: [px, pz] }) => Math.hypot(x - px, z - pz) > 1.45) &&
+      Math.hypot(x - jib.p[0], z - jib.p[1]) > 2.4 && Math.hypot(x - jib.tip[0], z - jib.tip[1]) > 1.6;
   }
+  const F = L.front + L.gap + .9, cz = L.cross - L.thrustGap - .8, bz = L.cross + L.crossD + L.thrustGap + .8;
+  const wx = L.wing + L.thrustGap + .8;
+  const mirror = (spans) => spans.flatMap(([a, b]) => [[-b, -a], [a, b]]);
+  const bands = [
+    [F, cz, mirror([[L.runHalf + L.thrustGap + .8, 13.4], [14.6, 29]])],
+    [cz + 1.2, bz - .4, mirror([[wx, 30]])],
+    [bz, 19.8, mirror([[1.0, 11.6], [12.8, 28]])],
+    [21.0, 31.5, mirror([[1.0, 11.6], [12.8, 25]])],
+  ];
+  const blocks = bands.flatMap(([z0, z1, spans]) => spans.map(([x0, x1]) => ({ x0, x1, z0, z1 })))
+    .sort((a, b) => a.z0 - b.z0 || a.x0 - b.x0)
+    .map((b, i) => ({ ...b, name: `F${i + 1}` }));
+  const positions = [], people = [];
   for (const [index, block] of blocks.entries()) {
-    const floor = floorBlocks([block], { keep, seed: 31 + index, trim: { rows: 3, cols: 4 } });
+    const floor = floorBlocks([block], { keep, seed: 31 + index, occupancy: 1, trim: { rows: 3, cols: 4 } });
+    if (!floor.chairs.length) continue;
     people.push(...floor.people);
     const rows = new Map();
     for (const chair of floor.chairs) {
@@ -43,9 +71,9 @@ const generalFloor = (() => {
       rows.get(chair.z).push(chair);
     }
     let row = 0;
-    for (const chairs of rows.values()) {
+    for (const z of [...rows.keys()].sort((a, b) => a - b)) {
       row++;
-      chairs.forEach((chair, i) => positions.push({ ...chair, yaw: chair.turn, block: block.name, level: 'FLOOR', row, num: i + 1 }));
+      rows.get(z).sort((a, b) => a.x - b.x).forEach((chair, i) => positions.push({ ...chair, yaw: chair.turn, block: block.name, level: 'FLOOR', row, num: i + 1 }));
     }
   }
   return { positions, people };

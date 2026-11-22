@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { V3 } from './core.js';
 
-export const CONCERT_VENUES = new Set(['arena', 'dome', 'stadium']);
+export const CONCERT_VENUES = new Set(['arena', 'dome', 'stadium', 'gymnastic-arena']);
 let modelsPromise, theaterModelsPromise, theaterLabPromise, clubModelsPromise;
 const SHADOW_CASTERS = new Set([
   'drums', 'keyboard', 'mic', 'wedge', 'fender', 'vox', 'fender-extension', 'vox-extension',
@@ -314,4 +314,37 @@ export function concertFixtureBodies(models, root, fixtures) {
       lenses.instanceMatrix.needsUpdate = lenses.instanceColor.needsUpdate = true;
     }
   };
+}
+
+// A model with some of its triangles left out: `drop(a, b, c)` is given each
+// triangle's corners in the model's own metres. Registered as `name`; the
+// geometry keeps its attributes and only its index changes, so a trimmed
+// console still shares its displays' materials (foh-screens finds them by name).
+export function trimmedModel(models, source, name, drop) {
+  if (models.has(name)) return name;
+  const base = models.get(source);
+  const a = V3(), b = V3(), c = V3();
+  const parts = base.parts.map(({ geometry, material, matrix }) => {
+    const pos = geometry.attributes.position;
+    const index = geometry.index;
+    const count = index ? index.count : pos.count;
+    const kept = [];
+    for (let i = 0; i < count; i += 3) {
+      const ia = index ? index.getX(i) : i, ib = index ? index.getX(i + 1) : i + 1, ic = index ? index.getX(i + 2) : i + 2;
+      a.fromBufferAttribute(pos, ia).applyMatrix4(matrix);
+      b.fromBufferAttribute(pos, ib).applyMatrix4(matrix);
+      c.fromBufferAttribute(pos, ic).applyMatrix4(matrix);
+      if (!drop(a, b, c)) kept.push(ia, ib, ic);
+    }
+    const geo = geometry.clone();
+    geo.setIndex(kept);
+    geo.userData.shared = true;
+    geo.computeBoundingBox();
+    geo.computeBoundingSphere();
+    return { geometry: geo, material, matrix };
+  }).filter((part) => part.geometry.index.count);
+  const bounds = new THREE.Box3();
+  for (const { geometry, matrix } of parts) bounds.union(geometry.boundingBox.clone().applyMatrix4(matrix));
+  models.set(name, { parts, bounds, size: bounds.getSize(V3()), center: bounds.getCenter(V3()) });
+  return name;
 }

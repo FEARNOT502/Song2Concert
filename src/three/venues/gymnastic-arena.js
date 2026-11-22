@@ -3,10 +3,12 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { KELVIN, V3, concreteTex, std, withRepeat } from '../core.js';
 import { stageSteps } from '../rig.js';
 import { decodeSeats, stadiumSeatGeometry, seatFinder } from '../stands.js';
+import { maskingDrapes } from '../show.js';
 import { GYM_AISLE_R, GYM_FOH, GYM_NAME, GYM_RAD, gymPoint, gymRing, gymSector } from '../gymnastic-arena-plan.js';
 import { GYM_UPPER } from './gymnastic-data.js';
 import { buildGymnasticShow } from './gymnastic-show.js';
-import { getGymnasticSeatCatalog, gymFloor, gymStands } from './gymnastic-seats.js';
+import { C3, buildBowl, cutRake } from './gymnastic-bowl.js';
+import { getGymnasticSeatCatalog, gymFloor, gymOpenSeat, gymStands, underConsole } from './gymnastic-seats.js';
 
 const TREAD_SECTORS = [[-50, 50], [61, 120], [128, 232], [240, 299]];
 const MAT = {
@@ -110,83 +112,245 @@ function lowerStands(root, mat, mode) {
   railArc(root, mat.rail, 42.4, 4.78, 136, 224);
 }
 
-function upperStands(root, mat) {
+// The 2F rake's tread height by radius (row by row, from the seats)
+const RAKE = [[44.8, 4.77], [46.0, 5.16], [46.9, 5.55], [47.8, 5.97], [48.7, 6.35], [50.0, 6.87], [50.9, 7.24], [52.4, 7.64],
+  [53.2, 8.02], [53.9, 8.32], [54.7, 8.73], [55.5, 9.14], [56.3, 9.53], [57.4, 10.12], [58.5, 10.68], [59.2, 11.09], [60.4, 11.78], [60.9, 12.1]];
+export function rakeAt(r) {
+  if (r <= RAKE[0][0]) return RAKE[0][1];
+  for (let i = 1; i < RAKE.length; i++) {
+    const [r0, y0] = RAKE[i - 1], [r1, y1] = RAKE[i];
+    if (r <= r1) return y0 + (y1 - y0) * (r - r0) / (r1 - r0);
+  }
+  return RAKE[RAKE.length - 1][1];
+}
+
+function upperStands(root, mat, pipe) {
   const coordinates = decodeSeats(GYM_UPPER);
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(Float32Array.from(coordinates, (x) => x / 100), 3));
-  geo.computeVertexNormals();
-  const deck = new THREE.Mesh(geo, mat.concrete);
+  const deck = new THREE.Mesh(cutRake(geo), mat.concrete);
+  geo.dispose();
   deck.receiveShadow = true;
+  deck.name = '2F rake';
   root.add(deck);
 
-  // Outer circulation and the front of the boxes behind the last seats.
-  root.add(plate(gymSector(0, 360, 59.2, 62.4), 10.43, 10.70, mat.concrete));
-  for (const [start, end] of [[21, 48], [55, 76], [82, 111], [113, 154], [158, 202], [206, 244], [250, 278], [283, 306], [312, 346]]) {
-    arcWall(root, mat.concourse, 60.35, 10.72, 14.02, start, end);
-    arcWall(root, mat.parapet, 59.8, 10.68, 11.45, start, end);
+  // The model's rake stops short of the biggest sections' top rows: their
+  // treads from the seats themselves, and a step up to the 3F concourse's
+  // edge behind the rest.
+  const parts = [];
+  const rows = new Map();
+  for (const s of gymStands()) {
+    if (+s.block < 23) continue;
+    const r = Math.hypot(s.x, s.z);
+    if (r < 57.9) continue;
+    const key = s.block + ':' + s.row, a = Math.atan2(s.x, -s.z) / GYM_RAD;
+    const e = rows.get(key) ?? { r: 0, y: 0, n: 0, a0: Infinity, a1: -Infinity, ref: a };
+    const d = ((a - e.ref + 540) % 360) - 180;
+    e.r += r; e.y += s.y; e.n++; e.a0 = Math.min(e.a0, e.ref + d); e.a1 = Math.max(e.a1, e.ref + d);
+    rows.set(key, e);
   }
+  for (const e of rows.values()) {
+    const r = e.r / e.n, y = e.y / e.n, pad = .55 / r / GYM_RAD;
+    parts.push(plateGeometry(gymSector(e.a0 - pad, e.a1 + pad, r - .45, r + .5), 10.45, y));
+  }
+  parts.push(plateGeometry(gymSector(0, 360, 58.3, C3.r0), 10.45, 10.72));
+  root.add(new THREE.Mesh(mergeGeometries(parts), mat.concrete));
+  parts.forEach((g) => g.dispose());
+
+  // the boxes' fronts and walls, where BOX 1-8 stand in the top rows
   for (const center of [112, 126, 140, 154, 206, 220, 234, 248]) {
     arcWall(root, mat.parapet, 58.35, 11.05, 11.45, center - 4.4, center + 4.4);
-    arcWall(root, mat.concourse, 60.1, 11.1, 13.92, center - 4.4, center + 4.4);
+    arcWall(root, mat.concourse, 60.6, 11.1, 13.92, center - 4.4, center + 4.4);
   }
-  arcWall(root, mat.parapet, 62.4, 12.9, 14.15);
-  arcWall(root, mat.wall, 62.4, 14.15, 22);
+  // the light grey band over the 3F concourse, up to the roof
+  arcWall(root, mat.parapet, 62.4, C3.ceil, C3.ceil + .7);
+  arcWall(root, mat.wall, 62.4, C3.ceil + .7, 22);
+  buildBowl(root, { pipe, rakeAt });
 }
 
-function roof(root, mat) {
-  const roofHeight = (r) => 28.9 - 7.2 * (r / 62.5) ** 2.2;
-  const positions = [], beams = [];
-  const radii = [.02, 8.2, 16, 25, 35, 45, 54, 62.5];
-  const n = 48, height = (a, r, drop = 0) => {
-    const [x, z] = gymPoint(a, r);
+function plateGeometry(outline, y0, y1) {
+  const shape = new THREE.Shape(outline.map(([x, z]) => new THREE.Vector2(x, -z)));
+  const g = new THREE.ExtrudeGeometry(shape, { depth: y1 - y0, bevelEnabled: false, steps: 1 });
+  g.rotateX(-Math.PI / 2);
+  g.translate(0, y0, 0);
+  return g.toNonIndexed();
+}
+
+// The roof as it reads from the seats (the 2018 interior photographs): a
+// space frame of deep radial trusses running in to a ring over the middle,
+// ring trusses at four radii, a grid of purlins with X bracing between them
+// at the roof's underside, white acoustic baffles hung in its bays, a
+// catwalk ring with its rails, the house speaker cluster in the middle and
+// the house lights, high bays on the trusses' bottom chords (`update(house)`
+// lights them).
+const ROOF_N = 24;
+const roofHeight = (r) => 28.9 - 7.2 * (r / 62.5) ** 2.2;
+function roof(root, mat, pipe) {
+  const n = ROOF_N, at = (deg, r, drop = 0) => {
+    const [x, z] = gymPoint(deg, r);
     return V3(x, roofHeight(r) - drop, z);
   };
-  const skin = (a, b, c) => positions.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
-  for (let r = 1; r < radii.length; r++) {
-    const inner = radii[r - 1], outer = radii[r];
-    for (let i = 0; i < n; i++) {
-      const a = i * 360 / n, b = (i + 1) * 360 / n;
-      skin(height(a, inner), height(a, outer), height(b, outer));
-      skin(height(a, inner), height(b, outer), height(b, inner));
-      const drop = r === 1 ? .55 : 1.15;
-      beams.push([height(a, outer, drop), height(b, outer, drop), r % 2 === 0 ? .22 : .16]);
-      if (r === 1) continue;
-      beams.push([height(a, inner, drop), height(a, outer, drop), .16]);
-      beams.push([height(a, inner, .10), height(b, outer, drop), .088]);
-      beams.push([height(a, outer, .10), height(a, outer, drop), .095]);
+  // the skin over it all: the deck's underside, dark between the members
+  const positions = [];
+  const radii = [.02, 8.2, 16, 25, 35, 45, 54, 62.5];
+  for (let k = 1; k < radii.length; k++) {
+    for (let i = 0; i < 48; i++) {
+      const a = i * 7.5, b = (i + 1) * 7.5;
+      for (const [p, q, w] of [[at(a, radii[k - 1]), at(a, radii[k]), at(b, radii[k])], [at(a, radii[k - 1]), at(b, radii[k]), at(b, radii[k - 1])]]) {
+        positions.push(p.x, p.y, p.z, q.x, q.y, q.z, w.x, w.y, w.z);
+      }
     }
   }
   const cover = new THREE.BufferGeometry();
   cover.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   cover.computeVertexNormals();
-  root.add(new THREE.Mesh(cover, mat.ceiling));
-  pipes(root, beams, mat.steel);
+  const skin = new THREE.Mesh(cover, mat.ceiling);
+  skin.name = 'Roof deck';
+  root.add(skin);
 
-  const panels = new THREE.InstancedMesh(new THREE.BoxGeometry(2.22, .075, 1.16), mat.panel, 480);
-  panels.userData.noCollide = true;
-  const matrix = new THREE.Matrix4();
-  let index = 0;
-  for (const radius of [15, 20, 26, 33, 39, 45, 51, 56, 59, 61]) {
-    for (let step = 0; step < n; step++) {
-      const angle = (step + (radius % 2 ? .5 : .26)) * 360 / n;
-      const [x, z] = gymPoint(angle, radius);
-      matrix.makeRotationY(-angle * GYM_RAD).setPosition(x, roofHeight(radius) - .57, z);
-      panels.setMatrixAt(index++, matrix);
+  const chords = [], webs = [], light = [];
+  const DEPTH = (r) => 1.2 + 1.5 * Math.min(1, r / 30);
+  // a deep truss from (a0, r0) to (a1, r1): a top chord under the deck, two
+  // bottom chords DEPTH below it, webs between them every ~2.4 m
+  function truss(a0, r0, a1, r1, size = .19) {
+    const len = Math.hypot(...gymPoint(a1, r1).map((v, i) => v - gymPoint(a0, r0)[i]));
+    const bays = Math.max(1, Math.round(len / 2.4));
+    const pts = [];
+    for (let i = 0; i <= bays; i++) {
+      const t = i / bays, a = a0 + (a1 - a0) * t, r = r0 + (r1 - r0) * t;
+      const top = at(a, r, .35), d = DEPTH(r);
+      const [sx, sz] = gymPoint(a + 90, 1), side = V3(sx * .55, 0, sz * .55);
+      const across = Math.abs(a1 - a0) > .1 && Math.abs(r1 - r0) < .1;
+      const off = across ? V3(...(() => { const [ux, uz] = gymPoint(a, 1); return [ux * .55, 0, uz * .55]; })()) : side;
+      pts.push({ top, b1: top.clone().add(V3(0, -d, 0)).add(off), b2: top.clone().add(V3(0, -d, 0)).sub(off) });
+    }
+    for (let i = 1; i < pts.length; i++) {
+      const p = pts[i - 1], q = pts[i];
+      chords.push([p.top, q.top, size], [p.b1, q.b1, size * .8], [p.b2, q.b2, size * .8]);
+      webs.push([i % 2 ? p.top : q.top, i % 2 ? q.b1 : p.b1, .07], [i % 2 ? p.top : q.top, i % 2 ? q.b2 : p.b2, .07], [p.b1, q.b2, .05]);
+    }
+    for (const p of pts) webs.push([p.top, p.b1, .06], [p.top, p.b2, .06], [p.b1, p.b2, .05]);
+    return pts;
+  }
+  const RINGS = [10, 22, 34, 46, 57];
+  for (let i = 0; i < n; i++) {
+    const a = i * 360 / n;
+    truss(a, RINGS[0], a, 61.6, .22);
+  }
+  for (const r of RINGS) {
+    for (let i = 0; i < n; i++) truss(i * 360 / n, r, (i + 1) * 360 / n, r, r === RINGS[0] ? .24 : .17);
+  }
+  // purlins round the bays at the underside, every 3 m out, X bracing between
+  for (let r = 13; r < 61; r += 3) {
+    for (let i = 0; i < n * 2; i++) {
+      const a = i * 180 / n, b = (i + 1) * 180 / n;
+      webs.push([at(a, r, .3), at(b, r, .3), .055]);
+      if (r + 3 < 61) webs.push([at(a, r, .3), at(b, r + 3, .3), .035], [at(b, r, .3), at(a, r + 3, .3), .035]);
     }
   }
-  root.add(panels);
+  // the catwalk ring: grating on the bottom chords' level, rails either side
+  const walkR = 28, walkY = roofHeight(walkR) - .35 - DEPTH(walkR) - .1;
+  const rails = [];
+  for (let i = 0; i < 96; i++) {
+    const a = i * 3.75, b = (i + 1) * 3.75;
+    for (const dr of [-.5, .5]) {
+      const [x0, z0] = gymPoint(a, walkR + dr), [x1, z1] = gymPoint(b, walkR + dr);
+      rails.push([V3(x0, walkY + 1.05, z0), V3(x1, walkY + 1.05, z1), .045], [V3(x0, walkY + .5, z0), V3(x1, walkY + .5, z1), .035]);
+      rails.push([V3(x0, walkY, z0), V3(x0, walkY + 1.05, z0), .04]);
+    }
+  }
+  const steel = std({ color: 0xd3d6d8, roughness: .8, metalness: .3 });
+  pipes(root, chords, steel);
+  pipes(root, webs, steel);
+  pipes(root, rails, std({ color: 0xbfc2c4, roughness: .8, metalness: .35 }));
+  const grating = new THREE.Mesh(new THREE.RingGeometry(walkR - .5, walkR + .5, 192, 1), std({ color: 0x55585a, roughness: .8, metalness: .4, side: THREE.DoubleSide }));
+  grating.rotateX(-Math.PI / 2);
+  grating.position.y = walkY;
+  grating.userData.noCollide = true;
+  root.add(grating);
+
+  // the baffles: white panels hung on edge in the bays, two rows a bay
+  const baffle = new THREE.InstancedMesh(new THREE.BoxGeometry(2.6, .9, .06), mat.panel, n * 2 * 15);
+  baffle.userData.noCollide = true;
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), one = V3(1, 1, 1);
+  let k = 0;
+  for (let i = 0; i < n * 2; i++) {
+    const a = (i + .5) * 180 / n;
+    for (let r = 14.5; r < 59 && k < baffle.count; r += 3) {
+      const p = at(a, r, .95);
+      q.setFromAxisAngle(V3(0, 1, 0), -a * GYM_RAD);
+      baffle.setMatrixAt(k++, m.compose(p, q, one));
+    }
+  }
+  baffle.count = k;
+  root.add(baffle);
+
+  // the house speaker cluster over the middle, in its ring
+  const cluster = new THREE.Group();
+  cluster.name = 'House speaker cluster';
+  const black = std({ color: 0x141516, roughness: .7, metalness: .2 });
+  for (let i = 0; i < 8; i++) {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.6, .9), black);
+    const [x, z] = gymPoint(i * 45, 1.25);
+    box.position.set(x, 22.6, z);
+    box.rotation.y = -i * 45 * GYM_RAD;
+    cluster.add(box);
+  }
+  const frame = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, .35, 24, 1, true), black);
+  frame.position.y = 23.7;
+  cluster.add(frame);
+  const hangers = [];
+  for (let i = 0; i < 4; i++) {
+    const [x, z] = gymPoint(i * 90 + 45, 1.8);
+    hangers.push([V3(x, 23.8, z), V3(x, roofHeight(2) - .2, z), .03]);
+  }
+  pipes(cluster, hangers, black);
+  cluster.traverse((o) => { o.userData.noCollide = true; });
+  root.add(cluster);
+
+  // the house lights: high bays under the bottom chords of the radial trusses
+  const lamps = new THREE.InstancedMesh(new THREE.CylinderGeometry(.24, .3, .38, 10), std({ color: 0x9a9c9e, roughness: .5, metalness: .5 }), n * 4);
+  const lens = new THREE.InstancedMesh(new THREE.CircleGeometry(.23, 12), new THREE.MeshBasicMaterial({ color: 0x000000, toneMapped: false }), n * 4);
+  lens.geometry.rotateX(Math.PI / 2);
+  k = 0;
+  for (let i = 0; i < n; i++) {
+    const a = i * 360 / n + (i % 2 ? 4 : -4);
+    for (const r of [17, 29, 41, 52]) {
+      const p = at(a, r, .35 + DEPTH(r) + .25);
+      lamps.setMatrixAt(k, m.makeTranslation(p.x, p.y, p.z));
+      lens.setMatrixAt(k, m.makeTranslation(p.x, p.y - .2, p.z));
+      if (pipe && (i + r) % 3 === 0) light.push(pipe.flares.add(V3(p.x, p.y - .22, p.z), KELVIN(5200), .5, 0));
+      k++;
+    }
+  }
+  lamps.userData.noCollide = lens.userData.noCollide = true;
+  root.add(lamps, lens);
+  const warm = KELVIN(5200);
+  // (the roof lit by the house lights' spill and bounce: the white deck, the
+  // baffles and the steel glow a little with them, as in the photographs)
+  const glow = [[mat.ceiling, .32], [mat.panel, .3], [steel, .12]];
+  for (const [m2] of glow) m2.emissive = KELVIN(5600);
+  return (house) => {
+    lens.material.color.copy(warm).multiplyScalar(.05 + 5.5 * house);
+    for (const f of light) f.intensity = 1.2 * house;
+    for (const [m2, k] of glow) m2.emissiveIntensity = k * house;
+  };
 }
 
 function chairs(root, seats) {
-  const body = new THREE.InstancedMesh(stadiumSeatGeometry(), std({ color: 0xffffff, roughness: .75, side: THREE.DoubleSide }), seats.length);
+  const body = new THREE.InstancedMesh(stadiumSeatGeometry(), std({ color: 0xffffff, roughness: .8, side: THREE.DoubleSide }), seats.length);
   const frame = new THREE.InstancedMesh(new THREE.BoxGeometry(.05, .48, .3), std({ color: 0x25282b, roughness: .82 }), seats.length);
   const mat = new THREE.Matrix4(), m2 = new THREE.Matrix4(), color = new THREE.Color();
   const mount = new THREE.Matrix4().makeTranslation(.24, .24, -.07);
+  // the colours as of 2025 (the concert photographs from 1F and from 2F 27):
+  // 1F's fixed rows yellow; 2F yellow at the front, then yellow and teal mixed
+  // seat by seat, teal taking over towards the back
+  const YELLOW = [0xd9a92c, 0xe0b237, 0xd3a128], TEAL = [0x4fa2b3, 0x5aabbb, 0x4697a8];
+  const hash = (i) => { let h = (i * 2654435761) >>> 0; h ^= h >>> 15; return (h % 1000) / 1000; };
   seats.forEach((seat, i) => {
-    const n = +seat.block;
-    const hue = n < 23
-      ? n >= 16 || (n >= 5 && n <= 11) ? (n >= 16 ? 0x27674d : 0xb99834) : 0xcaac43
-      : seat.y > 10.93 ? 0x78372c : ((n > 33 && n < 45) || n < 31 ? 0x67a8ad : 0xc98437);
+    const n = +seat.block, u = hash(i * 7 + n);
+    const teal = n >= 23 && (seat.row >= 13 ? u < .86 : seat.row >= 7 ? u < .55 : u < .08);
+    const hue = (teal ? TEAL : YELLOW)[Math.floor(hash(i + 911) * 3)];
     mat.makeRotationY(seat.yaw).setPosition(seat.x, seat.y, seat.z);
     body.setMatrixAt(i, mat);
     body.setColorAt(i, color.setHex(hue));
@@ -196,37 +360,74 @@ function chairs(root, seats) {
   root.add(body, frame);
 }
 
+// The folded telescopic rows (1-11) behind black cloth, as at a concert: a
+// pleated drape on a track along each bay's face, from the floor up under the
+// mid-aisle's rail, open at the aisle stairs between the bays.
+function foldedCurtain(root) {
+  const radius = GYM_AISLE_R - .73;
+  for (const [a, b] of TREAD_SECTORS) {
+    const ring = gymRing(a + .25, b - .25, radius, Math.ceil((b - a) / 2.2));
+    for (let i = 1; i < ring.length; i++) {
+      maskingDrapes(root, { a: ring[i - 1], b: ring[i], top: 2.52, panel: 1.4 });
+    }
+  }
+}
+
+// Each open seat taken, the person on it turned to the stage; their block for
+// the lightsticks the section (1F 1-22 on level 1, 2F 23-52 on level 2), their
+// place round the stage from one side of the house to the other.
+function seatedCrowd(seats, stage, round) {
+  return seats.map((s) => {
+    const turn = Math.atan2(stage.x - s.x, stage.z - s.z);
+    const around = Math.atan2(s.x - stage.x, s.z - stage.z);
+    return {
+      x: s.x - Math.sin(turn) * .12, y: s.y, z: s.z - Math.cos(turn) * .12, turn, seat: true,
+      zone: { lv: +s.block < 23 ? 1 : 2, block: +s.block, u: round ? (around + Math.PI) / (2 * Math.PI) : (around + Math.PI) / (2 * Math.PI) },
+    };
+  });
+}
+
 export function buildGymnasticArena(ctx) {
   const root = new THREE.Group();
   root.name = GYM_NAME;
+  const round = ctx.mode === '360';
   const textures = withRepeat(concreteTex({ key: 'gym-structure', tone: .44, warm: .05, even: .64 }), .27, .27);
   const mat = Object.fromEntries(Object.entries(MAT).map(([name, color]) =>
-    [name, std({ color, roughness: .91, side: THREE.DoubleSide, ...(name === 'concrete' ? textures : {}) })]));
+    // (no roughness map on the concrete: under it the screen-space reflections
+    // traced its pores and sparkled; the arena's concrete is the same)
+    [name, std({ color, roughness: .93, side: THREE.DoubleSide, ...(name === 'concrete' ? { ...textures, roughnessMap: null } : {}) })]));
   mat.panel = std({ color: 0xd2d4ce, roughness: 1, side: THREE.DoubleSide });
+  // the floor under its concert covering: dark grey protection panels
   const ground = new THREE.Mesh(new THREE.CircleGeometry(62.4, 128),
-    std({ color: 0x757474, ...withRepeat(concreteTex({ key: 'gym-floor', tone: .37, even: .82 }), 18, 18), roughness: .81 }));
+    std({ color: 0x3a3b3d, ...withRepeat(concreteTex({ key: 'gym-floor', tone: .37, even: .82 }), 18, 18), roughnessMap: null, roughness: 1 }));
   ground.rotateX(-Math.PI / 2);
   ground.receiveShadow = true;
   root.add(ground);
   lowerStands(root, mat, ctx.mode);
-  upperStands(root, mat);
-  roof(root, mat);
-  // The console occupies the centre of section 19 in the circular show.
-  const stands = gymStands().filter((seat) => ctx.mode !== '360' || seat.block !== '19');
-  chairs(root, stands);
+  foldedCurtain(root);
+  upperStands(root, mat, ctx.pipe);
+  const houseRoof = roof(root, mat, ctx.pipe);
+  // (360: the console's scaffold stands over section 19's middle rows)
+  const all = gymStands().filter((seat) => !round || !underConsole(seat));
+  chairs(root, all);
   const floor = gymFloor(ctx.mode);
   const catalog = getGymnasticSeatCatalog(ctx.mode);
-  const floorHeight = GYM_FOH[ctx.mode][1];
-  const eye = V3(GYM_FOH[ctx.mode][0], floorHeight + 1.6, GYM_FOH[ctx.mode][2]);
-  const show = buildGymnasticShow(ctx, root, eye, floor);
-  const room = {
-    root, eye, ...show, round: ctx.mode === '360', seatNear: seatFinder(catalog.seats.filter((s) => !s.standing)),
-    seats: [...stands, ...floor.positions],
-    background: new THREE.Color(0x090a0c), fog: new THREE.FogExp2(0x090a0d, .0029),
-    hazeDensity: .00072, volShoulder: 3.1, hazeAmb: new THREE.Color(0x080b12), hazeAmbDist: 95, beamGain: .52,
-    bloom: { strength: .36, threshold: 1.40, radius: .55, house: 2.6 },
-    grade: { exposure: 1.07, vignette: .25, grain: .02, lift: [.005, .006, .009] },
-    env: { w: 125, d: 125, h: 29, eye, wall: 0x15181e, floor: 0x121319 },
+  const [fx, fy, fz] = GYM_FOH[ctx.mode];
+  const eye = V3(fx, fy + 1.6, fz);
+  const stage = V3(0, 0, round ? 0 : -17);
+  const open = all.filter((seat) => gymOpenSeat(seat, ctx.mode));
+  const stands = {
+    people: seatedCrowd(open, stage, round), aisleLights: [], update() {},
+    seatNear: seatFinder(catalog.seats.filter((s) => !s.standing)), seats: [...all, ...floor.positions],
   };
-  return room;
+  const show = buildGymnasticShow(ctx, root, eye, stands, floor, (f) => houseRoof(f.house));
+  return {
+    root, eye, ...show, round, seatNear: stands.seatNear, seats: stands.seats, splitTurn: 0,
+    background: new THREE.Color(0x060608), fog: new THREE.FogExp2(0x07070a, .0031),
+    hazeAmb: new THREE.Color(0x050407), hazeAmbDist: 120,
+    bloom: { strength: .42, radius: .6, threshold: 1.38, house: 2.2 },
+    grade: { exposure: 1.14, vignette: .28, ca: .003, grain: .025, sat: 1.04, lift: [.004, .005, .009] },
+    envIntensity: .58,
+    finish: { matte: .15, gloss: .3, metal: .3 },
+  };
 }

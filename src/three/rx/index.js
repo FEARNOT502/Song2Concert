@@ -35,6 +35,11 @@ const LOOK = {
     general: { fog: 0.003, fogAmb: 0.35, floorY: 0, expRx: 1.45, fogFar: 200, led: 0.25 },
     360: { fog: 0.003, fogAmb: 0.35, floorY: 0, expRx: 1.5, fogFar: 200, led: 0.3 },
   },
+  // (KSPO DOME: smaller than the arena under a lower roof; its haze reaches across the bowl)
+  'gymnastic-arena': {
+    general: { fog: 0.0028, fogAmb: 0.35, floorY: 0, expRx: 1.45, fogFar: 140, led: 0.25 },
+    360: { fog: 0.0028, fogAmb: 0.35, floorY: 0, expRx: 1.5, fogFar: 140, led: 0.3 },
+  },
   dome: {
     general: { fog: 0.0016, fogAmb: 0.3, floorY: 0, expRx: 1.45, fogFar: 240, led: 0.2 },
     360: { fog: 0.0016, fogAmb: 0.3, floorY: 0, expRx: 1.5, fogFar: 240, led: 0.3 },

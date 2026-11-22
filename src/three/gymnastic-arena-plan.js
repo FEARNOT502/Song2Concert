@@ -6,18 +6,29 @@ export const GYM_FLOOR_R = 32.7;
 export const GYM_AISLE_R = 33.35;
 export const GYM_FIRST_ROW = 12;
 export const GYM_RAD = Math.PI / 180;
+// FOH: the mix position's deck (the console's floor, its top at y). General:
+// the floor's back middle, as on the operator's and HYBE's end-stage plots.
+// 360: the CONSOLE in section 19 (1F, between 18 and 20 on DAY6's map), on a
+// scaffold deck over the stand's rows, facing the round stage.
 export const GYM_FOH = {
-  general: [0, .65, 25.5],
-  360: [0, 3.75, -38.0],
+  general: [0, .81, 24.6],
+  360: [0, 4.86, -38.6],
 };
+// The section 19 scaffold under the 360 console (radii along the section's
+// middle, half its width across), and the FOH camera's riser on the landing
+// at the top of the section, behind the console.
+export const GYM_CONSOLE_DECK = { r0: 35.25, r1: 41.95, half: 4.6, top: 4.86 };
+export const GYM_FOH_CAMERA = { r: 44.05, y: 4.77, riser: .72 };
 export const GYM_PA = {
+  // mains off the downstage corners, side hangs turned to the 1F/2F sides,
+  // then a delay pair out over the floor's back corners for the C end's upper rows
   general: [
-    { x: -19.8, z: -17.9, top: 12.7, yaw: -.16 },
-    { x: 19.8, z: -17.9, top: 12.7, yaw: .16 },
-    { x: -22.6, z: -16.5, top: 12.4, yaw: -.87 },
-    { x: 22.6, z: -16.5, top: 12.4, yaw: .87 },
-    { x: -25.0, z: 16.2, top: 12.0, yaw: -.25 },
-    { x: 25.0, z: 18.0, top: 12.0, yaw: .25 },
+    { x: -21.9, z: -13.4, top: 16.9, yaw: -.12 },
+    { x: 21.9, z: -13.4, top: 16.9, yaw: .12 },
+    { x: -26.1, z: -14.1, top: 16.6, yaw: -.72 },
+    { x: 26.1, z: -14.1, top: 16.6, yaw: .72 },
+    { x: -24.8, z: 15.6, top: 17.2, yaw: -.24 },
+    { x: 24.8, z: 17.4, top: 17.2, yaw: .24 },
   ],
   360: Array.from({ length: 8 }, (_, i) => {
     const yaw = (Math.floor(i / 2) * 90 + (i % 2 ? 51 : 39)) * GYM_RAD;
@@ -32,26 +43,51 @@ export const gymRing = (start, end, r, segments = Math.ceil((end - start) / 3)) 
 export const gymSector = (start, end, near, far) =>
   [...gymRing(start, end, far), ...gymRing(start, end, near).reverse()];
 
+// General: the end stage at A with its LED wall and the band upstage, a
+// runway out to a walkway across it (the T: RIIZE's 2025 plot), the floor
+// seated round it. Units as CONCERT_LAYOUTS (stage-plan.js).
 const GENERAL = {
-  deck: 1.65, runway: 1.28, front: -12.3, back: -24.4, tip: 10.8, w: 38,
-  wall: [35.4, 10.4], wallZ: -23.35, rig: 15.9,
+  code: 'KG1', deck: 1.8, runway: 1.5, gap: 2.6, thrustGap: 2.2,
+  front: -12.3, back: -24.4, w: 40, runHalf: 2.1, cross: 3.4, crossD: 4.6, wing: 12.4, tip: 8.0,
+  wall: [30.4, 10.9, 4.45], wallZ: -23.15, rig: 18.2, reach: 66,
 };
-const ROUND = { deck: 1.38, rig: 18.4 };
+// 360: DAY6's low round deck, the drum riser in its middle, the grid over it.
+const ROUND = { code: 'KR1', deck: 1.38, riser: [2.28, .69], gap: 2.6, rig: 19.2, wall: [12.8, 6.25, 13.6], reach: 64 };
 const rect = (x0, x1, z0, z1) => [[x0, z0], [x1, z0], [x1, z1], [x0, z1]];
+const RISE = .2, RUN = .28;
+const flight = ({ x, z, h, y0 = 0, width, dir }) => {
+  const n = Math.max(1, Math.ceil((h - y0) / RISE - 1e-6)), len = n * RUN;
+  const [dx, dz] = dir, ax = -dz, az = dx, hw = width / 2;
+  return { x, z, h, y0, width, dir, ring: [[x - ax * hw, z - az * hw], [x + ax * hw, z + az * hw],
+    [x + ax * hw + dx * len, z + az * hw + dz * len], [x - ax * hw + dx * len, z - az * hw + dz * len]] };
+};
 
 export function gymStagePlan(mode) {
   const round = mode === '360';
   const L = round ? ROUND : GENERAL;
   if (round) {
     const ring = gymRing(0, 360, GYM_CENTER_R, 72).slice(0, -1);
-    return { L, round, decks: [{ ring, h: L.deck, radius: GYM_CENTER_R }], steps: [], masts: [] };
+    const riser = gymRing(0, 360, L.riser[0], 48).slice(0, -1);
+    const steps = [36, 216].map((deg) => {
+      const [x, z] = gymPoint(deg, GYM_CENTER_R + Math.ceil(L.deck / RISE) * RUN);
+      const [dx, dz] = gymPoint(deg, 1);
+      return flight({ x, z, h: L.deck, width: 1.3, dir: [-dx, -dz] });
+    });
+    return {
+      L, round, steps, masts: [],
+      decks: [{ ring, h: L.deck, radius: GYM_CENTER_R, gap: L.gap }, { ring: riser, h: L.deck + L.riser[1], base: L.deck, radius: L.riser[0], gap: 0 }],
+    };
   }
-  const main = rect(-L.w / 2, L.w / 2, L.back, L.front);
-  const runway = rect(-2.05, 2.05, L.front, L.tip);
-  const steps = [-1, 1].map((side) => {
-    const x = side * 14.8;
-    const z = L.front + 2.52;
-    return { x, z, h: L.deck, width: 1.45, dir: [0, -1], ring: rect(x - .725, x + .725, L.front, z) };
-  });
-  return { L, round, decks: [{ ring: main, h: L.deck }, { ring: runway, h: L.runway }], steps, masts: [] };
+  const r = L.w / 2;
+  const decks = [
+    { ring: rect(-r, r, L.back, L.front), h: L.deck, gap: L.gap },
+    { ring: rect(-L.runHalf, L.runHalf, L.front, L.cross), h: L.runway, gap: L.thrustGap },
+    { ring: rect(-L.wing, L.wing, L.cross, L.cross + L.crossD), h: L.runway, gap: L.thrustGap },
+  ];
+  const steps = [
+    // crew stairs down the deck's front at its ends, and up from the runway
+    ...[-1, 1].map((side) => flight({ x: side * (r - 2.2), z: L.front + Math.ceil(L.deck / RISE) * RUN, h: L.deck, width: 1.5, dir: [0, -1] })),
+    flight({ x: 0, z: L.front + Math.ceil((L.deck - L.runway) / RISE) * RUN, h: L.deck, y0: L.runway, width: 2.4, dir: [0, -1] }),
+  ];
+  return { L, round, decks: decks.map((d) => ({ base: 0, ramp: null, ...d })), steps, masts: [] };
 }

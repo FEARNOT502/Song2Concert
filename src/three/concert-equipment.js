@@ -131,8 +131,12 @@ function deckShadeTexture(decks, feet) {
   return { map, offset: new THREE.Vector2(minX, minZ), size: new THREE.Vector2(maxX - minX, maxZ - minZ) };
 }
 
-export function addConcertEquipment(models, root, room, mode, plan, eye) {
-  const data = layouts[room + '-' + mode];
+// `override`: a plot in the data file's shape, for a room that makes its own
+// (KSPO DOME). Its `foh` ({ y, yaw, model }) sets the mix position's base
+// height, its turn and the model standing there (a trimmed console without
+// the camera deck, for a deck over the stand's rows).
+export function addConcertEquipment(models, root, room, mode, plan, eye, override = null) {
+  const data = override ?? layouts[room + '-' + mode];
   const group = new THREE.Group();
   group.name = 'Concert equipment';
   root.add(group);
@@ -203,24 +207,53 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
     }
   }
 
-  add('foh', eye.x, 0, eye.z);
-  contact(eye.x, 0, eye.z, 8.15, 6.3);
+  const fohY = data.foh?.y ?? 0, fohYaw = data.foh?.yaw ?? 0, fohDeck = !data.foh?.model;
+  // the console's own frame: (x, z) off its middle, turned with it
+  const fohAt = (x, z) => V3(x, 0, z).applyAxisAngle(Y, fohYaw).add(V3(eye.x, 0, eye.z));
+  add(data.foh?.model ?? 'foh', eye.x, fohY, eye.z, fohYaw);
+  contact(eye.x, fohY, eye.z, 8.15, 6.3, fohYaw);
   // Match the authored FOH's two decks, side landings and individual treads.
   const lower = .81, upper = 3.14;
-  const fohFloor = (x, top, z, w, d) => boxCollision(eye.x + x, top - .07, eye.z + z, w, .14, d);
+  const fohFloor = (x, top, z, w, d) => {
+    const p = fohAt(x, z);
+    boxCollision(p.x, fohY + top - .07, p.z, w, .14, d, fohYaw);
+  };
+  const fohContact = (x, top, z, w, d) => {
+    const p = fohAt(x, z);
+    contact(p.x, fohY + top, p.z, w, d, fohYaw);
+  };
   fohFloor(0, lower, 0, 7, 5);
-  fohFloor(0, upper, 1.635, 4.38, 1.93);
-  fohFloor(3.3085, upper, 1.979, 2.377, 1.15);
+  if (fohDeck) {
+    fohFloor(0, upper, 1.635, 4.38, 1.93);
+    fohFloor(3.3085, upper, 1.979, 2.377, 1.15);
+  }
   fohFloor(3.962, lower, -2.061, 1.11, .82);
   for (let i = 0; i < 4; i++) fohFloor(0, lower * (i + 1) / 4, 3.52 - (i + .5) * .269, 1.33, .269);
-  for (let i = 0; i < 12; i++) {
+  if (fohDeck) for (let i = 0; i < 12; i++) {
     fohFloor(3.962, lower + (upper - lower) * (i + 1) / 12, 1.419 - (11.5 - i) * .261, .977, .261);
   }
   for (const x of [-1.34, 1.25]) {
-    contact(eye.x + x, lower, eye.z - .57, 2.48, 1.14);
-    contact(eye.x + x, lower, eye.z + .85, 1.0, .94);
+    fohContact(x, lower, -.57, 2.48, 1.14);
+    fohContact(x, lower, .85, 1.0, .94);
   }
-  for (const x of [-1.058, 1.046]) contact(eye.x + x, upper, eye.z + 1.64, 1.37, 1.6);
+  if (fohDeck) for (const x of [-1.058, 1.046]) fohContact(x, upper, 1.64, 1.37, 1.6);
+  // A FOH camera of its own where the deck is gone: on a riser (`p`, its top
+  // `y`, `aim`), the riser a black-skirted box like the floor cameras' pads.
+  if (data.fohCam) {
+    const { p: [cx, cz], y: cy, aim, riser = 0 } = data.fohCam;
+    const yaw = heading([aim[0] - cx, aim[2] - cz]);
+    add(cameraOnTripod(models, 1.6), cx, cy, cz, yaw);
+    if (riser > 0) {
+      const box = new THREE.Mesh(new THREE.BoxGeometry(1.5, riser, 1.5), std({ color: 0x050505, roughness: 1 }));
+      box.position.set(cx, cy - riser / 2, cz);
+      box.rotation.y = yaw;
+      box.name = 'FOH camera riser';
+      box.receiveShadow = true;
+      group.add(box);
+    }
+    boxCollision(cx, cy + .8, cz, .86, 1.6, .86, yaw);
+    contact(cx, cy, cz, 1.52, 1.48, yaw);
+  }
   // The floor cameras on their tripods, no risers, each run up to its own lens
   // height (the data's `lens`): the two in the pit kept under the front row's
   // sightline to the deck's edge (scripts set it from the pit's depth), the
@@ -361,7 +394,10 @@ export function addConcertEquipment(models, root, room, mode, plan, eye) {
   for (const item of data.stage) prop(item, stageHeight(plan.decks, ...item.p), false);
   for (const item of data.floor) prop(item, 0, true);
   // The open service cover is tucked next to the lower FOH rack.
-  add('cable-guard-service', eye.x - 2.98, .816, eye.z + .48, Math.PI / 2, V3(.63, 1, .74));
+  {
+    const p = fohAt(-2.98, .48);
+    add('cable-guard-service', p.x, fohY + .816, p.z, Math.PI / 2 + fohYaw, V3(.63, 1, .74));
+  }
   // The band has short spare signal looms next to its amp stacks. Vocal mic
   // stands remain the wireless assets, independent from the deck cabling.
   // (an amp line has one loom of its own in the data, not one per stack)

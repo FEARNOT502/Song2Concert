@@ -112,7 +112,10 @@ export function cameraPoses({ data, eye, focus, deck, field = 0, lensOf = () => 
     const pos = new THREE.Vector3(p[0] + (aim[0] - p[0]) / d * .45, field + lensOf(code), p[1] + (aim[1] - p[1]) / d * .45);
     return () => ({ pos, at: look(aim[0], aim[1]), fov: 30 });
   };
-  const cams = [() => ({ pos: new THREE.Vector3(eye.x - 1.04, 5.02, eye.z + 1.05), at: focus.clone(), fov: 17 })];
+  // the FOH camera: on the console's own camera deck, or (a plot's `fohCam`) on its riser
+  const fohCam = data.fohCam ? new THREE.Vector3(data.fohCam.p[0], data.fohCam.y + 1.6, data.fohCam.p[1])
+    : new THREE.Vector3(eye.x - 1.04, 5.02, eye.z + 1.05);
+  const cams = [() => ({ pos: fohCam, at: focus.clone(), fov: 17 })];
   for (const c of data.cameras.slice(0, 3)) cams.push(floorCam(c));
   while (cams.length < 4) cams.push(cams[cams.length - 1]);
   const { tip, aim } = data.jib;

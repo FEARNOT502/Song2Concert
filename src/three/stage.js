@@ -195,7 +195,9 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     const theater = id === 'theater';
     const models = id === 'club' ? loadClubModels() : theater && mode === 'op'
       ? loadTheaterModels()
-      : theater || CONCERT_VENUES.has(id) ? loadConcertModels() : null;
+      // (KSPO DOME's band plays the theatre's guitars and bass beside the shared kit)
+      : id === GYM_ID ? Promise.all([loadConcertModels(), loadTheaterModels()]).then(([a, b]) => new Map([...a, ...b]))
+        : theater || CONCERT_VENUES.has(id) ? loadConcertModels() : null;
     const [concertModels, theaterLab] = await Promise.all([
       models?.catch((error) => {
         console.warn('Unable to load concert equipment models', error);
