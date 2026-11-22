@@ -28,10 +28,12 @@ export const GYM_PA = {
     { x: -24.8, z: 15.6, top: 17.2, yaw: -.24 },
     { x: 24.8, z: 17.4, top: 17.2, yaw: .24 },
   ],
-  // 360: a pair at each corner of the LED box, splayed either side of the diagonal
+  // 360: a pair at each corner of the LED box, splayed either side of the
+  // diagonal, far enough out that each hangs clear past the box's face and
+  // its IMAG beside it, not in front of them
   360: Array.from({ length: 8 }, (_, i) => {
     const diag = (Math.floor(i / 2) * 90 + 45) * GYM_RAD, s = i % 2 ? 1 : -1;
-    const x = 12.4 * Math.sin(diag) + s * .9 * Math.cos(diag), z = 12.4 * Math.cos(diag) - s * .9 * Math.sin(diag);
+    const x = 13.6 * Math.sin(diag) + s * .9 * Math.cos(diag), z = 13.6 * Math.cos(diag) - s * .9 * Math.sin(diag);
     return { x, z, top: 18.2, yaw: diag + s * .38 };
   }),
 };

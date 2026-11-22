@@ -3,8 +3,7 @@
 //
 // The vomitories as the operator's model (kspodome_dae, 2023) draws them and
 // the 2018 photographs show them: an open pit in the rake between thin white
-// walls, the walls' tops a diagonal a metre over the treads beside them, a
-// handrail post at each front corner.
+// walls, the walls' tops a diagonal a metre over the treads beside them.
 //   lower  13 off the 1F cross aisle (4.77 m): four steps down to the
 //          concourse's level, then a tunnel under the rows (its roof at 6.2 m)
 //          straight into the concourse
@@ -49,6 +48,11 @@ export const UPPER_VOMS = [
 const WALL = .15;
 // lower: the cross aisle's edge, the tunnel's mouth, its roof's underside
 const L_FRONT = 45.0, L_MOUTH = 47.3, L_ROOF = 6.2;
+// the tunnel's roof, the rows' tread over it, as far back as the rake is
+// under it (from there the rake's own treads go on over the tunnel); the
+// seats over it sit on it (gymnastic-seats.js)
+export const L_TOP = 48.7, L_TREAD = 6.3;
+export const overTunnel = (x, z) => LOWER_VOMS.some(([deg, hw]) => within(deg, x, z, hw + WALL + .05, L_MOUTH - .1, L_TOP));
 // upper: the passage's run on past the door (the doorway 0.3 m in from the
 // pit's walls either side, at most 2 m wide)
 const PASSAGE = 1.6;
@@ -133,23 +137,41 @@ const within = (deg, x, z, hw, r0, r1) => {
 
 // The rake's surface with the vomitories' pits cut out of it, and without
 // the model's own stand-ins for what is under it (a flat slab at the 2F's
-// level, a wall round at 57 m): the concourse is built here instead.
+// level, its big triangles reaching out under the concourse; a wall round at
+// 57 m): the concourse is built here instead. The model's triangles near a
+// pit are split small before the pit is cut, so the cut follows the pit's
+// walls and leaves no hole beside them.
 export function cutRake(geometry) {
   const pos = geometry.attributes.position;
   const keep = [];
   const holes = [
-    ...LOWER_VOMS.map(([deg, hw]) => [deg, hw + WALL, CROSS_R + .2, 48.65]),
+    ...LOWER_VOMS.map(([deg, hw]) => [deg, hw + WALL, CROSS_R + .2, L_TOP]),
     ...UPPER_VOMS.map(([deg, rF, rD, hw]) => [deg, hw + WALL, rF, rD]),
-  ];
+  ].map(([deg, hw, r0, r1]) => {
+    const [cx, cz] = gymPoint(deg, (r0 + r1) / 2);
+    return { deg, hw, r0, r1, cx, cz, reach: Math.hypot(hw, (r1 - r0) / 2) + .3 };
+  });
+  const cut = (x, z) => holes.some((h) => within(h.deg, x, z, h.hw - .04, h.r0, h.r1));
+  const emit = (p, q, w, depth) => {
+    const x = (p.x + q.x + w.x) / 3, z = (p.z + q.z + w.z) / 3;
+    const edge = Math.max(p.distanceTo(q), q.distanceTo(w), w.distanceTo(p));
+    if (depth < 8 && edge > .16 && holes.some((h) => Math.hypot(x - h.cx, z - h.cz) < h.reach + edge)) {
+      const pq = p.clone().lerp(q, .5), qw = q.clone().lerp(w, .5), wp = w.clone().lerp(p, .5);
+      for (const [i, j, k] of [[p, pq, wp], [pq, q, qw], [wp, qw, w], [pq, qw, wp]]) emit(i, j, k, depth + 1);
+      return;
+    }
+    if (cut(x, z)) return;
+    for (const v of [p, q, w]) keep.push(v.x, v.y, v.z);
+  };
   const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
   for (let i = 0; i < pos.count; i += 3) {
     a.fromBufferAttribute(pos, i); b.fromBufferAttribute(pos, i + 1); c.fromBufferAttribute(pos, i + 2);
-    const x = (a.x + b.x + c.x) / 3, y = (a.y + b.y + c.y) / 3, z = (a.z + b.z + c.z) / 3, r = Math.hypot(x, z);
+    const y = (a.y + b.y + c.y) / 3, r = Math.hypot((a.x + b.x + c.x) / 3, (a.z + b.z + c.z) / 3);
     const n = b.clone().sub(a).cross(c.clone().sub(a)).normalize();
-    if (y < 4.9 && r > 45.6) continue;
+    const reach = Math.max(...[a, b, c].map((v) => Math.hypot(v.x, v.z)));
+    if (Math.abs(n.y) > .9 && y < 4.8 && reach > 49) continue;
     if (Math.abs(n.y) < .3 && r > 56.2 && r < 58.8 && y < 10.3) continue;
-    if (holes.some(([deg, hw, r0, r1]) => within(deg, x, z, hw - .05, r0, r1))) continue;
-    for (const v of [a, b, c]) keep.push(v.x, v.y, v.z);
+    emit(a.clone(), b.clone(), c.clone(), 0);
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(keep, 3));
@@ -213,10 +235,6 @@ export function buildBowl(root, { pipe, rakeAt }) {
   let lo = C2.r0, hi = TOP.r0;
   for (let i = 0; i < 30; i++) { const m = (lo + hi) / 2; if (soff(m) < C2.ceil) lo = m; else hi = m; }
   const R_CEIL = lo;
-  const post = (deg, r, y, s, out) => {
-    const [x, z] = gymPoint(deg, r), [tx, tz] = gymPoint(deg + 90, s * (out - .06));
-    W.rail.push([V3(x + tx, y, z + tz), V3(x + tx, y + 1.0, z + tz)]);
-  };
 
   // ── lower: off the cross aisle, four steps down between the walls, the
   // tunnel's mouth under the rows, the tunnel on into the concourse ──
@@ -224,7 +242,6 @@ export function buildBowl(root, { pipe, rakeAt }) {
     const OUT = PIT_HW + WALL;
     for (const s of [-1, 1]) {
       prism(W.white, deg, s * (PIT_HW + WALL / 2), [[L_FRONT, C2.y], [L_FRONT, CROSS_Y + 1.05], [L_MOUTH, rakeAt(L_MOUTH) + 1.05], [L_MOUTH, C2.y]], WALL);
-      post(deg, CROSS_R - .3, CROSS_Y, s, OUT);
       // the tunnel's walls
       radialBox(W.lit, deg, L_MOUTH, C2.r0, WALL / 2, C2.y, L_ROOF, s * (PIT_HW + WALL / 2));
     }
@@ -237,8 +254,8 @@ export function buildBowl(root, { pipe, rakeAt }) {
     // the tunnel's ceiling, its roof over the mouth (the rows' own tread
     // there) and the white face over the mouth
     radialBox(W.ceiling, deg, L_MOUTH, C2.r0 + .05, OUT, L_ROOF - .05, L_ROOF);
-    radialBox(W.tread, deg, L_MOUTH, 48.65, OUT, L_ROOF, L_ROOF + .1);
-    radialBox(W.white, deg, L_MOUTH - .02, L_MOUTH + .06, OUT, L_ROOF - .25, L_ROOF + .1);
+    radialBox(W.tread, deg, L_MOUTH, L_TOP, OUT, L_ROOF, L_TREAD);
+    radialBox(W.white, deg, L_MOUTH - .02, L_MOUTH + .06, OUT, L_ROOF - .25, L_TREAD);
   }
 
   // ── upper: the pit's floor stepping down from the row in front, a door
@@ -250,7 +267,6 @@ export function buildBowl(root, { pipe, rakeAt }) {
     const yF = rakeAt(rF), yD = Math.min(yF - .9, rakeAt(rD) - 2.0), head = yD + 1.95;
     for (const s of [-1, 1]) {
       prism(W.white, deg, s * (PIT_HW + WALL / 2), [[rF, yD - .3], [rF, yF + 1.0], [rD + .2, rakeAt(rD) + 1.0], [rD + .2, yD - .3]], WALL);
-      post(deg, rF + .12, yF, s, OUT);
     }
     // the floor: a landing, steps down, a landing at the door
     radialBox(W.tread, deg, rF, rF + .35, PIT_HW, yD - .3, yF);
@@ -316,7 +332,7 @@ export function buildBowl(root, { pipe, rakeAt }) {
     mesh(root, W.tread, concrete, 'Vomitory floors and stairs'),
     soffitMesh,
   ];
-  // the rails and posts, as thin tubes
+  // the rails, as thin tubes
   if (W.rail.length) {
     const up = V3(0, 1, 0), mtx = new THREE.Matrix4(), q = new THREE.Quaternion();
     const tubes = new THREE.InstancedMesh(new THREE.CylinderGeometry(.03, .03, 1, 8), rail, W.rail.length);

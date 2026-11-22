@@ -2,13 +2,16 @@ import { decodeSeats } from '../stands.js';
 import { floorBlocks } from '../show.js';
 import { GYM_AISLE_R, GYM_CENTER_R, GYM_CONSOLE_DECK, GYM_FIRST_ROW, GYM_FLOOR_R, GYM_FOH, GYM_STANDING, gymPoint, gymRing, gymSector, gymStagePlan } from '../gymnastic-arena-plan.js';
 import { GYM_SEATS, GYM_SECTION_ANGLES } from './gymnastic-data.js';
+import { L_TREAD, overTunnel } from './gymnastic-bowl.js';
 
 const packed = decodeSeats(GYM_SEATS);
 const stands = [];
 for (let i = 0; i < packed.length; i += 6) {
   const [xp, yp, zp, n, row, num] = packed.subarray(i, i + 6);
   if (n < 23 && row < GYM_FIRST_ROW) continue;
-  const x = xp / 100, y = yp / 100, z = zp / 100;
+  const x = xp / 100, z = zp / 100;
+  // (the seats over a lower vomitory's tunnel stand on its roof)
+  const y = n >= 23 && overTunnel(x, z) ? Math.max(yp / 100, L_TREAD) : yp / 100;
   stands.push({ x, y, z, block: String(n), row, num, level: n < 23 ? '1F' : '2F', yaw: Math.atan2(-x, -z), estimated: true });
 }
 
@@ -22,8 +25,9 @@ export function underConsole(seat) {
 }
 
 export function gymOpenSeat(seat, mode) {
-  // (360: section 19 is the CONSOLE on DAY6's map, not sold)
-  if (mode === '360') return seat.block !== '19';
+  // (360: the CONSOLE stands on a scaffold over section 19's middle rows;
+  // only the seats under it are out, the rest of the section is filled)
+  if (mode === '360') return !underConsole(seat);
   return seat.z > gymMask(seat.x) + 1.4;
 }
 
