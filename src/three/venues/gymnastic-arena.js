@@ -160,7 +160,7 @@ function upperStands(root, mat, pipe) {
   // the light grey band over the 3F concourse, up to the roof
   arcWall(root, mat.parapet, 62.4, C3.ceil, C3.ceil + .7);
   arcWall(root, mat.wall, 62.4, C3.ceil + .7, 22);
-  buildBowl(root, { pipe, rakeAt });
+  return buildBowl(root, { pipe, rakeAt });
 }
 
 function plateGeometry(outline, y0, y1) {
@@ -413,7 +413,7 @@ export function buildGymnasticArena(ctx) {
   root.add(ground);
   lowerStands(root, mat, ctx.mode);
   foldedCurtain(root);
-  upperStands(root, mat, ctx.pipe);
+  const bowl = upperStands(root, mat, ctx.pipe);
   const houseRoof = roof(root, mat, ctx.pipe);
   // (360: the console's scaffold stands over section 19's middle rows)
   const all = gymStands().filter((seat) => !round || !underConsole(seat));
@@ -428,7 +428,7 @@ export function buildGymnasticArena(ctx) {
     people: seatedCrowd(open, stage, round), aisleLights: [], update() {},
     seatNear: seatFinder(catalog.seats.filter((s) => !s.standing)), seats: [...all, ...floor.positions],
   };
-  const show = buildGymnasticShow(ctx, root, eye, stands, floor, (f) => houseRoof(f.house));
+  const show = buildGymnasticShow(ctx, root, eye, stands, floor, (f) => { houseRoof(f.house); bowl.update(f); });
   return {
     root, eye, ...show, round, seatNear: stands.seatNear, seats: stands.seats, splitTurn: 0,
     background: new THREE.Color(0x060608), fog: new THREE.FogExp2(0x07070a, .0031),

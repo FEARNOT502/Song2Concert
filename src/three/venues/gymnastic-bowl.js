@@ -272,5 +272,36 @@ export function buildBowl(root, { pipe, rakeAt }) {
   fit.userData.noCollide = true;
   fit.name = 'Concourse fittings';
   root.add(fit);
-  return { meshes };
+  // The concourses lit as the other rooms' are (stands.js roomLights): dark
+  // from the bowl, their lights coming up once someone steps into one (a
+  // concourse ring, a vomitory's passage, a stair core) and going down again
+  // when they leave.
+  const zones = [
+    { r0: C2.r0 - .2, r1: C2.r1, y0: C2.y - .3, y1: C2.y + 4.8 },
+    { r0: C3.r0 - .1, r1: C3.r1, y0: C3.y - .3, y1: C3.ceil },
+    ...LOWER_VOMS.map(([deg]) => ({ deg, hw: LOWER_W / 2 + .2, r0: CROSS_R + .3, r1: C2.r0, y0: C2.y - .3, y1: 7.4 })),
+    ...UPPER_VOMS.map(([deg, row]) => ({ deg, hw: UPPER_W / 2 + .2, r0: PIT[row].r0 + .6, r1: PIT_R1 + 5, y0: C2.y - .3, y1: PIT[row].floor + 2.4 })),
+  ];
+  const inside = ({ x, y, z }) => zones.some((q) => {
+    if (y < q.y0 || y > q.y1) return false;
+    if (q.deg === undefined) { const r = Math.hypot(x, z); return r > q.r0 && r < q.r1; }
+    return within(q.deg, x, z, q.hw, q.r0, q.r1);
+  });
+  const glow = [[lit, lit.emissiveIntensity], [floorLit, floorLit.emissiveIntensity], [ceilingLit, ceilingLit.emissiveIntensity]];
+  const fitColor = fit.material.color.clone();
+  let k = -1;
+  const set = (v) => {
+    k = v;
+    for (const [m, base] of glow) m.emissiveIntensity = base * v;
+    fit.material.color.copy(fitColor).multiplyScalar(v);
+  };
+  set(0);
+  const update = (f) => {
+    if (!f.cam) return;
+    const want = inside(f.cam) ? 1 : 0;
+    if (want === k) return;
+    const step = Math.min(1, (f.dt ?? 1 / 60) * 5);
+    set(Math.abs(want - k) < .02 ? want : k + (want - k) * step);
+  };
+  return { meshes, update };
 }

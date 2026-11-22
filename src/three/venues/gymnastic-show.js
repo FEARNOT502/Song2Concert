@@ -22,16 +22,6 @@ import { gymMask } from './gymnastic-seats.js';
 
 const ROOF = 27.4;
 
-// The ribbon boards round the bowl the concert photographs show (the tour's
-// name on them in 2025): small LED strips at the 3F concourse's rail, the
-// song's sleeve and title on them here.
-function ribbons(k, angles) {
-  for (const deg of angles) {
-    const [x, z] = gymPoint(deg, 60.55);
-    k.screen({ x, z, bottom: 12.95, w: 6.2, h: 1.05, yaw: -deg * GYM_RAD, bright: 1.4 });
-  }
-}
-
 function generalRig(k) {
   const { production, L, center, row, bar, screen, hang, drape } = k;
   const r = L.w / 2, [mainW, mainH, bottom] = L.wall;
@@ -94,8 +84,6 @@ function generalRig(k) {
       },
     });
   }
-  // (the ribbons last: the room's reflections take the first screens, the big ones)
-  ribbons(k, [70, 125, 180, 235, 290]);
   return V3(0, L.runway + .55, L.tip - 2.4);
 }
 
@@ -170,7 +158,6 @@ function roundRig(k) {
     panel.userData.noCollide = true;
     production.add(panel);
   }
-  ribbons(k, [20, 85, 150, 215, 280, 340]);
   return center;
 }
 
