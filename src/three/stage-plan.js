@@ -8,6 +8,8 @@
 // (towards FOH); `cz` is the z of the stage's centre (the round stage's
 // middle, or the end stage's reference point).
 
+import { GYM_ID, gymStagePlan } from './gymnastic-arena-plan.js';
+
 export const CONCERT_LAYOUTS = {
   arena: {
     general: { code: 'AG1', deck: 2.1, runway: 1.45, gap: 3.4, thrustGap: 2.65, front: 23, back: 6, w: 39, rig: 23.5, wallZ: 9.15, wall: [37, 14.7, 4.6], tip: 48, reach: 67 },
@@ -56,6 +58,7 @@ function flight({ x, z, h, y0 = 0, width, dir }) {
 //   steps  [{ x, z, h, y0, width, dir, ring }]
 //   masts  [[x, z]] the round stages' ground-supported roof towers
 export function stagePlan(id, mode, cz) {
+  if (id === GYM_ID) return gymStagePlan(mode);
   const L = CONCERT_LAYOUTS[id][mode === '360' ? '360' : 'general'];
   const round = mode === '360';
   const arena = id === 'arena', dome = id === 'dome', stadium = id === 'stadium';

@@ -30,10 +30,12 @@ import { BeatFollower } from './beat.js';
 import { buildVenue } from './venues/index.js';
 import { getDomeSeatCatalog } from './venues/dome.js';
 import { getStadiumSeatCatalog } from './venues/stadium.js';
+import { GYM_ID } from './gymnastic-arena-plan.js';
+import { getGymnasticSeatCatalog } from './venues/gymnastic-seats.js';
 import { getArenaSeatCatalog } from './venues/arena.js';
 import { getTheaterSeatCatalog } from './venues/theater-seats.js';
 // the rooms whose seats are named (block, row, seat), and each one's list of them
-const seatCatalog = (id, mode) => (id === 'dome' ? getDomeSeatCatalog() : id === 'stadium' ? getStadiumSeatCatalog(mode) : id === 'theater' ? getTheaterSeatCatalog(mode) : id === 'arena' ? getArenaSeatCatalog(mode) : null);
+const seatCatalog = (id, mode) => (id === 'dome' ? getDomeSeatCatalog() : id === 'stadium' ? getStadiumSeatCatalog(mode) : id === 'theater' ? getTheaterSeatCatalog(mode) : id === 'arena' ? getArenaSeatCatalog(mode) : id === GYM_ID ? getGymnasticSeatCatalog(mode) : null);
 import { BASE, PARTS, rollOf, section } from './show.js';
 
 // How far a new venue's camera may widen on a portrait screen: at least ~56°
@@ -218,7 +220,7 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
       o.geometry.computeBoundingBox();
       stops.push({ box: o.geometry.boundingBox.clone(), mat: o.matrixWorld.clone(), inv: o.matrixWorld.clone().invert() });
     });
-    for (const r of c.rigs) { r.blockers = stops; r.reach = CONCERT_VENUES.has(id) ? 260 : 0; }
+    for (const r of c.rigs) { r.blockers = stops; r.reach = id === GYM_ID ? 125 : CONCERT_VENUES.has(id) ? 260 : 0; }
     dropDegenerateTriangles(v.root);
     // the big rooms' paint, glass and steel without the sheen (core.js roomFinishes)
     if (v.finish) roomFinishes(v.root);

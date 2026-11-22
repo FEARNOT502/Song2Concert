@@ -15,6 +15,7 @@
 // that has been through a mastering engineer's bus compressor, and a second
 // helping on top of that is what congestion sounds like.
 
+import { GYM_ID, GYM_NAME, GYM_360_AUDIO } from './three/gymnastic-arena-plan.js';
 import { reverbTimes, imageSources, itdg, midRT, bassRatio, lateralFraction } from './audio/roomacoustics.js';
 import { VENUE_ROOMS, roomAbsorption, sourcePositions, listenerPosition, listeningDistance, DIRECTIVITY, fillArrivals } from './audio/venuerooms.js';
 
@@ -107,6 +108,15 @@ export const VENUES = [
     pa: { glue: 0, drive: 0 },
   },
   {
+    id: GYM_ID,
+    name: GYM_NAME,
+    type: 'INDOOR ARENA',
+    capacity: '~15,000 venue capacity',
+    position: fmtPosition(GYM_ID, 'FOH', 58),
+    acoustics: fmtAcoustics(GYM_ID, 'Modeled PA'),
+    pa: { glue: 0.24, drive: 0.18 },
+  },
+  {
     id: 'arena',
     name: 'Arena',
     type: 'ARENA',
@@ -140,12 +150,27 @@ export const VENUES = [
 
 export const findVenue = (id) => VENUES.find((v) => v.id === id) || VENUES[0];
 
+const gymRound = {
+  ...findVenue(GYM_ID),
+  soundProfile: GYM_360_AUDIO,
+  position: fmtPosition(GYM_360_AUDIO, 'FOH', 58),
+  acoustics: fmtAcoustics(GYM_360_AUDIO, 'Modeled PA'),
+};
+const gymRoundAudio = { ...gymRound, id: GYM_360_AUDIO };
+export const venueForMode = (id, mode) => id === GYM_ID && mode === '360' ? gymRound : findVenue(id);
+export const audioVenueForMode = (venue, mode) => venue.id === GYM_ID && mode === '360' ? gymRoundAudio : venue;
+
 // SOUND_NOTES — per-venue explanation, surfaced by the "?" help popup.
 // `points` are the bullet lines; `params` is a chip row of the venue's measured
 // figures, which are read from the room model rather than written down.
 const chip = (id) => `RT60 ${M[id].rt60.toFixed(2)}s · 베이스비 ${M[id].bass.toFixed(2)} · 첫 반사 +${(M[id].gap * 1000).toFixed(0)}ms · 거리 ${M[id].distance.toFixed(0)}m`;
 
+const gymSoundNote = (id) => ({
+  params: `Modeled · RT60 ${M[id].rt60.toFixed(2)}s · Bass ratio ${M[id].bass.toFixed(2)} · First reflection +${(M[id].gap * 1000).toFixed(0)}ms · Distance ${M[id].distance.toFixed(0)}m`,
+});
 export const SOUND_NOTES = {
+  [GYM_ID]: gymSoundNote(GYM_ID),
+  [GYM_360_AUDIO]: gymSoundNote(GYM_360_AUDIO),
   club: {
     headline: '짧고 타이트한 잔향 — 클럽의 친밀함',
     points: [

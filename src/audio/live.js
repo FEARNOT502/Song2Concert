@@ -9,7 +9,8 @@
 // It applies to the three venues with a full touring rig. A club, a theatre or
 // a concert hall is not where a live album was made, and nothing here changes
 // them.
-export const LIVE_VENUES = ['arena', 'dome', 'stadium'];
+import { GYM_ID, GYM_360_AUDIO } from '../three/gymnastic-arena-plan.js';
+export const LIVE_VENUES = ['arena', 'dome', 'stadium', GYM_ID, GYM_360_AUDIO];
 
 export const liveApplies = (venueId, on) => !!on && LIVE_VENUES.includes(venueId);
 

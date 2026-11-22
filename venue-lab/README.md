@@ -1,9 +1,9 @@
 # Venue Dev Lab
 
 The standalone Venue Dev Lab uses the same stage renderer, venue builders, and
-models as Song2Concert. It shows Club, Theater, Concert Hall, Arena, Dome, and
-Stadium. Arena, Dome, and Stadium offer general and 360 layouts. Theater also
-offers its orchestra-pit layout.
+models as Song2Concert. It shows Club, Theater, Concert Hall, KSPO DOME,
+Arena, Dome, and Stadium. KSPO DOME, Arena, Dome, and Stadium offer general
+and 360 layouts. Theater also offers its orchestra-pit layout.
 
 ## Build and view
 
@@ -87,11 +87,26 @@ temporal passes converge. `python3 compare.py` makes side-by-side sheets.
   list's own.)
 - `gen.mjs` is the archived prototype-to-module converter.
 
+## KSPO DOME seat data
+
+The [source list](../docs/references/GYMNASTIC_ARENA_REFERENCES.ko.md) links to
+both the operator's DAE archive and the detailed EPS seat chart. The generator
+requires NumPy, lxml and PyMuPDF. From the repository root, convert the
+extracted EPS and regenerate the module:
+
+```sh
+gs -dBATCH -dNOPAUSE -dEPSCrop -sDEVICE=pdfwrite -sOutputFile=chart-eps.pdf '체조좌석도면.eps'
+python3 venue-lab/pipeline/gymnastic_arena.py kspodome_dae.zip chart-eps.pdf src/three/venues/gymnastic-data.js
+```
+
+The exported positions start behind the mid-aisle in the lower stands. The
+row and seat identifiers in the generated grid are estimates.
+
 ## Checks
 
 Run from `venue-lab/` after building. Set `CHROME` to the path to Chromium.
 
-- `node uitest.mjs` opens the standalone HTML offline and verifies all six
+- `node uitest.mjs` opens the standalone HTML offline and verifies all seven
   venues and their optional layouts.
 - `node shot.mjs out/venue-lab.html shots/x arena 1280 720 "house=1&layout=360"`
   captures a screenshot. Use `cam=x,y,z,tx,ty,tz` to set the view.

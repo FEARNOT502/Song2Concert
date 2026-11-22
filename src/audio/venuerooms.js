@@ -20,6 +20,7 @@
 //   · arena/dome/stadium — the FOH mix position. That is not a compromise: it is
 //     literally the seat the show was mixed to sound correct in.
 
+import { GYM_ID, GYM_360_AUDIO, GYM_FOH, GYM_PA } from '../three/gymnastic-arena-plan.js';
 import { MATERIALS, BANDS, SPEED_OF_SOUND } from './roomacoustics.js';
 
 // A large-format PA is two hangs, not a point source. Modelling them separately
@@ -40,6 +41,8 @@ export const DIRECTIVITY = {
   theater: 0.55,
   concerthall: 0.18,
   arena: 0.88,
+  [GYM_ID]: .88,
+  [GYM_360_AUDIO]: .88,
   dome: 0.88,
   stadium: 0.90,
 };
@@ -68,6 +71,8 @@ export const DIRECTIVITY_Q = {
   theater: 4,
   concerthall: 2.2,
   arena: 5,
+  [GYM_ID]: 5,
+  [GYM_360_AUDIO]: 5,
   dome: 5,
   stadium: 5,
 };
@@ -86,6 +91,8 @@ export const SYSTEM_LF_HZ = {
   theater: 42,
   concerthall: 38,
   arena: 32,
+  [GYM_ID]: 34,
+  [GYM_360_AUDIO]: 34,
   dome: 30,
   stadium: 28,
 };
@@ -121,6 +128,8 @@ const FORMER_WIDTH = {
   theater: 1.28,
   concerthall: 1.45,
   arena: 1.58,
+  [GYM_ID]: 1.55,
+  [GYM_360_AUDIO]: 1.55,
   dome: 1.68,
   stadium: 1.40,
 };
@@ -167,6 +176,8 @@ export const VENUE_WET_DB = {
   theater: 2.5,
   concerthall: 3.0,
   arena: 3.5,
+  [GYM_ID]: 3.3,
+  [GYM_360_AUDIO]: 3.3,
   dome: 3.5,
   stadium: 3.5,
 };
@@ -200,6 +211,8 @@ export const RIG_POWER = {
   theater: 1,
   concerthall: 1,
   arena: 2.0,
+  [GYM_ID]: 1.82,
+  [GYM_360_AUDIO]: 1.82,
   dome: 2.4,
   stadium: 2.2,
 };
@@ -219,11 +232,39 @@ export const RIG_LOW_LIFT = {
   theater: 0,
   concerthall: 0,
   arena: 1.6,
+  [GYM_ID]: 1.5,
+  [GYM_360_AUDIO]: 1.5,
   dome: 1.6,
   stadium: 2.2,
 };
 
+const toGymRoom = ([x, y, z]) => [x + 62.4, z + 62.4, y];
+
+function gymRoom(mode) {
+  const round = mode === '360';
+  const mains = round ? [GYM_PA[mode][4], GYM_PA[mode][3]] : GYM_PA[mode].slice(0, 2);
+  const listener = GYM_FOH[mode].slice();
+  listener[0] += 1.3;
+  listener[1] += 1.6;
+  return {
+    reference: 'KSPO DOME (post-renovation model)',
+    dims: [124.8, 124.8, 27.8],
+    volume: 243000,
+    surfaces: { x0: 'audience', x1: 'audience', y0: 'arenaTreated', y1: 'audience', z0: 'concrete', z1: 'arenaTreated' },
+    absorbers: [
+      { area: round ? 13600 : 11900, material: 'audience' },
+      { area: 13500, material: 'arenaTreated' },
+      { area: 6300, material: 'concrete' },
+    ],
+    stage: { center: toGymRoom([0, round ? 2.1 : 2.0, round ? 0 : -17]), halfWidth: round ? 6.5 : 19.8 },
+    listener: toGymRoom(listener),
+    sources: mains.map(({ x, z, top }) => toGymRoom([x, top - 1.55, z])),
+  };
+}
+
 export const VENUE_ROOMS = {
+  [GYM_ID]: gymRoom('general'),
+  [GYM_360_AUDIO]: gymRoom('360'),
   club: {
     dims: [12, 16, 3.5],
     // Wood everywhere; the audience sits on the floor plane close to the stage.
@@ -381,6 +422,7 @@ export function roomAbsorption(id) {
 // a small stage), a left/right pair of hangs for the PA rooms.
 export function sourcePositions(id) {
   const r = VENUE_ROOMS[id];
+  if (r.sources) return r.sources;
   const [cx, cy, cz] = r.stage.center;
   const hw = r.stage.halfWidth;
   if (id === 'club' || id === 'theater' || id === 'concerthall') {
@@ -439,7 +481,17 @@ export function sourcePositions(id) {
 // ring behind the mix position as well as an inner one beside it. Both are true
 // of any real deployment: the towers ring the audience, the mix position is not
 // at the centre of that ring, and each tower is aligned to its own zone.
+function gymFill(mode, indexes, gains, delays) {
+  return indexes.map((index, i) => {
+    const { x, z, top } = GYM_PA[mode][index];
+    const [px, py, pz] = toGymRoom([x, top - 1.55, z]);
+    return { side: i % 2, x: px, y: py, z: pz, gain: gains[i], alignMs: delays[i] };
+  });
+}
+
 export const FILL_HANGS = {
+  [GYM_ID]: gymFill('general', [2, 3, 4, 5], [.18, .18, .23, .22], [7, 11, 18, 24]),
+  [GYM_360_AUDIO]: gymFill('360', [5, 2, 6, 1], [.24, .24, .16, .16], [6, 12, 19, 25]),
   arena: [
     { side: 0, x: 27, y: 38, z: 7, gain: 0.30, alignMs: 9 },
     { side: 1, x: 83, y: 45, z: 7, gain: 0.30, alignMs: 14 },

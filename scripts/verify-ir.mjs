@@ -44,6 +44,8 @@ const SR = 48000;
 // a listener perceives as reverberance there is far shorter than the tail
 // actually is, because the tail sits so far below the direct sound.
 const TARGETS = {
+  'gymnastic-arena': { c80: [0, 9], edtRatio: [0.5, 1.2], lateIacc: [0, 0.45] },
+  'gymnastic-arena-360': { c80: [0, 9], edtRatio: [0.5, 1.2], lateIacc: [0, 0.45] },
   // Bass ratio tolerance is wider here only because the club is hard to MEASURE:
   // at 0.75 s the fit window per octave is short, so band leakage weighs more.
   club:        { c80: [2, 14],  edtRatio: [0.7, 1.25], lateIacc: [0, 0.55], bass: 0.2 },

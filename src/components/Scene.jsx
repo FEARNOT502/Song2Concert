@@ -1,8 +1,8 @@
 // Scene.jsx — the venue, rendered in 3D.
 //
-// Each of the six rooms is a WebGL scene modelled on a real building (see
+// Each room is a WebGL scene modelled on a real building (see
 // src/three/venues): a live house, Blue Square's Shinhan Card Hall, the Lotte
-// Concert Hall, the Saitama Super Arena, the Tokyo Dome and Wembley. The
+// Concert Hall, KSPO DOME, the Saitama Super Arena, the Tokyo Dome and Wembley. The
 // listener starts at the seat the sound is computed for and can walk from
 // there — W A S D, drag to look — while the sound stays at that seat.
 //
@@ -21,6 +21,7 @@ import StageArt from './StageArt.jsx';
 import { BrandMark } from './TopBar.jsx';
 import { createStage } from '../three/stage.js';
 import { findVenue } from '../data.js';
+import { GYM_ID } from '../three/gymnastic-arena-plan.js';
 
 function LoadingCover({ venueId, mode, done }) {
   return (
@@ -129,7 +130,7 @@ function Scene({
   }, []);
 
   useEffect(() => { stageRef.current?.setVenue(venueId, venueMode); }, [venueId, venueMode]);
-  useEffect(() => { if (['dome','stadium','theater'].includes(venueId)) stageRef.current?.setSeat(seat); }, [venueId, seat]);
+  useEffect(() => { if (['dome','stadium','theater', GYM_ID].includes(venueId)) stageRef.current?.setSeat(seat); }, [venueId, venueMode, seat]);
   useEffect(() => { stageRef.current?.setArt({ coverId, coverSrc, title, artist }); }, [coverId, coverSrc, title, artist]);
   // Stopped, the house lights are up; playing, they go down for the show.
   useEffect(() => { stageRef.current?.setPlaying(playing); }, [playing]);

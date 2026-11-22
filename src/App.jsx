@@ -3,7 +3,7 @@
 // Upload-only: drop a FLAC/WAV to hear it re-rendered in the chosen venue.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { findVenue } from './data.js';
+import { findVenue, audioVenueForMode, venueForMode } from './data.js';
 import Scene from './components/Scene.jsx';
 import TopBar from './components/TopBar.jsx';
 import BottomTransport from './components/BottomTransport.jsx';
@@ -13,6 +13,7 @@ import QueuePanel from './components/QueuePanel.jsx';
 import LightPanel, { DESK } from './components/LightPanel.jsx';
 import MobileLayout from './components/MobileLayout.jsx';
 import { useSceneEffects } from './useSceneEffects.js';
+import { GYM_ID } from './three/gymnastic-arena-plan.js';
 import { CROWD_LIGHT_VENUES, useCrowdLight } from './useCrowdLight.js';
 import { modeOf, useVenueModes } from './useVenueModes.js';
 import { useIsMobile } from './useIsMobile.js';
@@ -120,8 +121,8 @@ export default function App() {
   const getClock = useCallback(() => engine.currentTime, [engine]);
 
   // derived
-  const venue = findVenue(venueId);
   const venueMode = modeOf(venueModes, venueId);
+  const venue = venueForMode(venueId, venueMode);
   const desk = CROWD_LIGHT_VENUES.includes(venueId);
   const liveAuto = !!upload?.liveAuto;
   const live = liveOverride ?? liveAuto;
@@ -138,7 +139,7 @@ export default function App() {
   const coverSrc = upload?.coverSrc || null;
 
   // ── push venue → convolver + pre-delay ──────────────────────────────────
-  useEffect(() => { engine.setVenue(venue); }, [engine, venue]);
+  useEffect(() => { engine.setVenue(audioVenueForMode(venue, venueMode)); }, [engine, venue, venueMode]);
 
   // ── push wet/dry + volume → graph ───────────────────────────────────────
   useEffect(() => { engine.setWetDry(wetDry); }, [engine, wetDry]);
@@ -244,7 +245,7 @@ export default function App() {
     setVenueId(id);
     if (mode) setVenueMode(id, mode);
     setWetDry(findVenue(id).position.wet); // reset wet/dry to the venue default
-    if (id === 'dome' || id === 'stadium' || id === 'theater' || id === 'arena') {      // (the rooms whose seats are named: see Modals' SEAT_ROOMS)
+    if (id === 'dome' || id === 'stadium' || id === 'theater' || id === 'arena' || id === GYM_ID) {      // (the rooms whose seats are named: see Modals' SEAT_ROOMS)
       setDomeSeat(seat || null);
       setActiveSeat(seat || null);
       stageRef.current?.setSeat(seat || null);

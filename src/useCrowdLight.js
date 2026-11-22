@@ -3,6 +3,7 @@
 // phone torches ('flash'). Only the arena, the dome and the stadium have a
 // crowd lit this way; the switch is shown there and kept for the next visit.
 
+import { GYM_ID } from './three/gymnastic-arena-plan.js';
 import { useCallback, useEffect, useState } from 'react';
 
 const KEY = 's2c.crowdLight';
@@ -16,7 +17,7 @@ function load() {
   }
 }
 
-export const CROWD_LIGHT_VENUES = ['arena', 'dome', 'stadium'];
+export const CROWD_LIGHT_VENUES = ['arena', 'dome', 'stadium', GYM_ID];
 
 export function useCrowdLight() {
   const [mode, setMode] = useState(load);

@@ -148,13 +148,14 @@ export class Walker {
     }
     const sx = seat.x - Math.sin(seat.yaw ?? 0) * 0.12;
     const sz = seat.z - Math.cos(seat.yaw ?? 0) * 0.12;
-    const eye = V3(sx, seat.y + WALK.sit, sz);
-    const target = stageTarget ? stageTarget.clone() : V3(sx + Math.sin(seat.yaw ?? 0) * 30, seat.y + WALK.sit - 3, sz + Math.cos(seat.yaw ?? 0) * 30);
+    const eyeHeight = seat.standing ? WALK.eye : WALK.sit;
+    const eye = V3(sx, seat.y + eyeHeight, sz);
+    const target = stageTarget ? stageTarget.clone() : V3(sx + Math.sin(seat.yaw ?? 0) * 30, seat.y + eyeHeight - 3, sz + Math.cos(seat.yaw ?? 0) * 30);
     this.home = { eye, target };
     this.currentSeat = seat;
     this.reset();
-    this.sitting = true;
-    this.eyeH = WALK.sit;
+    this.sitting = !seat.standing;
+    this.eyeH = eyeHeight;
     this.onSeatChange?.(seat);
   }
 

@@ -15,7 +15,7 @@ try {
   await page.goto(url + '?q=low#inspire');
   await page.waitForFunction(() => window.__ready === true || document.querySelector('#loading-name')?.textContent.startsWith('오류'), null, { timeout: 120000 });
   assert.equal(await page.evaluate(() => window.__ready), true, await page.locator('#loading-name').textContent());
-  const venues = ['club', 'theater', 'concerthall', 'arena', 'dome', 'stadium'];
+  const venues = ['club', 'theater', 'concerthall', 'gymnastic-arena', 'arena', 'dome', 'stadium'];
   assert.deepEqual(await page.locator('#tabs button').evaluateAll((tabs) => tabs.map((tab) => tab.dataset.id)), venues);
   assert.equal(await page.locator('#retract-row').count(), 0);
   assert.equal(await page.evaluate(() => window.__info().venue), 'club');

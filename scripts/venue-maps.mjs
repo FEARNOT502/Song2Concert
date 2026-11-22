@@ -20,13 +20,13 @@ import { chromium } from 'playwright';
 const URL = process.argv[2] || 'http://localhost:5173/Song2Concert/';
 const OUT = path.resolve('public/venue-maps');
 // (`<id>-360`: the big rooms laid out round a centre stage)
-const VENUES = (process.env.ONLY ? process.env.ONLY.split(',') : ['club', 'theater', 'concerthall', 'arena', 'dome', 'stadium', 'arena-360', 'dome-360', 'stadium-360']);
+const VENUES = (process.env.ONLY ? process.env.ONLY.split(',') : ['club', 'theater', 'concerthall', 'gymnastic-arena', 'arena', 'dome', 'stadium', 'gymnastic-arena-360', 'arena-360', 'dome-360', 'stadium-360']);
 // the plan is cut here (metres): the roof, the ceiling and what hangs from them
 // are above it
-const CUT = { club: 2.6, theater: 24, concerthall: 12, arena: 28, dome: 33, stadium: 40 };
+const CUT = { club: 2.6, theater: 24, concerthall: 12, 'gymnastic-arena': 13, arena: 28, dome: 33, stadium: 40 };
 // rooms whose floor is a standing floor, up to this height: it is tinted as an
 // audience area where it lies inside the seats (the pitch's cover is 1.5 m up)
-const STANDING = { club: 0.3, stadium: 2, 'arena-360': 0.3 };
+const STANDING = { club: 0.3, stadium: 2, 'arena-360': 0.3, 'gymnastic-arena-360': 0.3 };
 
 fs.mkdirSync(OUT, { recursive: true });
 const browser = await chromium.launch({ channel: process.env.CHANNEL, args: ['--use-angle=d3d11', '--ignore-gpu-blocklist', '--enable-webgl'] });
@@ -36,7 +36,8 @@ await page.waitForFunction(() => window.__stage && document.querySelector('.s2c-
 await page.evaluate(() => window.__stage.setEffects(false));
 
 for (const id of VENUES) {
-  const [vid, mode = 'general'] = id.split('-');
+  const mode = id.endsWith('-360') ? '360' : 'general';
+  const vid = mode === '360' ? id.slice(0, -4) : id;
   await page.evaluate(([v, m]) => window.__stage.setVenue(v, m === '360' ? '360' : 'general'), [vid, mode]);
   await page.waitForTimeout(300);
   await page.waitForFunction(([v, m]) => window.__stage.stats().venue === v && window.__stage.stats().mode === (m === '360' ? '360' : 'general') && document.querySelector('.s2c-load.is-done'), [vid, mode], { timeout: 180000 });

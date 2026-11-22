@@ -1,4 +1,4 @@
-// index.js — the six 3D venues, keyed by the same ids the audio engine uses.
+// index.js — the 3D venues, keyed by the same ids the audio engine uses.
 //
 // A builder takes the stage's context — the pipeline, the quality settings, the
 // crowd's shared uniforms, and the hooks for screens and rigs — and returns:
@@ -14,6 +14,8 @@
 import { buildClub } from './club.js';
 import { buildTheater } from './theater.js';
 import { buildConcertHall } from './concerthall.js';
+import { GYM_ID } from '../gymnastic-arena-plan.js';
+import { buildGymnasticArena } from './gymnastic-arena.js';
 import { buildArena } from './arena.js';
 import { buildDome } from './dome.js';
 import { buildStadium } from './stadium.js';
@@ -22,6 +24,7 @@ export const VENUE_BUILDERS = {
   club: buildClub,
   theater: buildTheater,
   concerthall: buildConcertHall,
+  [GYM_ID]: buildGymnasticArena,
   arena: buildArena,
   dome: buildDome,
   stadium: buildStadium,

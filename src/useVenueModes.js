@@ -1,14 +1,14 @@
 // useVenueModes.js — how each big room is set out, remembered between visits:
 // 'general' (an end stage, as before) or '360' (a centre stage, the house sold
-// all round it). Only the arena, the dome and the stadium have the choice;
-// each keeps its own, and starts at 'general'. The sound is the same either
-// way: the room being convolved does not change, only the picture of it.
+// all round it). Each keeps its own layout and starts at 'general'.
+// KSPO DOME also switches the PA and listener geometry with the layout.
 
+import { GYM_ID } from './three/gymnastic-arena-plan.js';
 import { useCallback, useEffect, useState } from 'react';
 
 const KEY = 's2c.venueModes';
 
-export const ROUND_VENUES = ['arena', 'dome', 'stadium'];
+export const ROUND_VENUES = ['arena', 'dome', 'stadium', GYM_ID];
 export const VENUE_MODES = ['general', '360'];
 
 function load() {

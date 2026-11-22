@@ -45,6 +45,9 @@ import { VENUE_ROOMS, roomAbsorption, sourcePositions, listenerPosition, listeni
 //     people, and reflections skimming a crowd at a shallow angle scatter rather
 //     than mirror — but it is real, and it is what a stadium sounds like.
 const TARGETS = {
+  // Model checks for the two KSPO concert plots; there is no published hall IR.
+  'gymnastic-arena': { midRT: [2.3, 2.9], bass: [1.05, 1.28], itdg: [0.035, 0.060], lf: [0.02, 0.12] },
+  'gymnastic-arena-360': { midRT: [2.1, 2.7], bass: [1.06, 1.30], itdg: [0.034, 0.065], lf: [0, 0.10] },
   club:        { midRT: [0.7, 1.0],  bass: [0.60, 1.00], itdg: [0.004, 0.014], lf: [0.10, 0.25] },
   // A theatre is built for speech and sightlines: shorter than a hall its size
   // and close to flat with frequency, because light framed construction and

@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { appPalette, clamp, COVERS, drawCover, extractPalette, V3 } from '../../src/three/core.js';
 import { createStage } from '../../src/three/stage.js';
 import { VENUE_BUILDERS } from '../../src/three/venues/index.js';
+import { GYM_ID, GYM_NAME } from '../../src/three/gymnastic-arena-plan.js';
+import { venueForMode } from '../../src/data.js';
 import { modeOf, ROUND_VENUES } from '../../src/useVenueModes.js';
 import { Tags, sleeveCanvas, typeSleeve } from './y-tags.js';
 import { exportBake } from './rx/bake-export.js';
@@ -30,6 +32,7 @@ import { exportBake } from './rx/bake-export.js';
 }
 
 const INFO = {
+  [GYM_ID]: { name: GYM_NAME, type: 'INDOOR ARENA', ref: '', seats: '≈15,000', seat: 'FOH', vol: '243,000' },
   club: { name: 'Club', type: 'LIVE HOUSE', ref: '라이브하우스 · 가상의 공간', seats: '350', seat: 'Floor, centre', dist: '5 m', rt: '0.75', vol: '672', warm: '0.85', refl: '+6' },
   theater: { name: 'Theater', type: 'PROSCENIUM · MUSICAL', ref: '블루스퀘어 신한카드홀 기반', seats: '1,766', seat: 'Stalls, row 9', dist: '14 m', rt: '1.28', vol: '15,000', warm: '1.01', refl: '+16' },
   concerthall: { name: 'Concert Hall', type: 'VINEYARD', ref: '롯데콘서트홀 기반', seats: '2,036', seat: 'Terrace block', dist: '13 m', rt: '2.02', vol: '22,000', warm: '1.20', refl: '+12' },
@@ -403,23 +406,25 @@ const UI = {
   pressed(sel, v) { this.$(sel).querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === v))); },
   venue(id) {
     const I = INFO[id];
+    const mode = modeOf(App.layouts, id);
+    const profile = id === GYM_ID ? venueForMode(id, mode) : null;
     document.querySelectorAll('#tabs button').forEach((b) => b.setAttribute('aria-current', b.dataset.id === id ? 'true' : 'false'));
     const $ = this.$;
     $('#v-type').textContent = `${I.type} · ${I.seats} SEATS`;
     $('#v-name').textContent = I.name;
     $('#v-ref').textContent = I.ref;
     $('#v-seat').textContent = I.seat;
-    $('#v-dist').textContent = I.dist;
-    $('#v-rt').textContent = I.rt;
+    $('#v-dist').textContent = profile?.position.distance ?? I.dist;
+    $('#v-rt').textContent = profile?.acoustics.rt60.replace(/ s$/, '') ?? I.rt;
     $('#v-vol').textContent = I.vol;
-    $('#v-warm').textContent = I.warm;
-    $('#v-refl').textContent = I.refl;
+    $('#v-warm').textContent = profile?.acoustics['bass ratio'] ?? I.warm;
+    $('#v-refl').textContent = profile?.position.firstReflection.replace(/ ms$/, '') ?? I.refl;
     const round = ROUND_VENUES.includes(id);
     $('#crowd-row').hidden = !round;
     $('#seg-layout').hidden = !round && id !== 'theater';
     $('#seg-layout [data-v="360"]').hidden = !round;
     $('#seg-layout [data-v="op"]').hidden = id !== 'theater';
-    this.pressed('#seg-layout', modeOf(App.layouts, id));
+    this.pressed('#seg-layout', mode);
   },
   tone(app) {
     this.pressed('#seg-tone', app.mode);

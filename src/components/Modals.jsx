@@ -2,7 +2,10 @@
 // FilePicker accepts a real uploaded FLAC/WAV via drag-drop or the native input.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { VENUES } from '../data.js';
+import { VENUES, venueForMode } from '../data.js';
+import { GYM_ID } from '../three/gymnastic-arena-plan.js';
+import { getGymnasticSeatCatalog } from '../three/venues/gymnastic-seats.js';
+import GymnasticBlockMap, { GYM_LEVELS } from './GymnasticBlockMap.jsx';
 import { ROUND_VENUES, VENUE_MODES, modeOf } from '../useVenueModes.js';
 import { getDomeSeatCatalog } from '../three/venues/dome.js';
 import { getStadiumSeatCatalog } from '../three/venues/stadium.js';
@@ -42,14 +45,14 @@ const ARENA_TIERS = [
 ];
 const TIERS = { dome: DOME_TIERS, stadium: STADIUM_TIERS, arena: ARENA_TIERS };
 // the rooms whose seats are named, and each one's list of them
-export const SEAT_ROOMS = ['dome', 'stadium', 'theater', 'arena'];
-const seatCatalog = (id, mode) => (id === 'dome' ? getDomeSeatCatalog() : id === 'stadium' ? getStadiumSeatCatalog(mode) : id === 'theater' ? getTheaterSeatCatalog(mode) : id === 'arena' ? getArenaSeatCatalog(mode) : null);
+export const SEAT_ROOMS = ['dome', 'stadium', 'theater', 'arena', GYM_ID];
+const seatCatalog = (id, mode) => (id === 'dome' ? getDomeSeatCatalog() : id === 'stadium' ? getStadiumSeatCatalog(mode) : id === 'theater' ? getTheaterSeatCatalog(mode) : id === 'arena' ? getArenaSeatCatalog(mode) : id === GYM_ID ? getGymnasticSeatCatalog(mode) : null);
 // a block's name as the picker writes it (a box by its number; the arena's by its door)
 const blockText = (b, room = null) => (room === 'arena' ? arenaBlockText(b) : /^B\d+$/.test(b) ? `BOX ${Number(b.slice(1))}` : b === 'L4' ? 'L4 BALCONY' : b);
 // (Wembley's Royal Box: Level 2's two middle blocks on the north side)
 const blockOption = (room, b) => (room === 'stadium' && (b === '201' || b === '252') ? `${b} · ROYAL BOX` : blockText(b, room));
 // a seat as the picker and the badges write it
-export const seatText = (s, room = null) => (s ? `${blockText(s.block, room)} · ROW ${s.row} · SEAT ${s.num}` : room === 'theater' ? '1F · ROW 9 · SEAT 23' : room === 'stadium' ? 'FOH · PITCH' : 'FOH · ARENA');
+export const seatText = (s, room = null) => (s && room === GYM_ID && /^S[1-6]$/.test(s.block) ? `STANDING · ${s.block}` : s ? `${blockText(s.block, room)} · ROW ${s.row} · SEAT ${s.num}` : room === 'theater' ? '1F · ROW 9 · SEAT 23' : room === 'stadium' ? 'FOH · PITCH' : 'FOH · ARENA');
 
 // ───────────────────────────────────────── Modal shell
 export function Modal({ open, onClose, title, subtitle, children }) {
@@ -86,6 +89,7 @@ const MODE_LABEL = { general: 'GENERAL', 360: '360' };
 const FLOOR = {
   club: 'Standing', theater: 'Seated', concerthall: 'Seated',
   arena: { general: 'Seated floor', 360: 'Standing floor' },
+  [GYM_ID]: { general: 'Seated floor', 360: 'Standing floor' },
   dome: { general: 'Seated floor', 360: 'Seated floor' },
   stadium: { general: 'Standing pitch', 360: 'Seated floor' },
 };
@@ -152,9 +156,14 @@ export function VenuePicker({ open, onClose, current, currentMode = 'general', m
     setSelNum(n0);
   }, [domeCat, selBlock, selNum]);
 
-  const v = VENUES.find((x) => x.id === sel) || VENUES[0];
-  const round = ROUND_VENUES.includes(v.id);
-  const mode = round || v.id === 'theater' ? selMode : 'general';
+  const round = ROUND_VENUES.includes(sel);
+  const mode = round || sel === 'theater' ? selMode : 'general';
+  const v = venueForMode(sel, mode);
+  const standingSpot = sel === GYM_ID && /^S[1-6]$/.test(selBlock);
+  useEffect(() => {
+    if (sel !== GYM_ID || selBlock === 'FOH' || !domeCat.byBlock.has(selBlock)) return;
+    if (!domeCat.getSeat(selBlock, selRow, selNum)) handleBlockChange(selBlock);
+  }, [sel, selBlock, selRow, selNum, domeCat, handleBlockChange]);
   const choose = useCallback((id) => { setSel(id); setSelMode(id === current ? currentMode : modeOf(modes, id)); }, [current, currentMode, modes]);
   const enter = useCallback((id = sel, m = mode) => {
     const seatObj = SEAT_ROOMS.includes(id) && selBlock !== 'FOH' ? (seatCatalog(id, m)?.getSeat(selBlock, selRow, selNum) || null) : null;
@@ -209,7 +218,7 @@ export function VenuePicker({ open, onClose, current, currentMode = 'general', m
         <div
           ref={listRef}
           role="listbox"
-          aria-label="공연장"
+          aria-label="Venues"
           className="flex sm:flex-col gap-1.5 overflow-x-auto sm:overflow-visible -mx-1 px-1 pb-1 sm:pb-0 snap-x"
         >
           {VENUES.map((x) => {
@@ -229,7 +238,7 @@ export function VenuePicker({ open, onClose, current, currentMode = 'general', m
                 }`}
               >
                 <div className="flex items-baseline gap-2 sm:gap-3">
-                  <span className={`w-2 text-[9px] ${here ? `text-[oklch(0.78_0.16_55)]` : 'text-transparent'}`} aria-label={here ? '지금 공연장' : undefined}>●</span>
+                  <span className={`w-2 text-[9px] ${here ? `text-[oklch(0.78_0.16_55)]` : 'text-transparent'}`} aria-label={here ? 'Current venue' : undefined}>●</span>
                   <span className={`normal-case tracking-tight font-tight text-[16px] sm:text-[17px] whitespace-nowrap ${on ? 'text-white' : 'text-neutral-300'}`}>{x.name}</span>
                   <span className="ml-auto pl-2 text-[11px] text-neutral-500 tabular-nums">{short(n)}</span>
                 </div>
@@ -270,6 +279,16 @@ export function VenuePicker({ open, onClose, current, currentMode = 'general', m
                   onPick={handleBlockChange}
                 />
               </SeatMap>
+            ) : v.id === GYM_ID && domeCat ? (
+              <SeatMap key={`${v.id}-${mode}`} alt={`${v.name} ${mode} block map`}>
+                <GymnasticBlockMap
+                  mode={mode}
+                  selected={selBlock === 'FOH' ? null : selBlock}
+                  seat={domeCat.getSeat(selBlock, selRow, selNum)}
+                  sellable={sellable}
+                  onPick={handleBlockChange}
+                />
+              </SeatMap>
             ) : v.id === 'arena' && domeCat ? (
               <SeatMap key={`${v.id}-${mode}`} alt={`${v.name}${mode === '360' ? ' 360' : ''} block map`}>
                 <ArenaBlockMap
@@ -281,7 +300,7 @@ export function VenuePicker({ open, onClose, current, currentMode = 'general', m
                 />
               </SeatMap>
             ) : (
-              <SeatMap key={`${v.id}-${mode}`} src={mapSrc(v.id, mode)} alt={`${v.name}${mode === '360' ? ' 360' : ''} 좌석배치도`} />
+              <SeatMap key={`${v.id}-${mode}`} src={mapSrc(v.id, mode)} alt={`${v.name}${mode === '360' ? ' 360' : ''} seating plan`} />
             )}
           </div>
 
@@ -297,7 +316,7 @@ export function VenuePicker({ open, onClose, current, currentMode = 'general', m
             {v.id==='theater'&&<p className="mt-2 text-[10px] text-neutral-500 tracking-[0.12em]" aria-live="polite">{mode==='op'?'Concert lighting':'Musical lighting'}</p>}
 
             {round && (
-              <div className="mt-4 grid grid-cols-2 border border-white/15" role="group" aria-label="배치">
+              <div className="mt-4 grid grid-cols-2 border border-white/15" role="group" aria-label="Layout">
                 {VENUE_MODES.map((m) => (
                   <button
                     key={m}
@@ -332,7 +351,13 @@ export function VenuePicker({ open, onClose, current, currentMode = 'general', m
                       className="bg-[#0a0a0a] border border-white/20 focus:border-[oklch(0.78_0.16_55)] text-white text-[12px] px-2 py-1.5 outline-none tabular-nums"
                     >
                       {sel !== 'theater' && <option value="FOH">{sel === 'stadium' ? 'FOH (PITCH)' : 'FOH (ARENA)'}</option>}
-                      {sel === 'theater' ? domeCat.blocks.map(f=><option key={f} value={f}>{f}</option>) : (TIERS[sel] ?? DOME_TIERS).map(([prefix, label]) => {
+                      {sel === 'theater' ? domeCat.blocks.map(f=><option key={f} value={f}>{f}</option>) : sel === GYM_ID ? GYM_LEVELS.map((level) => (
+                        <optgroup key={level} label={level}>
+                          {domeCat.blocks.filter((b) => domeCat.levelOf.get(b) === level).map((b) => (
+                            <option key={b} value={b}>{b}</option>
+                          ))}
+                        </optgroup>
+                      )) : (TIERS[sel] ?? DOME_TIERS).map(([prefix, label]) => {
                         const list = domeCat.blocks.filter((b) => (prefix === 'L4' ? b === 'L4' : b.startsWith(prefix) && b !== 'L4'));
                         if (!list.length) return null;
                         return (
@@ -347,12 +372,12 @@ export function VenuePicker({ open, onClose, current, currentMode = 'general', m
                     <span className="text-[9px] tracking-[0.2em] text-neutral-500">ROW</span>
                     <select
                       aria-label="Row"
-                      value={selBlock === 'FOH' ? '' : selRow}
-                      disabled={selBlock === 'FOH'}
+                      value={selBlock === 'FOH' || standingSpot ? '' : selRow}
+                      disabled={selBlock === 'FOH' || standingSpot}
                       onChange={(e) => handleRowChange(sel === 'theater' && !/^\d+$/.test(e.target.value) ? e.target.value : Number(e.target.value))}
                       className="bg-[#0a0a0a] border border-white/20 focus:border-[oklch(0.78_0.16_55)] disabled:opacity-40 text-white text-[12px] px-2 py-1.5 outline-none tabular-nums"
                     >
-                      {selBlock === 'FOH' ? <option value="">—</option> : domeRows.map((r) => (
+                      {selBlock === 'FOH' || standingSpot ? <option value="">—</option> : domeRows.map((r) => (
                         <option key={r} value={r}>{r === 'FAMILY' ? 'FAMILY' : r === 23 && sel === 'theater' ? '23 · WC' : r}</option>
                       ))}
                     </select>
@@ -361,12 +386,12 @@ export function VenuePicker({ open, onClose, current, currentMode = 'general', m
                     <span className="text-[9px] tracking-[0.2em] text-neutral-500">SEAT</span>
                     <select
                       aria-label="Seat"
-                      value={selBlock === 'FOH' ? '' : selNum}
-                      disabled={selBlock === 'FOH'}
+                      value={selBlock === 'FOH' || standingSpot ? '' : selNum}
+                      disabled={selBlock === 'FOH' || standingSpot}
                       onChange={(e) => setSelNum(Number(e.target.value))}
                       className="bg-[#0a0a0a] border border-white/20 focus:border-[oklch(0.78_0.16_55)] disabled:opacity-40 text-white text-[12px] px-2 py-1.5 outline-none tabular-nums"
                     >
-                      {selBlock === 'FOH' ? <option value="">—</option> : domeNums.map((n) => (
+                      {selBlock === 'FOH' || standingSpot ? <option value="">—</option> : domeNums.map((n) => (
                         <option key={n} value={n}>{n}</option>
                       ))}
                     </select>
@@ -471,9 +496,9 @@ function SeatMap({ src, alt, children = null, overlay = null }) {
       )}
       {overlay}
       <div className="absolute right-2 bottom-2 flex flex-col border border-white/15 bg-black/70 text-neutral-400 text-[13px] leading-none">
-        <button type="button" aria-label="확대" className="w-7 h-7 hover:text-white hover:bg-white/10" onClick={() => zoomAt(1.6, ...mid())}>+</button>
-        <button type="button" aria-label="축소" className="w-7 h-7 border-t border-white/15 hover:text-white hover:bg-white/10" onClick={() => zoomAt(1 / 1.6, ...mid())}>−</button>
-        {t.k > 1 && <button type="button" aria-label="원래 크기" className="w-7 h-7 border-t border-white/15 text-[10px] hover:text-white hover:bg-white/10" onClick={() => setT({ k: 1, x: 0, y: 0 })}>1:1</button>}
+        <button type="button" aria-label="Zoom in" className="w-7 h-7 hover:text-white hover:bg-white/10" onClick={() => zoomAt(1.6, ...mid())}>+</button>
+        <button type="button" aria-label="Zoom out" className="w-7 h-7 border-t border-white/15 hover:text-white hover:bg-white/10" onClick={() => zoomAt(1 / 1.6, ...mid())}>−</button>
+        {t.k > 1 && <button type="button" aria-label="Reset zoom" className="w-7 h-7 border-t border-white/15 text-[10px] hover:text-white hover:bg-white/10" onClick={() => setT({ k: 1, x: 0, y: 0 })}>1:1</button>}
       </div>
     </div>
   );
