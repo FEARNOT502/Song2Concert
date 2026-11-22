@@ -1,7 +1,7 @@
 // gymnastic-show.js — KSPO DOME's concerts on the shared production kit
 // (concert-production.js): its decks, LED trims, screens, line arrays, fixture
 // bodies, blinders, strobes, the deck's own lights, the equipment plot and the
-// FOH. The room's own part is its rig, here: the end stage's trusses, IMAG and
+// FOH. The room's own part is its rig, here: the end stage's trusses, back wall and
 // PA under the dome's roof (General), or DAY6's black grid over the round deck
 // with its screens turned four ways (360); and the 360's console deck over
 // section 19, with the console trimmed of its camera deck and the FOH camera
@@ -27,12 +27,7 @@ function generalRig(k) {
   const r = L.w / 2, [mainW, mainH, bottom] = L.wall;
   screen({ z: L.wallZ, bottom, w: mainW, h: mainH, bright: 1.65, light: true });
   screenHang(production, { y: bottom + mainH, z: L.wallZ, w: mainW, topY: ROOF, size: .7, n: 5 });
-  // the IMAG columns either side, portrait, turned in to the house
-  const wings = { x: 25.4, z: -15.2, bottom: 4.9, w: 7.4, h: 9.9, yaw: .3 };
-  for (const side of [-1, 1]) {
-    screen({ ...wings, x: side * wings.x, yaw: side * wings.yaw });
-    screenHang(production, { x: side * wings.x, y: wings.bottom + wings.h, z: wings.z, w: wings.w, yaw: side * wings.yaw, topY: ROOF, size: .48, n: 3 });
-  }
+  // (no IMAG either side: the end stage has its back wall only)
   // three trusses over the deck: washes upstage over the band, beams in the
   // middle, spots downstage; a par line on the front one
   const fy = L.rig - .35;

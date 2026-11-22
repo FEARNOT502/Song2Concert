@@ -471,6 +471,16 @@ window.__settle = async (n = 24) => {
   return rx.info();
 };
 window.__rxInfo = () => App.pipe.rx?.info();
+// what the camera sees at screen point (nx, ny) in -1..1: the nearest few
+// hits' object names, materials and distances (a check's question)
+window.__pick = (nx, ny) => {
+  const ray = new THREE.Raycaster();
+  ray.setFromCamera(new THREE.Vector2(nx, ny), App.pipe.camera);
+  return ray.intersectObject(App.venue.root, true).slice(0, 4).map((h) => ({
+    name: h.object.name || h.object.parent?.name || h.object.type, mat: h.object.material?.type,
+    side: h.object.material?.side, d: +h.distance.toFixed(2), y: +h.point.y.toFixed(2), r: +Math.hypot(h.point.x, h.point.z).toFixed(2),
+  }));
+};
 // the bake's input: the room's surfaces and its lights, sent to the bake server
 window.__rxExport = (opts) => exportBake(App, opts);
 window.__set = async (o = {}) => {

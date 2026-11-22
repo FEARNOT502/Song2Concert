@@ -1,42 +1,50 @@
 // gymnastic-bowl.js — the parts of KSPO DOME's bowl round the seats: the
-// vomitories, the two concourse rings behind them and the stairs between.
+// vomitories and the concourse behind them.
 //
-// The seats themselves say where the vomitories are: the operator's model
-// leaves gaps in the 2F rake where they cut through it (gymnastic-data.js).
-//   lower  12 tunnels from the 1F cross aisle (4.77 m) under 2F rows 1-4,
-//          ramping down to the 2F concourse
-//   upper  11 in rows 5-8 (or 7-8), stairs in them down to the concourse
-// Each an open pit with white diagonal walls and its door in the back, as
-// the 2018 photographs show them along the rake.
-// The 2F concourse runs round under the rake (its ceiling the rake's
-// underside), the 3F concourse behind the top row, open to the bowl over a
-// rail; four stair cores join them. Their finishes are lit from within, as
-// the arena's are (an emissive term in place of their fittings' light), so a
-// concourse reads lit through a vomitory's mouth with the house dark.
+// The vomitories as the operator's model (kspodome_dae, 2023) draws them and
+// the 2018 photographs show them: an open pit in the rake between thin white
+// walls, the walls' tops a diagonal a metre over the treads beside them, a
+// handrail post at each front corner.
+//   lower  12 off the 1F cross aisle (4.77 m): four steps down to the
+//          concourse's level, then a tunnel under the rows (its roof at 6.2 m)
+//          straight into the concourse
+//   upper  11 in the rows over 51 m (three or four rows cut, as the seats
+//          show): the pit's floor stepping down 0.9 m to a door in its back
+//          wall, past the door a stair down into the concourse
+// The concourse: one level all the way round under the rake, kept plain (no
+// rooms, doors or columns): its ceiling the rake's underside (white, ribbed
+// by the radial beams under the rake, as the 2025 photographs show it) out
+// to a flat ceiling under the top rows, a plain wall behind. Behind the top
+// row only a narrow aisle and the wall. The finishes are lit from within, as
+// the arena's are (an emissive term in place of their fittings' light), so
+// the concourse reads lit through a vomitory with the house dark.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { KELVIN, V3, std } from '../core.js';
+import { KELVIN, V3, floorPanelTex, std } from '../core.js';
 import { GYM_RAD, gymPoint, gymRing } from '../gymnastic-arena-plan.js';
 
 export const CROSS_Y = 4.77, CROSS_R = 44.8;
-export const C2 = { y: 3.9, r0: 49.6, r1: 66.5 };
-export const C3 = { y: 12.1, r0: 60.9, r1: 66.5, ceil: 15.0 };
+export const C2 = { y: 4.17, r0: 49.8, r1: 60.0, ceil: 10.2 };
+// the aisle behind the top row, up against the bowl's wall
+export const TOP = { y: 12.1, r0: 60.9, r1: 62.4 };
 
-// [angle, rows-on-either-side label] of each vomitory, from the gaps
-export const LOWER_VOMS = [
-  [14.5, ['49', '50']], [63.6, ['23', '24']], [92.9, ['26', '26']], [131.2, ['29', '30']],
-  [157.3, ['31', '32']], [180.0, ['33', '34']], [202.7, ['35', '36']], [228.8, ['38', '38']],
-  [267.2, ['41', '42']], [296.4, ['44', '44']], [326.5, ['45', '46']], [345.3, ['47', '48']],
-];
+// the lower vomitories' angles, from the gaps in the 2F's first rows
+export const LOWER_VOMS = [14.5, 63.6, 92.9, 131.2, 157.3, 180.0, 202.7, 228.8, 267.2, 296.4, 326.5, 345.3];
+// the upper ones: [angle, the pit's front, its back wall] (radii, from the
+// rows the seats leave out there)
 export const UPPER_VOMS = [
-  [22.35, 5], [44.65, 5], [78.25, 7], [112.05, 7], [145.95, 7], [180.0, 7], [214.0, 7],
-  [247.95, 7], [281.75, 7], [315.35, 7], [337.65, 5],
+  [22.35, 51.55, 55.03], [44.65, 51.45, 54.95], [78.25, 51.5, 54.45], [112.05, 51.23, 54.2],
+  [145.95, 50.98, 53.17], [180.0, 50.95, 54.25], [214.0, 50.97, 53.17], [247.95, 51.22, 54.18],
+  [281.75, 51.5, 54.45], [315.35, 51.45, 54.93], [337.65, 51.55, 55.03],
 ];
-const LOWER_W = 2.6, UPPER_W = 2.4, WALL = .3;
-// the pits' radii and floor heights by the first row they cut
-const PIT = { 5: { r0: 49.55, floor: 6.35 }, 7: { r0: 51.95, floor: 7.24 } };
-const PIT_R1 = 53.75;
-export const STAIR_CORES = [45, 135, 225, 315];
+// the pits' clear width either side of the line, their walls' thickness
+const PIT_HW = 1.35, WALL = .15, OUT = PIT_HW + WALL;
+// lower: the cross aisle's edge, the tunnel's mouth, its roof's underside
+const L_FRONT = 45.0, L_MOUTH = 47.3, L_ROOF = 6.2;
+// upper: the doorway's half-width, the passage's run on past the door
+const DOOR_HW = 1.0, PASSAGE = 1.6;
+// the rake's underside: .45 m under its treads
+const SOFFIT_DROP = .45;
 
 // a box radial at `deg`: tangential half-width `hw`, from radius r0 to r1
 function radialBox(out, deg, r0, r1, hw, y0, y1, across = 0) {
@@ -113,18 +121,25 @@ const within = (deg, x, z, hw, r0, r1) => {
   return Math.abs(d * GYM_RAD * r) < hw;
 };
 
-// The rake's surface with the vomitories' openings cut out of it.
+// The rake's surface with the vomitories' pits cut out of it, and without
+// the model's own stand-ins for what is under it (a flat slab at the 2F's
+// level, a wall round at 57 m): the concourse is built here instead.
 export function cutRake(geometry) {
   const pos = geometry.attributes.position;
   const keep = [];
   const holes = [
-    ...LOWER_VOMS.map(([deg]) => [deg, LOWER_W / 2 + WALL, CROSS_R + .2, 49.9]),
-    ...UPPER_VOMS.map(([deg, row]) => [deg, UPPER_W / 2 + WALL, PIT[row].r0, PIT_R1]),
+    ...LOWER_VOMS.map((deg) => [deg, OUT, CROSS_R + .2, 48.65]),
+    ...UPPER_VOMS.map(([deg, rF, rD]) => [deg, OUT, rF, rD]),
   ];
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
   for (let i = 0; i < pos.count; i += 3) {
-    const x = (pos.getX(i) + pos.getX(i + 1) + pos.getX(i + 2)) / 3, z = (pos.getZ(i) + pos.getZ(i + 1) + pos.getZ(i + 2)) / 3;
+    a.fromBufferAttribute(pos, i); b.fromBufferAttribute(pos, i + 1); c.fromBufferAttribute(pos, i + 2);
+    const x = (a.x + b.x + c.x) / 3, y = (a.y + b.y + c.y) / 3, z = (a.z + b.z + c.z) / 3, r = Math.hypot(x, z);
+    const n = b.clone().sub(a).cross(c.clone().sub(a)).normalize();
+    if (y < 4.9 && r > 45.6) continue;
+    if (Math.abs(n.y) < .3 && r > 56.2 && r < 58.8 && y < 10.3) continue;
     if (holes.some(([deg, hw, r0, r1]) => within(deg, x, z, hw - .05, r0, r1))) continue;
-    for (let k = 0; k < 3; k++) keep.push(pos.getX(i + k), pos.getY(i + k), pos.getZ(i + k));
+    for (const v of [a, b, c]) keep.push(v.x, v.y, v.z);
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(keep, 3));
@@ -132,137 +147,166 @@ export function cutRake(geometry) {
   return g;
 }
 
+// the rake's underside: a surface of revolution through `profile` [[r, y]..]
+// with angular gaps in each radial band, `holes` [[deg, half-width, r0, r1]..]
+function soffit(profile, holes) {
+  const pos = [];
+  for (let i = 1; i < profile.length; i++) {
+    const [ra, ya] = profile[i - 1], [rb, yb] = profile[i], rm = (ra + rb) / 2;
+    const cuts = holes.filter(([, , h0, h1]) => rm > h0 && rm < h1)
+      .map(([deg, hw]) => [deg - hw / rm / GYM_RAD, deg + hw / rm / GYM_RAD]).sort((a, b) => a[0] - b[0]);
+    const runs = cuts.length ? cuts.map((c, k) => [c[1], k + 1 < cuts.length ? cuts[k + 1][0] : cuts[0][0] + 360]) : [[0, 360]];
+    for (const [a0, a1] of runs) {
+      const n = Math.max(1, Math.ceil(a1 - a0));
+      for (let k = 0; k < n; k++) {
+        const d0 = a0 + (a1 - a0) * k / n, d1 = a0 + (a1 - a0) * (k + 1) / n;
+        const [x00, z00] = gymPoint(d0, ra), [x01, z01] = gymPoint(d1, ra);
+        const [x10, z10] = gymPoint(d0, rb), [x11, z11] = gymPoint(d1, rb);
+        pos.push(x00, ya, z00, x10, yb, z10, x11, yb, z11, x00, ya, z00, x11, yb, z11, x01, ya, z01);
+      }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(pos.length / 3 * 2), 2));
+  g.computeVertexNormals();
+  return g;
+}
+
 export function buildBowl(root, { pipe, rakeAt }) {
-  const white = std({ color: 0xc6c8c5, roughness: .95, envMapIntensity: .2, side: THREE.DoubleSide });
-  const concrete = std({ color: 0x8d9092, roughness: .92, side: THREE.DoubleSide });
-  // the concourses' finishes, lit from within (see the note at the top)
+  // the vomitories' white walls, matt (no sheen: under the house lights a
+  // painted edge read as a polished one)
+  const white = std({ color: 0xb4b6b3, roughness: 1, envMapIntensity: .15, side: THREE.DoubleSide });
+  white.userData.flat = true;
+  const concrete = std({ color: 0x8d9092, roughness: .95, side: THREE.DoubleSide });
+  // the concourse's finishes, lit from within (see the note at the top), a
+  // neutral white: light walls, a mid-grey stone floor, white ceilings
   // (their own colour nearly black: the house lights throw no shadows, and
   // would reach in through the rake; the finishes' look is their emission)
-  const lit = std({ color: 0x121110, roughness: .9, emissive: KELVIN(3600).multiplyScalar(.74), emissiveIntensity: .55, side: THREE.DoubleSide });
-  const floorLit = std({ color: 0x100f0e, roughness: .9, emissive: KELVIN(3600).multiplyScalar(.42), emissiveIntensity: .5 });
-  const ceilingLit = std({ color: 0x0f0f0e, roughness: .95, emissive: KELVIN(3600).multiplyScalar(.6), emissiveIntensity: .45, side: THREE.DoubleSide });
+  // (a near-white light: 4000 K read brown on these finishes; the walls and
+  // ceilings well over the floor, or the ring read as one grey haze)
+  const glowOf = (k, i, side = THREE.DoubleSide) => std({ color: 0x0f0f0f, roughness: .95, emissive: KELVIN(5600).multiplyScalar(k), emissiveIntensity: i, side });
+  const lit = glowOf(1, 1.2);
+  const floorLit = glowOf(.62, .72, THREE.FrontSide);
+  // the floor's stone, 0.6 m tiles (its UVs are metres: the sector's plan)
+  const tiles = floorPanelTex({ key: 'gym-concourse-floor', tone: .95, seed: 57 }).map;
+  tiles.repeat.set(1 / 4.8, 1 / 4.8);
+  floorLit.emissiveMap = tiles;
+  const ceilingLit = glowOf(1.05, 1.28);
+  // (the beams' sides a shade darker than the soffit between them, so they read)
+  const ribLit = glowOf(.74, 1.2);
+  for (const m of [lit, floorLit, ceilingLit, ribLit]) m.userData.flat = true;
   const rail = std({ color: 0xb7babb, roughness: .78, metalness: .4 });
-  const W = { white: [], roof: [], dark: [], frame: [], door: [], concrete: [], lit: [], floor: [], ceiling: [], rail: [], tread: [] };
-
-  // ── the vomitories, as they are in the 2018 photographs: an open pit in
-  // the rake facing the stage, its white walls' tops a diagonal rising from
-  // the pit's mouth to its back, the door in its back wall dark, a short roof
-  // over the door running back to where the rows go on ──
-  const hood = (deg, rF, rB, rEnd, floorY, width) => {
-    const hw = width / 2, door = [1.8, 2.2], roofY = floorY + door[1] + .38;
-    for (const s of [-1, 1]) {
-      prism(W.white, deg, s * (hw - WALL / 2), [[rF, C2.y], [rF, floorY + 1.05], [rB, roofY + .1], [rEnd, roofY + .1], [rEnd, C2.y]], WALL);
-    }
-    // the roof over the door and the tunnel's first metres
-    radialBox(W.roof, deg, rB, rEnd, hw - WALL, roofY - .22, roofY);
-    // the back wall: a lintel over the door, a jamb either side
-    const inner = width - WALL * 2, jamb = (inner - door[0]) / 2;
-    radialBox(W.white, deg, rB, rB + .25, inner / 2, floorY + door[1], roofY);
-    if (jamb > .05) for (const s of [-1, 1]) radialBox(W.white, deg, rB, rB + .25, jamb / 2, floorY, floorY + door[1], s * (door[0] / 2 + jamb / 2));
-    // the dark beyond the door: the tunnel's lining and its ceiling
-    for (const s of [-1, 1]) radialBox(W.dark, deg, rB + .25, rEnd + 1.2, .03, floorY - 1, floorY + door[1], s * (door[0] / 2 + .03));
-    radialBox(W.dark, deg, rB + .25, rEnd + 1.2, door[0] / 2 + .06, floorY + door[1], floorY + door[1] + .03);
-    // the pit's floor up to the back wall
-    radialBox(W.tread, deg, rF, rB + .25, hw - WALL, C2.y, floorY);
+  const W = { white: [], dark: [], lit: [], floor: [], ceiling: [], rib: [], rail: [], tread: [] };
+  const soff = (r) => rakeAt(r) - SOFFIT_DROP;
+  // where the soffit comes down to the flat ceiling
+  let lo = C2.r0, hi = TOP.r0;
+  for (let i = 0; i < 30; i++) { const m = (lo + hi) / 2; if (soff(m) < C2.ceil) lo = m; else hi = m; }
+  const R_CEIL = lo;
+  const post = (deg, r, y, s) => {
+    const [x, z] = gymPoint(deg, r), [tx, tz] = gymPoint(deg + 90, s * (OUT - .06));
+    W.rail.push([V3(x + tx, y, z + tz), V3(x + tx, y + 1.0, z + tz)]);
   };
 
-  // lower: the pit opens off the 1F cross aisle across 2F rows 1-2; past its
-  // door the tunnel ramps down under the rows to the concourse
-  for (const [deg] of LOWER_VOMS) {
-    const hw = LOWER_W / 2, rF = CROSS_R + .15, rB = 47.3, r1 = C2.r0 + .2;
-    hood(deg, rF, rB, 49.45, CROSS_Y, LOWER_W + WALL * 2);
-    const steps = 6;
-    for (let i = 0; i < steps; i++) {
-      const ra = rB + .25 + (r1 - rB - .25) * i / steps, rb = rB + .25 + (r1 - rB - .25) * (i + 1) / steps;
-      radialBox(W.tread, deg, ra, rb, .95, C2.y - .3, CROSS_Y - (CROSS_Y - C2.y) * (i + 1) / steps);
-    }
-    radialBox(W.ceiling, deg, 49.25, r1, hw + WALL, 6.45, 6.62);
-    for (const s of [-1, 1]) radialBox(W.lit, deg, 49.25, r1, WALL / 2, C2.y, 6.5, s * (hw + WALL / 2));
-  }
-
-  // upper: the pit's floor the tread of the row before it; past the door a
-  // stair down under the rows to the concourse
-  for (const [deg, row] of UPPER_VOMS) {
-    const { r0, floor } = PIT[row];
-    const rB = Math.min(r0 + 1.9, PIT_R1 - .45);
-    hood(deg, r0, rB, PIT_R1, floor, UPPER_W + WALL * 2);
-    radialBox(W.tread, deg, rB, PIT_R1, .95, C2.y, floor);
-    const [ux, uz] = gymPoint(deg, 1);
-    const [px, pz] = gymPoint(deg, PIT_R1);
-    const end = flight(W.tread, V3(px, floor, pz), V3(ux, 0, uz), C2.y - floor, 1.8, C2.y - .3);
+  // ── lower: off the cross aisle, four steps down between the walls, the
+  // tunnel's mouth under the rows, the tunnel on into the concourse ──
+  for (const deg of LOWER_VOMS) {
     for (const s of [-1, 1]) {
-      const [tx, tz] = gymPoint(deg + 90, s * .82);
-      W.rail.push([V3(px + tx, floor + .95, pz + tz), V3(end.x + tx, C2.y + .95, end.z + tz)]);
+      prism(W.white, deg, s * (PIT_HW + WALL / 2), [[L_FRONT, C2.y], [L_FRONT, CROSS_Y + 1.05], [L_MOUTH, rakeAt(L_MOUTH) + 1.05], [L_MOUTH, C2.y]], WALL);
+      post(deg, CROSS_R - .3, CROSS_Y, s);
+      // the tunnel's walls
+      radialBox(W.lit, deg, L_MOUTH, C2.r0, WALL / 2, C2.y, L_ROOF, s * (PIT_HW + WALL / 2));
     }
+    radialBox(W.tread, deg, CROSS_R - .05, L_FRONT + .4, PIT_HW, C2.y - .3, CROSS_Y);
+    for (let i = 0; i < 4; i++) {
+      const ra = L_FRONT + .4 + (L_MOUTH - L_FRONT - .4) * i / 4, rb = L_FRONT + .4 + (L_MOUTH - L_FRONT - .4) * (i + 1) / 4;
+      radialBox(W.tread, deg, ra, rb, PIT_HW, C2.y - .3, CROSS_Y - (CROSS_Y - C2.y) * (i + 1) / 4);
+    }
+    radialBox(W.floor, deg, L_MOUTH, C2.r0, PIT_HW, C2.y - .3, C2.y);
+    // the tunnel's ceiling, its roof over the mouth (the rows' own tread
+    // there) and the white face over the mouth
+    radialBox(W.ceiling, deg, L_MOUTH, C2.r0 + .05, OUT, L_ROOF - .05, L_ROOF);
+    radialBox(W.tread, deg, L_MOUTH, 48.65, OUT, L_ROOF, L_ROOF + .1);
+    radialBox(W.white, deg, L_MOUTH - .02, L_MOUTH + .06, OUT, L_ROOF - .25, L_ROOF + .1);
   }
 
-  // ── the 2F concourse under the rake: its floor, its inner wall where the
-  // rake comes down to it, the back wall with its doors, lit ──
+  // ── upper: the pit's floor stepping down from the row in front, a door
+  // in its back wall, past it a stair down into the concourse; under the
+  // rake the pit and the passage are a mass faced in the concourse's finish ──
+  for (const [deg, rF, rD] of UPPER_VOMS) {
+    // (a short pit drops further, for the door's height under the rows)
+    const yF = rakeAt(rF), yD = Math.min(yF - .9, rakeAt(rD) - 2.0), head = yD + 1.95;
+    for (const s of [-1, 1]) {
+      prism(W.white, deg, s * (PIT_HW + WALL / 2), [[rF, yD - .3], [rF, yF + 1.0], [rD + .2, rakeAt(rD) + 1.0], [rD + .2, yD - .3]], WALL);
+      post(deg, rF + .12, yF, s);
+    }
+    // the floor: a landing, steps down, a landing at the door
+    radialBox(W.tread, deg, rF, rF + .35, PIT_HW, yD - .3, yF);
+    const s0 = rF + .35, s1 = rD - .6, n = Math.round((yF - yD) / .18);
+    for (let i = 0; i < n; i++) radialBox(W.tread, deg, s0 + (s1 - s0) * i / n, s0 + (s1 - s0) * (i + 1) / n, PIT_HW, yD - .3, yF - (yF - yD) * (i + 1) / n);
+    radialBox(W.tread, deg, s1, rD + .2, PIT_HW, yD - .3, yD);
+    // the back wall: a lintel up to the rows behind, a jamb either side, the
+    // dark of the passage beyond
+    radialBox(W.white, deg, rD, rD + .2, PIT_HW, head, rakeAt(rD) + .02);
+    for (const s of [-1, 1]) radialBox(W.white, deg, rD, rD + .2, (PIT_HW - DOOR_HW) / 2, yD, head, s * (DOOR_HW + PIT_HW) / 2);
+    // the passage: down from the door into the concourse, lit, its walls
+    // and ceiling to where the soffit is high enough over the stair
+    const [ux, uz] = gymPoint(deg, 1), [px, pz] = gymPoint(deg, rD + .2);
+    const end = flight(W.floor, V3(px, yD, pz), V3(ux, 0, uz), C2.y - yD, DOOR_HW * 2 - .1, C2.y - .3);
+    const rP = rD + PASSAGE;
+    radialBox(W.ceiling, deg, rD + .2, rP, DOOR_HW + .08, head, head + .05);
+    radialBox(W.lit, deg, rP, rP + .03, DOOR_HW + .08, head, soff(rP) + .05);
+    for (const s of [-1, 1]) {
+      prism(W.lit, deg, s * (DOOR_HW + .04), [[rD + .2, C2.y], [rP, C2.y], [rP, soff(rP) + .05], [rD + .2, soff(rD + .2) + .05]], .08);
+      const [tx, tz] = gymPoint(deg + 90, s * (DOOR_HW - .12));
+      W.rail.push([V3(px + tx, yD + .9, pz + tz), V3(end.x + tx, C2.y + .9, end.z + tz)]);
+      // the mass's sides, its end beside the passage
+      prism(W.lit, deg, s * (OUT + .01), [[Math.max(rF, C2.r0), C2.y], [rD + .2, C2.y], [rD + .2, soff(rD + .2) + .05], [Math.max(rF, C2.r0), soff(Math.max(rF, C2.r0)) + .05]], .02);
+      radialBox(W.lit, deg, rD + .2, rD + .22, (OUT - DOOR_HW) / 2, C2.y, soff(rD + .2) + .05, s * (OUT + DOOR_HW) / 2);
+    }
+    if (rF > C2.r0) radialBox(W.lit, deg, rF - .02, rF, OUT + .01, C2.y, soff(rF) + .05);
+  }
+
+  // ── the concourse: its floor, its inner wall where the rake comes down to
+  // it, the rake's underside and the flat ceiling, a plain wall behind ──
   sector(W.floor, 0, 360, C2.r0, C2.r1, C2.y - .3, C2.y);
-  const gaps = (list, hw) => {
-    // the inner wall in runs between the lower vomitories' tunnels
-    const runs = [], cuts = list.map(([deg]) => [deg - (hw + .5) / C2.r0 / GYM_RAD, deg + (hw + .5) / C2.r0 / GYM_RAD]).sort((a, b) => a[0] - b[0]);
-    for (let i = 0; i < cuts.length; i++) runs.push([cuts[i][1], i + 1 < cuts.length ? cuts[i + 1][0] : cuts[0][0] + 360]);
-    return runs;
-  };
-  for (const [a0, a1] of gaps(LOWER_VOMS, LOWER_W / 2 + WALL)) cylinderWall(W.lit, C2.r0, C2.y, 6.9, a0, a1);
-  cylinderWall(W.lit, C2.r1, C2.y, C3.ceil, 0, 360);
-  // the 3F concourse floor (the 2F's ceiling there), its ceiling, the band
-  // over its open front, its rail behind the top row
-  const holes = STAIR_CORES.map((deg) => [deg - 5.2, deg + 5.2]);
-  const around = [];
-  for (let i = 0; i < holes.length; i++) around.push([holes[i][1], i + 1 < holes.length ? holes[i + 1][0] : holes[0][0] + 360]);
-  for (const [a0, a1] of around) sector(W.floor, a0, a1, C3.r0, C3.r1, C3.y - .3, C3.y);
-  for (const [a0, a1] of holes) sector(W.floor, a0, a1, C3.r0, 62.9, C3.y - .3, C3.y);
-  sector(W.ceiling, 0, 360, 62.4, C3.r1, C3.ceil, C3.ceil + .25);
-  for (let i = 0; i < 240; i++) {
-    const [ax, az] = gymPoint(i * 1.5, C3.r0 + .05), [bx, bz] = gymPoint((i + 1) * 1.5, C3.r0 + .05);
-    W.rail.push([V3(ax, C3.y + 1.05, az), V3(bx, C3.y + 1.05, bz)], [V3(ax, C3.y + .55, az), V3(bx, C3.y + .55, bz)]);
-    if (i % 2 === 0) W.rail.push([V3(ax, C3.y, az), V3(ax, C3.y + 1.05, az)]);
+  const cuts = LOWER_VOMS.map((deg) => [deg - (OUT + .02) / C2.r0 / GYM_RAD, deg + (OUT + .02) / C2.r0 / GYM_RAD]).sort((a, b) => a[0] - b[0]);
+  cuts.forEach((c, i) => cylinderWall(W.lit, C2.r0, C2.y, soff(C2.r0) + .05, c[1], i + 1 < cuts.length ? cuts[i + 1][0] : cuts[0][0] + 360));
+  // over the tunnels' ends, the wall's top
+  for (const deg of LOWER_VOMS) radialBox(W.lit, deg, C2.r0 - .02, C2.r0, OUT + .02, L_ROOF, soff(C2.r0) + .05);
+  cylinderWall(W.lit, C2.r1, C2.y, C2.ceil + .1, 0, 360);
+  sector(W.ceiling, 0, 360, R_CEIL - .05, C2.r1, C2.ceil, C2.ceil + .15);
+  // the soffit, open over the upper vomitories' pits and passages
+  const radii = new Set([C2.r0, R_CEIL, ...UPPER_VOMS.flatMap(([, rF, rD]) => [rF, rD + .2, rD + PASSAGE])]);
+  for (let r = Math.ceil(C2.r0 * 2) / 2; r < R_CEIL; r += .5) radii.add(r);
+  const profile = [...radii].filter((r) => r >= C2.r0 && r <= R_CEIL).sort((a, b) => a - b).map((r) => [r, soff(r)]);
+  const soffitHoles = UPPER_VOMS.flatMap(([deg, rF, rD]) => [[deg, OUT, rF, rD + .2], [deg, DOOR_HW + .04, rD + .2, rD + PASSAGE]]);
+  const soffitMesh = new THREE.Mesh(soffit(profile, soffitHoles), ceilingLit);
+  soffitMesh.name = 'Concourse soffit';
+  soffitMesh.userData.noCollide = true;
+  root.add(soffitMesh);
+  // the beams under the rake, every 2.5 degrees, clear of the vomitories
+  const near = (deg, list, half) => list.some((v) => Math.abs(((deg - (v[0] ?? v) + 540) % 360) - 180) * GYM_RAD * 52 < half);
+  const ribPts = [...profile.map(([r, y]) => [r, y + .05]), ...profile.map(([r, y]) => [r, y - .38]).reverse()];
+  for (let i = 0; i < 144; i++) {
+    const deg = 1.25 + i * 2.5;
+    if (near(deg, UPPER_VOMS, OUT + .4) || near(deg, LOWER_VOMS, OUT + .4)) continue;
+    prism(W.rib, deg, 0, ribPts, .3);
   }
 
-  // ── four stair cores between the 2F and the 3F, along the back wall:
-  // a flight up to a landing, the next back up to the 3F through its slab ──
-  for (const deg of STAIR_CORES) {
-    const r1 = C2.r1 - 1.0, r2 = C2.r1 - 2.7, mid = (C2.y + C3.y) / 2;
-    const tan = (a) => { const [tx, tz] = gymPoint(a + 90, 1); return V3(tx, 0, tz); };
-    // (each flight 22 treads, 6.2 m: about 5.4 degrees out here)
-    const [x1, z1] = gymPoint(deg - 4.6, r1);
-    flight(W.tread, V3(x1, C2.y, z1), tan(deg - 4.6), mid - C2.y, 1.5, C2.y - .3);
-    sector(W.tread, deg + .8, deg + 3.8, r2 - .8, r1 + .8, mid - .3, mid);
-    const [x2, z2] = gymPoint(deg + .8, r2);
-    flight(W.tread, V3(x2, mid, z2), tan(deg + .8).negate(), C3.y - mid, 1.5, mid - .3);
-    radialBox(W.lit, deg - 1.9, r2 + .75, r1 - .75, 2.9 * GYM_RAD * C2.r1, C2.y, mid + .2, 0);
-  }
-
-  // the concourses' back walls: columns at the structure's bays, between them
-  // the doors (washrooms, kiosks, stairs to the gates), dark grey in frames
-  for (const [y0, y1, r] of [[C2.y, C3.y - .3, C2.r1], [C3.y, C3.ceil, C3.r1]]) {
-    for (let i = 0; i < 36; i++) {
-      const deg = i * 10 + 5;
-      if (STAIR_CORES.some((c) => Math.abs(((deg - c + 540) % 360) - 180) < 7)) continue;
-      radialBox(W.concrete, deg, r - .55, r, .38, y0, y1);
-      if (i % 2) continue;
-      radialBox(W.frame, deg + 5, r - .08, r, 1.05, y0, y0 + 2.45);
-      radialBox(W.door, deg + 5, r - .1, r - .04, .9, y0, y0 + 2.3);
-    }
-  }
   const meshes = [
-    mesh(root, W.frame, std({ color: 0x8e9092, roughness: .6, metalness: .3 }), 'Concourse door frames', false),
-    mesh(root, W.door, std({ color: 0x3a3d41, roughness: .7, metalness: .2 }), 'Concourse doors', false),
-    mesh(root, W.white, white, 'Vomitory hoods'),
-    mesh(root, W.roof, std({ color: 0xb8bab6, roughness: .95, envMapIntensity: .2, side: THREE.DoubleSide }), 'Vomitory hood roofs'),
-    mesh(root, W.dark, std({ color: 0x141517, roughness: 1, side: THREE.DoubleSide }), 'Vomitory linings', false),
-    mesh(root, W.concrete, concrete, 'Bowl concrete'),
+    mesh(root, W.white, white, 'Vomitory walls'),
     mesh(root, W.lit, lit, 'Concourse walls'),
     mesh(root, W.floor, floorLit, 'Concourse floors'),
-    mesh(root, W.ceiling, ceilingLit, 'Concourse ceilings'),
+    mesh(root, W.ceiling, ceilingLit, 'Concourse ceilings', false),
+    mesh(root, W.rib, ribLit, 'Concourse soffit beams', false),
     mesh(root, W.tread, concrete, 'Vomitory floors and stairs'),
+    soffitMesh,
   ];
-  // the rails, as thin tubes
+  // the rails and posts, as thin tubes
   if (W.rail.length) {
     const up = V3(0, 1, 0), mtx = new THREE.Matrix4(), q = new THREE.Quaternion();
-    const tubes = new THREE.InstancedMesh(new THREE.CylinderGeometry(.024, .024, 1, 6), rail, W.rail.length);
+    const tubes = new THREE.InstancedMesh(new THREE.CylinderGeometry(.03, .03, 1, 8), rail, W.rail.length);
     W.rail.forEach(([a, b], i) => {
       const d = b.clone().sub(a), len = d.length();
       q.setFromUnitVectors(up, d.normalize());
@@ -272,38 +316,40 @@ export function buildBowl(root, { pipe, rakeAt }) {
     tubes.name = 'Bowl rails';
     root.add(tubes);
   }
-  // the fittings: a line of lamps under the rake round the 2F concourse, one
-  // under the 3F concourse's ceiling, every 2.5 degrees
-  const fit = new THREE.InstancedMesh(new THREE.BoxGeometry(1.2, .06, .22), new THREE.MeshBasicMaterial({ color: KELVIN(3600).multiplyScalar(1.1) }), 288);
-  const mtx = new THREE.Matrix4(), rot = new THREE.Quaternion(), one = V3(1, 1, 1);
-  let n = 0;
+  // the fittings: square downlights between the beams on the soffit, a ring
+  // of them in the flat ceiling
+  const spots = [];
   for (let i = 0; i < 144; i++) {
     const deg = i * 2.5;
-    rot.setFromAxisAngle(V3(0, 1, 0), Math.PI / 2 - deg * GYM_RAD);
-    for (const [r, y] of [[57.2, rakeAt(57.2) - .42], [64.4, C3.ceil - .05]]) {
-      const [x, z] = gymPoint(deg, r);
-      fit.setMatrixAt(n++, mtx.compose(V3(x, y, z), rot, one));
-    }
+    if (near(deg, UPPER_VOMS, OUT + .3)) continue;
+    for (const r of [52.2, 55.4]) spots.push([deg, r, soff(r) - .03]);
   }
+  for (let i = 0; i < 120; i++) spots.push([i * 3 + 1.5, (R_CEIL + C2.r1) / 2, C2.ceil - .03]);
+  const fit = new THREE.InstancedMesh(new THREE.BoxGeometry(.32, .04, .32), new THREE.MeshBasicMaterial({ color: KELVIN(5200).multiplyScalar(2.2) }), spots.length);
+  const mtx = new THREE.Matrix4(), rot = new THREE.Quaternion(), one = V3(1, 1, 1);
+  spots.forEach(([deg, r, y], n) => {
+    const [ux, uz] = gymPoint(deg, 1), k = y < C2.ceil - .1 ? (soff(r + .1) - soff(r - .1)) / .2 : 0;
+    rot.setFromUnitVectors(V3(0, 1, 0), V3(-k * ux, 1, -k * uz).normalize());
+    const [x, z] = gymPoint(deg, r);
+    fit.setMatrixAt(n, mtx.compose(V3(x, y, z), rot, one));
+  });
   fit.userData.noCollide = true;
   fit.name = 'Concourse fittings';
   root.add(fit);
-  // The concourses lit as the other rooms' are (stands.js roomLights): dark
-  // from the bowl, their lights coming up once someone steps into one (a
-  // concourse ring, a vomitory's passage, a stair core) and going down again
-  // when they leave.
+  // The concourse lit as the other rooms' are (stands.js roomLights): dark
+  // from the bowl, its lights coming up once someone steps into it (the
+  // ring, a tunnel or a passage) and going down again when they leave.
   const zones = [
-    { r0: C2.r0 - .2, r1: C2.r1, y0: C2.y - .3, y1: C2.y + 4.8 },
-    { r0: C3.r0 - .1, r1: C3.r1, y0: C3.y - .3, y1: C3.ceil },
-    ...LOWER_VOMS.map(([deg]) => ({ deg, hw: LOWER_W / 2 + .2, r0: CROSS_R + .3, r1: C2.r0, y0: C2.y - .3, y1: 7.4 })),
-    ...UPPER_VOMS.map(([deg, row]) => ({ deg, hw: UPPER_W / 2 + .2, r0: PIT[row].r0 + .6, r1: PIT_R1 + 5, y0: C2.y - .3, y1: PIT[row].floor + 2.4 })),
+    { r0: C2.r0 - .2, r1: C2.r1, y0: C2.y - .3, y1: C2.ceil },
+    ...LOWER_VOMS.map((deg) => ({ deg, hw: PIT_HW, r0: L_MOUTH, r1: C2.r0, y0: C2.y - .3, y1: L_ROOF + 1 })),
+    ...UPPER_VOMS.map(([deg, rF, rD]) => ({ deg, hw: DOOR_HW, r0: rD, r1: rD + PASSAGE, y0: C2.y - .3, y1: rakeAt(rF) + 1.2 })),
   ];
   const inside = ({ x, y, z }) => zones.some((q) => {
     if (y < q.y0 || y > q.y1) return false;
     if (q.deg === undefined) { const r = Math.hypot(x, z); return r > q.r0 && r < q.r1; }
     return within(q.deg, x, z, q.hw, q.r0, q.r1);
   });
-  const glow = [[lit, lit.emissiveIntensity], [floorLit, floorLit.emissiveIntensity], [ceilingLit, ceilingLit.emissiveIntensity]];
+  const glow = [lit, floorLit, ceilingLit, ribLit].map((m) => [m, m.emissiveIntensity]);
   const fitColor = fit.material.color.clone();
   let k = -1;
   const set = (v) => {

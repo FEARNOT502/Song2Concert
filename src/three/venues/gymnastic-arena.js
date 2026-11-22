@@ -6,7 +6,7 @@ import { maskingDrapes } from '../show.js';
 import { GYM_AISLE_R, GYM_FOH, GYM_NAME, GYM_RAD, gymPoint, gymRing, gymSector } from '../gymnastic-arena-plan.js';
 import { GYM_UPPER } from './gymnastic-data.js';
 import { buildGymnasticShow } from './gymnastic-show.js';
-import { C3, buildBowl, cutRake } from './gymnastic-bowl.js';
+import { TOP, buildBowl, cutRake } from './gymnastic-bowl.js';
 import { getGymnasticSeatCatalog, gymFloor, gymOpenSeat, gymStands, underConsole } from './gymnastic-seats.js';
 
 const TREAD_SECTORS = [[-50, 50], [61, 120], [128, 232], [240, 299]];
@@ -101,6 +101,15 @@ function lowerStands(root, mat, mode) {
     }
   }
 
+  // The tunnels between the blocks stay open from the floor; the cross aisle
+  // runs on over their back ends, and their back is a wall under it (open,
+  // it showed the hollow under the 2F's front)
+  for (let i = 0; i < TREAD_SECTORS.length; i++) {
+    const a = TREAD_SECTORS[i][1], b = TREAD_SECTORS[(i + 1) % TREAD_SECTORS.length][0] + (i + 1 === TREAD_SECTORS.length ? 360 : 0);
+    root.add(plate(gymSector(a, b, 33.91 + .84 * 11, 44.8), 4.51, 4.77, mat.concrete));
+    arcWall(root, mat.concrete, 44.75, 0, 4.51, a - .1, b + .1);
+  }
+
   // Accessible concourse at the back of C. The open edge and the slope
   // beside the treads face the stage and are visible from the floor.
   root.add(plate(gymSector(134, 226, 42.3, 45.4), 4.54, 4.78, mat.concrete));
@@ -130,7 +139,7 @@ function upperStands(root, mat, pipe) {
   root.add(deck);
 
   // The model's rake stops short of the biggest sections' top rows: their
-  // treads from the seats themselves, and a step up to the 3F concourse's
+  // treads from the seats themselves, and a step up to the aisle's
   // edge behind the rest.
   const parts = [];
   const rows = new Map();
@@ -148,7 +157,9 @@ function upperStands(root, mat, pipe) {
     const r = e.r / e.n, y = e.y / e.n, pad = .55 / r / GYM_RAD;
     parts.push(plateGeometry(gymSector(e.a0 - pad, e.a1 + pad, r - .45, r + .5), 10.45, y));
   }
-  parts.push(plateGeometry(gymSector(0, 360, 58.3, C3.r0), 10.45, 10.72));
+  parts.push(plateGeometry(gymSector(0, 360, 58.3, TOP.r0), 10.45, 10.72));
+  // the aisle behind the top row, against the wall
+  parts.push(plateGeometry(gymSector(0, 360, TOP.r0, TOP.r1 + .05), TOP.y - .3, TOP.y));
   root.add(new THREE.Mesh(mergeGeometries(parts), mat.concrete));
   parts.forEach((g) => g.dispose());
 
@@ -157,9 +168,10 @@ function upperStands(root, mat, pipe) {
     arcWall(root, mat.parapet, 58.35, 11.05, 11.45, center - 4.4, center + 4.4);
     arcWall(root, mat.concourse, 60.6, 11.1, 13.92, center - 4.4, center + 4.4);
   }
-  // the light grey band over the 3F concourse, up to the roof
-  arcWall(root, mat.parapet, 62.4, C3.ceil, C3.ceil + .7);
-  arcWall(root, mat.wall, 62.4, C3.ceil + .7, 22);
+  // the bowl's wall behind that aisle, a light grey band in it, up to the roof
+  arcWall(root, mat.wall, TOP.r1, TOP.y, 15);
+  arcWall(root, mat.parapet, TOP.r1, 15, 15.7);
+  arcWall(root, mat.wall, TOP.r1, 15.7, 22);
   return buildBowl(root, { pipe, rakeAt });
 }
 
@@ -433,7 +445,10 @@ export function buildGymnasticArena(ctx) {
     root, eye, ...show, round, seatNear: stands.seatNear, seats: stands.seats, splitTurn: 0,
     background: new THREE.Color(0x060608), fog: new THREE.FogExp2(0x07070a, .0031),
     hazeAmb: new THREE.Color(0x050407), hazeAmbDist: 120,
-    bloom: { strength: .32, radius: .5, threshold: 1.5, house: 1.0 },
+    // (house up, the threshold raised over what the house lights make of the
+    // white vomitory walls and the light floor: they haloed, and read as
+    // reflections)
+    bloom: { strength: .32, radius: .5, threshold: 1.5, house: 2.2 },
     grade: { exposure: 1.14, vignette: .28, ca: .003, grain: .025, sat: 1.04, lift: [.004, .005, .009] },
     envIntensity: .58,
     finish: { matte: .15, gloss: .3, metal: .3 },
