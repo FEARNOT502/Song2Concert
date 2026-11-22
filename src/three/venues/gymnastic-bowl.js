@@ -5,7 +5,7 @@
 // the 2018 photographs show them: an open pit in the rake between thin white
 // walls, the walls' tops a diagonal a metre over the treads beside them, a
 // handrail post at each front corner.
-//   lower  12 off the 1F cross aisle (4.77 m): four steps down to the
+//   lower  13 off the 1F cross aisle (4.77 m): four steps down to the
 //          concourse's level, then a tunnel under the rows (its roof at 6.2 m)
 //          straight into the concourse
 //   upper  11 in the rows over 51 m (three or four rows cut, as the seats
@@ -28,22 +28,31 @@ export const C2 = { y: 4.17, r0: 49.8, r1: 60.0, ceil: 10.2 };
 // the aisle behind the top row, up against the bowl's wall
 export const TOP = { y: 12.1, r0: 60.9, r1: 62.4 };
 
-// the lower vomitories' angles, centred in the gaps in the 2F's first rows
-// (the seats as the operator's chart draws them)
-export const LOWER_VOMS = [14.87, 63.42, 92.9, 131.08, 157.3, 180.0, 202.7, 228.8, 266.96, 296.64, 326.5, 345.42];
-// the upper ones: [angle, the pit's front, its back wall] (radii, from the
-// rows the chart's seats leave out there)
+// The vomitories where the operator's seat chart draws their stairs (its
+// hatched treads, put on the app's plan by the seats' own registration,
+// gym_seat_audit.py), each its stair's width (three a little narrower, clear
+// of the seats beside them):
+// the lower ones [angle, the pit's clear half-width]
+export const LOWER_VOMS = [
+  [14.98, .99], [33.49, 1.27], [63.47, 1.32], [93.03, 1.35], [131.03, 1.45], [157.33, 1.33], [180.02, 1.34],
+  [202.81, 1.24], [229.01, 1.41], [266.97, 1.32], [296.46, 1.28], [326.57, 1.27], [344.96, 1.01],
+];
+// the upper ones [angle, the pit's front, its back wall, clear half-width]
+// (the radii from the rows the chart's seats leave out there)
 export const UPPER_VOMS = [
-  [22.35, 51.61, 55.13], [44.65, 51.79, 54.78], [78.25, 51.58, 54.55], [112.05, 51.32, 54.29],
-  [145.95, 51.12, 54.1], [180.0, 51.0, 53.98], [214.0, 51.09, 54.05], [247.95, 51.26, 54.23],
-  [281.75, 51.46, 54.46], [315.35, 51.78, 54.77], [337.65, 51.59, 55.11],
+  [22.34, 51.61, 55.13, 1.32], [44.69, 51.79, 54.78, 1.34], [78.29, 51.58, 54.55, 1.43], [112.07, 51.32, 54.29, 1.34],
+  [145.98, 51.12, 54.1, 1.45], [180.01, 51.0, 53.98, 1.35], [214.03, 51.09, 54.05, 1.36], [247.93, 51.26, 54.23, 1.34],
+  [281.7, 51.46, 54.46, 1.35], [315.4, 51.78, 54.77, 1.29], [337.68, 51.59, 55.11, 1.33],
 ];
 // the pits' clear width either side of the line, their walls' thickness
-const PIT_HW = 1.35, WALL = .15, OUT = PIT_HW + WALL;
+// the pits' walls' thickness
+const WALL = .15;
 // lower: the cross aisle's edge, the tunnel's mouth, its roof's underside
 const L_FRONT = 45.0, L_MOUTH = 47.3, L_ROOF = 6.2;
-// upper: the doorway's half-width, the passage's run on past the door
-const DOOR_HW = 1.0, PASSAGE = 1.6;
+// upper: the passage's run on past the door (the doorway 0.3 m in from the
+// pit's walls either side, at most 2 m wide)
+const PASSAGE = 1.6;
+const doorOf = (hw) => Math.min(1.0, hw - .3);
 // the rake's underside: .45 m under its treads
 const SOFFIT_DROP = .45;
 
@@ -129,8 +138,8 @@ export function cutRake(geometry) {
   const pos = geometry.attributes.position;
   const keep = [];
   const holes = [
-    ...LOWER_VOMS.map((deg) => [deg, OUT, CROSS_R + .2, 48.65]),
-    ...UPPER_VOMS.map(([deg, rF, rD]) => [deg, OUT, rF, rD]),
+    ...LOWER_VOMS.map(([deg, hw]) => [deg, hw + WALL, CROSS_R + .2, 48.65]),
+    ...UPPER_VOMS.map(([deg, rF, rD, hw]) => [deg, hw + WALL, rF, rD]),
   ];
   const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
   for (let i = 0; i < pos.count; i += 3) {
@@ -204,17 +213,18 @@ export function buildBowl(root, { pipe, rakeAt }) {
   let lo = C2.r0, hi = TOP.r0;
   for (let i = 0; i < 30; i++) { const m = (lo + hi) / 2; if (soff(m) < C2.ceil) lo = m; else hi = m; }
   const R_CEIL = lo;
-  const post = (deg, r, y, s) => {
-    const [x, z] = gymPoint(deg, r), [tx, tz] = gymPoint(deg + 90, s * (OUT - .06));
+  const post = (deg, r, y, s, out) => {
+    const [x, z] = gymPoint(deg, r), [tx, tz] = gymPoint(deg + 90, s * (out - .06));
     W.rail.push([V3(x + tx, y, z + tz), V3(x + tx, y + 1.0, z + tz)]);
   };
 
   // ── lower: off the cross aisle, four steps down between the walls, the
   // tunnel's mouth under the rows, the tunnel on into the concourse ──
-  for (const deg of LOWER_VOMS) {
+  for (const [deg, PIT_HW] of LOWER_VOMS) {
+    const OUT = PIT_HW + WALL;
     for (const s of [-1, 1]) {
       prism(W.white, deg, s * (PIT_HW + WALL / 2), [[L_FRONT, C2.y], [L_FRONT, CROSS_Y + 1.05], [L_MOUTH, rakeAt(L_MOUTH) + 1.05], [L_MOUTH, C2.y]], WALL);
-      post(deg, CROSS_R - .3, CROSS_Y, s);
+      post(deg, CROSS_R - .3, CROSS_Y, s, OUT);
       // the tunnel's walls
       radialBox(W.lit, deg, L_MOUTH, C2.r0, WALL / 2, C2.y, L_ROOF, s * (PIT_HW + WALL / 2));
     }
@@ -234,12 +244,13 @@ export function buildBowl(root, { pipe, rakeAt }) {
   // ── upper: the pit's floor stepping down from the row in front, a door
   // in its back wall, past it a stair down into the concourse; under the
   // rake the pit and the passage are a mass faced in the concourse's finish ──
-  for (const [deg, rF, rD] of UPPER_VOMS) {
+  for (const [deg, rF, rD, PIT_HW] of UPPER_VOMS) {
+    const OUT = PIT_HW + WALL, DOOR_HW = doorOf(PIT_HW);
     // (a short pit drops further, for the door's height under the rows)
     const yF = rakeAt(rF), yD = Math.min(yF - .9, rakeAt(rD) - 2.0), head = yD + 1.95;
     for (const s of [-1, 1]) {
       prism(W.white, deg, s * (PIT_HW + WALL / 2), [[rF, yD - .3], [rF, yF + 1.0], [rD + .2, rakeAt(rD) + 1.0], [rD + .2, yD - .3]], WALL);
-      post(deg, rF + .12, yF, s);
+      post(deg, rF + .12, yF, s, OUT);
     }
     // the floor: a landing, steps down, a landing at the door
     radialBox(W.tread, deg, rF, rF + .35, PIT_HW, yD - .3, yF);
@@ -271,27 +282,28 @@ export function buildBowl(root, { pipe, rakeAt }) {
   // ── the concourse: its floor, its inner wall where the rake comes down to
   // it, the rake's underside and the flat ceiling, a plain wall behind ──
   sector(W.floor, 0, 360, C2.r0, C2.r1, C2.y - .3, C2.y);
-  const cuts = LOWER_VOMS.map((deg) => [deg - (OUT + .02) / C2.r0 / GYM_RAD, deg + (OUT + .02) / C2.r0 / GYM_RAD]).sort((a, b) => a[0] - b[0]);
+  const cuts = LOWER_VOMS.map(([deg, hw]) => [deg - (hw + WALL + .02) / C2.r0 / GYM_RAD, deg + (hw + WALL + .02) / C2.r0 / GYM_RAD]).sort((a, b) => a[0] - b[0]);
   cuts.forEach((c, i) => cylinderWall(W.lit, C2.r0, C2.y, soff(C2.r0) + .05, c[1], i + 1 < cuts.length ? cuts[i + 1][0] : cuts[0][0] + 360));
   // over the tunnels' ends, the wall's top
-  for (const deg of LOWER_VOMS) radialBox(W.lit, deg, C2.r0 - .02, C2.r0, OUT + .02, L_ROOF, soff(C2.r0) + .05);
+  for (const [deg, hw] of LOWER_VOMS) radialBox(W.lit, deg, C2.r0 - .02, C2.r0, hw + WALL + .02, L_ROOF, soff(C2.r0) + .05);
   cylinderWall(W.lit, C2.r1, C2.y, C2.ceil + .1, 0, 360);
   sector(W.ceiling, 0, 360, R_CEIL - .05, C2.r1, C2.ceil, C2.ceil + .15);
   // the soffit, open over the upper vomitories' pits and passages
   const radii = new Set([C2.r0, R_CEIL, ...UPPER_VOMS.flatMap(([, rF, rD]) => [rF, rD + .2, rD + PASSAGE])]);
   for (let r = Math.ceil(C2.r0 * 2) / 2; r < R_CEIL; r += .5) radii.add(r);
   const profile = [...radii].filter((r) => r >= C2.r0 && r <= R_CEIL).sort((a, b) => a - b).map((r) => [r, soff(r)]);
-  const soffitHoles = UPPER_VOMS.flatMap(([deg, rF, rD]) => [[deg, OUT, rF, rD + .2], [deg, DOOR_HW + .04, rD + .2, rD + PASSAGE]]);
+  const soffitHoles = UPPER_VOMS.flatMap(([deg, rF, rD, hw]) => [[deg, hw + WALL, rF, rD + .2], [deg, doorOf(hw) + .04, rD + .2, rD + PASSAGE]]);
   const soffitMesh = new THREE.Mesh(soffit(profile, soffitHoles), ceilingLit);
   soffitMesh.name = 'Concourse soffit';
   soffitMesh.userData.noCollide = true;
   root.add(soffitMesh);
   // the beams under the rake, every 2.5 degrees, clear of the vomitories
-  const near = (deg, list, half) => list.some((v) => Math.abs(((deg - (v[0] ?? v) + 540) % 360) - 180) * GYM_RAD * 52 < half);
+  // (near a vomitory: within its walls and `pad` more)
+  const near = (deg, list, pad) => list.some((v) => Math.abs(((deg - v[0] + 540) % 360) - 180) * GYM_RAD * 52 < v[v.length - 1] + WALL + pad);
   const ribPts = [...profile.map(([r, y]) => [r, y + .05]), ...profile.map(([r, y]) => [r, y - .38]).reverse()];
   for (let i = 0; i < 144; i++) {
     const deg = 1.25 + i * 2.5;
-    if (near(deg, UPPER_VOMS, OUT + .4) || near(deg, LOWER_VOMS, OUT + .4)) continue;
+    if (near(deg, UPPER_VOMS, .4) || near(deg, LOWER_VOMS, .4)) continue;
     prism(W.rib, deg, 0, ribPts, .3);
   }
 
@@ -322,7 +334,7 @@ export function buildBowl(root, { pipe, rakeAt }) {
   const spots = [];
   for (let i = 0; i < 144; i++) {
     const deg = i * 2.5;
-    if (near(deg, UPPER_VOMS, OUT + .3)) continue;
+    if (near(deg, UPPER_VOMS, .3)) continue;
     for (const r of [52.2, 55.4]) spots.push([deg, r, soff(r) - .03]);
   }
   for (let i = 0; i < 120; i++) spots.push([i * 3 + 1.5, (R_CEIL + C2.r1) / 2, C2.ceil - .03]);
@@ -342,8 +354,8 @@ export function buildBowl(root, { pipe, rakeAt }) {
   // ring, a tunnel or a passage) and going down again when they leave.
   const zones = [
     { r0: C2.r0 - .2, r1: C2.r1, y0: C2.y - .3, y1: C2.ceil },
-    ...LOWER_VOMS.map((deg) => ({ deg, hw: PIT_HW, r0: L_MOUTH, r1: C2.r0, y0: C2.y - .3, y1: L_ROOF + 1 })),
-    ...UPPER_VOMS.map(([deg, rF, rD]) => ({ deg, hw: DOOR_HW, r0: rD, r1: rD + PASSAGE, y0: C2.y - .3, y1: rakeAt(rF) + 1.2 })),
+    ...LOWER_VOMS.map(([deg, hw]) => ({ deg, hw, r0: L_MOUTH, r1: C2.r0, y0: C2.y - .3, y1: L_ROOF + 1 })),
+    ...UPPER_VOMS.map(([deg, rF, rD, hw]) => ({ deg, hw: doorOf(hw), r0: rD, r1: rD + PASSAGE, y0: C2.y - .3, y1: rakeAt(rF) + 1.2 })),
   ];
   const inside = ({ x, y, z }) => zones.some((q) => {
     if (y < q.y0 || y > q.y1) return false;
