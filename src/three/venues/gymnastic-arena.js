@@ -332,7 +332,7 @@ function roof(root, mat, pipe) {
   for (const [m2] of glow) m2.emissive = KELVIN(5600);
   return (house) => {
     lens.material.color.copy(warm).multiplyScalar(.05 + 5.5 * house);
-    for (const f of light) f.intensity = 1.2 * house;
+    for (const f of light) f.intensity = .4 * house;
     for (const [m2, k] of glow) m2.emissiveIntensity = k * house;
   };
 }
@@ -451,7 +451,7 @@ export function buildGymnasticArena(ctx) {
     root, eye, ...show, round, seatNear: stands.seatNear, seats: stands.seats, splitTurn: 0,
     background: new THREE.Color(0x060608), fog: new THREE.FogExp2(0x07070a, .0031),
     hazeAmb: new THREE.Color(0x050407), hazeAmbDist: 120,
-    bloom: { strength: .42, radius: .6, threshold: 1.38, house: 2.2 },
+    bloom: { strength: .42, radius: .6, threshold: 1.38, house: 1.6 },
     grade: { exposure: 1.14, vignette: .28, ca: .003, grain: .025, sat: 1.04, lift: [.004, .005, .009] },
     envIntensity: .58,
     finish: { matte: .15, gloss: .3, metal: .3 },

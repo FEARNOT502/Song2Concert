@@ -210,9 +210,10 @@ export function buildGymnasticShow(ctx, root, eye, stands, floor, houseUpdate = 
   // the house lights' banks on the roof's trusses: an inner ring for the
   // floor and the 1F rows, an outer one for the 2F rake
   const houseSources = [
-    // (the inner ring at a quarter of the outer's power: the floor is near it)
-    ...Array.from({ length: 6 }, (_, i) => { const [x, z] = gymPoint(i * 60 + 30, 18); return Object.assign(V3(x, 25.6, z), { k: .22 }); }),
-    ...Array.from({ length: 6 }, (_, i) => { const [x, z] = gymPoint(i * 60, 40); return V3(x, 23.4, z); }),
+    // (the inner ring at less of the power: the floor is near it; the outer
+    // ring twelve, each modest, so no one hangs a hot spot on the rake under it)
+    ...Array.from({ length: 6 }, (_, i) => { const [x, z] = gymPoint(i * 60 + 30, 18); return Object.assign(V3(x, 25.6, z), { k: .4 }); }),
+    ...Array.from({ length: 12 }, (_, i) => { const [x, z] = gymPoint(i * 30, 40); return V3(x, 23.4, z); }),
   ];
   const floorOf = (keep) => {
     if (!round) {
@@ -238,6 +239,9 @@ export function buildGymnasticShow(ctx, root, eye, stands, floor, houseUpdate = 
     fill: { sky: KELVIN(4600).multiplyScalar(.5), ground: new THREE.Color(0x2a2826) }, masking: [],
     rigOf: round ? roundRig : generalRig, floorOf, equipmentData: data,
   });
+  // (the house lights through the haze: a glow, not a white-out; the haze
+  // is thinned with them up, but these hang right over the rows)
+  root.traverse((o) => { if (o.isLight && o.userData.offWhenDark === 'house') o.userData.fogGain = .08; });
   // the decks' tops without the grid texture's roughness map: under it the
   // screen-space reflections traced the panels' grain and sparkled
   root.traverse((o) => {

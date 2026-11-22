@@ -37,8 +37,8 @@ const LOOK = {
   },
   // (KSPO DOME: smaller than the arena under a lower roof; its haze reaches across the bowl)
   'gymnastic-arena': {
-    general: { fog: 0.0024, fogAmb: 0.35, floorY: 0, expRx: 1.45, fogFar: 140, led: 0.25, box: [[-62, 0, -62], [62, 27, 62]], probe: [0, 9, 8] },
-    360: { fog: 0.0018, fogAmb: 0.3, floorY: 0, expRx: 1.5, fogFar: 140, led: 0.3, box: [[-62, 0, -62], [62, 27, 62]], probe: [0, 7, 20] },
+    general: { fog: 0.0022, fogAmb: 0.18, floorY: 0, expRx: 1.4, fogFar: 140, led: 0.25, box: [[-62, 0, -62], [62, 27, 62]], probe: [0, 9, 8] },
+    360: { fog: 0.0018, fogAmb: 0.18, floorY: 0, expRx: 1.45, fogFar: 140, led: 0.3, box: [[-62, 0, -62], [62, 27, 62]], probe: [0, 7, 20] },
   },
   dome: {
     general: { fog: 0.0016, fogAmb: 0.3, floorY: 0, expRx: 1.45, fogFar: 240, led: 0.2 },
@@ -289,11 +289,13 @@ class Rx {
       if (n >= MAX_FOG_LIGHTS) break;
       if (l.userData.fx || !(l.isSpotLight || l.isPointLight || l.isRectAreaLight)) continue;
       if (l.isRectAreaLight && !this.isScreenRect(l)) continue;
-      if (!GIVolume.visible(l) || l.intensity <= 1e-4) continue;
+      // (a light may light the haze less than the room: `fogGain`, e.g. house lights)
+      const fogGain = l.userData.fogGain ?? 1;
+      if (!GIVolume.visible(l) || l.intensity <= 1e-4 || fogGain <= 0) continue;
       l.getWorldPosition(wp);
       this.fogNames.push(`${l.type}:${l.name}`);
       U.uLPos.value[n].copy(wp);
-      U.uLCol.value[n].set(l.color.r, l.color.g, l.color.b).multiplyScalar(l.intensity * (l.isRectAreaLight ? (this.look.led ?? 0.4) : 1));
+      U.uLCol.value[n].set(l.color.r, l.color.g, l.color.b).multiplyScalar(l.intensity * fogGain * (l.isRectAreaLight ? (this.look.led ?? 0.4) : 1));
       U.uLArea.value[n].set(0, 0, 0, 0);
       U.uLSh.value[n] = -1;
       if (l.isRectAreaLight) {
