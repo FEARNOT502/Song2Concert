@@ -1,5 +1,45 @@
 {
  "tolerance_m": 0.35,
+ "registration1f": {
+  "blocks": {
+   "1-4": {
+    "scale": 0.98682,
+    "rotation_deg": 0.0919,
+    "offset_m": [
+     0.764,
+     0.003
+    ]
+   },
+   "5-11": {
+    "scale": 1.00453,
+    "rotation_deg": 0.1968,
+    "offset_m": [
+     0.145,
+     0.044
+    ]
+   },
+   "12-15": {
+    "scale": 0.98682,
+    "rotation_deg": 0.2854,
+    "offset_m": [
+     -0.164,
+     0.004
+    ]
+   },
+   "16-22": {
+    "scale": 0.99841,
+    "rotation_deg": 1.2172,
+    "offset_m": [
+     -0.877,
+     -0.06
+    ]
+   }
+  },
+  "pairDistance_m": {
+   "median": 0.004,
+   "p95": 0.006
+  }
+ },
  "registration": {
   "scale": 1.00017,
   "rotation_deg": 0.1942,
@@ -12,6 +52,14 @@
    "p95": 0.006
   }
  },
+ "level1": {
+  "chartSeats": 3770,
+  "appSeats": 3770,
+  "paired": 3770,
+  "missing": 0,
+  "extra": 0,
+  "otherSection": 0
+ },
  "level2": {
   "chartSeats": 7587,
   "appSeats": 7587,
@@ -21,6 +69,204 @@
   "otherSection": 0
  },
  "sections": {
+  "1": {
+   "label": 168,
+   "chart": 168,
+   "app": 168,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0,
+   "labelTotal": 282
+  },
+  "2": {
+   "label": 168,
+   "chart": 168,
+   "app": 168,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0,
+   "labelTotal": 282
+  },
+  "3": {
+   "label": 168,
+   "chart": 168,
+   "app": 168,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0,
+   "labelTotal": 282
+  },
+  "4": {
+   "label": 168,
+   "chart": 168,
+   "app": 168,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0,
+   "labelTotal": 282
+  },
+  "5": {
+   "label": 164,
+   "chart": 164,
+   "app": 164,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0,
+   "labelTotal": 292
+  },
+  "6": {
+   "label": 164,
+   "chart": 164,
+   "app": 164,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0,
+   "labelTotal": 292
+  },
+  "7": {
+   "label": 164,
+   "chart": 164,
+   "app": 164,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0,
+   "labelTotal": 292
+  },
+  "8": {
+   "label": 164,
+   "chart": 164,
+   "app": 164,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0,
+   "labelTotal": 292
+  },
+  "9": {
+   "label": 164,
+   "chart": 164,
+   "app": 164,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0,
+   "labelTotal": 292
+  },
+  "10": {
+   "label": 164,
+   "chart": 164,
+   "app": 164,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0,
+   "labelTotal": 292
+  },
+  "11": {
+   "label": 164,
+   "chart": 164,
+   "app": 164,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0,
+   "labelTotal": 292
+  },
+  "12": {
+   "label": 168,
+   "chart": 168,
+   "app": 168,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0,
+   "labelTotal": 282
+  },
+  "13": {
+   "label": 168,
+   "chart": 168,
+   "app": 168,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0,
+   "labelTotal": 282
+  },
+  "14": {
+   "label": 168,
+   "chart": 168,
+   "app": 168,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0,
+   "labelTotal": 282
+  },
+  "15": {
+   "label": 168,
+   "chart": 168,
+   "app": 168,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0,
+   "labelTotal": 282
+  },
+  "16": {
+   "label": 182,
+   "chart": 182,
+   "app": 182,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0,
+   "labelTotal": 310
+  },
+  "17": {
+   "label": 182,
+   "chart": 182,
+   "app": 182,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0,
+   "labelTotal": 310
+  },
+  "18": {
+   "label": 183,
+   "chart": 183,
+   "app": 183,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0,
+   "labelTotal": 311
+  },
+  "19": {
+   "label": 183,
+   "chart": 183,
+   "app": 183,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0,
+   "labelTotal": 311
+  },
+  "20": {
+   "label": 184,
+   "chart": 184,
+   "app": 184,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0,
+   "labelTotal": 312
+  },
+  "21": {
+   "label": 182,
+   "chart": 182,
+   "app": 182,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0,
+   "labelTotal": 310
+  },
+  "22": {
+   "label": 182,
+   "chart": 182,
+   "app": 182,
+   "missing": 0,
+   "extra": 0,
+   "otherSection": 0,
+   "labelTotal": 308
+  },
   "23": {
    "label": 417,
    "chart": 417,
@@ -262,6 +508,8 @@
    "otherSection": 0
   }
  },
+ "missingSeats1f": [],
+ "extraSeats1f": [],
  "missingSeats": [],
  "extraSeats": []
 }
