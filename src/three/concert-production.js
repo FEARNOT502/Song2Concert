@@ -759,12 +759,7 @@ export function concertProduction(ctx, root, room, { center, eye, stands, floorB
   const blinders = flashUnits(rig, production, units, { mountBody });
   const strobes = flashUnits(rig, production, units.map((u) => ({ ...u, pos: u.pos.clone().addScaledVector(u.dir, .15).add(V3(.7, .2, 0)) })), { kind: 'strobe', mountBody });
   equipment?.finish();
-  const desks = equipment && fohScreens(equipment.group, {
-    // (round a centre stage the screens' focus is up at the LED box: the FOH
-    // camera frames the deck and who is on it instead)
-    venueId: room, mode: ctx.mode, root, plan, pipe, data: equipment.data, eye, focus: round ? center.clone().setY(h + 2.2) : focus, deck: h,
-    field: indoor ? 0 : .02, lensOf: equipment.lensOf, high: q.msaa > 0,
-  });
+  const desks = equipment && fohScreens(equipment.group, { venueId: room, mode: ctx.mode, root, plan, high: q.msaa > 0 });
   return {
     desks,
     stageTarget: focus, camera: { pos: eye, target: focus, fov: indoor ? 56 : 59, near: .16, far: stadium ? 1800 : 700 },

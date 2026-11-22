@@ -15,10 +15,8 @@ export const GYM_FOH = {
   360: [0, 4.86, -38.6],
 };
 // The section 19 scaffold under the 360 console (radii along the section's
-// middle, half its width across), and the FOH camera's riser on the landing
-// at the top of the section, behind the console.
+// middle, half its width across).
 export const GYM_CONSOLE_DECK = { r0: 35.25, r1: 41.95, half: 4.6, top: 4.86 };
-export const GYM_FOH_CAMERA = { r: 44.05, y: 4.77, riser: .72 };
 export const GYM_PA = {
   // mains off the downstage corners, side hangs turned to the 1F/2F sides,
   // then a delay pair out over the floor's back corners for the C end's upper rows

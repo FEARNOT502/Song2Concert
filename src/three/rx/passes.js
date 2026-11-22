@@ -12,7 +12,7 @@
 //           in-scatter (spots through their shadow maps), the GI's ambient,
 //           then integrated front to back
 //   comp    scene + reflections, the haze over it, the beams on top
-//   taa     jittered frames resolved over time (variance-clipped history)
+//   taa     lighting samples resolved over time (variance-clipped history)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import * as THREE from 'three';
@@ -253,7 +253,11 @@ export function froxelLightMaterial() {
     uniform mat4 uPrevVP;
     uniform float uHasPrev, uBlend;
     varying vec2 vUv;
-    float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
+    vec3 froxelSample(vec3 cell) {
+      vec3 p = fract(cell * vec3(0.1031, 0.1030, 0.0973));
+      p += dot(p, p.yxz + 33.33);
+      return fract((p.xxy + p.yxx) * p.zyx + uFrame * vec3(0.7548777, 0.5698403, 0.618034));
+    }
     float shadowAt(int i, vec3 w) {
       vec4 c; float v = 1.0;
       ${Array.from({ length: S }, (_, i) => `if (i == ${i}) { c = uShM${i} * vec4(w, 1.0); c.xyz /= c.w; c.z += uShB${i}; if (c.w > 0.0 && all(greaterThan(c.xyz, vec3(0.0))) && all(lessThan(c.xyz, vec3(1.0)))) v = texture(tSh${i}, c.xyz); }`).join('\n      ')}
@@ -263,11 +267,9 @@ export function froxelLightMaterial() {
     void main() {
       vec3 f = froxelOf(floor(gl_FragCoord.xy));
       if (f.z >= uDims.z) { gl_FragColor = vec4(0.0); return; }
-      float jit = fract(ign(gl_FragCoord.xy) + uFrame * 0.618034);
-      // a different point inside the froxel every frame; the history averages them
-      vec2 jxy = vec2(fract(jit * 7.13 + uFrame * 0.7548777), fract(jit * 3.71 + uFrame * 0.5698403)) - 0.5;
-      vec2 uv = (f.xy + 0.5 + jxy * 0.95) / uDims.xy;
-      float d = sliceDist(f.z + jit);
+      vec3 sampleOffset = froxelSample(f);
+      vec2 uv = (f.xy + sampleOffset.xy) / uDims.xy;
+      float d = sliceDist(f.z + sampleOffset.z);
       vec4 v = uProjInv * vec4(uv * 2.0 - 1.0, 1.0, 1.0);
       vec3 ray = normalize(v.xyz / v.w);
       vec3 vp = ray * (d / max(-ray.z, 1e-3));
@@ -277,7 +279,7 @@ export function froxelLightMaterial() {
       vec4 vc = uProjInv * vec4(uvc * 2.0 - 1.0, 1.0, 1.0);
       vec3 rc = normalize(vc.xyz / vc.w);
       vec3 wc = (uCamWorld * vec4(rc * (sliceDist(f.z + 0.5) / max(-rc.z, 1e-3)), 1.0)).xyz;
-      vec3 toCam = normalize(cameraPosition - w);
+      vec3 toCam = normalize(mat3(uCamWorld) * -ray);
       // the haze: denser low down (it settles), stirred by noise
       float n = texture(tNoise, w * 0.06 + vec3(uTime * 0.01, uTime * 0.015, -uTime * 0.007)).r;
       float n2 = texture(tNoise, w * 0.21 - vec3(0.0, uTime * 0.02, 0.0)).r;
@@ -288,7 +290,7 @@ export function froxelLightMaterial() {
         if (i >= uCount) break;
         vec3 pl = uLPos[i];
         vec3 dl = pl - w;
-        float r = length(dl);
+        float r = max(length(dl), 0.01);
         vec3 ld = dl / r;
         float att;
         vec4 par = uLPar[i];
@@ -304,10 +306,10 @@ export function froxelLightMaterial() {
         }
         att = 1.0 / max(pow(r, par.w), 0.01);
         if (par.z > 0.0) { float q = clamp(1.0 - pow(r / par.z, 4.0), 0.0, 1.0); att *= q * q; }
-        if (par.x > -1.5) att *= smoothstep(par.x, par.y, dot(-ld, uLDir[i]));
+        if (par.x > -1.5) att *= smoothstep(par.x, max(par.y, par.x + 0.0001), dot(-ld, uLDir[i]));
         if (att <= 1e-6) continue;
         if (uLSh[i] > -0.5) att *= shadowAt(int(uLSh[i] + 0.5), w);
-        L += uLCol[i] * att * hg(dot(-ld, -toCam), uAniso);
+        L += uLCol[i] * att * hg(dot(-ld, toCam), uAniso);
       }
       if (uGIOn > 0.5) {
         vec3 g = (w - rxGIOrigin) / rxGISize;
@@ -399,6 +401,27 @@ export function compMaterial() {
       float a004 = min(r.x * r.x, exp2(-9.28 * nv)) * r.x + r.y;
       return vec2(-1.04, 1.04) * a004 + r.zw;
     }
+    // Cubic reconstruction in the volume's image plane. The four bilinear
+    // taps stay inside a depth tile and smooth out individual froxel cells.
+    vec4 fogSlice(float slice, vec2 lo, vec2 hi, vec2 w) {
+      vec4 a = mix(texture2D(tFog, atlasUv(lo, slice)), texture2D(tFog, atlasUv(vec2(hi.x, lo.y), slice)), w.x);
+      vec4 b = mix(texture2D(tFog, atlasUv(vec2(lo.x, hi.y), slice)), texture2D(tFog, atlasUv(hi, slice)), w.x);
+      return mix(a, b, w.y);
+    }
+    vec4 fogAt(vec2 uv, float k) {
+      vec2 p = uv * uDims.xy - 0.5;
+      vec2 f = fract(p), f2 = f * f, f3 = f2 * f;
+      vec2 w0 = (1.0 - 3.0 * f + 3.0 * f2 - f3) / 6.0;
+      vec2 w1 = (4.0 - 6.0 * f2 + 3.0 * f3) / 6.0;
+      vec2 w2 = (1.0 + 3.0 * f + 3.0 * f2 - 3.0 * f3) / 6.0;
+      vec2 w3 = f3 / 6.0;
+      vec2 right = w2 + w3;
+      vec2 base = floor(p) + 0.5;
+      vec2 lo = (base - 1.0 + w1 / (w0 + w1)) / uDims.xy;
+      vec2 hi = (base + 1.0 + w3 / right) / uDims.xy;
+      float k0 = floor(k), k1 = min(k0 + 1.0, uDims.z - 1.0);
+      return mix(fogSlice(k0, lo, hi, right), fogSlice(k1, lo, hi, right), k - k0);
+    }
     void main() {
       vec3 s = sane(texture2D(tScene, vUv).rgb);
       float z = texture2D(tDepth, vUv).x;
@@ -417,8 +440,7 @@ export function compMaterial() {
       if (uFogOn > 0.5) {
         float d = z >= 0.99999 ? uFar : -P.z;
         float k = clamp(distSlice(d) - 0.5, 0.0, uDims.z - 1.0);
-        float k0 = floor(k), k1 = min(k0 + 1.0, uDims.z - 1.0);
-        vec4 f = mix(texture2D(tFog, atlasUv(vUv, k0)), texture2D(tFog, atlasUv(vUv, k1)), k - k0);
+        vec4 f = fogAt(vUv, k);
         s = s * f.a + f.rgb;
       }
       vec2 o = uVolTexel * 0.75;
@@ -478,6 +500,7 @@ export function taaMaterial() {
       vec4 v = uProjInv * vec4(vUv * 2.0 - 1.0, z * 2.0 - 1.0, 1.0);
       vec3 w = (uCamWorld * vec4(v.xyz / v.w, 1.0)).xyz;
       vec4 pc = uPrevVP * vec4(w, 1.0);
+      if (pc.w <= 0.0) { gl_FragColor = vec4(cur, 1.0); return; }
       vec2 puv = pc.xy / pc.w * 0.5 + 0.5;
       bool off = any(lessThan(puv, vec2(0.0))) || any(greaterThan(puv, vec2(1.0)));
       if (off) { gl_FragColor = vec4(cur, 1.0); return; }

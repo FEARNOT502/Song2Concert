@@ -7,7 +7,7 @@ export const CONCERT_VENUES = new Set(['arena', 'dome', 'stadium', 'gymnastic-ar
 let modelsPromise, theaterModelsPromise, theaterLabPromise, clubModelsPromise;
 const SHADOW_CASTERS = new Set([
   'drums', 'keyboard', 'mic', 'wedge', 'fender', 'vox', 'fender-extension', 'vox-extension',
-  'touring-rack', 'flight-case', 'prompter', 'foh', 'camera', 'jib', 'jib-head',
+  'touring-rack', 'flight-case', 'prompter', 'foh',
   'theater-guitar', 'theater-bass', 'theater-amp-isolator', 'theater-pedalboard', 'theater-di',
   'drum-kit', 'keys', 'wireless-mic', 'guitar', 'guitar-stand', 'bass', 'bass-stand',
   'shared-vox', 'shared-fender', 'support-amp', 'shared-flight-case', 'shared-touring-rack', 'pa-top', 'pa-sub',
@@ -55,7 +55,7 @@ async function loadModels(asset) {
 
 export function loadConcertModels() {
   if (!modelsPromise) {
-    modelsPromise = loadModels('concert-equipment.glb?v=3').catch((error) => {
+    modelsPromise = loadModels('concert-equipment.glb?v=4').catch((error) => {
       modelsPromise = null;
       throw error;
     });
@@ -105,38 +105,6 @@ export const heading = ([x, z] = [0, 1]) => Math.atan2(x, z);
 const UP = V3(0, 1, 0);
 export function placement(x, y, z, yaw = 0, scale = V3(1, 1, 1)) {
   return new THREE.Matrix4().compose(V3(x, y, z), new THREE.Quaternion().setFromAxisAngle(UP, yaw), scale);
-}
-
-// A broadcast camera on a tripod run up or down so its lens stands at `lens`
-// metres: the legs (everything under the head) stretch, the head rides up on
-// them. Made once per height and kept beside the authored model.
-const CAMERA_LENS = 1.715, CAMERA_LEGS = 1.2;
-export function cameraOnTripod(models, lens) {
-  const name = `camera@${lens.toFixed(2)}`;
-  if (models.has(name)) return name;
-  const base = models.get('camera');
-  const s = 1 + (lens - CAMERA_LENS) / CAMERA_LEGS, lift = lens - CAMERA_LENS;
-  const v = V3(), inv = new THREE.Matrix4();
-  const parts = base.parts.map(({ geometry, material, matrix }) => {
-    const geo = geometry.clone();
-    const src = geometry.attributes.position;
-    const pos = new THREE.Float32BufferAttribute(src.count * 3, 3);
-    inv.copy(matrix).invert();
-    for (let i = 0; i < src.count; i++) {
-      v.fromBufferAttribute(src, i).applyMatrix4(matrix);
-      v.y = v.y <= CAMERA_LEGS ? v.y * s : v.y + lift;
-      v.applyMatrix4(inv);
-      pos.setXYZ(i, v.x, v.y, v.z);
-    }
-    geo.setAttribute('position', pos);
-    geo.computeBoundingBox();
-    geo.computeBoundingSphere();
-    return { geometry: geo, material, matrix };
-  });
-  const bounds = base.bounds.clone();
-  bounds.max.y += lift;
-  models.set(name, { parts, bounds, size: bounds.getSize(V3()), center: bounds.getCenter(V3()), lens });
-  return name;
 }
 
 export function addModelArray(batch, { x, y, z, boxes, width = 1.3, yaw = 0, splay = .035, depth = .7, height = .38 }, key = 'line-array') {
@@ -314,37 +282,4 @@ export function concertFixtureBodies(models, root, fixtures) {
       lenses.instanceMatrix.needsUpdate = lenses.instanceColor.needsUpdate = true;
     }
   };
-}
-
-// A model with some of its triangles left out: `drop(a, b, c)` is given each
-// triangle's corners in the model's own metres. Registered as `name`; the
-// geometry keeps its attributes and only its index changes, so a trimmed
-// console still shares its displays' materials (foh-screens finds them by name).
-export function trimmedModel(models, source, name, drop) {
-  if (models.has(name)) return name;
-  const base = models.get(source);
-  const a = V3(), b = V3(), c = V3();
-  const parts = base.parts.map(({ geometry, material, matrix }) => {
-    const pos = geometry.attributes.position;
-    const index = geometry.index;
-    const count = index ? index.count : pos.count;
-    const kept = [];
-    for (let i = 0; i < count; i += 3) {
-      const ia = index ? index.getX(i) : i, ib = index ? index.getX(i + 1) : i + 1, ic = index ? index.getX(i + 2) : i + 2;
-      a.fromBufferAttribute(pos, ia).applyMatrix4(matrix);
-      b.fromBufferAttribute(pos, ib).applyMatrix4(matrix);
-      c.fromBufferAttribute(pos, ic).applyMatrix4(matrix);
-      if (!drop(a, b, c)) kept.push(ia, ib, ic);
-    }
-    const geo = geometry.clone();
-    geo.setIndex(kept);
-    geo.userData.shared = true;
-    geo.computeBoundingBox();
-    geo.computeBoundingSphere();
-    return { geometry: geo, material, matrix };
-  }).filter((part) => part.geometry.index.count);
-  const bounds = new THREE.Box3();
-  for (const { geometry, matrix } of parts) bounds.union(geometry.boundingBox.clone().applyMatrix4(matrix));
-  models.set(name, { parts, bounds, size: bounds.getSize(V3()), center: bounds.getCenter(V3()) });
-  return name;
 }

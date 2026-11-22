@@ -1,16 +1,5 @@
-// foh-feeds.js — the two pictures the lighting desk shows that are drawn
-// from the room itself rather than onto a canvas:
-//
-//   fanMap      the lightsticks from straight above, on the 4:3 monitor: the
-//               same points and the same shader as in the house (so the waves
-//               and scenes are exactly the ones the crowd is running), with
-//               the stage's outline over them
-//   cameraFeed  one of five cameras (the FOH's own, the three floor cameras,
-//               the jib), rendered small into a target the lighting monitor
-//               shows in its picture; with the rig's beams and haze on 'high'
-//
-// Both render with the stage's renderer before the frame's own pass, a few
-// times a second, and only while the desk is near enough to be seen.
+// The overhead fan-light monitor draws the crowd's actual lightsticks and
+// the stage outline on their own layer.
 import * as THREE from 'three';
 
 export const MAP_LAYER = 7;
@@ -98,88 +87,6 @@ export function fanMap(root, plan, { size = [1024, 768] } = {}) {
         scene.background = bg;
       });
     },
-    dispose() { rt.dispose(); geo.dispose(); outline.material.dispose(); },
-  };
-}
-
-// The five cameras' places and where they look, from the layout data:
-// 0 the FOH's left camera on the upper deck, 1–3 the floor cameras, 4 the jib
-// (its head panning slowly to and fro over the stage).
-export function cameraPoses({ data, eye, focus, deck, field = 0, lensOf = () => 1.58 }) {
-  const look = (x, z, y = deck + 1.35) => new THREE.Vector3(x, y, z);
-  const floorCam = ({ code, p, aim }) => {
-    const d = Math.hypot(aim[0] - p[0], aim[1] - p[1]) || 1;
-    const pos = new THREE.Vector3(p[0] + (aim[0] - p[0]) / d * .45, field + lensOf(code), p[1] + (aim[1] - p[1]) / d * .45);
-    return () => ({ pos, at: look(aim[0], aim[1]), fov: 30 });
-  };
-  // the FOH camera: on the console's own camera deck, or (a plot's `fohCam`) on its riser
-  const fohCam = data.fohCam ? new THREE.Vector3(data.fohCam.p[0], data.fohCam.y + 1.6, data.fohCam.p[1])
-    : new THREE.Vector3(eye.x - 1.04, 5.02, eye.z + 1.05);
-  const cams = [() => ({ pos: fohCam, at: focus.clone(), fov: 17 })];
-  for (const c of data.cameras.slice(0, 3)) cams.push(floorCam(c));
-  while (cams.length < 4) cams.push(cams[cams.length - 1]);
-  const { tip, aim } = data.jib;
-  const jibPos = new THREE.Vector3(tip[0], field + 2.85, tip[1]);
-  const base = look(aim[0], aim[1], deck + 1.1);
-  cams.push((t) => {
-    const a = Math.sin(t * 0.21) * 0.14;
-    const dx = base.x - jibPos.x, dz = base.z - jibPos.z;
-    return { pos: jibPos, at: new THREE.Vector3(jibPos.x + dx * Math.cos(a) - dz * Math.sin(a), base.y, jibPos.z + dx * Math.sin(a) + dz * Math.cos(a)), fov: 38 };
-  });
-  return cams;
-}
-
-export function cameraFeed(pipe, poses, { size = [480, 270] } = {}) {
-  const [w, h] = size;
-  const cam = new THREE.PerspectiveCamera(30, w / h, .3, pipe.camera.far);
-  const sceneRT = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: 0 });
-  sceneRT.depthTexture = new THREE.DepthTexture(w, h);
-  sceneRT.depthTexture.type = THREE.UnsignedIntType;
-  const vw = Math.round(w / 2), vh = Math.round(h / 2);
-  const volRT = new THREE.WebGLRenderTarget(vw, vh, { type: THREE.HalfFloatType, depthBuffer: false });
-  const out = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, depthBuffer: false });
-  const texture = upright(out.texture);
-  const texel = new THREE.Vector2();
-  return {
-    texture,
-    target: out,
-    render(renderer, index, t, volume) {
-      const pose = poses[index](t);
-      if (cam.fov !== pose.fov) { cam.fov = pose.fov; cam.updateProjectionMatrix(); }
-      cam.position.copy(pose.pos);
-      cam.lookAt(pose.at);
-      cam.updateMatrixWorld();
-      const comp = pipe.venuePass?.comp;
-      withRenderer(renderer, () => {
-        renderer.setRenderTarget(sceneRT);
-        renderer.render(pipe.scene, cam);
-        renderer.setRenderTarget(volRT);
-        renderer.setClearColor(0x000000, 1);
-        renderer.clear(true, false, false);
-        // the rig's beams and the haze, as the stage's own pass draws them
-        // (it sets these again for its own camera before it draws)
-        if (volume && pipe.volOn && pipe.beams && pipe.haze) {
-          for (const U of [pipe.beams.uniforms, pipe.haze.uniforms]) {
-            U.tDepth.value = sceneRT.depthTexture;
-            U.uRes.value.set(vw, vh);
-            U.uProjInv.value.copy(cam.projectionMatrixInverse);
-            U.uFar.value = cam.far * 0.98;
-          }
-          pipe.haze.uniforms.uCamWorld.value.copy(cam.matrixWorld);
-          renderer.render(pipe.volScene, cam);
-        }
-        if (comp) {
-          const U = comp.material.uniforms;
-          texel.copy(U.uVolTexel.value);
-          U.tScene.value = sceneRT.texture;
-          U.tVol.value = volRT.texture;
-          U.uVolTexel.value.set(1 / vw, 1 / vh);
-          renderer.setRenderTarget(out);
-          comp.render(renderer);
-          U.uVolTexel.value.copy(texel);
-        }
-      });
-    },
-    dispose() { sceneRT.depthTexture.dispose(); sceneRT.dispose(); volRT.dispose(); out.dispose(); },
+    dispose() { rt.dispose(); },
   };
 }

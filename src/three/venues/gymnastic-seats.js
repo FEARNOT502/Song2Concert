@@ -1,7 +1,6 @@
 import { decodeSeats } from '../stands.js';
 import { floorBlocks } from '../show.js';
 import { GYM_AISLE_R, GYM_CENTER_R, GYM_CONSOLE_DECK, GYM_FIRST_ROW, GYM_FLOOR_R, GYM_FOH, GYM_STANDING, gymPoint, gymRing, gymSector, gymStagePlan } from '../gymnastic-arena-plan.js';
-import { gymCameraPads, gymJib } from './gymnastic-equipment.js';
 import { GYM_SEATS, GYM_SECTION_ANGLES } from './gymnastic-data.js';
 
 const packed = decodeSeats(GYM_SEATS);
@@ -30,12 +29,11 @@ export function gymOpenSeat(seat, mode) {
 
 // General: the floor seated round the T, in blocks either side of the runway,
 // beside the walkway, and behind it to the floor's back, clear of the pit's
-// fences, the floor cameras, the jib and the FOH.
+// fences and FOH.
 const generalFloor = (() => {
   const plan = gymStagePlan('general');
   const { L } = plan;
   const [fx, , fz] = GYM_FOH.general;
-  const pads = gymCameraPads('general'), jib = gymJib('general');
   const box = (ring) => {
     const xs = ring.map((p) => p[0]), zs = ring.map((p) => p[1]);
     return [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)];
@@ -44,9 +42,7 @@ const generalFloor = (() => {
   function keep(x, z) {
     return Math.hypot(x, z) < GYM_FLOOR_R - 2.0 &&
       clear.every(([[x0, x1, z0, z1], pad]) => x < x0 - pad || x > x1 + pad || z < z0 - pad || z > z1 + pad) &&
-      (Math.abs(x - fx) > 4.9 || Math.abs(z - fz) > 4.45) &&
-      pads.every(({ p: [px, pz] }) => Math.hypot(x - px, z - pz) > 1.45) &&
-      Math.hypot(x - jib.p[0], z - jib.p[1]) > 2.4 && Math.hypot(x - jib.tip[0], z - jib.tip[1]) > 1.6;
+      (Math.abs(x - fx) > 4.9 || Math.abs(z - fz) > 4.45);
   }
   const F = L.front + L.gap + .9, cz = L.cross - L.thrustGap - .8, bz = L.cross + L.crossD + L.thrustGap + .8;
   const wx = L.wing + L.thrustGap + .8;

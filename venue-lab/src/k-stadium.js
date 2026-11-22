@@ -175,8 +175,7 @@ function buildStadium(ctx) {
   // tier, filling its notch side to side, not a box standing out). On the
   // south side a bay holds the TV gantry (Level 4):
   // an open platform level with the tier's front row, a glass balustrade
-  // along its front, the cameras along it, the commentary desks along its
-  // back, under a light canopy.
+  // along its front, with commentary desks at the back under a light canopy.
   const housingMat = std({ color: 0x2a2c30, roughness: 0.7, metalness: 0.3 });
   const cladMat = std({ color: 0x74777c, roughness: 0.75, metalness: 0.2 });
   const soffitMat = std({ ...wallConc, color: 0xffffff, roughness: 0.92 });   // the notch's sides: the stand's own concrete
@@ -303,8 +302,8 @@ function buildStadium(ctx) {
       const lg = new THREE.BoxGeometry(2.4, 0.04, 0.3); lg.rotateY(Math.atan2(x, z)); lg.translate(x + (x / r) * off, top - 0.33, z + ZC + (z / r) * off); lamps.push(lg.toNonIndexed());
     }
     root.add(new THREE.Mesh(mergeGeometries(lamps), new THREE.MeshBasicMaterial({ color: 0xfff1d8 })));
-    // the commentary desks along the back, and the cameras along the front
-    const desks = [], cams = [], legs = [];
+    // the commentary desks along the back
+    const desks = [];
     for (let i = 0; i + 1 < A.length; i++) {
       const [ax, az] = A[i], [bx, bz] = A[i + 1], l = Math.hypot(bx - ax, bz - az);
       if (l < 0.2) continue;
@@ -312,21 +311,7 @@ function buildStadium(ctx) {
       const dg = new THREE.BoxGeometry(0.7, 0.06, l); dg.rotateY(Math.atan2(bx - ax, bz - az));
       dg.translate(cx - (cx / r) * 0.5, deckY + 0.74, cz + ZC - (cz / r) * 0.5); desks.push(dg.toNonIndexed());
     }
-    let run = 0;
-    for (let i = 0; i + 1 < f.length; i++) {
-      const [ax, az] = f[i], [bx, bz] = f[i + 1], l = Math.hypot(bx - ax, bz - az);
-      run += l;
-      if (run < 3.5) continue;
-      run = 0;
-      const r = Math.hypot(bx, bz) || 1, x = bx + (bx / r) * 1.3, z = bz + (bz / r) * 1.3;
-      const body = new THREE.BoxGeometry(0.34, 0.36, 0.7); body.rotateY(Math.atan2(-bx, -bz)); body.translate(x, deckY + 1.55, z + ZC); cams.push(body.toNonIndexed());
-      const lens = new THREE.CylinderGeometry(0.1, 0.12, 0.5, 10); lens.rotateX(Math.PI / 2); lens.rotateY(Math.atan2(-bx, -bz));
-      lens.translate(x - (bx / r) * 0.55, deckY + 1.58, z + ZC - (bz / r) * 0.55); cams.push(lens.toNonIndexed());
-      const post = new THREE.CylinderGeometry(0.06, 0.1, 1.35, 8); post.translate(x, deckY + 0.68, z + ZC); legs.push(post.toNonIndexed());
-    }
     root.add(new THREE.Mesh(mergeGeometries(desks), std({ color: 0x2e3036, roughness: 0.6, emissive: 0x1c2430, emissiveIntensity: 1 })));
-    if (cams.length) root.add(new THREE.Mesh(mergeGeometries(cams), std({ color: 0x0c0d10, roughness: 0.4, metalness: 0.4 })));
-    if (legs.length) root.add(new THREE.Mesh(mergeGeometries(legs), steelDark));
   }
 
   // ── the roof, as it is built ──
