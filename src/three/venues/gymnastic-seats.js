@@ -42,7 +42,7 @@ const generalFloor = (() => {
   };
   const clear = [...plan.decks.map((d) => [box(d.ring), d.gap + .85]), ...plan.steps.map((st) => [box(st.ring), .9])];
   function keep(x, z) {
-    return Math.hypot(x, z) < GYM_FLOOR_R - 1.25 &&
+    return Math.hypot(x, z) < GYM_FLOOR_R - 2.0 &&
       clear.every(([[x0, x1, z0, z1], pad]) => x < x0 - pad || x > x1 + pad || z < z0 - pad || z > z1 + pad) &&
       (Math.abs(x - fx) > 4.9 || Math.abs(z - fz) > 4.45) &&
       pads.every(({ p: [px, pz] }) => Math.hypot(x - px, z - pz) > 1.45) &&

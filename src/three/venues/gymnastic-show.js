@@ -119,6 +119,19 @@ function roundRig(k) {
   }
   const chains = [];
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) chainInto(chains, sx * (bw / 2 - .6), bottom + bh, sz * (bw / 2 - .6), top - .2, { motor: false });
+  // under each face of the box, its IMAG split in two, hung from the box
+  const [iw, ih] = [6.6, 3.6], ib = bottom - .45 - ih;
+  for (const yaw of AXES) {
+    const along = (d, across) => V3(Math.sin(yaw) * d + Math.cos(yaw) * across, 0, Math.cos(yaw) * d - Math.sin(yaw) * across);
+    for (const s of [-1, 1]) {
+      const p = along(bw / 2 - .4, s * (iw / 2 + .25));
+      screen({ x: p.x, z: p.z, bottom: ib, w: iw, h: ih, yaw, bright: 1.5 });
+      for (const t of [-1, 1]) {
+        const c = along(bw / 2 - .4, s * (iw / 2 + .25) + t * (iw / 2 - .5));
+        chainInto(chains, c.x, ib + ih, c.z, bottom, { motor: false });
+      }
+    }
+  }
   production.add(new THREE.Mesh(mergeGeometries(chains), mats().chain));
   for (const yaw of AXES) {
     const along = (d, across) => V3(Math.sin(yaw) * d + Math.cos(yaw) * across, 0, Math.cos(yaw) * d - Math.sin(yaw) * across);
