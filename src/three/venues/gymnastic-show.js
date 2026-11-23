@@ -173,13 +173,16 @@ function consoleDeck(root) {
     m.userData.noCollide = true;
     g.add(m);
   };
-  // the front: from the row under it up to the deck; the sides, raked with the rows
-  skirt(half * 2, top - 2.95, fx, (top + 2.95) / 2 - .06, -r0, 0);
+  // Close the front and rear down to the treads. Both sides follow the rake.
+  const skirtTop = top - .06, frontBottom = 2.89, rearBottom = 4.55;
+  skirt(half * 2, skirtTop - frontBottom, fx, (skirtTop + frontBottom) / 2, -r0, 0);
+  skirt(half * 2, skirtTop - rearBottom, fx, (skirtTop + rearBottom) / 2, -r1, 0);
   for (const s of [-1, 1]) {
-    const h0 = top - 2.95, h1 = .25;
-    const shape = new THREE.Shape([new THREE.Vector2(-depth / 2, -h0 / 2), new THREE.Vector2(depth / 2, h1 - h0 / 2), new THREE.Vector2(depth / 2, h0 / 2), new THREE.Vector2(-depth / 2, h0 / 2)]);
+    const front = s * depth / 2, rear = -front;
+    const shape = new THREE.Shape([new THREE.Vector2(front, frontBottom), new THREE.Vector2(rear, rearBottom),
+      new THREE.Vector2(rear, skirtTop), new THREE.Vector2(front, skirtTop)]);
     const m = new THREE.Mesh(new THREE.ShapeGeometry(shape), cloth);
-    m.position.set(fx + s * half, (top + 2.95) / 2 - .06, mid);
+    m.position.set(fx + s * half, 0, mid);
     m.rotation.y = -s * Math.PI / 2;
     m.userData.noCollide = true;
     g.add(m);

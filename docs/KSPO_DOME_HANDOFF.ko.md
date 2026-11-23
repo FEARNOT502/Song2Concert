@@ -8,6 +8,16 @@
 
 ## 1. 지금 상태
 
+### 2026-11-23 층간 통로와 360 FOH 보수
+
+- 로컬 브랜치 `codex/kspo-concourse-connection`은 `63d5f3af3262ee9eeabd06043723afb6bbffe5c6`에서 시작했다.
+- `gymnastic-bowl.js`에서 1F 교차 통로와 2F 첫 단 사이에 바닥을 이어 붙였다. 하부 보미토리 13곳에는 입구 폭과 계단을 남겼다. 19구역 뒤쪽 원본 메시가 비어 있던 구간에는 인접 2F 단 높이에 맞춘 단과 수직 면을 추가했다.
+- `gymnastic-show.js`에서 360 FOH 비계의 뒷면을 하부 단과 연결하고, 좌우 스커트를 각각 같은 방향의 경사에 맞췄다.
+- 콘코스 조명은 실제 소핏 아래와 보미토리 문 안쪽에서 켜진다. 개방된 상부 피트, 터널 위 객석과 일반 관객 동선에서는 꺼진다.
+- `node scripts/verify-gym-bowl.mjs`에서 위·아래에서 조사한 바닥 72,000점, 360 FOH 뒤 수직 면, 하부 보미토리 13개, 두 모드의 2F 시점 12,419개를 검증했다. `npm.cmd run verify:gym-seats`에서 1F 3,770석과 2F 7,587석이 도면에 일치했다.
+- Venue Lab의 일반·360 렌더 4장과 내부·외부 조명 상태를 확인했다. 로컬 캡처는 `venue-lab/shots/kspo/concourse-connection/`에 있다.
+- `venue-lab`에서 `node build.mjs`, `node bake-gi.mjs gymnastic-arena general 1.0`, `node bake-gi.mjs gymnastic-arena 360 1.0`을 실행해 두 모드의 GI를 재베이크했다.
+
 - 커밋 `a710ba2`: 보미토리, 콘코스, 1F 통로, IMAG, 글레어 작업.
 - `e414844`: Codex 커밋 `ebc6b2d`(조명 정리, FOH 콘솔 단순화, KSPO FOH 카메라·카메라 패드·지브 삭제)를 main에서 병합. 브랜치에 푸시까지 끝남.
 - `c2eb7a0`: 2F 좌석을 운영사 도면 기호로 재생성하고 `verify:gym-seats` 추가. 푸시 완료.

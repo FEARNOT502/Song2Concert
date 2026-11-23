@@ -9,6 +9,8 @@ import { buildGymnasticShow } from './gymnastic-show.js';
 import { TOP, buildBowl, cutRake } from './gymnastic-bowl.js';
 import { getGymnasticSeatCatalog, gymFloor, gymOpenSeat, gymStands, underConsole } from './gymnastic-seats.js';
 
+export { rakeAt } from './gymnastic-bowl.js';
+
 const TREAD_SECTORS = [[-50, 50], [61, 120], [128, 232], [240, 299]];
 const MAT = {
   concrete: 0x929698, folded: 0x575754, parapet: 0x767878, rail: 0xababaa,
@@ -142,19 +144,7 @@ function lowerStands(root, mat, mode) {
   }
 }
 
-// The 2F rake's tread height by radius (row by row, from the seats)
-const RAKE = [[44.8, 4.77], [46.0, 5.16], [46.9, 5.55], [47.8, 5.97], [48.7, 6.35], [50.0, 6.87], [50.9, 7.24], [52.4, 7.64],
-  [53.2, 8.02], [53.9, 8.32], [54.7, 8.73], [55.5, 9.14], [56.3, 9.53], [57.4, 10.12], [58.5, 10.68], [59.2, 11.09], [60.4, 11.78], [60.9, 12.1]];
-export function rakeAt(r) {
-  if (r <= RAKE[0][0]) return RAKE[0][1];
-  for (let i = 1; i < RAKE.length; i++) {
-    const [r0, y0] = RAKE[i - 1], [r1, y1] = RAKE[i];
-    if (r <= r1) return y0 + (y1 - y0) * (r - r0) / (r1 - r0);
-  }
-  return RAKE[RAKE.length - 1][1];
-}
-
-function upperStands(root, mat, pipe) {
+function upperStands(root, mat) {
   const coordinates = decodeSeats(GYM_UPPER);
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(Float32Array.from(coordinates, (x) => x / 100), 3));
@@ -200,7 +190,7 @@ function upperStands(root, mat, pipe) {
   railArc(root, mat.rail, TOP.r1 - .22, 10.78, 213.8, 506.2);
   railArc(root, mat.rail, TOP.r1 - .22, 10.78, 168.5, 191.5);
   for (const [a0, a1] of [[146.2, 168.5], [191.5, 213.8]]) railArc(root, mat.rail, TOP.r1 - .22, 11.78, a0, a1);
-  return buildBowl(root, { pipe, rakeAt });
+  return buildBowl(root);
 }
 
 function plateGeometry(outline, y0, y1) {
@@ -462,7 +452,7 @@ export function buildGymnasticArena(ctx) {
   root.add(ground);
   lowerStands(root, mat, ctx.mode);
   foldedCurtain(root);
-  const bowl = upperStands(root, mat, ctx.pipe);
+  const bowl = upperStands(root, mat);
   const houseRoof = roof(root, mat, ctx.pipe);
   // (360: the console's scaffold stands over section 19's middle rows)
   const all = gymStands().filter((seat) => !round || !underConsole(seat));
