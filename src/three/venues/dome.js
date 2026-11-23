@@ -22,6 +22,7 @@ import { concertRoom } from '../concert-production.js';
 import { STAGE_Z } from '../stage-plan.js';
 import { buildStands, decodeSeats } from '../stands.js';
 import { TD_STANDS } from './td-data.js';
+import { buildDomeSeatMeshes } from './dome-seats.js';
 
 let _domeCatalog = null;
 export function getDomeSeatCatalog() {
@@ -345,7 +346,13 @@ export function buildDome(ctx) {
   // the passages' and stairs' own light: full with the house, a third of it in the show
   const standLitList = [];
   const standLit = (m, e) => { m.emissiveIntensity = e; standLitList.push([m, e]); return m; };
+  let fittedTerraceRows;
   const stands = buildStands(TD, {
+    replaceSeatMeshes: ctx.domeSeatModels && ((seats) => {
+      const replacement = buildDomeSeatMeshes(ctx.domeSeatModels, seats);
+      fittedTerraceRows = replacement.placedRows;
+      return replacement;
+    }),
     // (the lightsticks' blocks: the real ones, as each seat is labelled; where
     // a level has no labels, by the stands' own aisles)
     byAisle: true,
@@ -739,7 +746,8 @@ export function buildDome(ctx) {
     const woods = new Map(), holes = [];
     const woodOf = (k) => { if (!woods.has(k)) woods.set(k, []); return woods.get(k); };
     const piece = (out, w, h, d, x, y, z, rotY) => { const b = new THREE.BoxGeometry(w, h, d); b.rotateY(rotY); b.translate(x, y, z); out.push(b); };
-    for (const seats of rows.values()) {
+    for (const [key, seats] of rows) {
+      if (fittedTerraceRows?.has(key)) continue;
       const wood = woodOf(seats.kind ?? 'terrace');
       seats.sort((p, q2) => p.a - q2.a);
       const blocks = [];

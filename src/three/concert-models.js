@@ -4,7 +4,7 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { V3 } from './core.js';
 
 export const CONCERT_VENUES = new Set(['arena', 'dome', 'stadium', 'gymnastic-arena']);
-let modelsPromise, theaterModelsPromise, theaterLabPromise, clubModelsPromise;
+let modelsPromise, theaterModelsPromise, theaterLabPromise, clubModelsPromise, domeSeatsPromise;
 const SHADOW_CASTERS = new Set([
   'drums', 'keyboard', 'mic', 'wedge', 'fender', 'vox', 'fender-extension', 'vox-extension',
   'touring-rack', 'flight-case', 'prompter', 'foh',
@@ -61,6 +61,35 @@ export function loadConcertModels() {
     });
   }
   return modelsPromise;
+}
+
+export function loadDomeSeatModels() {
+  if (!domeSeatsPromise) {
+    domeSeatsPromise = Promise.all(
+      ['general-seat', 'general-seat-far', 'balcony-seat', 'sky-terrace'].map((name) => loadScene(`tokyo-dome-${name}.glb`)),
+    ).then(([ordinary, distant, lounge, terrace]) => {
+      function part(scene, name) {
+        scene.updateMatrixWorld(true);
+        const mesh = scene.getObjectByName(name);
+        if (!mesh?.isMesh) throw Error(`Tokyo Dome seat part missing: ${name}`);
+        const { geometry, material } = mesh;
+        geometry.applyMatrix4(mesh.matrixWorld);
+        geometry.userData.shared = material.userData.shared = true;
+        return { geometry, material };
+      }
+      return {
+        general: part(ordinary, 'stand-seat'),
+        far: part(distant, 'stand-seat-far'),
+        balcony: part(lounge, 'balcony-seat'),
+        bench: part(terrace, 'terrace-bench'),
+        cabinet: part(terrace, 'terrace-counter-and-dividers'),
+      };
+    }).catch((error) => {
+      domeSeatsPromise = null;
+      throw error;
+    });
+  }
+  return domeSeatsPromise;
 }
 
 export function loadTheaterModels() {

@@ -25,7 +25,7 @@ import { crowdUniforms } from './people.js';
 import { LOD, Rig } from './rig.js';
 import { Walker } from './walk.js';
 import { createArt } from './art.js';
-import { CONCERT_VENUES, loadClubModels, loadConcertModels, loadTheaterLab, loadTheaterModels } from './concert-models.js';
+import { CONCERT_VENUES, loadClubModels, loadConcertModels, loadDomeSeatModels, loadTheaterLab, loadTheaterModels } from './concert-models.js';
 import { BeatFollower } from './beat.js';
 import { buildVenue } from './venues/index.js';
 import { getDomeSeatCatalog } from './venues/dome.js';
@@ -46,6 +46,8 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
   let pipe;
   try {
     pipe = new Pipeline(canvas);
+    // Keep the air clear in every venue, including when scene effects are on.
+    pipe.volOn = false;
   } catch {
     return null; // no WebGL — Scene falls back to a plain backdrop
   }
@@ -116,7 +118,6 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
   function applyPasses() {
     const on = fx && strain < 2;
     pipe.bloom.enabled = on && pipe.q.bloom;
-    pipe.volOn = on;
     if (pipe.rx) pipe.rx.on = on && qName === 'high' && pipe.rx.allowed;
   }
 
@@ -136,11 +137,11 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     });
   }
 
-  function makeCtx(concertModels, theaterLab) {
+  function makeCtx(concertModels, theaterLab, domeSeatModels) {
     const screens = [], rigs = [];
     const cu = crowdUniforms();
     return {
-      pipe, cu, screens, rigs, concertModels, theaterLab,
+      pipe, cu, screens, rigs, concertModels, theaterLab, domeSeatModels,
       // the big rooms' layout: 'general' (an end stage) or '360' (a centre stage)
       mode: venueMode,
       // the crowd is decided at build time: off, it is not built at all
@@ -189,7 +190,7 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     const models = id === 'club' ? loadClubModels() : (theater && mode === 'op') || id === GYM_ID
       ? loadTheaterModels()
       : theater || CONCERT_VENUES.has(id) ? loadConcertModels() : null;
-    const [concertModels, theaterLab] = await Promise.all([
+    const [concertModels, theaterLab, domeSeatModels] = await Promise.all([
       models?.catch((error) => {
         console.warn('Unable to load concert equipment models', error);
         return null;
@@ -198,9 +199,13 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
         console.warn('Unable to load the theater laboratory', error);
         return null;
       }) : null,
+      id === 'dome' ? loadDomeSeatModels().catch((error) => {
+        console.warn('Unable to load Tokyo Dome seat models', error);
+        return null;
+      }) : null,
     ]);
     if (gen !== buildGen || !running) return;
-    const c = makeCtx(concertModels, theaterLab);
+    const c = makeCtx(concertModels, theaterLab, domeSeatModels);
     const v = buildVenue(id, c);
     for (const r of c.rigs) { const g = r.build(); g.userData.plan = 'rig'; v.root.add(g); }
     // the beams stop on the stage roof, the LED boxes and the screens rather
@@ -325,12 +330,12 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     const level = pulseRef ? (pulseRef.current || 0) : pulse;
     beat.update(dt, { level, analyser: playing ? analyser?.() : null, playing, map: songMap, time: songMap && songClock ? songClock() : NaN });
     house += (houseTarget - house) * Math.min(1, dt * 1.4);
-    // Both renderers keep the room clear with the house lights up. The
-    // froxel volume already scatters light, so keep only a little legacy glow.
     if (pipe.rx) pipe.rx.house = house;
-    const volumeFog = pipe.rx?.on && pipe.rx.f.fog;
-    pipe.haze.uniforms.uStrength.value = (volumeFog ? 0.18 : 0.55) * (1 - 0.90 * house);
-    if (pipe.scene.fog) pipe.scene.fog.density = volumeFog ? 0 : venue.fog.density * (0.48 - 0.34 * house);
+    if (pipe.volOn) {
+      const volumeFog = pipe.rx?.on && pipe.rx.f.fog;
+      pipe.haze.uniforms.uStrength.value = (volumeFog ? 0.18 : 0.55) * (1 - 0.90 * house);
+    }
+    if (pipe.scene.fog) pipe.scene.fog.density = pipe.rx?.on ? 0 : venue.fog.density * (0.48 - 0.34 * house);
     const bloom = venue.bloom;
     const threshold = bloom?.threshold ?? 0.9;
     pipe.bloom.threshold = threshold + ((bloom?.house ?? threshold + 0.65) - threshold) * house;
@@ -605,8 +610,8 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
       strain = next;
       if (severe) applyQuality();
     },
-    // The crowd is decided when the room is built, so switching rebuilds it;
-    // the light shafts and bloom go at once.
+    // The crowd is decided when the room is built, so switching rebuilds it.
+    // Bloom changes immediately.
     setEffects(on) {
       const next = !!on;
       if (next === fx) return;
