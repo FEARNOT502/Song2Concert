@@ -23,9 +23,9 @@ import { KELVIN, V3, concreteTex, floorPanelTex, std, withRepeat } from '../core
 import { GYM_RAD, gymPoint, gymRing } from '../gymnastic-arena-plan.js';
 
 export const CROSS_Y = 4.77, CROSS_R = 44.8;
-export const C2 = { y: 4.17, r0: 49.8, r1: 60.0, ceil: 10.2 };
+export const C2 = { y: 4.17, r0: 49.8, r1: 59.8, ceil: 10.0 };
 // the aisle behind the top row, up against the bowl's wall
-export const TOP = { y: 12.1, r0: 60.9, r1: 62.4 };
+export const TOP = { y: 11.78, r0: 59.75, r1: 61.0 };
 
 // The vomitories where the operator's seat chart draws their stairs (its
 // hatched treads, put on the app's plan by the seats' own registration,
@@ -39,9 +39,9 @@ export const LOWER_VOMS = [
 // the upper ones [angle, the pit's front, its back wall, clear half-width]
 // (the radii from the rows the chart's seats leave out there)
 export const UPPER_VOMS = [
-  [22.34, 51.61, 55.13, 1.32], [44.69, 51.79, 54.78, 1.34], [78.29, 51.58, 54.55, 1.43], [112.07, 51.32, 54.29, 1.34],
+  [22.34, 51.61, 55.13, 1.32], [44.69, 51.79, 54.96, 1.34], [78.29, 51.58, 54.55, 1.43], [112.07, 51.32, 54.29, 1.34],
   [145.98, 51.12, 54.1, 1.45], [180.01, 51.0, 53.98, 1.35], [214.03, 51.09, 54.05, 1.36], [247.93, 51.26, 54.23, 1.34],
-  [281.7, 51.46, 54.46, 1.35], [315.4, 51.78, 54.77, 1.29], [337.68, 51.59, 55.11, 1.33],
+  [281.7, 51.46, 54.46, 1.35], [315.4, 51.78, 54.95, 1.29], [337.68, 51.59, 55.11, 1.33],
 ];
 // the pits' clear width either side of the line, their walls' thickness
 // the pits' walls' thickness
@@ -146,7 +146,7 @@ export function cutRake(geometry) {
   const keep = [];
   const holes = [
     ...LOWER_VOMS.map(([deg, hw]) => [deg, hw + WALL, CROSS_R + .2, L_TOP]),
-    ...UPPER_VOMS.map(([deg, rF, rD, hw]) => [deg, hw + WALL, rF, rD]),
+    ...UPPER_VOMS.map(([deg, rF, rD, hw]) => [deg, hw + WALL, rF, rD + .06]),
   ].map(([deg, hw, r0, r1]) => {
     const [cx, cz] = gymPoint(deg, (r0 + r1) / 2);
     return { deg, hw, r0, r1, cx, cz, reach: Math.hypot(hw, (r1 - r0) / 2) + .3 };
@@ -281,19 +281,26 @@ export function buildBowl(root, { pipe, rakeAt }) {
   // rake the pit and the passage are a mass faced in the concourse's finish ──
   for (const [deg, rF, rD, PIT_HW] of UPPER_VOMS) {
     const OUT = PIT_HW + WALL, DOOR_HW = doorOf(PIT_HW);
-    // (a short pit drops further, for the door's height under the rows)
-    const yF = rakeAt(rF), yD = Math.min(yF - .9, rakeAt(rD) - 2.0), head = yD + 1.95;
+    // (match the cut rake's exact front/back tread heights so there is no gap or lip)
+    const yF = 7.39, yB = rD > 54.8 ? 9.01 : 8.91;
+    const yD = Math.min(yF - .9, yB - 2.0), head = yD + 1.95;
     for (const s of [-1, 1]) {
-      addVomCurb(deg, s * (PIT_HW + WALL / 2), rF, rD + .2, yD - .3, yF + .42, rakeAt(rD) + .42);
+      addVomCurb(deg, s * (PIT_HW + WALL / 2), rF, rD + .2, yD - .3, yF + .38, yB + .38);
     }
-    // the floor: a landing, steps down, a landing at the door
-    radialBox(W.tread, deg, rF, rF + .35, PIT_HW, yD - .3, yF);
+    const [rux, ruz] = gymPoint(deg, rD + .2), [tx, tz] = gymPoint(deg + 90, PIT_HW + WALL / 2);
+    const bx0 = rux - tx, bz0 = ruz - tz, bx1 = rux + tx, bz1 = ruz + tz;
+    W.rail.push(
+      [V3(rux, yB + .38, ruz), V3(rux, yB + .82, ruz)],
+      [V3(bx0, yB + .82, bz0), V3(bx1, yB + .82, bz1)],
+    );
+    // the floor: a landing overlapping the cut edge, steps down, a landing at the door
+    radialBox(W.tread, deg, rF - .15, rF + .35, PIT_HW, yD - .3, yF);
     const s0 = rF + .35, s1 = rD - .6, n = Math.round((yF - yD) / .18);
     for (let i = 0; i < n; i++) radialBox(W.tread, deg, s0 + (s1 - s0) * i / n, s0 + (s1 - s0) * (i + 1) / n, PIT_HW, yD - .3, yF - (yF - yD) * (i + 1) / n);
     radialBox(W.tread, deg, s1, rD + .2, PIT_HW, yD - .3, yD);
-    // the back wall: a lintel up to the rows behind, a jamb either side, the
+    // the back wall: a lintel up to the curb top, a jamb either side, the
     // dark of the passage beyond
-    radialBox(W.white, deg, rD, rD + .2, PIT_HW, head, rakeAt(rD) + .02);
+    radialBox(W.white, deg, rD, rD + .2, PIT_HW + WALL, head, yB + .38);
     for (const s of [-1, 1]) radialBox(W.white, deg, rD, rD + .2, (PIT_HW - DOOR_HW) / 2, yD, head, s * (DOOR_HW + PIT_HW) / 2);
     // the passage: down from the door into the concourse, lit, its walls
     // and ceiling to where the soffit is high enough over the stair

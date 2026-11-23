@@ -113,7 +113,7 @@ function lowerStands(root, mat, mode) {
     }
     const end = front + .84 * rows;
     root.add(plate(gymSector(a, b, end, 44.8), 0, 4.77, mat.concrete));
-    const endProfile = [[GYM_AISLE_R - .33, 2.60], [front, 2.80], [end, isC ? 4.77 : 4.80], [44.6, 4.77]];
+    const endProfile = [[GYM_AISLE_R - .33, 2.60], [front, 2.80], [end, 2.8 + (rows - 1) * .2], [43.18, 4.77]];
     for (const deg of [a + .2, b - .2]) railRadial(root, mat.rail, deg, endProfile);
     // Small half-step strips in the lower seating aisles.
     const groups = i % 2 ? 4 : 7;
@@ -133,18 +133,13 @@ function lowerStands(root, mat, mode) {
   }
 
   // The tunnels between the blocks stay open from the floor; the cross aisle
-  // runs on over their back ends, and their back is a wall under it (open,
-  // it showed the hollow under the 2F's front)
+  // runs behind a solid masonry block so their backs are sealed flush with the
+  // stand rear, and a continuous fence bridges each tunnel edge along the aisle.
   for (let i = 0; i < TREAD_SECTORS.length; i++) {
     const a = TREAD_SECTORS[i][1], b = TREAD_SECTORS[(i + 1) % TREAD_SECTORS.length][0] + (i + 1 === TREAD_SECTORS.length ? 360 : 0);
-    root.add(plate(gymSector(a, b, 33.91 + .84 * 11, 44.8), 4.51, 4.77, mat.concrete));
-    arcWall(root, mat.concrete, 44.75, 0, 4.51, a - .1, b + .1);
+    root.add(plate(gymSector(a - .1, b + .1, 33.91 + .84 * 11, 44.8), 0, 4.77, mat.concrete));
+    railArc(root, mat.rail, 43.18, 4.77, a - .2, b + .2);
   }
-
-  // Accessible concourse at the back of C. The open edge and the slope
-  // beside the treads face the stage and are visible from the floor.
-  root.add(plate(gymSector(134, 226, 42.3, 45.4), 4.54, 4.78, mat.concrete));
-  railArc(root, mat.rail, 42.4, 4.78, 136, 224);
 }
 
 // The 2F rake's tread height by radius (row by row, from the seats)
@@ -169,34 +164,42 @@ function upperStands(root, mat, pipe) {
   deck.name = '2F rake';
   root.add(deck);
 
-  // The model's rake stops short of the biggest sections' top rows: their
-  // treads from the seats themselves, and a step up to the aisle's
-  // edge behind the rest.
-  const parts = [];
-  const rows = new Map();
-  for (const s of gymStands()) {
-    if (+s.block < 23) continue;
-    const r = Math.hypot(s.x, s.z);
-    if (r < 57.9) continue;
-    const key = s.block + ':' + s.row, a = Math.atan2(s.x, -s.z) / GYM_RAD;
-    const e = rows.get(key) ?? { r: 0, y: 0, n: 0, a0: Infinity, a1: -Infinity, ref: a };
-    const d = ((a - e.ref + 540) % 360) - 180;
-    e.r += r; e.y += s.y; e.n++; e.a0 = Math.min(e.a0, e.ref + d); e.a1 = Math.max(e.a1, e.ref + d);
-    rows.set(key, e);
+  // Continuous top tiers from the cut rake out to the outer bowl wall so
+  // every section meets cleanly with zero step breaks, topped by the solid
+  // paneled rear wall, fascia ring beam, and upper drum.
+  const parts = [
+    plateGeometry(gymSector(0, 360, 57.1, TOP.r1 + .05), 9.95, 10.14),
+    plateGeometry(gymSector(0, 360, 58.35, TOP.r1 + .05), 10.10, 10.78),
+    plateGeometry(gymSector(213.8, 224.5, 57.45, 58.45), 10.10, 10.46),
+  ];
+  for (const [a0, a1] of [[146.2, 168.5], [191.5, 213.8]]) {
+    parts.push(
+      plateGeometry(gymSector(a0, a1, 58.15, TOP.r1 + .05), 10.10, 10.94),
+      plateGeometry(gymSector(a0, a1, 59.00, TOP.r1 + .05), 10.90, 11.36),
+      plateGeometry(gymSector(a0, a1, 59.75, TOP.r1 + .05), 11.32, 11.78),
+    );
   }
-  for (const e of rows.values()) {
-    const r = e.r / e.n, y = e.y / e.n, pad = .55 / r / GYM_RAD;
-    parts.push(plateGeometry(gymSector(e.a0 - pad, e.a1 + pad, r - .45, r + .5), 10.45, y));
-  }
-  parts.push(plateGeometry(gymSector(0, 360, 58.3, TOP.r0), 10.45, 10.72));
-  // the aisle behind the top row, against the wall
-  parts.push(plateGeometry(gymSector(0, 360, TOP.r0, TOP.r1 + .05), TOP.y - .3, TOP.y));
   root.add(new THREE.Mesh(mergeGeometries(parts), mat.concrete));
   parts.forEach((g) => g.dispose());
 
-  // Continuous bowl wall behind the top-row aisle up to the roof deck.
-  arcWall(root, mat.wall, TOP.r1, 10.72, 22);
-  arcWall(root, mat.parapet, TOP.r1 - .04, 15, 15.55);
+  // Clean continuous perimeter wall right behind the top seats (no open 3F concourse).
+  arcWall(root, mat.wall, TOP.r1, 10.0, 15.2);
+  const cols = [];
+  for (let i = 0; i < 24; i++) {
+    const deg = i * 15, [cx, cz] = gymPoint(deg, TOP.r1 - .13);
+    const col = new THREE.BoxGeometry(.55, 5.2, .26);
+    col.rotateY(-deg * GYM_RAD);
+    col.translate(cx, 12.6, cz);
+    cols.push(col.toNonIndexed());
+    col.dispose();
+  }
+  root.add(new THREE.Mesh(mergeGeometries(cols), mat.parapet));
+  cols.forEach((g) => g.dispose());
+  root.add(plate(gymSector(0, 360, TOP.r1 - .25, TOP.r1 + .05), 15.2, 16.3, mat.parapet));
+  arcWall(root, mat.ceiling, TOP.r1, 16.3, 22.5);
+  railArc(root, mat.rail, TOP.r1 - .22, 10.78, 213.8, 506.2);
+  railArc(root, mat.rail, TOP.r1 - .22, 10.78, 168.5, 191.5);
+  for (const [a0, a1] of [[146.2, 168.5], [191.5, 213.8]]) railArc(root, mat.rail, TOP.r1 - .22, 11.78, a0, a1);
   return buildBowl(root, { pipe, rakeAt });
 }
 
@@ -383,14 +386,18 @@ function baffleTex() {
 }
 
 function chairs(root, seats) {
-  const body = new THREE.InstancedMesh(stadiumSeatGeometry(), std({ color: 0xffffff, roughness: .8, side: THREE.DoubleSide }), seats.length);
-  const frame = new THREE.InstancedMesh(new THREE.BoxGeometry(.05, .48, .3), std({ color: 0x25282b, roughness: .82 }), seats.length);
+  const bodyMat = std({ color: 0xffffff, roughness: .96, envMapIntensity: .05, side: THREE.DoubleSide });
+  const frameMat = std({ color: 0x25282b, roughness: .95, envMapIntensity: .05 });
+  bodyMat.userData.flat = true;
+  frameMat.userData.flat = true;
+  const body = new THREE.InstancedMesh(stadiumSeatGeometry(), bodyMat, seats.length);
+  const frame = new THREE.InstancedMesh(new THREE.BoxGeometry(.05, .48, .3), frameMat, seats.length);
   const mat = new THREE.Matrix4(), m2 = new THREE.Matrix4(), color = new THREE.Color();
   const mount = new THREE.Matrix4().makeTranslation(.24, .24, -.07);
   // the colours as of 2025 (the concert photographs from 1F and from 2F 27):
   // 1F's fixed rows yellow; 2F yellow at the front, then yellow and teal mixed
   // seat by seat, teal taking over towards the back
-  const YELLOW = [0xd9a92c, 0xe0b237, 0xd3a128], TEAL = [0x8ccbdc, 0x96d2e2, 0x80c2d4];
+  const YELLOW = [0x9e7820, 0xa67f24, 0x94701c], TEAL = [0x457d91, 0x4c8599, 0x3e7488];
   const hash = (i) => { let h = Math.imul(i | 0, 2654435761) >>> 0; h = (h ^ (h >>> 15)) >>> 0; return (h % 1000) / 1000; };
   seats.forEach((seat, i) => {
     const n = +seat.block, key = n * 1009 + seat.row * 97 + seat.num * 13;

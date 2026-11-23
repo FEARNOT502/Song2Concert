@@ -210,9 +210,9 @@ export function buildGymnasticShow(ctx, root, eye, stands, floor, houseUpdate = 
   // floor and the 1F rows, an outer one for the 2F rake
   const houseSources = [
     // (the inner ring at less of the power: the floor is near it; the outer
-    // ring twelve, each modest, so no one hangs a hot spot on the rake under it)
+    // ring twelve, kept moderate so the house lights do not blow out 2F seats)
     ...Array.from({ length: 6 }, (_, i) => { const [x, z] = gymPoint(i * 60 + 30, 18); return Object.assign(V3(x, 25.6, z), { k: .4 }); }),
-    ...Array.from({ length: 12 }, (_, i) => { const [x, z] = gymPoint(i * 30, 40); return V3(x, 23.4, z); }),
+    ...Array.from({ length: 12 }, (_, i) => { const [x, z] = gymPoint(i * 30, 40); return Object.assign(V3(x, 23.4, z), { k: .65 }); }),
   ];
   const floorOf = (keep) => {
     if (!round) {
