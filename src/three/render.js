@@ -174,6 +174,9 @@ export class BeamField {
     const A = this.aApex.array, D = this.aDir.array, P = this.aP.array, Q = this.aQ.array, C = this.aColor.array;
     for (const b of this.items) {
       if (b.intensity <= 1e-4 || n >= this.max) continue;
+      // Wide, soft washes read as floating clouds. The rig still lights the
+      // surfaces they hit and draws the fixture lenses.
+      if (b.soft >= 0.75 && b.angle >= 0.2) continue;
       const tanA = Math.tan(b.angle);
       // pull the apex back behind the lens so the beam leaves the lens at its
       // real aperture rather than from a point
@@ -640,10 +643,8 @@ export class Pipeline {
     this.renderer.info.reset();
     this.beams.uniforms.uTime.value = t;
     this.final.material.uniforms.uTime.value = t;
-    if (this.volOn) {
-      this.beams.sync();
-      this.haze.sync();
-    }
+    if (this.volOn) this.beams.sync();
+    if (this.volOn && this.haze.mesh.visible) this.haze.sync();
     this.flares.sync();
     this.gpu.poll();
     this.gpu.begin();
