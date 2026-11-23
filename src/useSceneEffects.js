@@ -1,6 +1,6 @@
 // useSceneEffects.js — the scene's quality switch, remembered between visits.
 //
-// The switch controls the crowd and postprocessing in three/stage.js.
+// The switch controls the crowd, light shafts, and bloom in three/stage.js.
 //
 // It defaults ON. The scene as designed is the product, and a player that opens
 // looking flat to save a machine that was never struggling has made the wrong
