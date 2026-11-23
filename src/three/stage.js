@@ -25,7 +25,7 @@ import { crowdUniforms } from './people.js';
 import { LOD, Rig } from './rig.js';
 import { Walker } from './walk.js';
 import { createArt } from './art.js';
-import { CONCERT_VENUES, loadClubModels, loadConcertModels, loadTheaterLab, loadTheaterModels } from './concert-models.js';
+import { CONCERT_VENUES, loadClubModels, loadConcertModels, loadDomeSeatModels, loadTheaterLab, loadTheaterModels } from './concert-models.js';
 import { BeatFollower } from './beat.js';
 import { buildVenue } from './venues/index.js';
 import { getDomeSeatCatalog } from './venues/dome.js';
@@ -137,11 +137,11 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     });
   }
 
-  function makeCtx(concertModels, theaterLab) {
+  function makeCtx(concertModels, theaterLab, domeSeatModels) {
     const screens = [], rigs = [];
     const cu = crowdUniforms();
     return {
-      pipe, cu, screens, rigs, concertModels, theaterLab,
+      pipe, cu, screens, rigs, concertModels, theaterLab, domeSeatModels,
       // the big rooms' layout: 'general' (an end stage) or '360' (a centre stage)
       mode: venueMode,
       // the crowd is decided at build time: off, it is not built at all
@@ -190,7 +190,7 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
     const models = id === 'club' ? loadClubModels() : (theater && mode === 'op') || id === GYM_ID
       ? loadTheaterModels()
       : theater || CONCERT_VENUES.has(id) ? loadConcertModels() : null;
-    const [concertModels, theaterLab] = await Promise.all([
+    const [concertModels, theaterLab, domeSeatModels] = await Promise.all([
       models?.catch((error) => {
         console.warn('Unable to load concert equipment models', error);
         return null;
@@ -199,9 +199,13 @@ export function createStage(canvas, { quality = 'high', effects = true, onLoadin
         console.warn('Unable to load the theater laboratory', error);
         return null;
       }) : null,
+      id === 'dome' ? loadDomeSeatModels().catch((error) => {
+        console.warn('Unable to load Tokyo Dome seat models', error);
+        return null;
+      }) : null,
     ]);
     if (gen !== buildGen || !running) return;
-    const c = makeCtx(concertModels, theaterLab);
+    const c = makeCtx(concertModels, theaterLab, domeSeatModels);
     const v = buildVenue(id, c);
     for (const r of c.rigs) { const g = r.build(); g.userData.plan = 'rig'; v.root.add(g); }
     // the beams stop on the stage roof, the LED boxes and the screens rather

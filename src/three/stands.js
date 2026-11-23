@@ -1404,7 +1404,7 @@ export function seatFinder(spots, { below = 0.05 } = {}) {
 export function buildStands(data, {
   offset = V3(0, 0, 0), stage = V3(0, 2, 0), seatColors = {}, seatColor = 0x22262e,
   concreteTone = 0.22, concreteWarm = 0, concreteEven = 0, sold = () => true, occupancy = 0.97, seed = 5, roofY = 36, crowd = true,
-  materials = {}, seatMesh = null, seatColorAt = null, tiers = null, wedges = null,
+  materials = {}, seatMesh = null, replaceSeatMeshes = null, seatColorAt = null, tiers = null, wedges = null,
   seatKeep = null, byAisle = false, aisleFirst = false, sectors = null, sectorEven = 0, sectorFacing = 0, sectorJoin = null, sectorMin = 0.5, sectorWhole = 0.35, sectorBlocks = false, sectorPair = null, sectorOver = null, sectorSplitEnds = false, sectorTrim = 0, sectorSplitWide = 0, round = false,
 }) {
   const g = new THREE.Group();
@@ -2273,9 +2273,13 @@ export function buildStands(data, {
     g.add(seatMesh(allSpots.map((sp) => ({ x: sp.x, y: sp.y, z: sp.z, turn: sp.yaw }))));
     return { group: g, people, aisleLights, update, topAt, seatNear, seats: allSpots };
   }
+  const replacement = replaceSeatMeshes?.(allSpots);
+  if (replacement) g.add(replacement.group);
   const seatGeo = stadiumSeatGeometry(), paddedGeo = paddedSeatGeometry();
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion();
-  for (const { spots, col, padded } of seatSpots) {
+  for (const { spots: original, col, padded } of seatSpots) {
+    const spots = replacement ? original.filter((seat) => !replacement.replaced.has(seat)) : original;
+    if (!spots.length) continue;
     const inst = new THREE.InstancedMesh(padded ? paddedGeo : seatGeo, std({ color: col, roughness: padded ? 0.94 : 0.65, metalness: 0, side: THREE.DoubleSide }), spots.length);
     spots.forEach((s, i) => { q.setFromAxisAngle(V3(0, 1, 0), s.yaw); m4.compose(V3(s.x, s.y, s.z), q, V3(1, 1, 1)); inst.setMatrixAt(i, m4); });
     inst.receiveShadow = true;
